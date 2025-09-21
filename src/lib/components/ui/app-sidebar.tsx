@@ -58,7 +58,7 @@ export function AppSidebar({
                 {section.title}
               </h3>
               <div className="space-y-1">
-                {section.items.map((item) => (
+                {section.items.map((item) =>
                   item.disabled ? (
                     <Button
                       key={item.id}
@@ -72,13 +72,27 @@ export function AppSidebar({
                   ) : (
                     <Link key={item.id} href={item.href}>
                       <Button
-                        variant={
-                          item.isActive ||
-                          pathname === item.href ||
-                          pathname.startsWith(item.href + "/")
-                            ? "default"
-                            : "ghost"
-                        }
+                        variant={(() => {
+                          if (item.isActive) return "default";
+                          if (pathname === item.href) return "default";
+                          // Only activate parent routes if there are no more specific child routes
+                          if (pathname.startsWith(item.href + "/")) {
+                            // Check if there's a more specific route that should be active instead
+                            const hasMoreSpecificRoute = sections.some(
+                              (section) =>
+                                section.items.some(
+                                  (otherItem) =>
+                                    otherItem.href !== item.href &&
+                                    otherItem.href.startsWith(
+                                      item.href + "/"
+                                    ) &&
+                                    pathname.startsWith(otherItem.href)
+                                )
+                            );
+                            return hasMoreSpecificRoute ? "ghost" : "default";
+                          }
+                          return "ghost";
+                        })()}
                         className="w-full justify-start"
                       >
                         {item.icon && <span className="mr-2">{item.icon}</span>}
@@ -86,7 +100,7 @@ export function AppSidebar({
                       </Button>
                     </Link>
                   )
-                ))}
+                )}
               </div>
             </div>
           ))}
@@ -103,4 +117,3 @@ export function AppSidebar({
     </div>
   );
 }
-

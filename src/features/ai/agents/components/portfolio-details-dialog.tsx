@@ -1,90 +1,112 @@
-'use client'
+"use client";
 
-import React, { useState } from 'react'
+import React, { useState } from "react";
 
-import { Badge } from '@/lib/components/ui/badge'
-import { Button } from '@/lib/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/lib/components/ui/card'
-import { Input } from '@/lib/components/ui/input'
-import { log } from '@/lib/utils/logger'
+import { Badge } from "@/lib/components/ui/badge";
+import { Button } from "@/lib/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/lib/components/ui/card";
+import { Input } from "@/lib/components/ui/input";
+import { log } from "@/lib/utils/logger";
 
-import { useAgentWork } from '../hooks/use-agent-work'
-import { Portfolio, Agent, UpdatePortfolioRequest } from '../types'
-import { AgentWorkCard } from './agent-work-card'
+import { useAgentWork } from "../hooks/use-agent-work";
+import { Agent, Portfolio, UpdatePortfolioRequest } from "../types";
+
+import { AgentWorkCard } from "./agent-work-card";
 
 interface PortfolioDetailsDialogProps {
-  portfolio: Portfolio | null
-  availableAgents: Agent[]
-  onClose: () => void
-  onUpdatePortfolio: (portfolioId: string, updates: Partial<Portfolio>) => Promise<void>
-  onDeletePortfolio: (portfolioId: string) => void
+  portfolio: Portfolio | null;
+  availableAgents: Agent[];
+  onClose: () => void;
+  onUpdatePortfolio: (
+    portfolioId: string,
+    updates: Partial<Portfolio>
+  ) => Promise<void>;
+  onDeletePortfolio: (portfolioId: string) => void;
 }
 
-export function PortfolioDetailsDialog({ 
-  portfolio, 
+export function PortfolioDetailsDialog({
+  portfolio,
   availableAgents,
-  onClose, 
-  onUpdatePortfolio, 
-  onDeletePortfolio 
+  onClose,
+  onUpdatePortfolio,
+  onDeletePortfolio,
 }: PortfolioDetailsDialogProps) {
-  const { workHistory, executeWork, loading: workLoading } = useAgentWork(portfolio?.id || '')
-  const [editing, setEditing] = useState(false)
-  const [formData, setFormData] = useState<UpdatePortfolioRequest>({})
-  const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([])
+  const {
+    workHistory,
+    executeWork,
+    loading: workLoading,
+  } = useAgentWork(portfolio?.id || "");
+  const [editing, setEditing] = useState(false);
+  const [formData, setFormData] = useState<UpdatePortfolioRequest>({});
+  const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
 
   React.useEffect(() => {
     if (portfolio) {
       setFormData({
         name: portfolio.name,
         description: portfolio.description,
-        thesis: portfolio.thesis
-      })
-      setSelectedAgentIds(portfolio.assignedAgents.map(a => a.agentId))
+        thesis: portfolio.thesis,
+      });
+      setSelectedAgentIds(portfolio.assignedAgents.map((a) => a.agentId));
     }
-  }, [portfolio])
+  }, [portfolio]);
 
   const handleSave = async () => {
-    if (!portfolio) return
-    
+    if (!portfolio) return;
+
     try {
       await onUpdatePortfolio(portfolio.id, {
         ...formData,
-        assignedAgentIds: selectedAgentIds
-      } as any)
-      setEditing(false)
+        assignedAgentIds: selectedAgentIds,
+      } as any);
+      setEditing(false);
     } catch (error) {
-      log.failure('Failed to update portfolio', error, 'PortfolioDetailsDialog')
+      log.failure(
+        "Failed to update portfolio",
+        error,
+        "PortfolioDetailsDialog"
+      );
     }
-  }
+  };
 
   const handleDelete = () => {
-    if (!portfolio) return
-    
-    if (confirm('Are you sure you want to delete this portfolio? This action cannot be undone.')) {
-      onDeletePortfolio(portfolio.id)
-      onClose()
+    if (!portfolio) return;
+
+    if (
+      confirm(
+        "Are you sure you want to delete this portfolio? This action cannot be undone."
+      )
+    ) {
+      onDeletePortfolio(portfolio.id);
+      onClose();
     }
-  }
+  };
 
   const handleAgentToggle = (agentId: string) => {
-    setSelectedAgentIds(prev => 
+    setSelectedAgentIds((prev) =>
       prev.includes(agentId)
-        ? prev.filter(id => id !== agentId)
+        ? prev.filter((id) => id !== agentId)
         : [...prev, agentId]
-    )
-  }
+    );
+  };
 
   const handleExecuteWork = async (agentId: string) => {
-    if (!portfolio) return
-    
-    try {
-      await executeWork(portfolio.id, agentId)
-    } catch (error) {
-      log.failure('Failed to execute work', error, 'PortfolioDetailsDialog')
-    }
-  }
+    if (!portfolio) return;
 
-  if (!portfolio) return null
+    try {
+      await executeWork(portfolio.id, agentId);
+    } catch (error) {
+      log.failure("Failed to execute work", error, "PortfolioDetailsDialog");
+    }
+  };
+
+  if (!portfolio) return null;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -109,7 +131,7 @@ export function PortfolioDetailsDialog({
                       size="sm"
                       onClick={() => setEditing(!editing)}
                     >
-                      {editing ? 'Cancel' : 'Edit'}
+                      {editing ? "Cancel" : "Edit"}
                     </Button>
                     {editing && (
                       <Button size="sm" onClick={handleSave}>
@@ -122,30 +144,45 @@ export function PortfolioDetailsDialog({
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium mb-2">Name</label>
+                    <label className="block text-sm font-medium mb-2">
+                      Name
+                    </label>
                     {editing ? (
                       <Input
-                        value={formData.name || ''}
-                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                        value={formData.name || ""}
+                        onChange={(e) =>
+                          setFormData({ ...formData, name: e.target.value })
+                        }
                       />
                     ) : (
                       <p className="text-gray-900">{portfolio.name}</p>
                     )}
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-2">Status</label>
-                    <Badge variant={portfolio.isActive ? 'default' : 'secondary'}>
-                      {portfolio.isActive ? 'Active' : 'Inactive'}
+                    <label className="block text-sm font-medium mb-2">
+                      Status
+                    </label>
+                    <Badge
+                      variant={portfolio.isActive ? "default" : "secondary"}
+                    >
+                      {portfolio.isActive ? "Active" : "Inactive"}
                     </Badge>
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-2">Description</label>
+                  <label className="block text-sm font-medium mb-2">
+                    Description
+                  </label>
                   {editing ? (
                     <Input
-                      value={formData.description || ''}
-                      onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                      value={formData.description || ""}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          description: e.target.value,
+                        })
+                      }
                     />
                   ) : (
                     <p className="text-gray-900">{portfolio.description}</p>
@@ -154,13 +191,17 @@ export function PortfolioDetailsDialog({
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium mb-2">Created</label>
+                    <label className="block text-sm font-medium mb-2">
+                      Created
+                    </label>
                     <p className="text-gray-900">
                       {new Date(portfolio.createdAt).toLocaleDateString()}
                     </p>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-2">Last Updated</label>
+                    <label className="block text-sm font-medium mb-2">
+                      Last Updated
+                    </label>
                     <p className="text-gray-900">
                       {new Date(portfolio.updatedAt).toLocaleDateString()}
                     </p>
@@ -177,8 +218,10 @@ export function PortfolioDetailsDialog({
               <CardContent>
                 {editing ? (
                   <textarea
-                    value={formData.thesis || ''}
-                    onChange={(e) => setFormData({ ...formData, thesis: e.target.value })}
+                    value={formData.thesis || ""}
+                    onChange={(e) =>
+                      setFormData({ ...formData, thesis: e.target.value })
+                    }
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     rows={6}
                   />
@@ -197,7 +240,9 @@ export function PortfolioDetailsDialog({
               <CardHeader>
                 <CardTitle>Assigned AI Agents</CardTitle>
                 <CardDescription>
-                  {editing ? 'Select agents to analyze this portfolio' : 'Agents assigned to analyze this portfolio'}
+                  {editing
+                    ? "Select agents to analyze this portfolio"
+                    : "Agents assigned to analyze this portfolio"}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -208,14 +253,16 @@ export function PortfolioDetailsDialog({
                         key={agent.id}
                         className={`cursor-pointer transition-colors ${
                           selectedAgentIds.includes(agent.id)
-                            ? 'ring-2 ring-blue-500 bg-blue-50'
-                            : 'hover:bg-gray-50'
+                            ? "ring-2 ring-blue-500 bg-blue-50"
+                            : "hover:bg-gray-50"
                         }`}
                         onClick={() => handleAgentToggle(agent.id)}
                       >
                         <CardHeader className="pb-2">
                           <div className="flex items-center justify-between">
-                            <CardTitle className="text-sm">{agent.name}</CardTitle>
+                            <CardTitle className="text-sm">
+                              {agent.name}
+                            </CardTitle>
                             <input
                               type="checkbox"
                               checked={selectedAgentIds.includes(agent.id)}
@@ -233,7 +280,9 @@ export function PortfolioDetailsDialog({
                 ) : (
                   <div className="space-y-3">
                     {portfolio.assignedAgents.length === 0 ? (
-                      <p className="text-gray-600 text-center py-4">No agents assigned</p>
+                      <p className="text-gray-600 text-center py-4">
+                        No agents assigned
+                      </p>
                     ) : (
                       portfolio.assignedAgents.map((assignedAgent) => (
                         <div
@@ -241,23 +290,39 @@ export function PortfolioDetailsDialog({
                           className="flex items-center justify-between p-3 border rounded-md"
                         >
                           <div className="flex-1">
-                            <h4 className="font-medium">{assignedAgent.agent.name}</h4>
-                            <p className="text-sm text-gray-600">{assignedAgent.agent.description}</p>
+                            <h4 className="font-medium">
+                              {assignedAgent.agent.name}
+                            </h4>
+                            <p className="text-sm text-gray-600">
+                              {assignedAgent.agent.description}
+                            </p>
                             <div className="flex items-center space-x-4 mt-2 text-xs text-gray-500">
-                              <span>Model: {assignedAgent.agent.model.name}</span>
-                              <span>Role: {assignedAgent.agent.role.replace('_', ' ')}</span>
+                              <span>
+                                Model: {assignedAgent.agent.model.name}
+                              </span>
+                              <span>
+                                Role:{" "}
+                                {assignedAgent.agent.role.replace("_", " ")}
+                              </span>
                               <span>Work Count: {assignedAgent.workCount}</span>
                               {assignedAgent.lastWorkedAt && (
-                                <span>Last Worked: {new Date(assignedAgent.lastWorkedAt).toLocaleDateString()}</span>
+                                <span>
+                                  Last Worked:{" "}
+                                  {new Date(
+                                    assignedAgent.lastWorkedAt
+                                  ).toLocaleDateString()}
+                                </span>
                               )}
                             </div>
                           </div>
                           <Button
-                            onClick={() => handleExecuteWork(assignedAgent.agentId)}
+                            onClick={() =>
+                              handleExecuteWork(assignedAgent.agentId)
+                            }
                             disabled={workLoading}
                             size="sm"
                           >
-                            {workLoading ? 'Working...' : 'Work'}
+                            {workLoading ? "Working..." : "Work"}
                           </Button>
                         </div>
                       ))
@@ -277,7 +342,9 @@ export function PortfolioDetailsDialog({
               </CardHeader>
               <CardContent>
                 {workHistory.length === 0 ? (
-                  <p className="text-gray-600 text-center py-4">No work history available</p>
+                  <p className="text-gray-600 text-center py-4">
+                    No work history available
+                  </p>
                 ) : (
                   <div className="space-y-4">
                     {workHistory.map((work) => (
@@ -290,16 +357,10 @@ export function PortfolioDetailsDialog({
 
             {/* Actions */}
             <div className="flex justify-end space-x-3 pt-4 border-t">
-              <Button
-                variant="outline"
-                onClick={onClose}
-              >
+              <Button variant="outline" onClick={onClose}>
                 Close
               </Button>
-              <Button
-                variant="destructive"
-                onClick={handleDelete}
-              >
+              <Button variant="destructive" onClick={handleDelete}>
                 Delete Portfolio
               </Button>
             </div>
@@ -307,5 +368,5 @@ export function PortfolioDetailsDialog({
         </div>
       </div>
     </div>
-  )
+  );
 }

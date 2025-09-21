@@ -4,6 +4,8 @@ import React, { useState } from 'react'
 import { Button } from '@/lib/components/ui/button'
 import { Input } from '@/lib/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/lib/components/ui/card'
+import { Modal, ModalForm, ModalSection, ModalField } from '@/lib/components/ui/modal'
+import { AlertTriangle } from 'lucide-react'
 import { Agent, CreatePortfolioRequest } from '../types'
 
 interface CreatePortfolioDialogProps {
@@ -56,44 +58,59 @@ export function CreatePortfolioDialog({
     }
   }
 
-  if (!open) return null
+  const footer = (
+    <>
+      <Button
+        type="button"
+        variant="outline"
+        onClick={() => onOpenChange(false)}
+        disabled={loading}
+      >
+        Cancel
+      </Button>
+      <Button
+        type="submit"
+        form="create-portfolio-form"
+        disabled={loading}
+        className="min-w-[140px]"
+      >
+        {loading ? 'Creating...' : 'Create Portfolio'}
+      </Button>
+    </>
+  )
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="p-6">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl font-bold">Create New Portfolio</h2>
-            <Button
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-            >
-              Close
-            </Button>
+    <Modal
+      open={open}
+      onOpenChange={onOpenChange}
+      title="Create New Portfolio"
+      size="xl"
+      footer={footer}
+    >
+      <ModalForm id="create-portfolio-form" onSubmit={handleSubmit}>
+        {/* Basic Information */}
+        <ModalSection title="Basic Information">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <ModalField label="Portfolio Name" required>
+              <Input
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                placeholder="e.g., Tech Growth Portfolio"
+                required
+                className="w-full"
+              />
+            </ModalField>
+            <ModalField label="Description" required>
+              <Input
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                placeholder="Brief description of this portfolio"
+                required
+                className="w-full"
+              />
+            </ModalField>
           </div>
-
-          <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Basic Information */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium mb-2">Portfolio Name</label>
-                <Input
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="e.g., Tech Growth Portfolio"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-2">Description</label>
-                <Input
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  placeholder="Brief description of this portfolio"
-                  required
-                />
-              </div>
-            </div>
+        </ModalSection>
 
             {/* Investment Thesis */}
             <div>

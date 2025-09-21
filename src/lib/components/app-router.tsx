@@ -4,7 +4,6 @@ import { AlertCircle, Loader2, Shield } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
-import { AdminDashboard } from "@/features/admin/components/admin-dashboard";
 import { WaitlistDashboard } from "@/features/waitlist/components/waitlist-dashboard";
 import { Button } from "@/lib/components/ui/button";
 import {
@@ -42,12 +41,17 @@ export function AppRouter({ children }: AppRouterProps) {
     if (!authLoading && !routingLoading && isAuthenticated && route) {
       const currentPath = window.location.pathname;
 
+      // Don't redirect admin users from admin sub-pages
+      if (isAdmin && currentPath.startsWith("/admin/")) {
+        return;
+      }
+
       // Redirect if user is not on the correct path
       if (currentPath !== route.path) {
         router.push(route.path);
       }
     }
-  }, [isAuthenticated, authLoading, routingLoading, route, router]);
+  }, [isAuthenticated, authLoading, routingLoading, route, router, isAdmin]);
 
   // Show loading state while determining authentication and routing
   if (authLoading || routingLoading) {
@@ -70,9 +74,12 @@ export function AppRouter({ children }: AppRouterProps) {
   // Authenticated - determine which dashboard to show based on current path
   const currentPath = window.location.pathname;
 
-  // Admin users - allow access to admin dashboard
-  if (isAdmin && currentPath === "/admin") {
-    return <AdminDashboard />;
+  // Admin users - allow access to admin dashboard and admin sub-pages
+  if (
+    isAdmin &&
+    (currentPath === "/admin" || currentPath.startsWith("/admin/"))
+  ) {
+    return <>{children}</>;
   }
 
   // Waitlist users - allow access to waitlist dashboard
