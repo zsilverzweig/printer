@@ -1,4 +1,4 @@
-import { alpacaService } from "@/lib/services/alpaca";
+import { alpacaService } from "@/features/finance/lib/alpaca-service";
 import {
   AlpacaListOrdersParams,
   AlpacaOrder,
@@ -79,7 +79,8 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const symbolInput = typeof body.symbol === "string" ? body.symbol.trim() : "";
+    const symbolInput =
+      typeof body.symbol === "string" ? body.symbol.trim() : "";
 
     if (!symbolInput) {
       return NextResponse.json(
@@ -88,7 +89,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const sideInput = typeof body.side === "string" ? body.side.toLowerCase() : "";
+    const sideInput =
+      typeof body.side === "string" ? body.side.toLowerCase() : "";
     if (sideInput !== "buy" && sideInput !== "sell") {
       return NextResponse.json(
         { error: "Order side must be either 'buy' or 'sell'" },
@@ -111,7 +113,9 @@ export async function POST(request: NextRequest) {
       typeof body.time_in_force === "string"
         ? body.time_in_force.toLowerCase()
         : "day";
-    if (!TIME_IN_FORCE_OPTIONS.includes(timeInForceInput as AlpacaTimeInForce)) {
+    if (
+      !TIME_IN_FORCE_OPTIONS.includes(timeInForceInput as AlpacaTimeInForce)
+    ) {
       return NextResponse.json(
         { error: "Unsupported time in force option" },
         { status: 400 }

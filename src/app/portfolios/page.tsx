@@ -1,6 +1,6 @@
 "use client";
 
-import { PortfolioManagement } from "@/features/ai/agents/components/portfolio-management";
+import { PortfolioManagement } from "@/features/finance/portfolio/components/portfolio-management";
 import { useAuthContext } from "@/lib/providers/auth-provider";
 import { Loader2 } from "lucide-react";
 

@@ -2,7 +2,7 @@
 
 import { Loader2 } from "lucide-react";
 
-import { AlpacaTradingPanel } from "@/features/admin/components/alpaca-trading-panel";
+import { AlpacaTradingPanel } from "@/features/finance/trading/components/alpaca-trading-panel";
 import { useAuthContext } from "@/lib/providers/auth-provider";
 
 export default function AdminAlpacaPage() {

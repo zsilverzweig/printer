@@ -1,4 +1,4 @@
-import { alpacaService } from "@/lib/services/alpaca";
+import { alpacaService } from "@/features/finance/lib/alpaca-service";
 import { NextResponse } from "next/server";
 
 export async function GET() {

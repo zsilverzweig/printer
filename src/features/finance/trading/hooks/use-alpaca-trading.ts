@@ -22,7 +22,10 @@ export interface UseAlpacaTradingReturn {
   placeOrder: (order: AlpacaOrderRequest) => Promise<AlpacaOrder>;
 }
 
-async function fetchJson<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
+async function fetchJson<T>(
+  input: RequestInfo,
+  init?: RequestInit
+): Promise<T> {
   const response = await fetch(input, init);
   const text = await response.text();
   let payload: unknown = null;
@@ -85,7 +88,9 @@ export function useAlpacaTrading(): UseAlpacaTradingReturn {
         await Promise.all([
           fetchJson<{ account: AlpacaAccount }>("/api/alpaca/account"),
           fetchJson<{ positions: AlpacaPosition[] }>("/api/alpaca/positions"),
-          fetchJson<{ orders: AlpacaOrder[] }>("/api/alpaca/orders?status=all&limit=25"),
+          fetchJson<{ orders: AlpacaOrder[] }>(
+            "/api/alpaca/orders?status=all&limit=25"
+          ),
         ]);
 
       setAccount(accountResponse.account);
@@ -93,7 +98,8 @@ export function useAlpacaTrading(): UseAlpacaTradingReturn {
       setOrders(ordersResponse.orders);
       setLastUpdated(new Date());
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to load Alpaca data";
+      const message =
+        err instanceof Error ? err.message : "Failed to load Alpaca data";
       setError(message);
       log.error("Failed to load Alpaca data", err, "useAlpacaTrading");
     } finally {
@@ -115,11 +121,14 @@ export function useAlpacaTrading(): UseAlpacaTradingReturn {
         setIsPlacingOrder(true);
         setError(null);
 
-        const response = await fetchJson<{ order: AlpacaOrder }>("/api/alpaca/orders", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(order),
-        });
+        const response = await fetchJson<{ order: AlpacaOrder }>(
+          "/api/alpaca/orders",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(order),
+          }
+        );
 
         await loadTradingData();
         return response.order;

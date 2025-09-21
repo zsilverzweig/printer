@@ -118,11 +118,17 @@ class AlpacaService {
     }
 
     if (payload && typeof payload === "object") {
-      if ("message" in payload && typeof (payload as { message: unknown }).message === "string") {
+      if (
+        "message" in payload &&
+        typeof (payload as { message: unknown }).message === "string"
+      ) {
         return (payload as { message: string }).message;
       }
 
-      if ("error" in payload && typeof (payload as { error: unknown }).error === "string") {
+      if (
+        "error" in payload &&
+        typeof (payload as { error: unknown }).error === "string"
+      ) {
         return (payload as { error: string }).error;
       }
     }
@@ -138,7 +144,9 @@ class AlpacaService {
     return this.request<AlpacaPosition[]>("/v2/positions");
   }
 
-  async listOrders(params: AlpacaListOrdersParams = {}): Promise<AlpacaOrder[]> {
+  async listOrders(
+    params: AlpacaListOrdersParams = {}
+  ): Promise<AlpacaOrder[]> {
     const searchParams = new URLSearchParams();
 
     if (params.status) {

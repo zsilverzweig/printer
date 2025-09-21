@@ -1,14 +1,10 @@
 "use client";
 
-import {
-  ArrowUpRight,
-  Loader2,
-  RefreshCw,
-  TrendingUp,
-} from "lucide-react";
-import { useMemo, useState } from "react";
+import { ArrowUpRight, Loader2, RefreshCw, TrendingUp } from "lucide-react";
 import type { ChangeEvent, FormEvent } from "react";
+import { useMemo, useState } from "react";
 
+import { Badge } from "@/lib/components/ui/badge";
 import { Button } from "@/lib/components/ui/button";
 import {
   Card,
@@ -18,7 +14,6 @@ import {
   CardTitle,
 } from "@/lib/components/ui/card";
 import { Input } from "@/lib/components/ui/input";
-import { Badge } from "@/lib/components/ui/badge";
 import {
   AlpacaOrderSide,
   AlpacaPosition,
@@ -120,7 +115,8 @@ export function AlpacaTradingPanel() {
     placeOrder,
   } = useAlpacaTrading();
 
-  const [formState, setFormState] = useState<OrderFormState>(DEFAULT_FORM_STATE);
+  const [formState, setFormState] =
+    useState<OrderFormState>(DEFAULT_FORM_STATE);
   const [orderError, setOrderError] = useState<string | null>(null);
   const [orderSuccess, setOrderSuccess] = useState<string | null>(null);
 
@@ -132,7 +128,9 @@ export function AlpacaTradingPanel() {
 
   const recentOrders = useMemo(() => {
     return [...orders].sort((a, b) => {
-      return new Date(b.submitted_at).getTime() - new Date(a.submitted_at).getTime();
+      return (
+        new Date(b.submitted_at).getTime() - new Date(a.submitted_at).getTime()
+      );
     });
   }, [orders]);
 
@@ -206,7 +204,9 @@ export function AlpacaTradingPanel() {
       });
 
       setOrderSuccess(
-        `Submitted ${order.side.toUpperCase()} order for ${order.symbol} (${order.qty || qty}).`
+        `Submitted ${order.side.toUpperCase()} order for ${order.symbol} (${
+          order.qty || qty
+        }).`
       );
       setFormState((prev) => ({ ...prev, symbol: "", qty: "1" }));
     } catch (err) {
@@ -261,7 +261,9 @@ export function AlpacaTradingPanel() {
               </CardDescription>
             </div>
             {account && (
-              <Badge variant={account.trading_blocked ? "destructive" : "secondary"}>
+              <Badge
+                variant={account.trading_blocked ? "destructive" : "secondary"}
+              >
                 {account.status.toUpperCase()}
               </Badge>
             )}
@@ -292,7 +294,9 @@ export function AlpacaTradingPanel() {
                   </p>
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Portfolio value</p>
+                  <p className="text-sm text-muted-foreground">
+                    Portfolio value
+                  </p>
                   <p className="text-xl font-semibold">
                     {formatCurrency(account.portfolio_value, accountCurrency)}
                   </p>
@@ -473,7 +477,11 @@ export function AlpacaTradingPanel() {
                 <div className="text-sm text-green-600">{orderSuccess}</div>
               )}
 
-              <Button type="submit" disabled={isPlacingOrder} className="w-full">
+              <Button
+                type="submit"
+                disabled={isPlacingOrder}
+                className="w-full"
+              >
                 {isPlacingOrder ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 ) : (
@@ -524,7 +532,10 @@ export function AlpacaTradingPanel() {
                           {formatNumber(position.qty, 4)}
                         </td>
                         <td className="py-2 text-right">
-                          {formatCurrency(position.market_value, accountCurrency)}
+                          {formatCurrency(
+                            position.market_value,
+                            accountCurrency
+                          )}
                         </td>
                         <td
                           className={`py-2 text-right ${
@@ -533,7 +544,10 @@ export function AlpacaTradingPanel() {
                               : "text-red-600"
                           }`}
                         >
-                          {formatCurrency(position.unrealized_pl, accountCurrency)}
+                          {formatCurrency(
+                            position.unrealized_pl,
+                            accountCurrency
+                          )}
                         </td>
                         <td
                           className={`py-2 text-right ${
