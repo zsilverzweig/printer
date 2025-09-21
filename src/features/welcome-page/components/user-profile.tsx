@@ -2,6 +2,7 @@
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/lib/components/ui/avatar'
 import { Button } from '@/lib/components/ui/button'
+import { log } from '@/lib/utils/logger'
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -35,7 +36,7 @@ export function UserProfile() {
       await signOut()
       router.push('/login')
     } catch (error) {
-      console.error('Sign-out failed:', error)
+      log.error('Sign-out failed', error, 'UserProfile')
     }
   }
 

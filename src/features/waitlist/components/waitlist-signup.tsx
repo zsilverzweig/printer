@@ -3,6 +3,7 @@
 import { Button } from '@/lib/components/ui/button'
 import { Card } from '@/lib/components/ui/card'
 import { Input } from '@/lib/components/ui/input'
+import { log } from '@/lib/utils/logger'
 import { useAuthContext } from '@/lib/providers/auth-provider'
 import { useState } from 'react'
 import { useWaitlist } from '../hooks/use-waitlist'
@@ -27,7 +28,7 @@ export function WaitlistSignup({ onSuccess }: WaitlistSignupProps) {
       await joinWaitlist(email.trim())
       onSuccess?.()
     } catch (err) {
-      console.error('Failed to join waitlist:', err)
+      log.error('Failed to join waitlist', err, 'WaitlistSignup')
     } finally {
       setIsSubmitting(false)
     }
@@ -39,7 +40,7 @@ export function WaitlistSignup({ onSuccess }: WaitlistSignupProps) {
       await signInWithGoogle()
       onSuccess?.()
     } catch (err) {
-      console.error('Failed to sign in with Google:', err)
+      log.error('Failed to sign in with Google', err, 'WaitlistSignup')
     } finally {
       setIsSubmitting(false)
     }

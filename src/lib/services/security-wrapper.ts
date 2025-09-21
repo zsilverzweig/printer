@@ -1,5 +1,6 @@
 // Centralized security wrapper for Printer API endpoints
 import { NextRequest, NextResponse } from 'next/server'
+import { log } from '@/lib/utils/logger'
 import { SecurityConfig, SecurityResult } from '../types/api'
 import { RateLimiter } from './rate-limiter'
 
@@ -59,7 +60,11 @@ export class SecurityWrapper {
     // 4. Rate limiting
     const rateLimit = await this.config.rateLimiter.checkLimit(request)
     if (!rateLimit.allowed) {
-      console.log('🚫 Rate limit exceeded')
+      log.warn('🚫 Rate limit exceeded', {
+        remaining: rateLimit.remaining,
+        retryAfter: rateLimit.retryAfter,
+        clientIP: this.getClientIP(request),
+      }, 'SecurityWrapper')
       return {
         success: false,
         response: NextResponse.json(
@@ -88,10 +93,11 @@ export class SecurityWrapper {
       }
     }
 
-    console.log('✅ Security checks passed')
+    const clientIP = this.getClientIP(request)
+    log.info('✅ Security checks passed', { clientIP }, 'SecurityWrapper')
     return {
       success: true,
-      clientIP: this.getClientIP(request),
+      clientIP,
     }
   }
 

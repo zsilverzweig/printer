@@ -2,6 +2,7 @@
 'use client'
 
 import { useAuthContext } from '@/lib/providers/auth-provider'
+import { log } from '@/lib/utils/logger'
 import { useCallback, useEffect, useState } from 'react'
 import { adminService } from '../services/admin-service'
 import type {
@@ -37,7 +38,7 @@ export function useAdminConfig(): UseAdminConfigReturn {
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to load config'
       setError(errorMessage)
-      console.error('Failed to load admin config:', err)
+      log.error('Failed to load admin config', err, 'useAdminConfig')
     } finally {
       setLoading(false)
     }

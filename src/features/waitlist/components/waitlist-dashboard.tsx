@@ -3,6 +3,7 @@
 import { Button } from '@/lib/components/ui/button'
 import { Card } from '@/lib/components/ui/card'
 import { Separator } from '@/lib/components/ui/separator'
+import { log } from '@/lib/utils/logger'
 import { CreditCard, Linkedin, Share2, Twitter, Users } from 'lucide-react'
 import { useState } from 'react'
 import { useWaitlist } from '../hooks/use-waitlist'
@@ -20,7 +21,7 @@ export function WaitlistDashboard({ onJoinWaitlist }: WaitlistDashboardProps) {
       setIsPerformingAction(actionType)
       await performAction(actionType as any)
     } catch (err) {
-      console.error('Failed to perform action:', err)
+      log.error('Failed to perform action', err, 'WaitlistDashboard')
     } finally {
       setIsPerformingAction(null)
     }
@@ -30,7 +31,7 @@ export function WaitlistDashboard({ onJoinWaitlist }: WaitlistDashboardProps) {
     try {
       await purchaseUpgrade(positions)
     } catch (err) {
-      console.error('Failed to purchase upgrade:', err)
+      log.error('Failed to purchase upgrade', err, 'WaitlistDashboard')
     }
   }
 

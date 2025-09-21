@@ -1,5 +1,6 @@
 // Admin service for managing waitlist and system configuration
 import { waitlistService } from '@/features/waitlist/services/waitlist-service'
+import { log } from '@/lib/utils/logger'
 import { db } from '@/lib/services/firebase'
 import {
     collection,
@@ -81,7 +82,7 @@ export class AdminService {
         updatedAt: new Date()
       } as AdminConfig
     } catch (error) {
-      console.error('❌ Failed to get admin config:', error)
+      log.failure('Failed to get admin config', error, 'AdminService')
       throw error
     }
   }
@@ -102,7 +103,7 @@ export class AdminService {
         updatedBy
       })
     } catch (error) {
-      console.error('❌ Failed to update admin config:', error)
+      log.failure('Failed to update admin config', error, 'AdminService')
       throw error
     }
   }
@@ -118,7 +119,7 @@ export class AdminService {
         updatedBy
       )
     } catch (error) {
-      console.error('❌ Failed to toggle waitlist:', error)
+      log.failure('Failed to toggle waitlist', error, 'AdminService')
       throw error
     }
   }
@@ -134,7 +135,7 @@ export class AdminService {
         updatedBy
       )
     } catch (error) {
-      console.error('❌ Failed to toggle auto-add to waitlist:', error)
+      log.failure('Failed to toggle auto-add to waitlist', error, 'AdminService')
       throw error
     }
   }
@@ -232,7 +233,7 @@ export class AdminService {
         recentEntries
       }
     } catch (error) {
-      console.error('❌ Failed to get waitlist stats:', error)
+      log.failure('Failed to get waitlist stats', error, 'AdminService')
       throw error
     }
   }
@@ -257,7 +258,7 @@ export class AdminService {
         lastActionAt: doc.data().lastActionAt?.toDate()
       }))
     } catch (error) {
-      console.error('❌ Failed to get waitlist entries:', error)
+      log.failure('Failed to get waitlist entries', error, 'AdminService')
       throw error
     }
   }
@@ -276,7 +277,7 @@ export class AdminService {
       // Recalculate positions
       await waitlistService.recalculatePositions()
     } catch (error) {
-      console.error('❌ Failed to remove waitlist entry:', error)
+      log.failure('Failed to remove waitlist entry', error, 'AdminService')
       throw error
     }
   }
@@ -300,7 +301,7 @@ export class AdminService {
         await waitlistService.recalculatePositions()
       }
     } catch (error) {
-      console.error('❌ Failed to update waitlist entry status:', error)
+      log.failure('Failed to update waitlist entry status', error, 'AdminService')
       throw error
     }
   }
@@ -332,7 +333,7 @@ export class AdminService {
       // Recalculate positions
       await waitlistService.recalculatePositions()
     } catch (error) {
-      console.error('❌ Failed to send invites:', error)
+      log.failure('Failed to send invites', error, 'AdminService')
       throw error
     }
   }
@@ -345,7 +346,7 @@ export class AdminService {
       const config = await this.getAdminConfig()
       return config.autoAddToWaitlist
     } catch (error) {
-      console.error('❌ Failed to check auto-add setting:', error)
+      log.failure('Failed to check auto-add setting', error, 'AdminService')
       return false
     }
   }
@@ -358,7 +359,7 @@ export class AdminService {
       const config = await this.getAdminConfig()
       return config.waitlistEnabled
     } catch (error) {
-      console.error('❌ Failed to check waitlist setting:', error)
+      log.failure('Failed to check waitlist setting', error, 'AdminService')
       return false
     }
   }

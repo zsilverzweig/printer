@@ -2,6 +2,7 @@
 'use client'
 
 import { useAuthContext } from '@/lib/providers/auth-provider'
+import { log } from '@/lib/utils/logger'
 import { useCallback, useEffect, useState } from 'react'
 import { adminService } from '../services/admin-service'
 import type {
@@ -50,7 +51,7 @@ export function useAdmin(): UseAdminReturn {
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to load admin data'
       setError(errorMessage)
-      console.error('Failed to load admin data:', err)
+      log.error('Failed to load admin data', err, 'useAdmin')
     } finally {
       setLoading(false)
     }
@@ -150,7 +151,7 @@ export function useAdmin(): UseAdminReturn {
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to refresh stats'
       setError(errorMessage)
-      console.error('Failed to refresh stats:', err)
+      log.error('Failed to refresh stats', err, 'useAdmin')
     }
   }, [user])
 
