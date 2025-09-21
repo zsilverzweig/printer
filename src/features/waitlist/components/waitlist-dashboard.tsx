@@ -1,6 +1,6 @@
 "use client";
 
-import { CreditCard, Linkedin, Share2, Twitter, Users } from "lucide-react";
+import { CreditCard, Crown, Share2, Users } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "@/lib/components/ui/button";
@@ -48,10 +48,6 @@ export function WaitlistDashboard({ onJoinWaitlist }: WaitlistDashboardProps) {
 
   const getActionIcon = (actionType: string) => {
     switch (actionType) {
-      case "social_share_twitter":
-        return <Twitter className="w-4 h-4" />;
-      case "social_share_linkedin":
-        return <Linkedin className="w-4 h-4" />;
       case "referral_signup":
         return <Users className="w-4 h-4" />;
       case "payment_upgrade":
@@ -82,10 +78,38 @@ export function WaitlistDashboard({ onJoinWaitlist }: WaitlistDashboardProps) {
   return (
     <div className="max-w-2xl mx-auto space-y-6 p-6">
       {/* Position Card */}
-      <Card className="p-6">
+      <Card
+        className={`p-6 ${
+          entry.isPaidUser
+            ? "border-yellow-400 bg-gradient-to-br from-yellow-50 to-amber-50"
+            : ""
+        }`}
+      >
         <div className="text-center">
-          <h2 className="text-3xl font-bold text-blue-600 mb-2">#{position}</h2>
-          <p className="text-gray-600 mb-4">Your position in the waitlist</p>
+          <div className="flex items-center justify-center mb-2">
+            {entry.isPaidUser && (
+              <Crown className="w-6 h-6 text-yellow-500 mr-2" />
+            )}
+            <h2
+              className={`text-3xl font-bold ${
+                entry.isPaidUser ? "text-yellow-600" : "text-blue-600"
+              }`}
+            >
+              #{position}
+            </h2>
+          </div>
+          <p className="text-gray-600 mb-4">
+            {entry.isPaidUser
+              ? "Your premium position in the waitlist"
+              : "Your position in the waitlist"}
+          </p>
+          {entry.isPaidUser && (
+            <div className="mb-4 p-3 bg-yellow-100 border border-yellow-200 rounded-lg">
+              <p className="text-sm text-yellow-800 font-medium">
+                🎉 Premium Member - You're at the top of the waitlist!
+              </p>
+            </div>
+          )}
           <div className="flex justify-center space-x-4 text-sm text-gray-500">
             <span>{entry.totalActions} actions completed</span>
             <span>•</span>
@@ -93,7 +117,9 @@ export function WaitlistDashboard({ onJoinWaitlist }: WaitlistDashboardProps) {
             {entry.paidUpgrades > 0 && (
               <>
                 <span>•</span>
-                <span>{entry.paidUpgrades} paid upgrades</span>
+                <span className="font-medium text-yellow-600">
+                  {entry.paidUpgrades} premium upgrades
+                </span>
               </>
             )}
           </div>
@@ -137,39 +163,7 @@ export function WaitlistDashboard({ onJoinWaitlist }: WaitlistDashboardProps) {
         <Separator className="my-6" />
 
         {/* Action Buttons */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <Button
-            onClick={() => handleAction("social_share_twitter")}
-            disabled={loading || isPerformingAction === "social_share_twitter"}
-            variant="outline"
-            className="w-full"
-          >
-            {isPerformingAction === "social_share_twitter" ? (
-              "Sharing..."
-            ) : (
-              <>
-                <Twitter className="w-4 h-4 mr-2" />
-                Share on Twitter
-              </>
-            )}
-          </Button>
-
-          <Button
-            onClick={() => handleAction("social_share_linkedin")}
-            disabled={loading || isPerformingAction === "social_share_linkedin"}
-            variant="outline"
-            className="w-full"
-          >
-            {isPerformingAction === "social_share_linkedin" ? (
-              "Sharing..."
-            ) : (
-              <>
-                <Linkedin className="w-4 h-4 mr-2" />
-                Share on LinkedIn
-              </>
-            )}
-          </Button>
-
+        <div className="space-y-3">
           <Button
             onClick={() => handleAction("referral_signup")}
             disabled={loading || isPerformingAction === "referral_signup"}
@@ -181,31 +175,51 @@ export function WaitlistDashboard({ onJoinWaitlist }: WaitlistDashboardProps) {
             ) : (
               <>
                 <Users className="w-4 h-4 mr-2" />
-                Refer a Friend
+                Invite Friends (+5 positions)
               </>
             )}
           </Button>
 
-          <Button
-            onClick={() => handlePurchaseUpgrade(1)}
-            disabled={loading}
-            className="w-full"
-          >
-            <CreditCard className="w-4 h-4 mr-2" />
-            Buy 1 Position ($10)
-          </Button>
-        </div>
+          <Separator className="my-4" />
 
-        <div className="mt-4 text-center">
-          <Button
-            onClick={() => handlePurchaseUpgrade(5)}
-            disabled={loading}
-            variant="outline"
-            className="w-full"
-          >
-            <CreditCard className="w-4 h-4 mr-2" />
-            Buy 5 Positions ($50)
-          </Button>
+          <div className="text-center mb-4">
+            <h4 className="font-semibold text-lg mb-2">Buy Your Spot</h4>
+            <p className="text-sm text-gray-600 mb-4">
+              Skip the line and get priority access to Printer
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <Button
+              onClick={() => handlePurchaseUpgrade(1)}
+              disabled={loading}
+              className="w-full bg-yellow-600 hover:bg-yellow-700"
+            >
+              <Crown className="w-4 h-4 mr-2" />
+              Buy 1 Position ($10)
+            </Button>
+
+            <Button
+              onClick={() => handlePurchaseUpgrade(5)}
+              disabled={loading}
+              className="w-full bg-yellow-600 hover:bg-yellow-700"
+            >
+              <Crown className="w-4 h-4 mr-2" />
+              Buy 5 Positions ($50)
+            </Button>
+          </div>
+
+          <div className="mt-3 text-center">
+            <Button
+              onClick={() => handlePurchaseUpgrade(10)}
+              disabled={loading}
+              variant="outline"
+              className="w-full border-yellow-400 text-yellow-600 hover:bg-yellow-50"
+            >
+              <Crown className="w-4 h-4 mr-2" />
+              Buy 10 Positions ($100)
+            </Button>
+          </div>
         </div>
       </Card>
 
