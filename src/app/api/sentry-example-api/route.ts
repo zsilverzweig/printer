@@ -1,6 +1,6 @@
+import { logger } from "@/lib/utils/logger";
 import * as Sentry from "@sentry/nextjs";
 import { NextResponse } from "next/server";
-import { logger } from "@/lib/utils/logger";
 
 export const dynamic = "force-dynamic";
 
@@ -45,6 +45,4 @@ export async function GET() {
     throw error;
   }
   
-  // This line will never be reached due to the throw above
-  return NextResponse.json({ data: "Testing Sentry Error..." });
 }
