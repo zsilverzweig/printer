@@ -3,7 +3,7 @@ import {
   calculatePriorityScore,
   createSortedWaitlist,
   waitlistTestData,
-} from "@/__tests__/utils";
+} from "@/lib/test-utils";
 
 describe("Waitlist Priority Scoring", () => {
   describe("Priority Score Calculation", () => {

@@ -1,6 +1,45 @@
 // Refactored tests for WaitlistService using new test infrastructure
-import { createFirebaseMocks, waitlistTestData } from "@/__tests__/utils";
+import { createFirebaseMocks, waitlistTestData } from "@/lib/test-utils";
 import { WaitlistService } from "../waitlist-service";
+
+// Mock Firebase modules
+jest.mock("firebase/firestore", () => ({
+  getFirestore: jest.fn(() => ({})),
+  addDoc: jest.fn(),
+  getDoc: jest.fn(),
+  getDocs: jest.fn(),
+  updateDoc: jest.fn(),
+  onSnapshot: jest.fn(),
+  query: jest.fn(),
+  where: jest.fn(),
+  collection: jest.fn(),
+  doc: jest.fn(),
+  writeBatch: jest.fn(),
+  serverTimestamp: jest.fn(() => new Date()),
+  increment: jest.fn((value) => ({ increment: value })),
+}));
+
+jest.mock("firebase/auth", () => ({
+  getAuth: jest.fn(() => ({})),
+}));
+
+jest.mock("firebase/app", () => ({
+  initializeApp: jest.fn(() => ({})),
+}));
+
+jest.mock("@/lib/services/firebase", () => ({
+  db: {},
+  auth: {},
+}));
+
+jest.mock("@/lib/utils/logger", () => ({
+  log: {
+    success: jest.fn(),
+    failure: jest.fn(),
+    error: jest.fn(),
+    info: jest.fn(),
+  },
+}));
 
 describe("WaitlistService", () => {
   let service: WaitlistService;

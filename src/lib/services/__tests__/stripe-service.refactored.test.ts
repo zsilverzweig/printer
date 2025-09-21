@@ -4,7 +4,7 @@ import {
   setupStripeMocks,
   stripeTestScenarios,
   verifyStripeApiCall,
-} from "@/__tests__/utils";
+} from "@/lib/test-utils";
 import { StripeService } from "../stripe";
 
 describe("StripeService", () => {
