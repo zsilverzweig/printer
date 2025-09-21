@@ -1,11 +1,12 @@
 // Firebase Authentication service for Printer
+import { log } from '@/lib/utils/logger'
 import {
-    GoogleAuthProvider,
-    onAuthStateChanged,
-    signInWithPopup,
-    signOut,
-    User,
-    UserCredential
+  GoogleAuthProvider,
+  onAuthStateChanged,
+  signInWithPopup,
+  signOut,
+  User,
+  UserCredential
 } from 'firebase/auth'
 import { auth } from './firebase'
 
@@ -47,14 +48,14 @@ export class AuthService {
       const result: UserCredential = await signInWithPopup(auth, googleProvider)
       const user = this.mapFirebaseUser(result.user)
       
-      console.log('✅ Google sign-in successful:', user.email)
+      log.success('Google sign-in successful', { email: user.email }, 'AuthService')
       
       // Check if auto-add to waitlist is enabled
       await this.handleAutoWaitlist(user)
       
       return user
     } catch (error) {
-      console.error('❌ Google sign-in failed:', error)
+      log.failure('Google sign-in failed', error, 'AuthService')
       throw new Error('Failed to sign in with Google')
     }
   }
@@ -65,9 +66,9 @@ export class AuthService {
   async signOutUser(): Promise<void> {
     try {
       await signOut(auth)
-      console.log('✅ Sign-out successful')
+      log.success('Sign-out successful', undefined, 'AuthService')
     } catch (error) {
-      console.error('❌ Sign-out failed:', error)
+      log.failure('Sign-out failed', error, 'AuthService')
       throw new Error('Failed to sign out')
     }
   }
@@ -172,7 +173,7 @@ export class AuthService {
       
       return await user.getIdToken()
     } catch (error) {
-      console.error('❌ Failed to get ID token:', error)
+      log.error('Failed to get ID token', error, 'AuthService')
       return null
     }
   }
@@ -189,7 +190,7 @@ export class AuthService {
       
       return await user.getIdToken(true) // Force refresh
     } catch (error) {
-      console.error('❌ Failed to refresh ID token:', error)
+      log.error('Failed to refresh ID token', error, 'AuthService')
       return null
     }
   }
@@ -219,12 +220,12 @@ export class AuthService {
             user.displayName || undefined,
             { source: 'auto_signup' }
           )
-          console.log('✅ User automatically added to waitlist:', user.email)
+          log.success('User automatically added to waitlist', { email: user.email }, 'AuthService')
         }
       }
     } catch (error) {
       // Don't throw error to avoid breaking sign-in flow
-      console.error('❌ Failed to handle auto-waitlist:', error)
+      log.error('Failed to handle auto-waitlist', error, 'AuthService')
     }
   }
 
@@ -250,7 +251,7 @@ export class AuthService {
       try {
         callback(this.currentUser)
       } catch (error) {
-        console.error('❌ Error in auth state listener:', error)
+        log.error('Error in auth state listener', error, 'AuthService')
       }
     })
   }

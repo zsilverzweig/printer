@@ -1,5 +1,6 @@
 // Advanced cost monitoring and alerting system for Printer AI operations
 import { AIOperation, CostEntry, TokenUsage } from '../types'
+import { log } from '@/lib/utils/logger'
 
 interface CostLimits {
   daily: number
@@ -71,7 +72,7 @@ class CostMonitor {
     const pricing = this.pricing[model as keyof typeof this.pricing]
 
     if (!pricing) {
-      console.warn(`⚠️ Unknown model pricing: ${model}`)
+      log.warn('Unknown model pricing', { model }, 'CostMonitor')
       return
     }
 
@@ -94,9 +95,12 @@ class CostMonitor {
       this.operationCosts.set(entry.operation, currentCost + totalCost)
     }
 
-    console.log(
-      `💰 Cost recorded: $${totalCost.toFixed(4)} for ${entry.operation} (${entry.model}) - ${entry.tokensUsed.totalTokens} tokens`
-    )
+    log.info('Cost recorded', {
+      cost: totalCost.toFixed(4),
+      operation: entry.operation,
+      model: entry.model,
+      tokens: entry.tokensUsed.totalTokens
+    }, 'CostMonitor')
 
     // Check limits and send alerts
     this.checkLimits()
@@ -139,9 +143,12 @@ class CostMonitor {
     }
 
     // Log current status
-    console.log(
-      `📊 Cost Status - Hourly: $${hourlyCost.toFixed(2)}/${this.limits.hourly}, Daily: $${dailyCost.toFixed(2)}/${this.limits.daily}`
-    )
+    log.info('Cost status', {
+      hourlyCost: hourlyCost.toFixed(2),
+      hourlyLimit: this.limits.hourly,
+      dailyCost: dailyCost.toFixed(2),
+      dailyLimit: this.limits.daily
+    }, 'CostMonitor')
   }
 
   /**
@@ -171,18 +178,18 @@ class CostMonitor {
       switch (channel) {
         case 'console':
           if (severity === 'critical') {
-            console.error(message)
+            log.error('Cost alert', { message, type, cost, limit, severity }, 'CostMonitor')
           } else {
-            console.warn(message)
+            log.warn('Cost alert', { message, type, cost, limit, severity }, 'CostMonitor')
           }
           break
         case 'email':
           // TODO: Implement email alerts
-          console.log(`📧 Email alert: ${message}`)
+          log.info('Email alert', { message }, 'CostMonitor')
           break
         case 'slack':
           // TODO: Implement Slack alerts
-          console.log(`💬 Slack alert: ${message}`)
+          log.info('Slack alert', { message }, 'CostMonitor')
           break
       }
     }
@@ -267,7 +274,7 @@ class CostMonitor {
    */
   setLimits(limits: Partial<CostLimits>): void {
     this.limits = { ...this.limits, ...limits }
-    console.log(`📊 Cost limits updated:`, this.limits)
+    log.info('Cost limits updated', this.limits, 'CostMonitor')
   }
 
   /**
@@ -275,7 +282,7 @@ class CostMonitor {
    */
   setAlertConfig(config: Partial<AlertConfig>): void {
     this.alertConfig = { ...this.alertConfig, ...config }
-    console.log(`🔔 Alert config updated:`, this.alertConfig)
+    log.info('Alert config updated', this.alertConfig, 'CostMonitor')
   }
 
   /**
@@ -289,7 +296,7 @@ class CostMonitor {
     
     const removed = initialLength - this.costs.length
     if (removed > 0) {
-      console.log(`🧹 Cleaned up ${removed} old cost entries`)
+      log.info('Cleaned up old cost entries', { removed }, 'CostMonitor')
     }
   }
 

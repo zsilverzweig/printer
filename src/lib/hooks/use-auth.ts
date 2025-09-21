@@ -2,6 +2,7 @@
 'use client'
 
 import { authService, AuthUser } from '@/lib/services/auth'
+import { log } from '@/lib/utils/logger'
 import { useEffect, useState } from 'react'
 
 export interface UseAuthReturn {
@@ -44,7 +45,7 @@ export function useAuth(): UseAuthReturn {
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Sign-in failed'
       setError(errorMessage)
-      console.error('Sign-in error:', err)
+      log.error('Sign-in error', err, 'useAuth')
     } finally {
       setLoading(false)
     }
@@ -58,7 +59,7 @@ export function useAuth(): UseAuthReturn {
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Sign-out failed'
       setError(errorMessage)
-      console.error('Sign-out error:', err)
+      log.error('Sign-out error', err, 'useAuth')
     } finally {
       setLoading(false)
     }

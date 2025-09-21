@@ -1,6 +1,7 @@
 'use client'
 
 import { Button } from '@/lib/components/ui/button'
+import { log } from '@/lib/utils/logger'
 import { useEffect, useState } from 'react'
 
 interface H2NavigationProps {
@@ -14,16 +15,16 @@ export function H2Navigation({ className = '' }: H2NavigationProps) {
   useEffect(() => {
     // Find all H2 elements in the markdown content
     const h2Elements = document.querySelectorAll('.markdown-content h2')
-    console.log('Found H2 elements:', h2Elements.length) // Debug log
+    log.debug('H2Navigation useEffect triggered', { count: h2Elements.length }, 'H2Navigation')
     
     const h2s = Array.from(h2Elements).map((h2) => {
       const id = h2.textContent?.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || ''
       h2.id = id
-      console.log('H2 element:', h2.textContent, 'ID:', id) // Debug log
+      log.debug('H2 element processed', { text: h2.textContent, id }, 'H2Navigation')
       return { id, text: h2.textContent || '' }
     })
 
-    console.log('Processed H2 elements:', h2s) // Debug log
+    log.debug('Processed H2 elements', { elements: h2s }, 'H2Navigation')
     setH2Elements(h2s)
     
     // Set first section as active initially
@@ -60,9 +61,9 @@ export function H2Navigation({ className = '' }: H2NavigationProps) {
   }, [])
 
   const scrollToSection = (id: string) => {
-    console.log('Scrolling to section:', id) // Debug log
+    log.debug('Scrolling to section', { id }, 'H2Navigation')
     const element = document.getElementById(id)
-    console.log('Found element:', element) // Debug log
+    log.debug('Found element', { element: !!element }, 'H2Navigation')
     
     if (element) {
       // Update active state immediately
@@ -84,7 +85,7 @@ export function H2Navigation({ className = '' }: H2NavigationProps) {
       }, 1000)
       
     } else {
-      console.error('Element not found for id:', id) // Debug log
+      log.error('Element not found for id', { id }, 'H2Navigation')
     }
   }
 
