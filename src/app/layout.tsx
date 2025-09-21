@@ -11,6 +11,7 @@ export const metadata: Metadata = {
   description: 'An AI-powered investment research engine that produces actionable, company-level investment theses through structured reasoning and adversarial testing.',
 }
 
+
 export default function RootLayout({
   children,
 }: {
