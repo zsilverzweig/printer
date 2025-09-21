@@ -1,6 +1,7 @@
 import { AuthProvider } from '@/lib/providers/auth-provider'
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
+import { Toaster } from 'sonner'
 import './globals.css'
 
 const inter = Inter({ subsets: ['latin'] })
@@ -21,6 +22,12 @@ export default function RootLayout({
       <body className={inter.className}>
         <AuthProvider>
           {children}
+          <Toaster 
+            position="bottom-right"
+            expand={true}
+            richColors={true}
+            closeButton={true}
+          />
         </AuthProvider>
       </body>
     </html>

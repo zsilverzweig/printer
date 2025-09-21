@@ -1,0 +1,34 @@
+# Cursor AI Rules for Printer Project
+
+## Project Context
+
+This is an AI-powered investment research engine that produces actionable, company-level investment theses through structured reasoning and adversarial testing.
+
+## Technology Stack
+
+- Next.js 14 with TypeScript
+- React 18
+- Tailwind CSS
+- Radix UI components
+- Firebase
+- OpenAI API
+
+## Code Style
+
+- Use TypeScript for all new files
+- Follow React best practices
+- Use Tailwind CSS for styling
+- Prefer functional components with hooks
+- Use proper TypeScript types
+
+## File Organization
+
+- Components go in `src/components/`
+- Pages go in `src/app/`
+- Utilities go in `src/lib/`
+- Types go in `src/types/`
+
+## Terminal Working Directory
+
+The terminal should always start in `/Users/zs/repos/printer`
+
