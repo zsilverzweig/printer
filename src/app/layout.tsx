@@ -1,3 +1,4 @@
+import { AppRouter } from '@/lib/components/app-router'
 import { AuthProvider } from '@/lib/providers/auth-provider'
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
@@ -22,7 +23,9 @@ export default function RootLayout({
       <meta name="apple-mobile-web-app-title" content="printer" />
       <body className={inter.className}>
         <AuthProvider>
-          {children}
+          <AppRouter>
+            {children}
+          </AppRouter>
           <Toaster 
             position="bottom-right"
             expand={true}
