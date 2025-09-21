@@ -10,6 +10,7 @@ import {
   Home,
   Settings,
   Shield,
+  TrendingUp,
   Users,
 } from "lucide-react";
 import { AppSidebar, SidebarSection } from "./app-sidebar";
@@ -80,6 +81,12 @@ export function MainAppSidebar() {
           title: "Agent Management",
           href: "/admin/agents",
           icon: <Bot className="h-4 w-4" />,
+        },
+        {
+          id: "alpaca-trading",
+          title: "Alpaca Trading Sandbox",
+          href: "/admin/alpaca",
+          icon: <TrendingUp className="h-4 w-4" />,
         },
         {
           id: "user-management",

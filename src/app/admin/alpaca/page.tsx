@@ -1,13 +1,13 @@
 "use client";
 
-import { PortfolioManagement } from "@/features/finance/portfolio/components/portfolio-management";
-import { useAuthContext } from "@/lib/providers/auth-provider";
 import { Loader2 } from "lucide-react";
 
-export default function PortfoliosPage() {
-  const { isAuthenticated, user, loading } = useAuthContext();
+import { AlpacaTradingPanel } from "@/features/finance/trading/components/alpaca-trading-panel";
+import { useAuthContext } from "@/lib/providers/auth-provider";
 
-  // Show loading state while determining authentication
+export default function AdminAlpacaPage() {
+  const { isAuthenticated, isAdmin, loading } = useAuthContext();
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -19,8 +19,7 @@ export default function PortfoliosPage() {
     );
   }
 
-  // Check if user is authenticated
-  if (!isAuthenticated || !user) {
+  if (!isAuthenticated) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center">
@@ -33,9 +32,22 @@ export default function PortfoliosPage() {
     );
   }
 
+  if (!isAdmin) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold mb-4">Access Denied</h1>
+          <p className="text-muted-foreground">
+            You don't have permission to access this page.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="container mx-auto p-6">
-      <PortfolioManagement userId={user.uid} />
+      <AlpacaTradingPanel />
     </div>
   );
 }
