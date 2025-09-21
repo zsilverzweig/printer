@@ -1,79 +1,90 @@
-'use client'
+"use client";
 
-import { Button } from '@/lib/components/ui/button'
-import { Card } from '@/lib/components/ui/card'
-import { Separator } from '@/lib/components/ui/separator'
-import { log } from '@/lib/utils/logger'
-import { CreditCard, Linkedin, Share2, Twitter, Users } from 'lucide-react'
-import { useState } from 'react'
-import { useWaitlist } from '../hooks/use-waitlist'
+import { CreditCard, Linkedin, Share2, Twitter, Users } from "lucide-react";
+import { useState } from "react";
+
+import { Button } from "@/lib/components/ui/button";
+import { Card } from "@/lib/components/ui/card";
+import { Separator } from "@/lib/components/ui/separator";
+import { log } from "@/lib/utils/logger";
+
+import { useWaitlist } from "../hooks/use-waitlist";
 
 interface WaitlistDashboardProps {
-  onJoinWaitlist?: () => void
+  onJoinWaitlist?: () => void;
 }
 
 export function WaitlistDashboard({ onJoinWaitlist }: WaitlistDashboardProps) {
-  const { entry, position, availableActions, performAction, purchaseUpgrade, loading } = useWaitlist()
-  const [isPerformingAction, setIsPerformingAction] = useState<string | null>(null)
+  const {
+    entry,
+    position,
+    availableActions,
+    performAction,
+    purchaseUpgrade,
+    loading,
+  } = useWaitlist();
+  const [isPerformingAction, setIsPerformingAction] = useState<string | null>(
+    null
+  );
 
   const handleAction = async (actionType: string) => {
     try {
-      setIsPerformingAction(actionType)
-      await performAction(actionType as any)
+      setIsPerformingAction(actionType);
+      await performAction(actionType as any);
     } catch (err) {
-      log.error('Failed to perform action', err, 'WaitlistDashboard')
+      log.error("Failed to perform action", err, "WaitlistDashboard");
     } finally {
-      setIsPerformingAction(null)
+      setIsPerformingAction(null);
     }
-  }
+  };
 
   const handlePurchaseUpgrade = async (positions: number) => {
     try {
-      await purchaseUpgrade(positions)
+      await purchaseUpgrade(positions);
     } catch (err) {
-      log.error('Failed to purchase upgrade', err, 'WaitlistDashboard')
+      log.error("Failed to purchase upgrade", err, "WaitlistDashboard");
     }
-  }
+  };
 
   const getActionIcon = (actionType: string) => {
     switch (actionType) {
-      case 'social_share_twitter':
-        return <Twitter className="w-4 h-4" />
-      case 'social_share_linkedin':
-        return <Linkedin className="w-4 h-4" />
-      case 'referral_signup':
-        return <Users className="w-4 h-4" />
-      case 'payment_upgrade':
-        return <CreditCard className="w-4 h-4" />
+      case "social_share_twitter":
+        return <Twitter className="w-4 h-4" />;
+      case "social_share_linkedin":
+        return <Linkedin className="w-4 h-4" />;
+      case "referral_signup":
+        return <Users className="w-4 h-4" />;
+      case "payment_upgrade":
+        return <CreditCard className="w-4 h-4" />;
       default:
-        return <Share2 className="w-4 h-4" />
+        return <Share2 className="w-4 h-4" />;
     }
-  }
+  };
 
   if (!entry) {
     return (
-      <Card className="p-6 max-w-md mx-auto">
-        <div className="text-center">
-          <h2 className="text-2xl font-bold mb-2">Join the Waitlist</h2>
-          <p className="text-gray-600 mb-4">
-            You're not on the waitlist yet. Join now to get early access!
-          </p>
-          <Button onClick={onJoinWaitlist} className="w-full">
-            Join Waitlist
-          </Button>
-        </div>
-      </Card>
-    )
+      <div className="flex items-center justify-center min-h-full">
+        <Card className="p-6 max-w-md mx-auto">
+          <div className="text-center">
+            <h2 className="text-2xl font-bold mb-2">Join the Waitlist</h2>
+            <p className="text-gray-600 mb-4">
+              You&apos;re not on the waitlist yet. Join now to get early access!
+            </p>
+            <Button onClick={onJoinWaitlist} className="w-full">
+              Join Waitlist
+            </Button>
+          </div>
+        </Card>
+      </div>
+    );
   }
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
+    <div className="max-w-2xl mx-auto space-y-6 p-6">
       {/* Position Card */}
       <Card className="p-6">
         <div className="text-center">
-          <h2 className="text-3xl font-bold text-blue-600 mb-2">
-            #{position}
-          </h2>
+          <h2 className="text-3xl font-bold text-blue-600 mb-2">#{position}</h2>
           <p className="text-gray-600 mb-4">Your position in the waitlist</p>
           <div className="flex justify-center space-x-4 text-sm text-gray-500">
             <span>{entry.totalActions} actions completed</span>
@@ -98,7 +109,10 @@ export function WaitlistDashboard({ onJoinWaitlist }: WaitlistDashboardProps) {
 
         <div className="space-y-3">
           {availableActions.map((action) => (
-            <div key={action.id} className="flex items-center justify-between p-4 border rounded-lg">
+            <div
+              key={action.id}
+              className="flex items-center justify-between p-4 border rounded-lg"
+            >
               <div className="flex items-center space-x-3">
                 {getActionIcon(action.id)}
                 <div>
@@ -125,13 +139,13 @@ export function WaitlistDashboard({ onJoinWaitlist }: WaitlistDashboardProps) {
         {/* Action Buttons */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <Button
-            onClick={() => handleAction('social_share_twitter')}
-            disabled={loading || isPerformingAction === 'social_share_twitter'}
+            onClick={() => handleAction("social_share_twitter")}
+            disabled={loading || isPerformingAction === "social_share_twitter"}
             variant="outline"
             className="w-full"
           >
-            {isPerformingAction === 'social_share_twitter' ? (
-              'Sharing...'
+            {isPerformingAction === "social_share_twitter" ? (
+              "Sharing..."
             ) : (
               <>
                 <Twitter className="w-4 h-4 mr-2" />
@@ -141,13 +155,13 @@ export function WaitlistDashboard({ onJoinWaitlist }: WaitlistDashboardProps) {
           </Button>
 
           <Button
-            onClick={() => handleAction('social_share_linkedin')}
-            disabled={loading || isPerformingAction === 'social_share_linkedin'}
+            onClick={() => handleAction("social_share_linkedin")}
+            disabled={loading || isPerformingAction === "social_share_linkedin"}
             variant="outline"
             className="w-full"
           >
-            {isPerformingAction === 'social_share_linkedin' ? (
-              'Sharing...'
+            {isPerformingAction === "social_share_linkedin" ? (
+              "Sharing..."
             ) : (
               <>
                 <Linkedin className="w-4 h-4 mr-2" />
@@ -157,13 +171,13 @@ export function WaitlistDashboard({ onJoinWaitlist }: WaitlistDashboardProps) {
           </Button>
 
           <Button
-            onClick={() => handleAction('referral_signup')}
-            disabled={loading || isPerformingAction === 'referral_signup'}
+            onClick={() => handleAction("referral_signup")}
+            disabled={loading || isPerformingAction === "referral_signup"}
             variant="outline"
             className="w-full"
           >
-            {isPerformingAction === 'referral_signup' ? (
-              'Processing...'
+            {isPerformingAction === "referral_signup" ? (
+              "Processing..."
             ) : (
               <>
                 <Users className="w-4 h-4 mr-2" />
@@ -216,5 +230,5 @@ export function WaitlistDashboard({ onJoinWaitlist }: WaitlistDashboardProps) {
         </div>
       </Card>
     </div>
-  )
+  );
 }

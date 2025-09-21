@@ -1,64 +1,66 @@
-'use client'
+"use client";
 
-import { Button } from '@/lib/components/ui/button'
-import { Card } from '@/lib/components/ui/card'
-import { log } from '@/lib/utils/logger'
 import {
-    Mail,
-    RefreshCw,
-    Send,
-    Settings,
-    TrendingUp,
-    Users,
-    UserX
-} from 'lucide-react'
-import { useState } from 'react'
-import { useAdmin } from '../hooks/use-admin'
+  Mail,
+  RefreshCw,
+  Send,
+  Settings,
+  TrendingUp,
+  Users,
+  UserX,
+} from "lucide-react";
+import { useState } from "react";
+
+import { Button } from "@/lib/components/ui/button";
+import { Card } from "@/lib/components/ui/card";
+import { log } from "@/lib/utils/logger";
+
+import { useAdmin } from "../hooks/use-admin";
 
 export function AdminDashboard() {
-  const { 
-    config, 
-    stats, 
-    users, 
-    loading, 
-    error, 
-    sendInvites, 
-    removeWaitlistEntry, 
+  const {
+    config,
+    stats,
+    users,
+    loading,
+    error,
+    sendInvites,
+    removeWaitlistEntry,
     updateWaitlistEntryStatus,
-    refreshStats 
-  } = useAdmin()
-  
-  const [isSendingInvites, setIsSendingInvites] = useState(false)
-  const [inviteCount, setInviteCount] = useState(10)
+    refreshStats,
+  } = useAdmin();
+
+  const [isSendingInvites, setIsSendingInvites] = useState(false);
+  const [inviteCount, setInviteCount] = useState(10);
 
   const handleSendInvites = async () => {
     try {
-      setIsSendingInvites(true)
-      await sendInvites(inviteCount)
+      setIsSendingInvites(true);
+      await sendInvites(inviteCount);
     } catch (err) {
-      log.error('Failed to send invites', err, 'AdminDashboard')
+      log.error("Failed to send invites", err, "AdminDashboard");
     } finally {
-      setIsSendingInvites(false)
+      setIsSendingInvites(false);
     }
-  }
+  };
 
   const handleRemoveEntry = async (entryId: string) => {
-    if (confirm('Are you sure you want to remove this entry?')) {
+    if (confirm("Are you sure you want to remove this entry?")) {
       try {
-        await removeWaitlistEntry(entryId)
+        await removeWaitlistEntry(entryId);
       } catch (err) {
-        log.error('Failed to remove entry', err, 'AdminDashboard')
+        log.error("Failed to remove entry", err, "AdminDashboard");
       }
     }
-  }
+  };
 
   const handleUpdateStatus = async (entryId: string, status: string) => {
     try {
-      await updateWaitlistEntryStatus(entryId, status)
+      await updateWaitlistEntryStatus(entryId, status);
     } catch (err) {
-      log.error('Failed to update status', err, 'AdminDashboard')
+      log.error("Failed to update status", err, "AdminDashboard");
     }
-  }
+  };
 
   if (loading && !config) {
     return (
@@ -68,7 +70,7 @@ export function AdminDashboard() {
           <p className="text-gray-600">Loading admin dashboard...</p>
         </div>
       </div>
-    )
+    );
   }
 
   if (error) {
@@ -78,7 +80,7 @@ export function AdminDashboard() {
           <p className="text-red-600">{error}</p>
         </div>
       </div>
-    )
+    );
   }
 
   return (
@@ -87,10 +89,14 @@ export function AdminDashboard() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Admin Dashboard</h1>
-          <p className="text-gray-600 mt-1">Manage waitlist and system settings</p>
+          <p className="text-gray-600 mt-1">
+            Manage waitlist and system settings
+          </p>
         </div>
         <Button onClick={refreshStats} variant="outline" disabled={loading}>
-          <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+          <RefreshCw
+            className={`w-4 h-4 mr-2 ${loading ? "animate-spin" : ""}`}
+          />
           Refresh
         </Button>
       </div>
@@ -102,8 +108,12 @@ export function AdminDashboard() {
             <div className="flex items-center">
               <Users className="w-8 h-8 text-blue-600" />
               <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Total Entries</p>
-                <p className="text-2xl font-bold text-gray-900">{stats.totalEntries}</p>
+                <p className="text-sm font-medium text-gray-600">
+                  Total Entries
+                </p>
+                <p className="text-2xl font-bold text-gray-900">
+                  {stats.totalEntries}
+                </p>
               </div>
             </div>
           </Card>
@@ -112,8 +122,12 @@ export function AdminDashboard() {
             <div className="flex items-center">
               <TrendingUp className="w-8 h-8 text-green-600" />
               <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Avg Position</p>
-                <p className="text-2xl font-bold text-gray-900">{stats.averagePosition}</p>
+                <p className="text-sm font-medium text-gray-600">
+                  Avg Position
+                </p>
+                <p className="text-2xl font-bold text-gray-900">
+                  {stats.averagePosition}
+                </p>
               </div>
             </div>
           </Card>
@@ -122,8 +136,12 @@ export function AdminDashboard() {
             <div className="flex items-center">
               <Mail className="w-8 h-8 text-purple-600" />
               <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Conversion Rate</p>
-                <p className="text-2xl font-bold text-gray-900">{stats.conversionRate}%</p>
+                <p className="text-sm font-medium text-gray-600">
+                  Conversion Rate
+                </p>
+                <p className="text-2xl font-bold text-gray-900">
+                  {stats.conversionRate}%
+                </p>
               </div>
             </div>
           </Card>
@@ -134,7 +152,7 @@ export function AdminDashboard() {
               <div className="ml-4">
                 <p className="text-sm font-medium text-gray-600">Status</p>
                 <p className="text-2xl font-bold text-gray-900">
-                  {config?.waitlistEnabled ? 'Enabled' : 'Disabled'}
+                  {config?.waitlistEnabled ? "Enabled" : "Disabled"}
                 </p>
               </div>
             </div>
@@ -150,45 +168,57 @@ export function AdminDashboard() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="font-medium">Waitlist Enabled</p>
-                <p className="text-sm text-gray-600">Allow users to join the waitlist</p>
+                <p className="text-sm text-gray-600">
+                  Allow users to join the waitlist
+                </p>
               </div>
-              <div className={`px-3 py-1 rounded-full text-sm font-medium ${
-                config.waitlistEnabled 
-                  ? 'bg-green-100 text-green-800' 
-                  : 'bg-red-100 text-red-800'
-              }`}>
-                {config.waitlistEnabled ? 'Enabled' : 'Disabled'}
+              <div
+                className={`px-3 py-1 rounded-full text-sm font-medium ${
+                  config.waitlistEnabled
+                    ? "bg-green-100 text-green-800"
+                    : "bg-red-100 text-red-800"
+                }`}
+              >
+                {config.waitlistEnabled ? "Enabled" : "Disabled"}
               </div>
             </div>
 
             <div className="flex items-center justify-between">
               <div>
                 <p className="font-medium">Auto-Add to Waitlist</p>
-                <p className="text-sm text-gray-600">Automatically add new users to waitlist</p>
+                <p className="text-sm text-gray-600">
+                  Automatically add new users to waitlist
+                </p>
               </div>
-              <div className={`px-3 py-1 rounded-full text-sm font-medium ${
-                config.autoAddToWaitlist 
-                  ? 'bg-green-100 text-green-800' 
-                  : 'bg-red-100 text-red-800'
-              }`}>
-                {config.autoAddToWaitlist ? 'Enabled' : 'Disabled'}
+              <div
+                className={`px-3 py-1 rounded-full text-sm font-medium ${
+                  config.autoAddToWaitlist
+                    ? "bg-green-100 text-green-800"
+                    : "bg-red-100 text-red-800"
+                }`}
+              >
+                {config.autoAddToWaitlist ? "Enabled" : "Disabled"}
               </div>
             </div>
 
             <div className="flex items-center justify-between">
               <div>
                 <p className="font-medium">Waitlist Capacity</p>
-                <p className="text-sm text-gray-600">Maximum number of waitlist entries</p>
+                <p className="text-sm text-gray-600">
+                  Maximum number of waitlist entries
+                </p>
               </div>
               <span className="text-sm font-medium text-gray-900">
-                {config.waitlistCapacity || 'Unlimited'}
+                {config.waitlistCapacity || "Unlimited"}
               </span>
             </div>
 
             <div className="flex items-center justify-between">
               <div>
                 <p className="font-medium">Invite Batch Size</p>
-                <p className="text-sm text-gray-600">Number of invites to send at once</p>
+                <p className="text-sm text-gray-600">
+                  Number of invites to send at once
+                </p>
               </div>
               <span className="text-sm font-medium text-gray-900">
                 {config.inviteBatchSize}
@@ -266,31 +296,38 @@ export function AdminDashboard() {
               {users.slice(0, 20).map((user) => (
                 <tr key={user.id}>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    #{user.position}
+                    #{user.waitlistEntry?.position || "N/A"}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     {user.email}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {user.totalPoints || 0}
+                    {user.waitlistEntry?.totalPoints || 0}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                      user.status === 'active' ? 'bg-green-100 text-green-800' :
-                      user.status === 'invited' ? 'bg-blue-100 text-blue-800' :
-                      user.status === 'converted' ? 'bg-purple-100 text-purple-800' :
-                      'bg-red-100 text-red-800'
-                    }`}>
-                      {user.status}
+                    <span
+                      className={`px-2 py-1 text-xs font-medium rounded-full ${
+                        user.waitlistEntry?.status === "active"
+                          ? "bg-green-100 text-green-800"
+                          : user.waitlistEntry?.status === "invited"
+                          ? "bg-blue-100 text-blue-800"
+                          : user.waitlistEntry?.status === "converted"
+                          ? "bg-purple-100 text-purple-800"
+                          : "bg-red-100 text-red-800"
+                      }`}
+                    >
+                      {user.waitlistEntry?.status || "N/A"}
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {user.joinedAt?.toLocaleDateString()}
+                    {user.createdAt?.toLocaleDateString()}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
                     <select
-                      value={user.status}
-                      onChange={(e) => handleUpdateStatus(user.id, e.target.value)}
+                      value={user.waitlistEntry?.status || "active"}
+                      onChange={(e) =>
+                        handleUpdateStatus(user.id, e.target.value)
+                      }
                       className="text-xs border border-gray-300 rounded px-2 py-1"
                     >
                       <option value="active">Active</option>
@@ -319,5 +356,5 @@ export function AdminDashboard() {
         )}
       </Card>
     </div>
-  )
+  );
 }

@@ -1,12 +1,13 @@
 "use client";
 
+import { Loader2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
+
 import { AdminDashboard } from "@/features/admin/components/admin-dashboard";
 import { WaitlistDashboard } from "@/features/waitlist/components/waitlist-dashboard";
 import { useUserRouting } from "@/lib/hooks/use-user-routing";
 import { useAuthContext } from "@/lib/providers/auth-provider";
-import { Loader2 } from "lucide-react";
-import { useRouter } from "next/navigation";
-import { useEffect } from "react";
 
 interface AppRouterProps {
   children?: React.ReactNode;
