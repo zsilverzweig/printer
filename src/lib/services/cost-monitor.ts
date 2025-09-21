@@ -350,7 +350,7 @@ export function estimateCost(
   const pricing = costMonitor['pricing'][model.toLowerCase() as keyof typeof costMonitor['pricing']]
   
   if (!pricing) {
-    console.warn(`⚠️ Unknown model pricing for estimation: ${model}`)
+    log.warn('⚠️ Unknown model pricing for estimation', { model }, 'CostMonitor')
     return 0
   }
 

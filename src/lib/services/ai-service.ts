@@ -1,5 +1,6 @@
 // Core AI service for Printer with advanced capabilities
 import OpenAI from 'openai'
+import { log } from '@/lib/utils/logger'
 import { AIAgent, AIOperation, AIRequest, AIResponse, TokenUsage } from '../types/ai'
 import { estimateCost, recordAICost } from './cost-monitor'
 
@@ -67,7 +68,7 @@ export class AIService {
       const cachedResponse = this.cache.get(cacheKey)
       
       if (cachedResponse && this.isCacheValid(cachedResponse)) {
-        console.log(`🎯 Cache hit for request ${request.id}`)
+        log.info(`🎯 Cache hit for request ${request.id}`, undefined, 'AIService')
         return {
           ...cachedResponse,
           isCached: true,
@@ -80,7 +81,7 @@ export class AIService {
       const estimatedOutputTokens = Math.min(agent.maxTokens, 2000) // Conservative estimate
       const estimatedCost = estimateCost(agent.model.name, estimatedInputTokens, estimatedOutputTokens)
       
-      console.log(`💰 Estimated cost: $${estimatedCost.toFixed(4)} for ${operation}`)
+      log.info(`💰 Estimated cost: $${estimatedCost.toFixed(4)} for ${operation}`, undefined, 'AIService')
 
       // Make API request
       const completion = await openai.chat.completions.create({
@@ -153,12 +154,12 @@ export class AIService {
       // Store request history
       this.addToHistory(request)
 
-      console.log(`✅ AI response generated: ${tokensUsed.totalTokens} tokens, $${actualCost.toFixed(4)}`)
-      
+      log.success(`AI response generated: ${tokensUsed.totalTokens} tokens, $${actualCost.toFixed(4)}`, undefined, 'AIService')
+
       return response
 
     } catch (error) {
-      console.error('❌ AI service error:', error)
+      log.failure('AI service error', error, 'AIService')
       
       // Return error response
       return {
@@ -210,7 +211,7 @@ export class AIService {
       const parsedData = JSON.parse(response.content) as T
       return { ...response, parsedData }
     } catch (error) {
-      console.error('❌ Failed to parse structured response:', error)
+      log.failure('Failed to parse structured response', error, 'AIService')
       return response
     }
   }
@@ -245,7 +246,7 @@ export class AIService {
       this.cache.clear()
     }
     
-    console.log(`🧹 Cache cleared for ${agentId || 'all agents'}`)
+    log.info(`🧹 Cache cleared for ${agentId || 'all agents'}`, undefined, 'AIService')
   }
 
   /**

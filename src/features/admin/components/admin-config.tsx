@@ -4,6 +4,7 @@ import { Button } from '@/lib/components/ui/button'
 import { Card } from '@/lib/components/ui/card'
 import { Input } from '@/lib/components/ui/input'
 import { Switch } from '@/lib/components/ui/switch'
+import { log } from '@/lib/utils/logger'
 import {
     RefreshCw,
     Save,
@@ -46,7 +47,7 @@ export function AdminConfig() {
       setIsUpdating(true)
       await updateConfig(localConfig)
     } catch (err) {
-      console.error('Failed to update config:', err)
+      log.error('Failed to update config', err, 'AdminConfig')
     } finally {
       setIsUpdating(false)
     }
@@ -56,7 +57,7 @@ export function AdminConfig() {
     try {
       await toggleWaitlist()
     } catch (err) {
-      console.error('Failed to toggle waitlist:', err)
+      log.error('Failed to toggle waitlist', err, 'AdminConfig')
     }
   }
 
@@ -64,7 +65,7 @@ export function AdminConfig() {
     try {
       await toggleAutoAdd()
     } catch (err) {
-      console.error('Failed to toggle auto-add:', err)
+      log.error('Failed to toggle auto-add', err, 'AdminConfig')
     }
   }
 

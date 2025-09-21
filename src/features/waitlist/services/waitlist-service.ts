@@ -1,5 +1,6 @@
 // Waitlist service for Firebase integration
 import { db } from '@/lib/services/firebase'
+import { log } from '@/lib/utils/logger'
 import {
     addDoc,
     collection,
@@ -134,7 +135,7 @@ export class WaitlistService {
         lastActionAt: undefined
       } as WaitlistEntry
     } catch (error) {
-      console.error('❌ Failed to join waitlist:', error)
+      log.failure('Failed to join waitlist', error, 'WaitlistService')
       throw error
     }
   }
@@ -162,7 +163,7 @@ export class WaitlistService {
         lastActionAt: doc.data().lastActionAt?.toDate()
       } as WaitlistEntry
     } catch (error) {
-      console.error('❌ Failed to get waitlist entry:', error)
+      log.failure('Failed to get waitlist entry', error, 'WaitlistService')
       throw error
     }
   }
@@ -211,7 +212,7 @@ export class WaitlistService {
       // Recalculate positions
       await this.recalculatePositions()
     } catch (error) {
-      console.error('❌ Failed to perform action:', error)
+      log.failure('Failed to perform action', error, 'WaitlistService')
       throw error
     }
   }
@@ -262,7 +263,7 @@ export class WaitlistService {
         createdAt: new Date()
       } as WaitlistPayment
     } catch (error) {
-      console.error('❌ Failed to purchase upgrade:', error)
+      log.failure('Failed to purchase upgrade', error, 'WaitlistService')
       throw error
     }
   }
@@ -299,7 +300,7 @@ export class WaitlistService {
         }
       }
     } catch (error) {
-      console.error('❌ Failed to get waitlist config:', error)
+      log.failure('Failed to get waitlist config', error, 'WaitlistService')
       throw error
     }
   }
@@ -329,7 +330,7 @@ export class WaitlistService {
       
       await batch.commit()
     } catch (error) {
-      console.error('❌ Failed to recalculate positions:', error)
+      log.failure('Failed to recalculate positions', error, 'WaitlistService')
       throw error
     }
   }

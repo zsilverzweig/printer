@@ -2,6 +2,7 @@
 
 import { Button } from '@/lib/components/ui/button'
 import { Card } from '@/lib/components/ui/card'
+import { log } from '@/lib/utils/logger'
 import {
     Mail,
     RefreshCw,
@@ -35,7 +36,7 @@ export function AdminDashboard() {
       setIsSendingInvites(true)
       await sendInvites(inviteCount)
     } catch (err) {
-      console.error('Failed to send invites:', err)
+      log.error('Failed to send invites', err, 'AdminDashboard')
     } finally {
       setIsSendingInvites(false)
     }
@@ -46,7 +47,7 @@ export function AdminDashboard() {
       try {
         await removeWaitlistEntry(entryId)
       } catch (err) {
-        console.error('Failed to remove entry:', err)
+        log.error('Failed to remove entry', err, 'AdminDashboard')
       }
     }
   }
@@ -55,7 +56,7 @@ export function AdminDashboard() {
     try {
       await updateWaitlistEntryStatus(entryId, status)
     } catch (err) {
-      console.error('Failed to update status:', err)
+      log.error('Failed to update status', err, 'AdminDashboard')
     }
   }
 
