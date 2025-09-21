@@ -178,9 +178,9 @@ class CostMonitor {
       switch (channel) {
         case 'console':
           if (severity === 'critical') {
-            log.error('Cost alert', { message, type, cost, limit, severity }, 'CostMonitor')
+            log.error('Cost alert', { message, type, current, limit, severity }, 'CostMonitor')
           } else {
-            log.warn('Cost alert', { message, type, cost, limit, severity }, 'CostMonitor')
+            log.warn('Cost alert', { message, type, current, limit, severity }, 'CostMonitor')
           }
           break
         case 'email':
