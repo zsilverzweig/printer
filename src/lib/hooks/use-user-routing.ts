@@ -1,81 +1,73 @@
 // Hook for determining user routing based on authentication and role
-'use client'
+"use client";
 
-import { waitlistService } from '@/features/waitlist/services/waitlist-service'
-import type { WaitlistEntry } from '@/features/waitlist/types'
-import { useAuthContext } from '@/lib/providers/auth-provider'
-import { useCallback, useEffect, useState } from 'react'
+import { useUser } from "@/lib/hooks/use-user";
+import { useCallback } from "react";
 
 export interface UserRoute {
-  path: string
-  reason: string
+  path: string;
+  reason: string;
 }
 
 export interface UseUserRoutingReturn {
-  route: UserRoute | null
-  loading: boolean
-  error: string | null
-  isAdmin: boolean
-  isOnWaitlist: boolean
-  waitlistEntry: WaitlistEntry | null
+  route: UserRoute | null;
+  loading: boolean;
+  error: string | null;
+  isAdmin: boolean;
+  isOnWaitlist: boolean;
+  canAccessApp: boolean;
+  access: any;
 }
 
 export function useUserRouting(): UseUserRoutingReturn {
-  const { user, isAuthenticated, isAdmin } = useAuthContext()
-  const [waitlistEntry, setWaitlistEntry] = useState<WaitlistEntry | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  // Load waitlist entry when user changes
-  useEffect(() => {
-    if (!isAuthenticated || !user) {
-      setWaitlistEntry(null)
-      setLoading(false)
-      return
-    }
-
-    setLoading(true)
-    setError(null)
-
-    // Listen to waitlist entry changes
-    const unsubscribe = waitlistService.onWaitlistEntryChange(user.uid, (newEntry) => {
-      setWaitlistEntry(newEntry)
-      setLoading(false)
-    })
-
-    return unsubscribe
-  }, [isAuthenticated, user])
+  const {
+    user,
+    isAuthenticated,
+    isAdmin,
+    loading,
+    error,
+    isOnWaitlist,
+    canAccessApp,
+    access,
+  } = useUser();
 
   const determineRoute = useCallback((): UserRoute | null => {
     if (!isAuthenticated || !user) {
-      return null
+      return null;
     }
 
     // Admin users go to admin dashboard
     if (isAdmin) {
       return {
-        path: '/admin',
-        reason: 'Admin user - redirecting to admin dashboard'
-      }
+        path: "/admin",
+        reason: "Admin user - redirecting to admin dashboard",
+      };
     }
 
     // Check if user is on waitlist
-    if (waitlistEntry) {
+    if (isOnWaitlist) {
       return {
-        path: '/waitlist',
-        reason: 'User is on waitlist - redirecting to waitlist dashboard'
-      }
+        path: "/waitlist",
+        reason: "User is on waitlist - redirecting to waitlist dashboard",
+      };
     }
 
-    // Default authenticated users go to home page
+    // Check if user has active access
+    if (canAccessApp) {
+      return {
+        path: "/home",
+        reason: "Active user - redirecting to home page",
+      };
+    }
+
+    // User doesn't have access - redirect to waitlist or show restrictions
     return {
-      path: '/',
-      reason: 'Authenticated user - redirecting to home page'
-    }
-  }, [isAuthenticated, user, isAdmin, waitlistEntry])
+      path: "/waitlist",
+      reason: "User access restricted - redirecting to waitlist",
+    };
+  }, [isAuthenticated, user, isAdmin, isOnWaitlist, canAccessApp]);
 
-  const route = determineRoute()
-  const isOnWaitlist = waitlistEntry !== null
+  const route = determineRoute();
 
   return {
     route,
@@ -83,6 +75,7 @@ export function useUserRouting(): UseUserRoutingReturn {
     error,
     isAdmin,
     isOnWaitlist,
-    waitlistEntry
-  }
+    canAccessApp,
+    access,
+  };
 }

@@ -1,11 +1,19 @@
 "use client";
 
-import { Loader2 } from "lucide-react";
+import { AlertCircle, Loader2, Shield } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
 import { AdminDashboard } from "@/features/admin/components/admin-dashboard";
 import { WaitlistDashboard } from "@/features/waitlist/components/waitlist-dashboard";
+import { Button } from "@/lib/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/lib/components/ui/card";
 import { useUserRouting } from "@/lib/hooks/use-user-routing";
 import { useAuthContext } from "@/lib/providers/auth-provider";
 
@@ -14,38 +22,32 @@ interface AppRouterProps {
 }
 
 /**
- * Lightweight centralized router that determines which content to show
- * based on authentication status and user role, while still using Next.js routing
+ * Centralized router that enforces waitlist status and determines which content to show
+ * based on authentication status, user role, and access permissions
  */
 export function AppRouter({ children }: AppRouterProps) {
   const { isAuthenticated, loading: authLoading } = useAuthContext();
-  const { loading: routingLoading, isAdmin, isOnWaitlist } = useUserRouting();
+  const {
+    loading: routingLoading,
+    isAdmin,
+    isOnWaitlist,
+    canAccessApp,
+    access,
+    route,
+  } = useUserRouting();
   const router = useRouter();
 
   // Handle routing for authenticated users
   useEffect(() => {
-    if (!authLoading && !routingLoading && isAuthenticated) {
+    if (!authLoading && !routingLoading && isAuthenticated && route) {
       const currentPath = window.location.pathname;
 
-      // Redirect authenticated users from root to appropriate page
-      if (currentPath === "/") {
-        if (isAdmin) {
-          router.push("/admin");
-        } else if (isOnWaitlist) {
-          router.push("/waitlist");
-        } else {
-          router.push("/home");
-        }
+      // Redirect if user is not on the correct path
+      if (currentPath !== route.path) {
+        router.push(route.path);
       }
     }
-  }, [
-    isAuthenticated,
-    authLoading,
-    routingLoading,
-    isAdmin,
-    isOnWaitlist,
-    router,
-  ]);
+  }, [isAuthenticated, authLoading, routingLoading, route, router]);
 
   // Show loading state while determining authentication and routing
   if (authLoading || routingLoading) {
@@ -68,16 +70,77 @@ export function AppRouter({ children }: AppRouterProps) {
   // Authenticated - determine which dashboard to show based on current path
   const currentPath = window.location.pathname;
 
+  // Admin users - allow access to admin dashboard
   if (isAdmin && currentPath === "/admin") {
     return <AdminDashboard />;
   }
 
+  // Waitlist users - allow access to waitlist dashboard
   if (isOnWaitlist && currentPath === "/waitlist") {
     return <WaitlistDashboard />;
   }
 
-  if (currentPath === "/home") {
+  // Active users - allow access to home page
+  if (canAccessApp && currentPath === "/home") {
     return <>{children}</>;
+  }
+
+  // Access denied - show restrictions
+  if (!canAccessApp && isAuthenticated) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background p-4">
+        <Card className="w-full max-w-md">
+          <CardHeader className="text-center">
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-orange-100">
+              <Shield className="h-6 w-6 text-orange-600" />
+            </div>
+            <CardTitle>Access Restricted</CardTitle>
+            <CardDescription>
+              Your account doesn&apos;t have access to the full application yet.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {access?.restrictions && access.restrictions.length > 0 && (
+              <div className="space-y-2">
+                <h4 className="text-sm font-medium text-muted-foreground">
+                  Current Status:
+                </h4>
+                <ul className="space-y-1">
+                  {access.restrictions.map(
+                    (restriction: string, index: number) => (
+                      <li
+                        key={index}
+                        className="flex items-center gap-2 text-sm"
+                      >
+                        <AlertCircle className="h-4 w-4 text-orange-500" />
+                        {restriction}
+                      </li>
+                    )
+                  )}
+                </ul>
+              </div>
+            )}
+
+            {isOnWaitlist ? (
+              <Button
+                onClick={() => router.push("/waitlist")}
+                className="w-full"
+              >
+                Go to Waitlist Dashboard
+              </Button>
+            ) : (
+              <Button
+                onClick={() => router.push("/waitlist")}
+                variant="outline"
+                className="w-full"
+              >
+                Join Waitlist
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    );
   }
 
   // Show loading while redirecting
