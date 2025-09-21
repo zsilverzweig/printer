@@ -1,12 +1,5 @@
-// Agent service for managing AI agents, portfolios, and workflow execution
-
-import {
-  AI_MODELS,
-  aiService,
-  createAIRequest,
-} from "@/lib/services/ai-service";
-import { AIAgent } from "@/lib/types/ai";
-import { log } from "@/lib/utils/logger";
+import { AI_MODELS } from "@/lib/services/ai-service"
+import { log } from "@/lib/utils/logger"
 
 import {
   Agent,
@@ -20,254 +13,56 @@ import {
   Portfolio,
   UpdateAgentRequest,
   UpdatePortfolioRequest,
-} from "../types";
-
-// Mock data storage (replace with Firebase in production)
-class AgentStorage {
-  private agents = new Map<string, Agent>();
-  private agentVersions = new Map<string, AgentVersion[]>();
-  private templates = new Map<string, AgentTemplate>();
-  private portfolios = new Map<string, Portfolio>();
-  private agentWork = new Map<string, AgentWork>();
-
-  // Agent operations
-  async createAgent(agent: Agent): Promise<Agent> {
-    this.agents.set(agent.id, agent);
-    this.agentVersions.set(agent.id, []);
-    return agent;
-  }
-
-  async getAgent(id: string): Promise<Agent | null> {
-    return this.agents.get(id) || null;
-  }
-
-  async getAllAgents(): Promise<Agent[]> {
-    return Array.from(this.agents.values());
-  }
-
-  async updateAgent(id: string, updates: Partial<Agent>): Promise<Agent> {
-    const existing = this.agents.get(id);
-    if (!existing) throw new Error(`Agent ${id} not found`);
-
-    const updated = { ...existing, ...updates, updatedAt: new Date() };
-    this.agents.set(id, updated);
-    return updated;
-  }
-
-  async deleteAgent(id: string): Promise<void> {
-    this.agents.delete(id);
-    this.agentVersions.delete(id);
-  }
-
-  // Version operations
-  async createAgentVersion(version: AgentVersion): Promise<AgentVersion> {
-    const versions = this.agentVersions.get(version.agentId) || [];
-    versions.push(version);
-    this.agentVersions.set(version.agentId, versions);
-    return version;
-  }
-
-  async getAgentVersions(agentId: string): Promise<AgentVersion[]> {
-    return this.agentVersions.get(agentId) || [];
-  }
-
-  // Template operations
-  async createTemplate(template: AgentTemplate): Promise<AgentTemplate> {
-    this.templates.set(template.id, template);
-    return template;
-  }
-
-  async getTemplate(id: string): Promise<AgentTemplate | null> {
-    return this.templates.get(id) || null;
-  }
-
-  async getAllTemplates(): Promise<AgentTemplate[]> {
-    return Array.from(this.templates.values());
-  }
-
-  // Portfolio operations
-  async createPortfolio(portfolio: Portfolio): Promise<Portfolio> {
-    this.portfolios.set(portfolio.id, portfolio);
-    return portfolio;
-  }
-
-  async getPortfolio(id: string): Promise<Portfolio | null> {
-    return this.portfolios.get(id) || null;
-  }
-
-  async getAllPortfolios(userId: string): Promise<Portfolio[]> {
-    return Array.from(this.portfolios.values()).filter(
-      (p) => p.userId === userId
-    );
-  }
-
-  async updatePortfolio(
-    id: string,
-    updates: Partial<Portfolio>
-  ): Promise<Portfolio> {
-    const existing = this.portfolios.get(id);
-    if (!existing) throw new Error(`Portfolio ${id} not found`);
-
-    const updated = { ...existing, ...updates, updatedAt: new Date() };
-    this.portfolios.set(id, updated);
-    return updated;
-  }
-
-  async deletePortfolio(id: string): Promise<void> {
-    this.portfolios.delete(id);
-  }
-
-  // Work operations
-  async createWork(work: AgentWork): Promise<AgentWork> {
-    this.agentWork.set(work.id, work);
-    return work;
-  }
-
-  async getWork(id: string): Promise<AgentWork | null> {
-    return this.agentWork.get(id) || null;
-  }
-
-  async updateWork(
-    id: string,
-    updates: Partial<AgentWork>
-  ): Promise<AgentWork> {
-    const existing = this.agentWork.get(id);
-    if (!existing) throw new Error(`Work ${id} not found`);
-
-    const updated = { ...existing, ...updates };
-    this.agentWork.set(id, updated);
-    return updated;
-  }
-
-  async getWorkHistory(portfolioId: string): Promise<AgentWork[]> {
-    return Array.from(this.agentWork.values()).filter(
-      (w) => w.portfolioId === portfolioId
-    );
-  }
-}
-
-const storage = new AgentStorage();
+} from "../types"
+import {
+  AgentRepository,
+  FirestoreAgentRepository,
+} from "./firestore/agent-repository"
+import { createDefaultAgentTemplates } from "./templates/default-agent-templates"
+import { AgentWorkExecutor } from "./workflow/agent-work-executor"
 
 export class AgentService {
-  private initialized = false;
+  private initialized = false
 
-  constructor() {
-    this.initializeDefaultTemplates();
+  constructor(
+    private readonly repository: AgentRepository = new FirestoreAgentRepository(),
+    private readonly workExecutor: AgentWorkExecutor = new AgentWorkExecutor(
+      repository
+    )
+  ) {
+    void this.initializeDefaultTemplates()
   }
 
   private async initializeDefaultTemplates(): Promise<void> {
-    if (this.initialized) return;
+    if (this.initialized) return
 
-    const defaultTemplates: AgentTemplate[] = [
-      {
-        id: "business-fundamentals",
-        name: "Business Fundamentals Agent",
-        description:
-          "Analyzes revenue, margins, growth, and core business metrics",
-        role: "business_fundamentals",
-        category: "cru",
-        defaultPromptGuidance: `You are a Business Fundamentals Analyst. Your role is to analyze the core business metrics and fundamentals of companies.
-
-Focus on:
-- Revenue growth and quality
-- Profit margins and trends
-- Market position and competitive advantages
-- Business model sustainability
-- Key performance indicators
-
-Provide structured analysis with specific metrics and clear recommendations.`,
-        defaultWorkflow: DEFAULT_WORKFLOW,
-        defaultModel: "gpt-4o-mini",
-        defaultTemperature: 0.3,
-        defaultMaxTokens: 2000,
-        isBuiltIn: true,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      },
-      {
-        id: "risk-assessor",
-        name: "Risk Assessment Agent",
-        description: "Identifies and quantifies investment risks",
-        role: "risk_assessor",
-        category: "cru",
-        defaultPromptGuidance: `You are a Risk Assessment Specialist. Your role is to identify, analyze, and quantify investment risks.
-
-Focus on:
-- Market risks and volatility
-- Company-specific risks
-- Regulatory and compliance risks
-- Financial risks and debt levels
-- Operational risks
-- Black swan event potential
-
-Provide risk ratings, probability assessments, and mitigation strategies.`,
-        defaultWorkflow: DEFAULT_WORKFLOW,
-        defaultModel: "gpt-4o-mini",
-        defaultTemperature: 0.2,
-        defaultMaxTokens: 2000,
-        isBuiltIn: true,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      },
-      {
-        id: "narrative-analyst",
-        name: "Narrative Analyst",
-        description: "Analyzes market sentiment and investment narratives",
-        role: "narrative_analyst",
-        category: "cru",
-        defaultPromptGuidance: `You are a Narrative Analyst. Your role is to analyze market sentiment, investor narratives, and story-driven factors.
-
-Focus on:
-- Market sentiment and momentum
-- Investor expectations and positioning
-- Media coverage and public perception
-- Sector trends and themes
-- Catalysts and narrative drivers
-- Contrarian opportunities
-
-Assess narrative strength, sustainability, and potential for change.`,
-        defaultWorkflow: DEFAULT_WORKFLOW,
-        defaultModel: "gpt-4o-mini",
-        defaultTemperature: 0.4,
-        defaultMaxTokens: 2000,
-        isBuiltIn: true,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      },
-      {
-        id: "counterpoint-agent",
-        name: "Counterpoint Agent",
-        description:
-          "Provides adversarial testing and challenges investment theses",
-        role: "counterpoint_agent",
-        category: "cru",
-        defaultPromptGuidance: `You are a Counterpoint Agent. Your role is to challenge investment theses and provide adversarial analysis.
-
-Focus on:
-- Identifying weaknesses in the thesis
-- Alternative explanations and scenarios
-- Potential negative catalysts
-- Overlooked risks and concerns
-- Market inefficiencies and mispricings
-- Contrarian viewpoints
-
-Be critical but constructive. Challenge assumptions and provide balanced perspectives.`,
-        defaultWorkflow: DEFAULT_WORKFLOW,
-        defaultModel: "gpt-4o-mini",
-        defaultTemperature: 0.5,
-        defaultMaxTokens: 2000,
-        isBuiltIn: true,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      },
-    ];
-
+    const defaultTemplates = createDefaultAgentTemplates()
     for (const template of defaultTemplates) {
-      await storage.createTemplate(template);
+      const existingTemplate = await this.repository.getTemplate(template.id)
+      if (!existingTemplate) {
+        await this.repository.createTemplate(template)
+      }
     }
 
-    this.initialized = true;
-    log.info("Default agent templates initialized", undefined, "AgentService");
+    this.initialized = true
+    log.info("Default agent templates initialized", undefined, "AgentService")
+  }
+
+  private resolveModel(
+    requested: string | Agent["model"] | undefined,
+    fallback: Agent["model"]
+  ): Agent["model"] {
+    if (!requested) {
+      return fallback
+    }
+
+    if (typeof requested === "string") {
+      return (
+        AI_MODELS[requested as keyof typeof AI_MODELS] ?? fallback
+      ) as Agent["model"]
+    }
+
+    return requested
   }
 
   // Agent Management
@@ -276,8 +71,15 @@ Be critical but constructive. Challenge assumptions and provide balanced perspec
     createdBy: string
   ): Promise<Agent> {
     const template = request.templateId
-      ? await storage.getTemplate(request.templateId)
-      : null;
+      ? await this.repository.getTemplate(request.templateId)
+      : null
+
+    const defaultModelKey = template?.defaultModel ?? "gpt-4o-mini"
+    const model =
+      (request.model &&
+        AI_MODELS[request.model as keyof typeof AI_MODELS]) ||
+      AI_MODELS[defaultModelKey as keyof typeof AI_MODELS] ||
+      AI_MODELS["gpt-4o-mini"]
 
     const agent: Agent = {
       id: this.generateId(),
@@ -288,9 +90,7 @@ Be critical but constructive. Challenge assumptions and provide balanced perspec
         request.promptGuidance || template?.defaultPromptGuidance || "",
       workflow:
         request.workflow || template?.defaultWorkflow || DEFAULT_WORKFLOW,
-      model:
-        AI_MODELS[request.model as keyof typeof AI_MODELS] ||
-        AI_MODELS["gpt-4o-mini"],
+      model,
       temperature: request.temperature ?? template?.defaultTemperature ?? 0.3,
       maxTokens: request.maxTokens ?? template?.defaultMaxTokens ?? 2000,
       version: "1.0.0",
@@ -298,31 +98,30 @@ Be critical but constructive. Challenge assumptions and provide balanced perspec
       createdAt: new Date(),
       updatedAt: new Date(),
       createdBy,
-    };
+    }
 
-    const createdAgent = await storage.createAgent(agent);
+    const createdAgent = await this.repository.createAgent(agent)
 
-    // Create initial version
     await this.createAgentVersion(
       createdAgent.id,
       createdBy,
       "Initial version"
-    );
+    )
 
     log.success(
       `Agent created: ${createdAgent.name}`,
       undefined,
       "AgentService"
-    );
-    return createdAgent;
+    )
+    return createdAgent
   }
 
   async getAgent(id: string): Promise<Agent | null> {
-    return storage.getAgent(id);
+    return this.repository.getAgent(id)
   }
 
   async getAllAgents(): Promise<Agent[]> {
-    return storage.getAllAgents();
+    return this.repository.getAllAgents()
   }
 
   async updateAgent(
@@ -330,41 +129,48 @@ Be critical but constructive. Challenge assumptions and provide balanced perspec
     request: UpdateAgentRequest,
     updatedBy: string
   ): Promise<Agent> {
-    const existing = await storage.getAgent(id);
-    if (!existing) throw new Error(`Agent ${id} not found`);
+    const existing = await this.repository.getAgent(id)
+    if (!existing) throw new Error(`Agent ${id} not found`)
 
-    // Check if versioning is needed
     const needsVersioning =
       (request.promptGuidance !== undefined &&
         request.promptGuidance !== existing.promptGuidance) ||
       (request.workflow !== undefined &&
-        JSON.stringify(request.workflow) !== JSON.stringify(existing.workflow));
+        JSON.stringify(request.workflow) !== JSON.stringify(existing.workflow))
 
-    let updates = request;
+    let versionToApply = existing.version
     if (needsVersioning) {
-      // Create new version before updating
       await this.createAgentVersion(
         id,
         updatedBy,
         request.changeReason || "Configuration updated"
-      );
+      )
 
-      // Increment version
-      const versionParts = existing.version.split(".");
-      const newVersion = `${versionParts[0]}.${
+      const versionParts = existing.version.split(".")
+      versionToApply = `${versionParts[0]}.${
         parseInt(versionParts[1]) + 1
-      }.0`;
-      updates = { ...request, version: newVersion };
+      }.0`
     }
 
-    const updated = await storage.updateAgent(id, updates);
-    log.success(`Agent updated: ${updated.name}`, undefined, "AgentService");
-    return updated;
+    const { changeReason: _ignored, model, ...rest } = request
+    const updates: Partial<Agent> = { ...rest }
+
+    if (model !== undefined) {
+      updates.model = this.resolveModel(model, existing.model)
+    }
+
+    if (needsVersioning) {
+      updates.version = versionToApply
+    }
+
+    const updated = await this.repository.updateAgent(id, updates)
+    log.success(`Agent updated: ${updated.name}`, undefined, "AgentService")
+    return updated
   }
 
   async deleteAgent(id: string): Promise<void> {
-    await storage.deleteAgent(id);
-    log.info(`Agent deleted: ${id}`, undefined, "AgentService");
+    await this.repository.deleteAgent(id)
+    log.info(`Agent deleted: ${id}`, undefined, "AgentService")
   }
 
   // Version Management
@@ -373,8 +179,8 @@ Be critical but constructive. Challenge assumptions and provide balanced perspec
     createdBy: string,
     changeReason?: string
   ): Promise<AgentVersion> {
-    const agent = await storage.getAgent(agentId);
-    if (!agent) throw new Error(`Agent ${agentId} not found`);
+    const agent = await this.repository.getAgent(agentId)
+    if (!agent) throw new Error(`Agent ${agentId} not found`)
 
     const version: AgentVersion = {
       id: this.generateId(),
@@ -389,13 +195,13 @@ Be critical but constructive. Challenge assumptions and provide balanced perspec
       createdBy,
       changeReason,
       isActive: false,
-    };
+    }
 
-    return storage.createAgentVersion(version);
+    return this.repository.createAgentVersion(version)
   }
 
   async getAgentVersions(agentId: string): Promise<AgentVersion[]> {
-    return storage.getAgentVersions(agentId);
+    return this.repository.getAgentVersions(agentId)
   }
 
   async revertToVersion(
@@ -403,46 +209,44 @@ Be critical but constructive. Challenge assumptions and provide balanced perspec
     versionId: string,
     revertedBy: string
   ): Promise<Agent> {
-    const versions = await storage.getAgentVersions(agentId);
-    const version = versions.find((v) => v.id === versionId);
-    if (!version) throw new Error(`Version ${versionId} not found`);
+    const versions = await this.repository.getAgentVersions(agentId)
+    const version = versions.find((v) => v.id === versionId)
+    if (!version) throw new Error(`Version ${versionId} not found`)
 
-    const agent = await storage.getAgent(agentId);
-    if (!agent) throw new Error(`Agent ${agentId} not found`);
+    const agent = await this.repository.getAgent(agentId)
+    if (!agent) throw new Error(`Agent ${agentId} not found`)
 
-    // Create new version before reverting
     await this.createAgentVersion(
       agentId,
       revertedBy,
       `Reverted to version ${version.version}`
-    );
+    )
 
-    // Update agent with version data
-    const updated = await storage.updateAgent(agentId, {
+    const updated = await this.repository.updateAgent(agentId, {
       promptGuidance: version.promptGuidance,
       workflow: version.workflow,
       model: version.model,
       temperature: version.temperature,
       maxTokens: version.maxTokens,
       version: `${version.version}.revert`,
-    });
+    })
 
     log.success(
       `Agent reverted to version ${version.version}`,
       undefined,
       "AgentService"
-    );
-    return updated;
+    )
+    return updated
   }
 
   // Template Management
   async getTemplates(): Promise<AgentTemplate[]> {
-    await this.initializeDefaultTemplates();
-    return storage.getAllTemplates();
+    await this.initializeDefaultTemplates()
+    return this.repository.getAllTemplates()
   }
 
   async getTemplate(id: string): Promise<AgentTemplate | null> {
-    return storage.getTemplate(id);
+    return this.repository.getTemplate(id)
   }
 
   // Portfolio Management
@@ -460,14 +264,13 @@ Be critical but constructive. Challenge assumptions and provide balanced perspec
       createdAt: new Date(),
       updatedAt: new Date(),
       isActive: true,
-    };
+    }
 
-    const createdPortfolio = await storage.createPortfolio(portfolio);
+    const createdPortfolio = await this.repository.createPortfolio(portfolio)
 
-    // Assign agents if provided
     if (request.assignedAgentIds) {
       for (const agentId of request.assignedAgentIds) {
-        await this.assignAgent(createdPortfolio.id, agentId, userId);
+        await this.assignAgent(createdPortfolio.id, agentId, userId)
       }
     }
 
@@ -475,59 +278,66 @@ Be critical but constructive. Challenge assumptions and provide balanced perspec
       `Portfolio created: ${createdPortfolio.name}`,
       undefined,
       "AgentService"
-    );
-    return createdPortfolio;
+    )
+    return createdPortfolio
   }
 
   async getPortfolio(id: string): Promise<Portfolio | null> {
-    return storage.getPortfolio(id);
+    return this.repository.getPortfolio(id)
   }
 
   async getAllPortfolios(userId: string): Promise<Portfolio[]> {
-    return storage.getAllPortfolios(userId);
+    return this.repository.getAllPortfolios(userId)
   }
 
   async updatePortfolio(
     id: string,
     request: UpdatePortfolioRequest
   ): Promise<Portfolio> {
-    const existing = await storage.getPortfolio(id);
-    if (!existing) throw new Error(`Portfolio ${id} not found`);
+    const existing = await this.repository.getPortfolio(id)
+    if (!existing) throw new Error(`Portfolio ${id} not found`)
 
-    const updated = await storage.updatePortfolio(id, request);
+    const updates: Partial<Portfolio> & { assignedAgents?: AssignedAgent[] } = {}
 
-    // Handle agent assignments
+    if (request.name !== undefined) updates.name = request.name
+    if (request.description !== undefined)
+      updates.description = request.description
+    if (request.thesis !== undefined) updates.thesis = request.thesis
+
     if (request.assignedAgentIds) {
-      // Get all agents to populate the assignedAgents array
-      const allAgents = await this.getAllAgents();
+      const allAgents = await this.getAllAgents()
       const assignedAgents = request.assignedAgentIds.map((agentId) => {
-        const agent = allAgents.find((a) => a.id === agentId);
-        if (!agent) throw new Error(`Agent ${agentId} not found`);
+        const agent = allAgents.find((a) => a.id === agentId)
+        if (!agent) throw new Error(`Agent ${agentId} not found`)
 
-        return {
+        const assignment: AssignedAgent = {
           agentId,
           agent,
           assignedAt: new Date(),
           assignedBy: existing.userId,
           isActive: true,
           workCount: 0,
-        };
-      });
+        }
 
-      updated.assignedAgents = assignedAgents;
+        return assignment
+      })
+
+      updates.assignedAgents = assignedAgents
     }
+
+    const updated = await this.repository.updatePortfolio(id, updates)
 
     log.success(
       `Portfolio updated: ${updated.name}`,
       undefined,
       "AgentService"
-    );
-    return updated;
+    )
+    return updated
   }
 
   async deletePortfolio(id: string): Promise<void> {
-    await storage.deletePortfolio(id);
-    log.info(`Portfolio deleted: ${id}`, undefined, "AgentService");
+    await this.repository.deletePortfolio(id)
+    log.info(`Portfolio deleted: ${id}`, undefined, "AgentService")
   }
 
   async assignAgent(
@@ -535,20 +345,19 @@ Be critical but constructive. Challenge assumptions and provide balanced perspec
     agentId: string,
     assignedBy: string
   ): Promise<void> {
-    const portfolio = await storage.getPortfolio(portfolioId);
-    if (!portfolio) throw new Error(`Portfolio ${portfolioId} not found`);
+    const portfolio = await this.repository.getPortfolio(portfolioId)
+    if (!portfolio) throw new Error(`Portfolio ${portfolioId} not found`)
 
-    const agent = await storage.getAgent(agentId);
-    if (!agent) throw new Error(`Agent ${agentId} not found`);
+    const agent = await this.repository.getAgent(agentId)
+    if (!agent) throw new Error(`Agent ${agentId} not found`)
 
-    // Check if already assigned
     const existingAssignment = portfolio.assignedAgents.find(
       (a) => a.agentId === agentId
-    );
+    )
     if (existingAssignment) {
       throw new Error(
         `Agent ${agentId} is already assigned to portfolio ${portfolioId}`
-      );
+      )
     }
 
     const assignedAgent: AssignedAgent = {
@@ -558,36 +367,36 @@ Be critical but constructive. Challenge assumptions and provide balanced perspec
       assignedBy,
       isActive: true,
       workCount: 0,
-    };
+    }
 
-    portfolio.assignedAgents.push(assignedAgent);
-    await storage.updatePortfolio(portfolioId, {
-      assignedAgents: portfolio.assignedAgents,
-    });
+    await this.repository.updatePortfolio(portfolioId, {
+      assignedAgents: [...portfolio.assignedAgents, assignedAgent],
+    })
 
     log.success(
       `Agent ${agent.name} assigned to portfolio ${portfolio.name}`,
       undefined,
       "AgentService"
-    );
+    )
   }
 
   async unassignAgent(portfolioId: string, agentId: string): Promise<void> {
-    const portfolio = await storage.getPortfolio(portfolioId);
-    if (!portfolio) throw new Error(`Portfolio ${portfolioId} not found`);
+    const portfolio = await this.repository.getPortfolio(portfolioId)
+    if (!portfolio) throw new Error(`Portfolio ${portfolioId} not found`)
 
-    portfolio.assignedAgents = portfolio.assignedAgents.filter(
+    const remainingAssignments = portfolio.assignedAgents.filter(
       (a) => a.agentId !== agentId
-    );
-    await storage.updatePortfolio(portfolioId, {
-      assignedAgents: portfolio.assignedAgents,
-    });
+    )
+
+    await this.repository.updatePortfolio(portfolioId, {
+      assignedAgents: remainingAssignments,
+    })
 
     log.info(
       `Agent ${agentId} unassigned from portfolio ${portfolioId}`,
       undefined,
       "AgentService"
-    );
+    )
   }
 
   // Work Execution
@@ -596,140 +405,59 @@ Be critical but constructive. Challenge assumptions and provide balanced perspec
     agentId: string,
     userId: string
   ): Promise<AgentWork> {
-    const portfolio = await storage.getPortfolio(portfolioId);
-    if (!portfolio) throw new Error(`Portfolio ${portfolioId} not found`);
+    const portfolio = await this.repository.getPortfolio(portfolioId)
+    if (!portfolio) throw new Error(`Portfolio ${portfolioId} not found`)
 
     const assignedAgent = portfolio.assignedAgents.find(
       (a) => a.agentId === agentId
-    );
+    )
     if (!assignedAgent)
       throw new Error(
         `Agent ${agentId} is not assigned to portfolio ${portfolioId}`
-      );
-
-    const agent = assignedAgent.agent;
+      )
 
     const work: AgentWork = {
       id: this.generateId(),
       portfolioId,
       agentId,
-      agent,
+      agent: assignedAgent.agent,
       thesis: portfolio.thesis,
       status: "pending",
       startedAt: new Date(),
-    };
-
-    const createdWork = await storage.createWork(work);
-
-    // Execute workflow asynchronously
-    this.executeWorkflow(createdWork).catch((error) => {
-      log.failure(
-        `Workflow execution failed for work ${createdWork.id}`,
-        error,
-        "AgentService"
-      );
-    });
-
-    return createdWork;
-  }
-
-  private async executeWorkflow(work: AgentWork): Promise<void> {
-    try {
-      // Update status to running
-      await storage.updateWork(work.id, { status: "running" });
-
-      // Convert agent to AIAgent format
-      const aiAgent: AIAgent = {
-        id: work.agent.id,
-        name: work.agent.name,
-        description: work.agent.description,
-        role: work.agent.role,
-        model: work.agent.model,
-        systemPrompt: work.agent.promptGuidance,
-        temperature: work.agent.temperature,
-        maxTokens: work.agent.maxTokens,
-        version: work.agent.version,
-        createdAt: work.agent.createdAt,
-        updatedAt: work.agent.updatedAt,
-        isActive: work.agent.isActive,
-      };
-
-      // Create AI request
-      const request = createAIRequest(
-        work.agent.id,
-        `Investment Thesis Analysis:\n\n${work.thesis}`,
-        { portfolioId: work.portfolioId, workId: work.id },
-        work.portfolioId // Using portfolioId as userId for now
-      );
-
-      // Execute AI request
-      const response = await aiService.generateResponse(
-        aiAgent,
-        request,
-        "thesis_generation"
-      );
-
-      // Update work with results
-      await storage.updateWork(work.id, {
-        status: "completed",
-        request,
-        response,
-        completedAt: new Date(),
-      });
-
-      // Update agent work count
-      const portfolio = await storage.getPortfolio(work.portfolioId);
-      if (portfolio) {
-        const assignedAgent = portfolio.assignedAgents.find(
-          (a) => a.agentId === work.agentId
-        );
-        if (assignedAgent) {
-          assignedAgent.workCount += 1;
-          assignedAgent.lastWorkedAt = new Date();
-          await storage.updatePortfolio(work.portfolioId, {
-            assignedAgents: portfolio.assignedAgents,
-          });
-        }
-      }
-
-      log.success(`Work completed: ${work.id}`, undefined, "AgentService");
-    } catch (error) {
-      await storage.updateWork(work.id, {
-        status: "failed",
-        error: error instanceof Error ? error.message : "Unknown error",
-        completedAt: new Date(),
-      });
-
-      log.failure(`Work failed: ${work.id}`, error, "AgentService");
     }
+
+    const createdWork = await this.repository.createWork(work)
+
+    void this.workExecutor.run(createdWork)
+
+    return createdWork
   }
 
   async getWork(id: string): Promise<AgentWork | null> {
-    return storage.getWork(id);
+    return this.repository.getWork(id)
   }
 
   async getWorkHistory(portfolioId: string): Promise<AgentWork[]> {
-    return storage.getWorkHistory(portfolioId);
+    return this.repository.getWorkHistory(portfolioId)
   }
 
   async cancelWork(id: string): Promise<void> {
-    const work = await storage.getWork(id);
-    if (!work) throw new Error(`Work ${id} not found`);
+    const work = await this.repository.getWork(id)
+    if (!work) throw new Error(`Work ${id} not found`)
 
     if (work.status === "running" || work.status === "pending") {
-      await storage.updateWork(id, {
+      await this.repository.updateWork(id, {
         status: "cancelled",
         completedAt: new Date(),
-      });
-      log.info(`Work cancelled: ${id}`, undefined, "AgentService");
+      })
+      log.info(`Work cancelled: ${id}`, undefined, "AgentService")
     }
   }
 
   private generateId(): string {
-    return `agent_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    return `agent_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
   }
 }
 
-// Global service instance
-export const agentService = new AgentService();
-export default agentService;
+export const agentService = new AgentService()
+export default agentService

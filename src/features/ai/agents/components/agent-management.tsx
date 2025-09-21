@@ -5,7 +5,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/lib
 import { Button } from '@/lib/components/ui/button'
 import { Input } from '@/lib/components/ui/input'
 import { useAgents } from '../hooks/use-agents'
-import { Agent, AgentTemplate, CreateAgentRequest } from '../types'
+import {
+  Agent,
+  AgentTemplate,
+  CreateAgentRequest,
+  UpdateAgentRequest,
+} from '../types'
 import { AgentList } from './agent-list'
 import { CreateAgentDialog } from './create-agent-dialog'
 import { AgentDetailsDialog } from './agent-details-dialog'

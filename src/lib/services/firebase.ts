@@ -22,8 +22,12 @@ export const auth = getAuth(app)
 // Collection names
 export const COLLECTIONS = {
   AGENTS: 'agents',
+  AGENT_TEMPLATES: 'agent_templates',
+  AGENT_VERSIONS: 'agent_versions',
   AGENT_TEAMS: 'agent_teams',
   COMPANY_RESEARCH: 'company_research',
+  PORTFOLIOS: 'portfolios',
+  AGENT_WORK: 'agent_work',
   TRADE_ARCHETYPES: 'trade_archetypes',
   INVESTMENT_THESES: 'investment_theses',
   MARKET_OPPORTUNITIES: 'market_opportunities',
