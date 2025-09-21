@@ -4,6 +4,7 @@ import * as Sentry from "@sentry/nextjs";
 import Head from "next/head";
 import { useEffect, useState } from "react";
 import styles from "./page.module.css";
+import { logger } from "@/lib/utils/logger";
 
 class SentryExampleFrontendError extends Error {
   constructor(message: string | undefined) {
@@ -18,8 +19,19 @@ export default function Page() {
   
   useEffect(() => {
     async function checkConnectivity() {
-      const result = await Sentry.diagnoseSdkConnectivity();
-      setIsConnected(result !== 'sentry-unreachable');
+      logger.info("Checking Sentry connectivity", {
+        environment: process.env.NODE_ENV,
+        sentryDsn: process.env.NEXT_PUBLIC_SENTRY_DSN ? "configured" : "missing"
+      });
+      
+      try {
+        const result = await Sentry.diagnoseSdkConnectivity();
+        logger.info("Sentry connectivity check result", { result });
+        setIsConnected(result !== 'sentry-unreachable');
+      } catch (error) {
+        logger.error("Failed to check Sentry connectivity", { error });
+        setIsConnected(false);
+      }
     }
     checkConnectivity();
   }, []);
@@ -50,16 +62,36 @@ export default function Page() {
           type="button"
           className={styles.button}
           onClick={async () => {
-            await Sentry.startSpan({
-              name: 'Example Frontend/Backend Span',
-              op: 'test'
-            }, async () => {
-              const res = await fetch("/api/sentry-example-api");
-              if (!res.ok) {
-                setHasSentError(true);
-              }
-            });
-            throw new SentryExampleFrontendError("This error is raised on the frontend of the example page.");
+            logger.info("Button clicked - starting Sentry test");
+            
+            try {
+              await Sentry.startSpan({
+                name: 'Example Frontend/Backend Span',
+                op: 'test'
+              }, async () => {
+                logger.info("Making API call to /api/sentry-example-api");
+                const res = await fetch("/api/sentry-example-api");
+                logger.info("API call completed", { 
+                  status: res.status, 
+                  ok: res.ok,
+                  statusText: res.statusText 
+                });
+                
+                if (!res.ok) {
+                  logger.warn("API call returned non-ok status", { status: res.status });
+                  setHasSentError(true);
+                }
+              });
+              
+              logger.info("About to throw frontend error");
+              throw new SentryExampleFrontendError("This error is raised on the frontend of the example page.");
+            } catch (error) {
+              logger.error("Error in button click handler", { 
+                error: error instanceof Error ? error.message : String(error),
+                errorName: error instanceof Error ? error.name : 'Unknown'
+              });
+              throw error; // Re-throw to let Sentry handle it
+            }
           }}
           disabled={!isConnected}
         >
