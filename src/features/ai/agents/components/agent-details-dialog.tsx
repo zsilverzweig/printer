@@ -11,7 +11,7 @@ import { useAgents } from '../hooks/use-agents'
 interface AgentDetailsDialogProps {
   agent: Agent | null
   onClose: () => void
-  onUpdateAgent: (agentId: string, updates: Partial<Agent>) => Promise<void>
+  onUpdateAgent: (agentId: string, updates: UpdateAgentRequest) => Promise<void>
   onDeleteAgent: (agentId: string) => void
 }
 
