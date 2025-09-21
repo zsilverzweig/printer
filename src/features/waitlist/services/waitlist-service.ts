@@ -9,7 +9,6 @@ import {
     getDocs,
     increment,
     onSnapshot,
-    orderBy,
     query,
     serverTimestamp,
     updateDoc,
@@ -310,19 +309,35 @@ export class WaitlistService {
    */
   async recalculatePositions(): Promise<void> {
     try {
+      // Get all active entries (simple query, no composite index needed)
       const entriesQuery = query(
         collection(db, COLLECTIONS.WAITLIST_ENTRIES),
-        where('status', '==', 'active'),
-        orderBy('totalPoints', 'desc'),
-        orderBy('joinedAt', 'asc')
+        where('status', '==', 'active')
       )
       
       const snapshot = await getDocs(entriesQuery)
-      const batch = writeBatch(db)
       
-      snapshot.docs.forEach((doc, index) => {
+      // Sort client-side to avoid composite index requirement
+      const entries = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ref: doc.ref,
+        totalPoints: doc.data().totalPoints || 0,
+        joinedAt: doc.data().joinedAt || new Date()
+      }))
+      
+      // Sort by totalPoints desc, then by joinedAt asc
+      entries.sort((a, b) => {
+        if (b.totalPoints !== a.totalPoints) {
+          return b.totalPoints - a.totalPoints
+        }
+        return a.joinedAt.toMillis() - b.joinedAt.toMillis()
+      })
+      
+      // Update positions in batches
+      const batch = writeBatch(db)
+      entries.forEach((entry, index) => {
         const newPosition = index + 1
-        batch.update(doc.ref, {
+        batch.update(entry.ref, {
           position: newPosition,
           updatedAt: serverTimestamp()
         })

@@ -7,8 +7,6 @@ import {
     doc,
     getDoc,
     getDocs,
-    limit,
-    orderBy,
     query,
     serverTimestamp,
     setDoc,
@@ -153,26 +151,29 @@ export class AdminService {
       const entriesSnapshot = await getDocs(entriesQuery)
       const totalEntries = entriesSnapshot.size
 
-      // Get recent entries (last 7 days)
+      // Get recent entries (last 7 days) - simplified query
       const sevenDaysAgo = new Date()
       sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
       
-      const recentEntriesQuery = query(
+      // Simple query without composite index - filter client-side
+      const allActiveEntriesQuery = query(
         collection(db, COLLECTIONS.WAITLIST_ENTRIES),
-        where('status', '==', 'active'),
-        where('joinedAt', '>=', sevenDaysAgo),
-        orderBy('joinedAt', 'desc'),
-        limit(10)
+        where('status', '==', 'active')
       )
-      const recentSnapshot = await getDocs(recentEntriesQuery)
+      const allActiveSnapshot = await getDocs(allActiveEntriesQuery)
       
-      const recentEntries = recentSnapshot.docs.map(doc => ({
-        id: doc.id,
-        email: doc.data().email,
-        position: doc.data().position,
-        joinedAt: doc.data().joinedAt?.toDate() || new Date(),
-        totalPoints: doc.data().totalPoints || 0
-      }))
+      // Filter and sort client-side to avoid composite index
+      const recentEntries = allActiveSnapshot.docs
+        .map(doc => ({
+          id: doc.id,
+          email: doc.data().email,
+          position: doc.data().position,
+          joinedAt: doc.data().joinedAt?.toDate() || new Date(),
+          totalPoints: doc.data().totalPoints || 0
+        }))
+        .filter(entry => entry.joinedAt >= sevenDaysAgo)
+        .sort((a, b) => b.joinedAt.getTime() - a.joinedAt.getTime())
+        .slice(0, 10)
 
       // Get top actions
       const actionsQuery = query(
@@ -199,7 +200,7 @@ export class AdminService {
       })
       const averagePosition = totalEntries > 0 ? Math.round(totalPosition / totalEntries) : 0
 
-      // Get daily signups (last 7 days)
+      // Get daily signups (last 7 days) - use existing data to avoid multiple queries
       const dailySignups = []
       for (let i = 6; i >= 0; i--) {
         const date = new Date()
@@ -209,17 +210,15 @@ export class AdminService {
         const endOfDay = new Date(date)
         endOfDay.setHours(23, 59, 59, 999)
 
-        const dayQuery = query(
-          collection(db, COLLECTIONS.WAITLIST_ENTRIES),
-          where('status', '==', 'active'),
-          where('joinedAt', '>=', startOfDay),
-          where('joinedAt', '<=', endOfDay)
-        )
-        const daySnapshot = await getDocs(dayQuery)
+        // Count from already fetched data instead of new queries
+        const dayCount = allActiveSnapshot.docs.filter(doc => {
+          const joinedAt = doc.data().joinedAt?.toDate()
+          return joinedAt && joinedAt >= startOfDay && joinedAt <= endOfDay
+        }).length
         
         dailySignups.push({
           date: date.toISOString().split('T')[0],
-          count: daySnapshot.size
+          count: dayCount
         })
       }
 
@@ -243,13 +242,14 @@ export class AdminService {
    */
   async getAllWaitlistEntries(): Promise<any[]> {
     try {
+      // Simple query without orderBy to avoid index requirements
       const entriesQuery = query(
-        collection(db, COLLECTIONS.WAITLIST_ENTRIES),
-        orderBy('position', 'asc')
+        collection(db, COLLECTIONS.WAITLIST_ENTRIES)
       )
       const snapshot = await getDocs(entriesQuery)
       
-      return snapshot.docs.map(doc => ({
+      // Sort client-side to avoid composite index
+      const entries = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data(),
         joinedAt: doc.data().joinedAt?.toDate() || new Date(),
@@ -257,6 +257,9 @@ export class AdminService {
         updatedAt: doc.data().updatedAt?.toDate() || new Date(),
         lastActionAt: doc.data().lastActionAt?.toDate()
       }))
+      
+      // Sort by position ascending
+      return entries.sort((a, b) => (a.position || 0) - (b.position || 0))
     } catch (error) {
       log.failure('Failed to get waitlist entries', error, 'AdminService')
       throw error
@@ -311,18 +314,24 @@ export class AdminService {
    */
   async sendInvites(count: number): Promise<void> {
     try {
+      // Get all active entries and sort client-side
       const entriesQuery = query(
         collection(db, COLLECTIONS.WAITLIST_ENTRIES),
-        where('status', '==', 'active'),
-        orderBy('position', 'asc'),
-        limit(count)
+        where('status', '==', 'active')
       )
       
       const snapshot = await getDocs(entriesQuery)
+      
+      // Sort by position and take top entries
+      const sortedEntries = snapshot.docs
+        .map(doc => ({ ref: doc.ref, position: doc.data().position || 0 }))
+        .sort((a, b) => a.position - b.position)
+        .slice(0, count)
+      
       const batch = writeBatch(db)
       
-      snapshot.docs.forEach(doc => {
-        batch.update(doc.ref, {
+      sortedEntries.forEach(entry => {
+        batch.update(entry.ref, {
           status: 'invited',
           updatedAt: serverTimestamp()
         })
