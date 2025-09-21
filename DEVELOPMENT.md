@@ -51,24 +51,9 @@ src/
     └── utils/          # Shared utility functions
 ```
 
-## Adding New Documentation
-
-1. Add markdown files to the `docs/` directory
-2. Files will automatically appear in the sidebar navigation
-3. Use internal links with relative paths to link between documents
-
 ## Building for Production
 
 ```bash
 npm run build
 npm start
 ```
-
-## Deployment
-
-The site can be deployed to any static hosting service that supports Next.js:
-
-- **Vercel** (recommended)
-- **Netlify**
-- **GitHub Pages**
-- **Firebase Hosting**

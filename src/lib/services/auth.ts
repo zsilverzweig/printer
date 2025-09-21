@@ -97,6 +97,7 @@ export class AuthService {
     const adminEmails = [
       'admin@printer.ai',
       'zach@printer.ai',
+      'silverzweig@gmail.com',
       // Add more admin emails as needed
     ]
     

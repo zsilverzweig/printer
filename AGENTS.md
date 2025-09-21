@@ -8,7 +8,7 @@
 
 Follow Single Responsibility Principles
 
-Never commit files unless explicitly directed to.
+When working in IDE modes, never commit files unless explicitly directed to.
 
 Assume that there is a pattern already in place to solve problems, don't create a new one. If you can't find a pattern, ask the user for more guidance.
 

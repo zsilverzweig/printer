@@ -3,6 +3,7 @@
 import { Button } from '@/lib/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/lib/components/ui/card'
 import { useAuth } from '@/lib/hooks/use-auth'
+import { useUserRouting } from '@/lib/hooks/use-user-routing'
 import { log } from '@/lib/utils/logger'
 import { AlertCircle, Loader2, Printer } from 'lucide-react'
 import { useRouter } from 'next/navigation'
@@ -10,14 +11,19 @@ import { useEffect } from 'react'
 
 export default function LoginPage() {
   const { signInWithGoogle, loading, error, isAuthenticated } = useAuth()
+  const { route, loading: routingLoading } = useUserRouting()
   const router = useRouter()
 
   // Redirect if already authenticated
   useEffect(() => {
-    if (isAuthenticated) {
-      router.push('/')
+    if (isAuthenticated && route && !routingLoading) {
+      log.info('Redirecting authenticated user', { 
+        route: route.path, 
+        reason: route.reason 
+      }, 'LoginPage')
+      router.push(route.path)
     }
-  }, [isAuthenticated, router])
+  }, [isAuthenticated, route, routingLoading, router])
 
   const handleGoogleSignIn = async () => {
     try {
@@ -28,12 +34,14 @@ export default function LoginPage() {
     }
   }
 
-  if (isAuthenticated) {
+  if (isAuthenticated || routingLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center">
           <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-primary" />
-          <p className="text-muted-foreground">Redirecting...</p>
+          <p className="text-muted-foreground">
+            {isAuthenticated ? 'Redirecting...' : 'Loading...'}
+          </p>
         </div>
       </div>
     )

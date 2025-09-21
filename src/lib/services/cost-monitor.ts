@@ -1,6 +1,6 @@
 // Advanced cost monitoring and alerting system for Printer AI operations
-import { AIOperation, CostEntry, TokenUsage } from '../types'
 import { log } from '@/lib/utils/logger'
+import { AIOperation, CostEntry, TokenUsage } from '../types'
 
 interface CostLimits {
   daily: number
