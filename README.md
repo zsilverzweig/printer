@@ -1,79 +1,41 @@
 # Printer Project
 
-This repository houses all company planning documents and code for the Printer AI research engine project.
+An AI-powered investment research engine that produces actionable, company-level investment theses through structured reasoning and adversarial testing.
 
-## Printer Project Outline
+## Overview
 
-### 1. Vision
+Printer is a virtual investment firm powered by AI agents that work together to analyze companies, build investment theses, and manage a portfolio based on the core thesis that "AI changes everything." The system uses multi-agent collaboration, persistent context, and continuous learning to make investment decisions that improve over time.
 
-- Build an AI research engine that produces actionable, company-level investment theses.
-- Start with a core top-down thesis: AI changes everything.
-- Map which companies are positively vs. negatively impacted by AI, then size positions accordingly.
-- Differentiate by using structured reasoning + adversarial checks, not one-shot prompts or news scraping.
+## Key Features
 
-⸻
+- **Multi-Agent System**: Specialized AI agents for different aspects of investment analysis
+- **Structured Decision Cycles**: Every position requires thesis + catalyst + time horizon
+- **Adversarial Testing**: Built-in counterpoint analysis for every investment thesis
+- **Performance Tracking**: Continuous monitoring and system improvement
+- **Real-time Interface**: Web-based dashboard for monitoring and control
 
-### 2. Guiding Principles (Decision Cycle Rules)
+## Documentation
 
-1. Every position must have a thesis + catalyst + time horizon (6–9 mo).
-2. Adversarial testing is required; every thesis needs disconfirmers.
-3. Risk first: size, correlation, and kill-switches built in.
-4. Adaptation > prediction: re-run cycles when narratives shift.
-5. Maintain continuity: every new thesis references or supersedes the last.
+### Core Strategy
 
-⸻
+- **[Business Strategy](docs/business-strategy.md)** - Vision, operating model, and investment approach
+- **[Technical Architecture](docs/tech-stack.md)** - System design, technology choices, and implementation
+- **[Product Roadmap](docs/product-roadmap.md)** - High-level development phases and objectives
 
-### 3. Operating Model
+### Investment Information
 
-#### 3.1. High-Level Scoping
+- **[Investment Thesis](docs/investment-thesis.md)** - Core investment proposition and market opportunity
+- **[Financial Projections](docs/financial-projections.md)** - Revenue model, growth projections, and capital requirements
+- **[Competitive Analysis](docs/competitive-analysis.md)** - Market landscape and competitive positioning
+- **[Team and Advisors](docs/team-and-advisors.md)** - Leadership team, advisory board, and expansion plans
 
-- Agents sweep sectors for AI exposure.
-- Classify companies as AI-positive, AI-negative, or neutral.
-- Build a living map of the AI impact landscape.
+### Development Planning
 
-#### 3.2. Company Research Units (CRUs)
+- **[Agent Management](docs/Development%20Planning/agent-management.md)** - Creating, editing, and versioning AI agents
+- **[Team System](docs/Development%20Planning/teams.md)** - Building agent teams and collaboration patterns
+- **[Company Research](docs/Development%20Planning/cru.md)** - The 6-agent Company Research Unit system
+- **[Feature Roadmap](docs/Development%20Planning/feature-roadmap.md)** - Detailed development timeline and features
 
-Each company has a mini-agent team that runs the Printer Decision Cycle:
+## Project Status
 
-- **Business Fundamentals** – revenue streams, margin impact.
-- **Product / Pipeline** – AI-related initiatives, adoption timelines.
-- **Management & Strategy** – credibility of AI investments.
-- **Narrative** – investor sentiment, analyst chatter.
-- **Risk** – structural vulnerabilities, regulatory exposure.
-- **Counterpoint** – stress-tests the bull case.
-
-Output: A Company Dossier with thesis, catalysts, risks, confidence, and kill switches.
-
-#### 3.3. Senior Management Layer
-
-- **Global Risk Manager** – checks concentration, cross-sector exposures.
-- **Global Narrative Manager** – maps system-wide stories (e.g., "chips bottleneck").
-- **Macro Manager** – adjusts for policy, rates, geopolitics.
-- **Portfolio Synthesizer (PM)** – decides final allocations.
-
-⸻
-
-### 4. Deliverables
-
-- **Company Dossiers** – structured research documents for each name.
-- **AI Landscape Map** – overview of sector winners/losers.
-- **Portfolio Actions** – adds/trims/exits with rationale.
-- **Kill-Switch List** – pre-set triggers for exiting positions.
-- **Cycle Log** – append-only record of theses, evidence, and updates.
-
-⸻
-
-### 5. Cadence
-
-- **Quarterly**: Full landscape refresh.
-- **Monthly**: Dossier updates for top 20 AI-exposed companies.
-- **Weekly**: Each CRU runs a cycle; managers synthesize updates.
-- **Event-driven**: Extra cycle on catalysts (earnings, product launches, trial readouts, regulation).
-
-⸻
-
-### 6. Edge
-
-- Not competing on speed of data, but on structured reasoning + continuity.
-- Every thesis is transparent, adversarially tested, and auditable.
-- Scaling edge comes from being able to run parallel company deep dives with consistent quality.
+🚧 **In Development** - Currently in planning and architecture phase
