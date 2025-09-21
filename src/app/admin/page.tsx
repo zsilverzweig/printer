@@ -1,6 +1,6 @@
 "use client";
 
-import { Bot, Loader2, Settings, Users } from "lucide-react";
+import { Bot, LineChart, Loader2, Settings, Users } from "lucide-react";
 import Link from "next/link";
 
 import { Button } from "@/lib/components/ui/button";
@@ -66,7 +66,7 @@ export default function AdminPage() {
         </div>
 
         {/* Admin Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <Card className="hover:shadow-md transition-shadow">
             <CardHeader>
               <div className="flex items-center space-x-2">
@@ -80,6 +80,23 @@ export default function AdminPage() {
             <CardContent>
               <Link href="/admin/agents">
                 <Button className="w-full">Manage Agents</Button>
+              </Link>
+            </CardContent>
+          </Card>
+
+          <Card className="hover:shadow-md transition-shadow">
+            <CardHeader>
+              <div className="flex items-center space-x-2">
+                <LineChart className="h-5 w-5 text-indigo-600" />
+                <CardTitle>Alpaca Trading</CardTitle>
+              </div>
+              <CardDescription>
+                Test paper buy and sell orders with Alpaca
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Link href="/admin/alpaca">
+                <Button className="w-full">Open Trading Sandbox</Button>
               </Link>
             </CardContent>
           </Card>

@@ -3,6 +3,9 @@
 // Core AI types
 export * from './ai'
 
+// Trading integrations
+export * from './alpaca'
+
 // Agent team types
 export * from './teams'
 
