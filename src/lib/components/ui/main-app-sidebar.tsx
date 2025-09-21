@@ -4,6 +4,8 @@ import { useUserRouting } from "@/lib/hooks/use-user-routing";
 import { useAuthContext } from "@/lib/providers/auth-provider";
 import {
   BarChart3,
+  Bot,
+  Briefcase,
   FileText,
   Home,
   Settings,
@@ -27,6 +29,17 @@ export function MainAppSidebar() {
           title: "Dashboard",
           href: "/home",
           icon: <Home className="h-4 w-4" />,
+        },
+      ],
+    },
+    {
+      title: "Investment",
+      items: [
+        {
+          id: "portfolios",
+          title: "My Portfolios",
+          href: "/portfolios",
+          icon: <Briefcase className="h-4 w-4" />,
         },
       ],
     },
@@ -61,6 +74,12 @@ export function MainAppSidebar() {
           title: "Admin Panel",
           href: "/admin",
           icon: <Shield className="h-4 w-4" />,
+        },
+        {
+          id: "agent-management",
+          title: "Agent Management",
+          href: "/admin/agents",
+          icon: <Bot className="h-4 w-4" />,
         },
         {
           id: "user-management",
@@ -110,4 +129,3 @@ export function MainAppSidebar() {
     />
   );
 }
-
