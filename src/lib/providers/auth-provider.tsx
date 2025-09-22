@@ -1,31 +1,35 @@
-'use client'
+"use client";
 
-import { createContext, ReactNode, useContext } from 'react'
+import { createContext, ReactNode, useContext } from "react";
 
-import { useAuth, UseAuthReturn } from '@/lib/hooks/use-auth'
+import { useAuth, UseAuthReturn } from "@/lib/hooks/use-auth";
 
 interface AuthContextType extends UseAuthReturn {}
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined)
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 interface AuthProviderProps {
-  children: ReactNode
+  children: ReactNode;
 }
 
 export function AuthProvider({ children }: AuthProviderProps) {
-  const auth = useAuth()
+  console.log("[PERF] AuthProvider rendering at:", new Date().toISOString());
 
-  return (
-    <AuthContext.Provider value={auth}>
-      {children}
-    </AuthContext.Provider>
-  )
+  const auth = useAuth();
+
+  console.log("[PERF] AuthProvider auth state:", {
+    isAuthenticated: auth.isAuthenticated,
+    loading: auth.loading,
+    user: auth.user ? "present" : "null",
+  });
+
+  return <AuthContext.Provider value={auth}>{children}</AuthContext.Provider>;
 }
 
 export function useAuthContext(): AuthContextType {
-  const context = useContext(AuthContext)
+  const context = useContext(AuthContext);
   if (context === undefined) {
-    throw new Error('useAuthContext must be used within an AuthProvider')
+    throw new Error("useAuthContext must be used within an AuthProvider");
   }
-  return context
+  return context;
 }

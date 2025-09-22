@@ -9,9 +9,16 @@ import { getMarkdownFile } from "@/lib/services/markdown";
  * Sidebar is now handled at the layout level
  */
 export async function WelcomePage() {
+  console.log("[PERF] WelcomePage starting at:", new Date().toISOString());
+
   // Default to showing the Fund Prospectus README
   const defaultSlug = "Fund Prospectus/README";
+
+  const startTime = performance.now();
   const markdownFile = await getMarkdownFile(defaultSlug);
+  const endTime = performance.now();
+
+  console.log("[PERF] getMarkdownFile took:", endTime - startTime, "ms");
 
   if (!markdownFile) {
     notFound();

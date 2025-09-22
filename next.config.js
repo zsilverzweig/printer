@@ -3,6 +3,62 @@ const nextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
+  // Performance optimizations
+  experimental: {
+    optimizePackageImports: [
+      "@radix-ui/react-avatar",
+      "@radix-ui/react-dialog",
+      "@radix-ui/react-dropdown-menu",
+      "@radix-ui/react-separator",
+      "@radix-ui/react-slot",
+      "@radix-ui/react-switch",
+      "@radix-ui/react-tooltip",
+      "lucide-react",
+    ],
+  },
+  // Reduce bundle size
+  webpack: (config, { dev, isServer }) => {
+    if (!dev && !isServer) {
+      config.optimization.splitChunks = {
+        chunks: "all",
+        cacheGroups: {
+          vendor: {
+            test: /[\\/]node_modules[\\/]/,
+            name: "vendors",
+            chunks: "all",
+          },
+        },
+      };
+    }
+
+    // Add performance logging
+    if (dev) {
+      config.plugins.push({
+        apply: (compiler) => {
+          compiler.hooks.compile.tap("PerformancePlugin", () => {
+            console.log(
+              "[PERF] Webpack compilation starting at:",
+              new Date().toISOString()
+            );
+          });
+
+          compiler.hooks.done.tap("PerformancePlugin", (stats) => {
+            console.log(
+              "[PERF] Webpack compilation completed at:",
+              new Date().toISOString()
+            );
+            console.log(
+              "[PERF] Compilation time:",
+              stats.endTime - stats.startTime,
+              "ms"
+            );
+          });
+        },
+      });
+    }
+
+    return config;
+  },
 };
 
 module.exports = nextConfig;
@@ -25,7 +81,7 @@ module.exports = withSentryConfig(module.exports, {
   // https://docs.sentry.io/platforms/javascript/guides/nextjs/manual-setup/
 
   // Upload a larger set of source maps for prettier stack traces (increases build time)
-  widenClientFileUpload: true,
+  widenClientFileUpload: process.env.NODE_ENV === "production",
 
   // Route browser requests to Sentry through a Next.js rewrite to circumvent ad-blockers.
   // This can increase your server load as well as your hosting bill.
