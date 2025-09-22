@@ -1,36 +1,31 @@
-import {
-  AgentTemplate,
-  DEFAULT_WORKFLOW,
-  Workflow,
-} from "../../types"
+import { AgentTemplate, DEFAULT_WORKFLOW, Workflow } from "../../types";
 
 const cloneWorkflow = (workflow: Workflow): Workflow => ({
   ...workflow,
   steps: workflow.steps.map((step) => ({
     ...step,
-    dependencies: step.dependencies ? [...step.dependencies] : undefined,
+    dependencies: step.dependencies ? [...step.dependencies] : [],
   })),
   createdAt: new Date(workflow.createdAt),
   updatedAt: new Date(workflow.updatedAt),
-})
+});
 
 interface TemplateSeed {
-  id: AgentTemplate["id"]
-  name: AgentTemplate["name"]
-  description: AgentTemplate["description"]
-  role: AgentTemplate["role"]
-  category: AgentTemplate["category"]
-  prompt: string
-  temperature: number
-  maxTokens: number
+  id: AgentTemplate["id"];
+  name: AgentTemplate["name"];
+  description: AgentTemplate["description"];
+  role: AgentTemplate["role"];
+  category: AgentTemplate["category"];
+  prompt: string;
+  temperature: number;
+  maxTokens: number;
 }
 
 const TEMPLATE_SEEDS: TemplateSeed[] = [
   {
     id: "business-fundamentals",
     name: "Business Fundamentals Agent",
-    description:
-      "Analyzes revenue, margins, growth, and core business metrics",
+    description: "Analyzes revenue, margins, growth, and core business metrics",
     role: "business_fundamentals",
     category: "cru",
     prompt: `You are a Business Fundamentals Analyst. Your role is to analyze the core business metrics and fundamentals of companies.
@@ -107,10 +102,10 @@ Be critical but constructive. Challenge assumptions and provide balanced perspec
     temperature: 0.5,
     maxTokens: 2000,
   },
-]
+];
 
 const buildTemplate = (seed: TemplateSeed): AgentTemplate => {
-  const timestamp = new Date()
+  const timestamp = new Date();
 
   return {
     id: seed.id,
@@ -126,8 +121,8 @@ const buildTemplate = (seed: TemplateSeed): AgentTemplate => {
     isBuiltIn: true,
     createdAt: timestamp,
     updatedAt: timestamp,
-  }
-}
+  };
+};
 
 export const createDefaultAgentTemplates = (): AgentTemplate[] =>
-  TEMPLATE_SEEDS.map(buildTemplate)
+  TEMPLATE_SEEDS.map(buildTemplate);

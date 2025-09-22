@@ -21,6 +21,22 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const agentRequest: CreateAgentRequest = body;
 
+    // Validate required fields
+    if (
+      !agentRequest.name ||
+      !agentRequest.description ||
+      !agentRequest.role ||
+      !agentRequest.promptGuidance
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Missing required fields: name, description, role, and promptGuidance are required",
+        },
+        { status: 400 }
+      );
+    }
+
     // TODO: Get actual user ID from authentication
     const userId = "current-user";
 
