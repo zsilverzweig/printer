@@ -13,16 +13,8 @@ interface AppLayoutProps {
 }
 
 export function AppLayout({ children }: AppLayoutProps) {
-  console.log("[PERF] AppLayout rendering at:", new Date().toISOString());
-
   const { isAuthenticated, loading: authLoading } = useAuthContext();
   const { loading: routingLoading } = useUserRouting();
-
-  console.log("[PERF] AppLayout auth state:", {
-    isAuthenticated,
-    authLoading,
-    routingLoading,
-  });
 
   // Show loading state while determining authentication and routing
   if (authLoading || routingLoading) {

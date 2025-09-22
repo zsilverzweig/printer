@@ -21,8 +21,8 @@ export function useUserAccess(uid: string | null): UseUserAccessReturn {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const loadAccess = useCallback(async () => {
-    if (!uid) {
+  const loadAccess = useCallback(async (userId: string | null) => {
+    if (!userId) {
       setAccess(null);
       setLoading(false);
       return;
@@ -32,7 +32,7 @@ export function useUserAccess(uid: string | null): UseUserAccessReturn {
       setLoading(true);
       setError(null);
 
-      const accessData = await userService.getUserAccess(uid);
+      const accessData = await userService.getUserAccess(userId);
       setAccess(accessData);
     } catch (err) {
       const errorMessage =
@@ -42,11 +42,11 @@ export function useUserAccess(uid: string | null): UseUserAccessReturn {
     } finally {
       setLoading(false);
     }
-  }, [uid]);
+  }, []);
 
   useEffect(() => {
-    loadAccess();
-  }, [loadAccess]);
+    loadAccess(uid);
+  }, [uid, loadAccess]);
 
   const canAccess = useCallback(
     (feature: keyof UserAccess): boolean => {
@@ -76,8 +76,8 @@ export function useUserAccess(uid: string | null): UseUserAccessReturn {
   );
 
   const refreshAccess = useCallback(async () => {
-    await loadAccess();
-  }, [loadAccess]);
+    await loadAccess(uid);
+  }, [loadAccess, uid]);
 
   return {
     access,

@@ -1,7 +1,7 @@
 // Comprehensive user hook that combines authentication with user profile management
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect } from "react";
 
 import { useUserAccess } from "@/lib/hooks/use-user-access";
 import { useUserProfile } from "@/lib/hooks/use-user-profile";
@@ -50,7 +50,6 @@ export function useUser(): UseUserReturn {
   const {
     profile,
     access,
-    loading: profileLoading,
     error: profileError,
     updateProfile,
     updateStatus,
@@ -59,28 +58,15 @@ export function useUser(): UseUserReturn {
 
   const {
     access: accessData,
-    loading: accessLoading,
     error: accessError,
     hasRestriction,
     refreshAccess,
   } = useUserAccess(auth.user?.uid || null);
 
-  const [initializing, setInitializing] = useState(true);
-
-  // Add timeout to prevent infinite loading
-  useEffect(() => {
-    const timeout = setTimeout(() => {
-      setInitializing(false);
-    }, 5000); // 5 second timeout
-
-    return () => clearTimeout(timeout);
-  }, []);
-
   // Initialize user profile when user signs in
   useEffect(() => {
     const initializeUser = async () => {
       if (!auth.user || profile) {
-        setInitializing(false);
         return;
       }
 
@@ -110,8 +96,6 @@ export function useUser(): UseUserReturn {
         await refreshAccess();
       } catch (error) {
         log.error("Failed to initialize user profile", error, "useUser");
-      } finally {
-        setInitializing(false);
       }
     };
 
@@ -142,10 +126,8 @@ export function useUser(): UseUserReturn {
     return profile?.photoURL || auth.user?.photoURL || null;
   }, [profile, auth.user]);
 
-  // Don't show loading if user is not authenticated and auth is not loading
-  const shouldShowLoading =
-    auth.loading ||
-    (auth.isAuthenticated && (profileLoading || accessLoading || initializing));
+  // Simplified loading logic - only show loading during initial auth check
+  const shouldShowLoading = auth.loading;
 
   return {
     // Authentication state
