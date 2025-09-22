@@ -1,10 +1,11 @@
-import { waitlistService } from "@/features/waitlist/services/waitlist-service";
-import { log } from "@/lib/utils/logger";
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 
+import { waitlistService } from "@/features/waitlist/services/waitlist-service";
+import { log } from "@/lib/utils/logger";
+
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: "2024-12-18.acacia",
+  apiVersion: "2025-08-27.basil",
 });
 
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET!;

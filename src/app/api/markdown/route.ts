@@ -1,5 +1,6 @@
-import { getMarkdownFiles } from "@/lib/services/markdown";
 import { NextRequest, NextResponse } from "next/server";
+
+import { getMarkdownFiles } from "@/lib/services/markdown";
 
 export async function GET(request: NextRequest) {
   try {

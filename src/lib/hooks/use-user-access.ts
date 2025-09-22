@@ -1,10 +1,11 @@
 // React hook for user access management
 "use client";
 
+import { useCallback, useEffect, useState } from "react";
+
 import { userService } from "@/lib/services/user-service";
 import type { UserAccess } from "@/lib/types/user";
 import { log } from "@/lib/utils/logger";
-import { useCallback, useEffect, useState } from "react";
 
 export interface UseUserAccessReturn {
   access: UserAccess | null;

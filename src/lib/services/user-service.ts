@@ -1,16 +1,4 @@
 // User profile service for managing user data and waitlist status
-import { adminService } from "@/features/admin/services/admin-service";
-import { waitlistService } from "@/features/waitlist/services/waitlist-service";
-import { db } from "@/lib/services/firebase";
-import type {
-  UserAccess,
-  UserMetadata,
-  UserPreferences,
-  UserProfile,
-  UserService,
-  UserStatus,
-} from "@/lib/types/user";
-import { log } from "@/lib/utils/logger";
 import {
   collection,
   deleteDoc,
@@ -23,6 +11,19 @@ import {
   updateDoc,
   where,
 } from "firebase/firestore";
+
+import { adminService } from "@/features/admin/services/admin-service";
+import { waitlistService } from "@/features/waitlist/services/waitlist-service";
+import { db } from "@/lib/services/firebase";
+import type {
+  UserAccess,
+  UserMetadata,
+  UserPreferences,
+  UserProfile,
+  UserService,
+  UserStatus,
+} from "@/lib/types/user";
+import { log } from "@/lib/utils/logger";
 
 // Collection names
 const COLLECTIONS = {

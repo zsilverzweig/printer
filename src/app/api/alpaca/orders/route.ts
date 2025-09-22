@@ -1,3 +1,5 @@
+import { NextRequest, NextResponse } from "next/server";
+
 import { alpacaService } from "@/features/finance/lib/alpaca-service";
 import {
   AlpacaListOrdersParams,
@@ -8,7 +10,6 @@ import {
   AlpacaPositionSide,
   AlpacaTimeInForce,
 } from "@/lib/types";
-import { NextRequest, NextResponse } from "next/server";
 
 const ORDER_TYPES: AlpacaOrderType[] = [
   "market",

@@ -77,7 +77,7 @@ export const createMockStripe = (): MockStripe => ({
 });
 
 // Mock fetch responses for Stripe API calls
-export const createMockFetchResponse = (data: any, ok: boolean = true) => ({
+export const createMockFetchResponse = (data: any, ok = true) => ({
   ok,
   status: ok ? 200 : 400,
   json: jest.fn().mockResolvedValue(data),

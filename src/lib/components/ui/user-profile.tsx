@@ -1,5 +1,8 @@
 "use client";
 
+import { Crown, LogOut, Settings, User } from "lucide-react";
+import { useRouter } from "next/navigation";
+
 import {
   Avatar,
   AvatarFallback,
@@ -15,8 +18,6 @@ import {
   DropdownMenuTrigger,
 } from "@/lib/components/ui/dropdown-menu";
 import { useAuth } from "@/lib/hooks/use-auth";
-import { Crown, LogOut, Settings, User } from "lucide-react";
-import { useRouter } from "next/navigation";
 
 export function UserProfile() {
   const { user, signOut, loading, isAdmin, displayName, photoURL } = useAuth();

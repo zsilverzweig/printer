@@ -1,8 +1,9 @@
 // Hook for determining user routing based on authentication and role
 "use client";
 
-import { useUser } from "@/lib/hooks/use-user";
 import { useCallback } from "react";
+
+import { useUser } from "@/lib/hooks/use-user";
 
 export interface UserRoute {
   path: string;

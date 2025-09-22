@@ -1,5 +1,7 @@
 import { Timestamp } from "firebase/firestore"
 
+import { AIRequest, AIResponse } from "@/lib/types/ai"
+
 import {
   Agent,
   AgentTemplate,
@@ -8,7 +10,6 @@ import {
   AssignedAgent,
   Portfolio,
 } from "../../types"
-import { AIRequest, AIResponse } from "@/lib/types/ai"
 
 export type FirestoreDocument = Record<string, any>
 

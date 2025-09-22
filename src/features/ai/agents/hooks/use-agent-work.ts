@@ -1,7 +1,9 @@
 // React hook for managing agent work execution
 
-import { log } from "@/lib/utils/logger";
 import { useCallback, useEffect, useState } from "react";
+
+import { log } from "@/lib/utils/logger";
+
 import { AgentWork, UseAgentWorkReturn } from "../types";
 
 export function useAgentWork(portfolioId: string): UseAgentWorkReturn {

@@ -1,15 +1,18 @@
 'use client'
 
 import React, { useState } from 'react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/lib/components/ui/card'
+
 import { Button } from '@/lib/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/lib/components/ui/card'
 import { Input } from '@/lib/components/ui/input'
-import { usePortfolios } from '../hooks/use-portfolios'
+
 import { useAgents } from '../hooks/use-agents'
+import { usePortfolios } from '../hooks/use-portfolios'
 import { Portfolio, CreatePortfolioRequest } from '../types'
-import { PortfolioList } from './portfolio-list'
+
 import { CreatePortfolioDialog } from './create-portfolio-dialog'
 import { PortfolioDetailsDialog } from './portfolio-details-dialog'
+import { PortfolioList } from './portfolio-list'
 
 interface PortfolioManagementProps {
   userId: string

@@ -1,5 +1,6 @@
-import { agentService } from "@/features/ai/agents/services/agent-service";
 import { NextResponse } from "next/server";
+
+import { agentService } from "@/features/ai/agents/services/agent-service";
 
 export async function GET() {
   try {

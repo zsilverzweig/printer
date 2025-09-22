@@ -1,6 +1,7 @@
 // Stripe service for handling payments
-import { log } from "@/lib/utils/logger";
 import { loadStripe, Stripe } from "@stripe/stripe-js";
+
+import { log } from "@/lib/utils/logger";
 
 // Initialize Stripe
 let stripePromise: Promise<Stripe | null>;

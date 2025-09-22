@@ -14,6 +14,7 @@ import {
   UpdateAgentRequest,
   UpdatePortfolioRequest,
 } from "../types"
+
 import {
   AgentRepository,
   FirestoreAgentRepository,

@@ -1,7 +1,4 @@
 // Admin service for managing waitlist and system configuration
-import { waitlistService } from '@/features/waitlist/services/waitlist-service'
-import { log } from '@/lib/utils/logger'
-import { db } from '@/lib/services/firebase'
 import {
     collection,
     doc,
@@ -14,6 +11,11 @@ import {
     where,
     writeBatch
 } from 'firebase/firestore'
+
+import { waitlistService } from '@/features/waitlist/services/waitlist-service'
+import { db } from '@/lib/services/firebase'
+import { log } from '@/lib/utils/logger'
+
 import type {
     AdminConfig,
     WaitlistStats
@@ -252,6 +254,7 @@ export class AdminService {
       const entries = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data(),
+        position: doc.data().position || 0,
         joinedAt: doc.data().joinedAt?.toDate() || new Date(),
         createdAt: doc.data().createdAt?.toDate() || new Date(),
         updatedAt: doc.data().updatedAt?.toDate() || new Date(),

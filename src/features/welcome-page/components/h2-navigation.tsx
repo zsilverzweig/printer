@@ -1,8 +1,9 @@
 'use client'
 
+import { useEffect, useState } from 'react'
+
 import { Button } from '@/lib/components/ui/button'
 import { log } from '@/lib/utils/logger'
-import { useEffect, useState } from 'react'
 
 interface H2NavigationProps {
   className?: string

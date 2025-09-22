@@ -1,6 +1,7 @@
+import { NextRequest, NextResponse } from "next/server";
+
 import { agentService } from "@/features/ai/agents/services/agent-service";
 import { CreatePortfolioRequest } from "@/features/ai/agents/types";
-import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(request: NextRequest) {
   try {

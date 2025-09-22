@@ -1,6 +1,6 @@
 // Agent management types for Printer AI system
 
-import { AIAgent, AIModel, AIRequest, AIResponse } from '@/lib/types/ai'
+import { AIModel, AIRequest, AIResponse } from '@/lib/types/ai'
 
 // Core Agent Types
 export interface Agent {

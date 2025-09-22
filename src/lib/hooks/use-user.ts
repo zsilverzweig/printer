@@ -1,13 +1,14 @@
 // Comprehensive user hook that combines authentication with user profile management
 "use client";
 
+import { useCallback, useEffect, useState } from "react";
+
 import { useUserAccess } from "@/lib/hooks/use-user-access";
 import { useUserProfile } from "@/lib/hooks/use-user-profile";
 import { useAuthContext } from "@/lib/providers/auth-provider";
 import { userService } from "@/lib/services/user-service";
 import type { UserAccess, UserProfile, UserStatus } from "@/lib/types/user";
 import { log } from "@/lib/utils/logger";
-import { useCallback, useEffect, useState } from "react";
 
 export interface UseUserReturn {
   // Authentication state

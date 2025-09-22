@@ -2,6 +2,9 @@
 
 import React, { useState } from "react";
 
+import { AgentWorkCard } from "@/features/ai/agents/components/agent-work-card";
+import { useAgentWork } from "@/features/ai/agents/hooks/use-agent-work";
+import { Agent } from "@/features/ai/agents/types";
 import { Badge } from "@/lib/components/ui/badge";
 import { Button } from "@/lib/components/ui/button";
 import {
@@ -14,11 +17,9 @@ import {
 import { Input } from "@/lib/components/ui/input";
 import { log } from "@/lib/utils/logger";
 
-import { useAgentWork } from "@/features/ai/agents/hooks/use-agent-work";
-import { Agent } from "@/features/ai/agents/types";
+
 import { Portfolio, UpdatePortfolioRequest } from "../types";
 
-import { AgentWorkCard } from "@/features/ai/agents/components/agent-work-card";
 
 interface PortfolioDetailsDialogProps {
   portfolio: Portfolio | null;

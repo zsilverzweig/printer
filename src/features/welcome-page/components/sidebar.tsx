@@ -1,10 +1,12 @@
 'use client'
 
-import { Button } from '@/lib/components/ui/button'
-import { MarkdownFile } from '@/lib/services/markdown'
 import { FileText, Home, Printer } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+
+import { Button } from '@/lib/components/ui/button'
+import { MarkdownFile } from '@/lib/services/markdown'
+
 import { UserProfile } from './user-profile'
 
 interface SidebarProps {

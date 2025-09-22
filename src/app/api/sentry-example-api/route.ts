@@ -1,6 +1,6 @@
-import { logger } from "@/lib/utils/logger";
 import * as Sentry from "@sentry/nextjs";
-import { NextResponse } from "next/server";
+
+import { logger } from "@/lib/utils/logger";
 
 export const dynamic = "force-dynamic";
 

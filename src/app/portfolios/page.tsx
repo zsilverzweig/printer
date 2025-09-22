@@ -1,8 +1,9 @@
 "use client";
 
+import { Loader2 } from "lucide-react";
+
 import { PortfolioManagement } from "@/features/finance/portfolio/components/portfolio-management";
 import { useAuthContext } from "@/lib/providers/auth-provider";
-import { Loader2 } from "lucide-react";
 
 export default function PortfoliosPage() {
   const { isAuthenticated, user, loading } = useAuthContext();
