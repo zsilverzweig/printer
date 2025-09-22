@@ -13,18 +13,11 @@ const firebaseConfig = {
 };
 
 // Initialize Firebase
-console.log(
-  "[PERF] Firebase initialization starting at:",
-  new Date().toISOString()
-);
 export const app = initializeApp(firebaseConfig);
-console.log("[PERF] Firebase app initialized at:", new Date().toISOString());
 
 // Initialize Firebase services
 export const db = getFirestore(app);
-console.log("[PERF] Firestore initialized at:", new Date().toISOString());
 export const auth = getAuth(app);
-console.log("[PERF] Firebase Auth initialized at:", new Date().toISOString());
 
 // Collection names
 export const COLLECTIONS = {

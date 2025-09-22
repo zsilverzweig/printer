@@ -43,12 +43,15 @@ export function useAgents(): UseAgentsReturn {
         templatesResponse.json(),
       ]);
 
-      setAgents(agentsData.agents);
-      setTemplates(templatesData.templates);
+      setAgents(agentsData.agents || []);
+      setTemplates(templatesData.templates || []);
     } catch (err) {
       const errorMessage =
         err instanceof Error ? err.message : "Failed to load agents";
       setError(errorMessage);
+      // Set empty arrays as fallback
+      setAgents([]);
+      setTemplates([]);
       log.failure("Failed to load agents data", err, "useAgents");
     } finally {
       setLoading(false);
@@ -147,26 +150,23 @@ export function useAgents(): UseAgentsReturn {
     }
   }, []);
 
-  const getAgentVersions = useCallback(
-    async (agentId: string): Promise<AgentVersion[]> => {
-      try {
-        setError(null);
-        // For now, return empty array since we don't have a versions API endpoint yet
-        // TODO: Implement versions API endpoint
-        return [];
-      } catch (err) {
-        const errorMessage =
-          err instanceof Error ? err.message : "Failed to get agent versions";
-        setError(errorMessage);
-        log.failure("Failed to get agent versions", err, "useAgents");
-        throw err;
-      }
-    },
-    []
-  );
+  const getAgentVersions = useCallback(async (): Promise<AgentVersion[]> => {
+    try {
+      setError(null);
+      // For now, return empty array since we don't have a versions API endpoint yet
+      // TODO: Implement versions API endpoint
+      return [];
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error ? err.message : "Failed to get agent versions";
+      setError(errorMessage);
+      log.failure("Failed to get agent versions", err, "useAgents");
+      throw err;
+    }
+  }, []);
 
   const revertToVersion = useCallback(
-    async (agentId: string, versionId: string): Promise<Agent> => {
+    async (agentId: string): Promise<Agent> => {
       try {
         setError(null);
         // For now, just return the current agent since we don't have versioning API yet

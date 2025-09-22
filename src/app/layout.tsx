@@ -21,7 +21,7 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
-  console.log("[PERF] RootLayout rendering at:", new Date().toISOString());
+  // console.log("[PERF] RootLayout rendering at:", new Date().toISOString());
 
   return (
     <html lang="en" className="dark">

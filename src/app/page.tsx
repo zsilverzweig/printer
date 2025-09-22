@@ -5,6 +5,5 @@ import { WelcomePage } from "@/lib/components/welcome-page";
  * The AppRouter component will override this for authenticated users
  */
 export default function HomePage() {
-  console.log("[PERF] HomePage rendering at:", new Date().toISOString());
   return <WelcomePage />;
 }

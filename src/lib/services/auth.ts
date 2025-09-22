@@ -35,28 +35,11 @@ export class AuthService {
   private authStateListeners: Array<(user: AuthUser | null) => void> = [];
 
   constructor() {
-    console.log(
-      "[PERF] AuthService constructor starting at:",
-      new Date().toISOString()
-    );
-
     // Listen for auth state changes
     onAuthStateChanged(auth, (user) => {
-      console.log(
-        "[PERF] Firebase auth state changed at:",
-        new Date().toISOString()
-      );
-      console.log("[PERF] Firebase user:", user ? 'present' : 'null');
       this.currentUser = user ? this.mapFirebaseUser(user) : null;
-      console.log("[PERF] Mapped currentUser:", this.currentUser ? 'present' : 'null');
       this.notifyListeners();
-      console.log("[PERF] Notified", this.authStateListeners.length, "listeners");
     });
-
-    console.log(
-      "[PERF] AuthService constructor completed at:",
-      new Date().toISOString()
-    );
   }
 
   /**

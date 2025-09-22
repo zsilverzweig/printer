@@ -6,13 +6,14 @@ import { useCallback, useEffect, useState } from "react";
 import { useUserAccess } from "@/lib/hooks/use-user-access";
 import { useUserProfile } from "@/lib/hooks/use-user-profile";
 import { useAuthContext } from "@/lib/providers/auth-provider";
+import type { AuthUser } from "@/lib/services/auth";
 import { userService } from "@/lib/services/user-service";
 import type { UserAccess, UserProfile, UserStatus } from "@/lib/types/user";
 import { log } from "@/lib/utils/logger";
 
 export interface UseUserReturn {
   // Authentication state
-  user: any | null;
+  user: AuthUser | null;
   isAuthenticated: boolean;
   isAdmin: boolean;
   loading: boolean;
@@ -44,15 +45,8 @@ export interface UseUserReturn {
 }
 
 export function useUser(): UseUserReturn {
-  console.log("[PERF] useUser hook starting at:", new Date().toISOString());
-  
   const auth = useAuthContext();
-  console.log("[PERF] useUser auth state:", { 
-    isAuthenticated: auth.isAuthenticated, 
-    loading: auth.loading,
-    user: auth.user ? 'present' : 'null'
-  });
-  
+
   const {
     profile,
     access,
@@ -62,13 +56,7 @@ export function useUser(): UseUserReturn {
     updateStatus,
     refreshProfile,
   } = useUserProfile(auth.user?.uid || null);
-  
-  console.log("[PERF] useUserProfile state:", { 
-    profileLoading, 
-    profileError,
-    profile: profile ? 'present' : 'null'
-  });
-  
+
   const {
     access: accessData,
     loading: accessLoading,
@@ -76,19 +64,12 @@ export function useUser(): UseUserReturn {
     hasRestriction,
     refreshAccess,
   } = useUserAccess(auth.user?.uid || null);
-  
-  console.log("[PERF] useUserAccess state:", { 
-    accessLoading, 
-    accessError,
-    access: accessData ? 'present' : 'null'
-  });
-  
+
   const [initializing, setInitializing] = useState(true);
 
   // Add timeout to prevent infinite loading
   useEffect(() => {
     const timeout = setTimeout(() => {
-      console.log("[PERF] Loading timeout reached, setting initializing to false");
       setInitializing(false);
     }, 5000); // 5 second timeout
 
@@ -98,14 +79,7 @@ export function useUser(): UseUserReturn {
   // Initialize user profile when user signs in
   useEffect(() => {
     const initializeUser = async () => {
-      console.log("[PERF] initializeUser called:", { 
-        hasUser: !!auth.user, 
-        hasProfile: !!profile,
-        isAuthenticated: auth.isAuthenticated 
-      });
-      
       if (!auth.user || profile) {
-        console.log("[PERF] Setting initializing to false - no user or profile exists");
         setInitializing(false);
         return;
       }
@@ -169,16 +143,9 @@ export function useUser(): UseUserReturn {
   }, [profile, auth.user]);
 
   // Don't show loading if user is not authenticated and auth is not loading
-  const shouldShowLoading = auth.loading || (auth.isAuthenticated && (profileLoading || accessLoading || initializing));
-  
-  console.log("[PERF] useUser loading state:", {
-    authLoading: auth.loading,
-    isAuthenticated: auth.isAuthenticated,
-    profileLoading,
-    accessLoading,
-    initializing,
-    shouldShowLoading
-  });
+  const shouldShowLoading =
+    auth.loading ||
+    (auth.isAuthenticated && (profileLoading || accessLoading || initializing));
 
   return {
     // Authentication state

@@ -32,30 +32,30 @@ const nextConfig = {
     }
 
     // Add performance logging
-    if (dev) {
-      config.plugins.push({
-        apply: (compiler) => {
-          compiler.hooks.compile.tap("PerformancePlugin", () => {
-            console.log(
-              "[PERF] Webpack compilation starting at:",
-              new Date().toISOString()
-            );
-          });
+    // if (dev) {
+    //   config.plugins.push({
+    //     apply: (compiler) => {
+    //       compiler.hooks.compile.tap("PerformancePlugin", () => {
+    //         console.log(
+    //           "[PERF] Webpack compilation starting at:",
+    //           new Date().toISOString()
+    //         );
+    //       });
 
-          compiler.hooks.done.tap("PerformancePlugin", (stats) => {
-            console.log(
-              "[PERF] Webpack compilation completed at:",
-              new Date().toISOString()
-            );
-            console.log(
-              "[PERF] Compilation time:",
-              stats.endTime - stats.startTime,
-              "ms"
-            );
-          });
-        },
-      });
-    }
+    //       // compiler.hooks.done.tap("PerformancePlugin", (stats) => {
+    //       //   console.log(
+    //       //     "[PERF] Webpack compilation completed at:",
+    //       //     new Date().toISOString()
+    //       //   );
+    //       //   console.log(
+    //       //     "[PERF] Compilation time:",
+    //       //     stats.endTime - stats.startTime,
+    //       //     "ms"
+    //       //   );
+    //       // });
+    //     },
+    //   });
+    // }
 
     return config;
   },

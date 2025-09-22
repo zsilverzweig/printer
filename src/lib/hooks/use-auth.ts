@@ -19,42 +19,23 @@ export interface UseAuthReturn {
 }
 
 export function useAuth(): UseAuthReturn {
-  console.log("[PERF] useAuth hook initializing at:", new Date().toISOString());
-
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    console.log(
-      "[PERF] useAuth useEffect starting at:",
-      new Date().toISOString()
-    );
-
     // Set initial user state
-    const startTime = performance.now();
     const currentUser = authService.getCurrentUser();
-    const endTime = performance.now();
-
-    console.log(
-      "[PERF] authService.getCurrentUser took:",
-      endTime - startTime,
-      "ms"
-    );
-    console.log("[PERF] Current user:", currentUser ? "present" : "null");
-
     setUser(currentUser);
     setLoading(false);
 
     // Listen for auth state changes
     const unsubscribe = authService.onAuthStateChange((newUser) => {
-      console.log("[PERF] Auth state change callback triggered:", newUser ? 'user present' : 'no user');
       setUser(newUser);
       setLoading(false);
       setError(null);
     });
 
-    console.log("[PERF] useAuth useEffect completed at:", new Date().toISOString());
     return unsubscribe;
   }, []);
 

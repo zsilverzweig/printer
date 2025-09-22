@@ -13,16 +13,7 @@ interface AuthProviderProps {
 }
 
 export function AuthProvider({ children }: AuthProviderProps) {
-  console.log("[PERF] AuthProvider rendering at:", new Date().toISOString());
-
   const auth = useAuth();
-
-  console.log("[PERF] AuthProvider auth state:", {
-    isAuthenticated: auth.isAuthenticated,
-    loading: auth.loading,
-    user: auth.user ? "present" : "null",
-  });
-
   return <AuthContext.Provider value={auth}>{children}</AuthContext.Provider>;
 }
 

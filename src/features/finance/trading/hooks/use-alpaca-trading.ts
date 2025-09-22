@@ -102,7 +102,10 @@ export function useAlpacaTrading(): UseAlpacaTradingReturn {
       const message =
         err instanceof Error ? err.message : "Failed to load Alpaca data";
       setError(message);
-      log.error("Failed to load Alpaca data", err, "useAlpacaTrading");
+      // Only log error if it's not a credential configuration issue
+      if (!message.includes("credentials are not configured")) {
+        log.error("Failed to load Alpaca data", err, "useAlpacaTrading");
+      }
     } finally {
       setLoading(false);
     }
