@@ -1,9 +1,10 @@
 'use client'
 
 import React from 'react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/lib/components/ui/card'
+
 import { Badge } from '@/lib/components/ui/badge'
-import { Button } from '@/lib/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/lib/components/ui/card'
+
 import { AgentWork, WorkStatus } from '../types'
 
 interface AgentWorkCardProps {

@@ -1,11 +1,13 @@
 'use client'
 
+import { useState } from 'react'
+
 import { Button } from '@/lib/components/ui/button'
 import { Card } from '@/lib/components/ui/card'
 import { Input } from '@/lib/components/ui/input'
-import { log } from '@/lib/utils/logger'
 import { useAuthContext } from '@/lib/providers/auth-provider'
-import { useState } from 'react'
+import { log } from '@/lib/utils/logger'
+
 import { useWaitlist } from '../hooks/use-waitlist'
 
 interface WaitlistSignupProps {

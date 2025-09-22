@@ -1,13 +1,15 @@
 'use client'
 
 import React, { useState } from 'react'
-import { Button } from '@/lib/components/ui/button'
-import { Input } from '@/lib/components/ui/input'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/lib/components/ui/card'
+
 import { Badge } from '@/lib/components/ui/badge'
+import { Button } from '@/lib/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/lib/components/ui/card'
+import { Input } from '@/lib/components/ui/input'
 import { Modal } from '@/lib/components/ui/modal'
-import { Agent, UpdateAgentRequest } from '../types'
+
 import { useAgents } from '../hooks/use-agents'
+import { Agent, UpdateAgentRequest } from '../types'
 
 interface AgentDetailsDialogProps {
   agent: Agent | null

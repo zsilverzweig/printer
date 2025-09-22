@@ -10,6 +10,7 @@ import {
 } from "firebase/firestore"
 
 import { db, COLLECTIONS } from "@/lib/services/firebase"
+
 import {
   Agent,
   AgentTemplate,
@@ -18,6 +19,7 @@ import {
   AssignedAgent,
   Portfolio,
 } from "../../types"
+
 import {
   deserializeAgent,
   deserializeAgentVersion,

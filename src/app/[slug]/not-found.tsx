@@ -1,6 +1,7 @@
+import Link from 'next/link'
+
 import { Button } from '@/lib/components/ui/button'
 import { Card } from '@/lib/components/ui/card'
-import Link from 'next/link'
 
 export default function NotFound() {
   return (

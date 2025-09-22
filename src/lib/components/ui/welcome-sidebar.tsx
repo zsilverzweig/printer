@@ -1,9 +1,11 @@
 "use client";
 
-import { MarkdownFile } from "@/lib/services/markdown";
 import { FileText, Home, Loader2, Printer } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+
+import { MarkdownFile } from "@/lib/services/markdown";
+
 import { AppSidebar, SidebarSection } from "./app-sidebar";
 import { UserProfile } from "./user-profile";
 

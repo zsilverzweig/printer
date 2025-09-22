@@ -1,5 +1,7 @@
 "use client";
 
+import React, { useState } from "react";
+
 import { Agent } from "@/features/ai/agents/types";
 import { Button } from "@/lib/components/ui/button";
 import {
@@ -16,7 +18,7 @@ import {
   ModalForm,
   ModalSection,
 } from "@/lib/components/ui/modal";
-import React, { useState } from "react";
+
 import { CreatePortfolioRequest } from "../types";
 
 interface CreatePortfolioDialogProps {

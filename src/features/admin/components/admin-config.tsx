@@ -1,10 +1,5 @@
 'use client'
 
-import { Button } from '@/lib/components/ui/button'
-import { Card } from '@/lib/components/ui/card'
-import { Input } from '@/lib/components/ui/input'
-import { Switch } from '@/lib/components/ui/switch'
-import { log } from '@/lib/utils/logger'
 import {
     RefreshCw,
     Save,
@@ -12,6 +7,13 @@ import {
     Users
 } from 'lucide-react'
 import { useState } from 'react'
+
+import { Button } from '@/lib/components/ui/button'
+import { Card } from '@/lib/components/ui/card'
+import { Input } from '@/lib/components/ui/input'
+import { Switch } from '@/lib/components/ui/switch'
+import { log } from '@/lib/utils/logger'
+
 import { useAdminConfig } from '../hooks/use-admin-config'
 
 export function AdminConfig() {

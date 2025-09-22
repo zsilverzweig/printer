@@ -4,6 +4,7 @@
  */
 
 import { toast } from 'sonner'
+
 import { logger } from './logger'
 
 export interface ToastOptions {

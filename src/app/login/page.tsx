@@ -1,13 +1,14 @@
 'use client'
 
+import { AlertCircle, Loader2, Printer } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { useEffect } from 'react'
+
 import { Button } from '@/lib/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/lib/components/ui/card'
 import { useAuth } from '@/lib/hooks/use-auth'
 import { useUserRouting } from '@/lib/hooks/use-user-routing'
 import { log } from '@/lib/utils/logger'
-import { AlertCircle, Loader2, Printer } from 'lucide-react'
-import { useRouter } from 'next/navigation'
-import { useEffect } from 'react'
 
 export default function LoginPage() {
   const { signInWithGoogle, loading, error, isAuthenticated } = useAuth()

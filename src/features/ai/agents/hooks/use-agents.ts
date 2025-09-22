@@ -1,7 +1,9 @@
 // React hook for managing AI agents
 
-import { log } from "@/lib/utils/logger";
 import { useCallback, useEffect, useState } from "react";
+
+import { log } from "@/lib/utils/logger";
+
 import {
   Agent,
   AgentTemplate,

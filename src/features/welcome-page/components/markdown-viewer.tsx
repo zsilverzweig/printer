@@ -1,9 +1,11 @@
 'use client'
 
-import { Card } from '@/lib/components/ui/card'
-import { MarkdownFile } from '@/lib/services/markdown'
 import { useRouter } from 'next/navigation'
 import { useEffect } from 'react'
+
+import { Card } from '@/lib/components/ui/card'
+import { MarkdownFile } from '@/lib/services/markdown'
+
 import { H2Navigation } from './h2-navigation'
 
 interface MarkdownViewerProps {

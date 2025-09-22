@@ -44,7 +44,7 @@ export const createFirebaseMocks = () => {
 };
 
 // Helper to create mock Firestore document
-export const createMockFirestoreDoc = (data: any, id: string = "doc-123") => ({
+export const createMockFirestoreDoc = (data: any, id = "doc-123") => ({
   id,
   ref: { id },
   data: () => ({
@@ -90,7 +90,7 @@ export const setupMockEmptyWaitlist = (
 // Helper to setup successful waitlist join
 export const setupMockWaitlistJoin = (
   mocks: ReturnType<typeof createFirebaseMocks>,
-  entryId: string = "new-entry-123"
+  entryId = "new-entry-123"
 ) => {
   const mockDocRef = { id: entryId };
   const mockSnapshot = createMockSnapshot([]); // Empty for new user

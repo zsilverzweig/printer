@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+
 import { useAgents } from "@/features/ai/agents/hooks/use-agents";
 import { Button } from "@/lib/components/ui/button";
 import {
@@ -9,9 +11,10 @@ import {
   CardTitle,
 } from "@/lib/components/ui/card";
 import { Input } from "@/lib/components/ui/input";
-import { useState } from "react";
+
 import { usePortfolios } from "../hooks/use-portfolios";
 import { CreatePortfolioRequest, Portfolio } from "../types";
+
 import { CreatePortfolioDialog } from "./create-portfolio-dialog";
 import { PortfolioDetailsDialog } from "./portfolio-details-dialog";
 import { PortfolioList } from "./portfolio-list";

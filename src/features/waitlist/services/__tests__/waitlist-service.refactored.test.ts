@@ -1,5 +1,6 @@
 // Refactored tests for WaitlistService using new test infrastructure
 import { createFirebaseMocks, waitlistTestData } from "@/lib/test-utils";
+
 import { WaitlistService } from "../waitlist-service";
 
 // Mock Firebase modules

@@ -1,19 +1,21 @@
 'use client'
 
 import React, { useState } from 'react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/lib/components/ui/card'
+
 import { Button } from '@/lib/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/lib/components/ui/card'
 import { Input } from '@/lib/components/ui/input'
+
 import { useAgents } from '../hooks/use-agents'
 import {
   Agent,
-  AgentTemplate,
   CreateAgentRequest,
   UpdateAgentRequest,
 } from '../types'
+
+import { AgentDetailsDialog } from './agent-details-dialog'
 import { AgentList } from './agent-list'
 import { CreateAgentDialog } from './create-agent-dialog'
-import { AgentDetailsDialog } from './agent-details-dialog'
 
 export function AgentManagement() {
   const { agents, templates, loading, error, createAgent, updateAgent, deleteAgent } = useAgents()

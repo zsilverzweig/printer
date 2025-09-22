@@ -1,6 +1,7 @@
+import { notFound } from "next/navigation";
+
 import { MarkdownViewer } from "@/features/welcome-page/components/markdown-viewer";
 import { getMarkdownFile } from "@/lib/services/markdown";
-import { notFound } from "next/navigation";
 
 /**
  * Welcome page component that shows the main documentation

@@ -1,9 +1,10 @@
 // React hook for Firebase authentication
 'use client'
 
+import { useEffect, useState } from 'react'
+
 import { authService, AuthUser } from '@/lib/services/auth'
 import { log } from '@/lib/utils/logger'
-import { useEffect, useState } from 'react'
 
 export interface UseAuthReturn {
   user: AuthUser | null

@@ -1,7 +1,5 @@
 "use client";
 
-import { useUserRouting } from "@/lib/hooks/use-user-routing";
-import { useAuthContext } from "@/lib/providers/auth-provider";
 import {
   BarChart3,
   Bot,
@@ -13,6 +11,10 @@ import {
   TrendingUp,
   Users,
 } from "lucide-react";
+
+import { useUserRouting } from "@/lib/hooks/use-user-routing";
+import { useAuthContext } from "@/lib/providers/auth-provider";
+
 import { AppSidebar, SidebarSection } from "./app-sidebar";
 import { UserProfile } from "./user-profile";
 

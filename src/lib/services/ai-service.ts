@@ -1,7 +1,10 @@
 // Core AI service for Printer with advanced capabilities
 import OpenAI from 'openai'
+
 import { log } from '@/lib/utils/logger'
+
 import { AIAgent, AIOperation, AIRequest, AIResponse, TokenUsage } from '../types/ai'
+
 import { estimateCost, recordAICost } from './cost-monitor'
 
 const openai = new OpenAI({

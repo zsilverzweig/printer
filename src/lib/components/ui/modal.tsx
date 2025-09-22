@@ -1,9 +1,10 @@
 "use client";
 
-import { Button } from "@/lib/components/ui/button";
-import { cn } from "@/lib/utils/utils";
 import { X } from "lucide-react";
 import { ReactNode } from "react";
+
+import { Button } from "@/lib/components/ui/button";
+import { cn } from "@/lib/utils/utils";
 
 interface ModalProps {
   open: boolean;

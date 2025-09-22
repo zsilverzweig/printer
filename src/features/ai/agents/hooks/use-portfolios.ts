@@ -1,7 +1,9 @@
 // React hook for managing portfolios
 
-import { log } from "@/lib/utils/logger";
 import { useCallback, useEffect, useState } from "react";
+
+import { log } from "@/lib/utils/logger";
+
 import {
   CreatePortfolioRequest,
   Portfolio,

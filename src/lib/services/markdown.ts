@@ -1,6 +1,7 @@
 import fs from 'fs'
-import matter from 'gray-matter'
 import path from 'path'
+
+import matter from 'gray-matter'
 import { remark } from 'remark'
 import remarkBreaks from 'remark-breaks'
 import gfm from 'remark-gfm'
@@ -25,7 +26,7 @@ export async function getMarkdownFiles(): Promise<MarkdownFile[]> {
   const markdownFiles: MarkdownFileInfo[] = []
   
   // Recursively find all markdown files in docs directory
-  function findMarkdownFiles(dir: string, relativePath: string = '') {
+  function findMarkdownFiles(dir: string, relativePath = '') {
     const items = fs.readdirSync(dir)
     
     for (const item of items) {

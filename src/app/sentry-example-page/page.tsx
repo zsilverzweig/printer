@@ -1,9 +1,11 @@
 "use client";
 
-import { logger } from "@/lib/utils/logger";
 import * as Sentry from "@sentry/nextjs";
 import Head from "next/head";
 import { useEffect, useState } from "react";
+
+import { logger } from "@/lib/utils/logger";
+
 import styles from "./page.module.css";
 
 class SentryExampleFrontendError extends Error {

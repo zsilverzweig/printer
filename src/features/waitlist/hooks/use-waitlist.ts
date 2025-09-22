@@ -1,8 +1,10 @@
 // React hook for waitlist functionality
 'use client'
 
-import { useAuthContext } from '@/lib/providers/auth-provider'
 import { useCallback, useEffect, useState } from 'react'
+
+import { useAuthContext } from '@/lib/providers/auth-provider'
+
 import { waitlistService } from '../services/waitlist-service'
 import type {
     ActionTypeId,

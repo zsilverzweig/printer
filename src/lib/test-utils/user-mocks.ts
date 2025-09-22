@@ -119,7 +119,7 @@ export const authTestScenarios = {
     }),
 
   // Error state
-  error: (errorMessage: string = "Authentication failed") =>
+  error: (errorMessage = "Authentication failed") =>
     createMockAuthContext({
       user: null,
       isAuthenticated: false,

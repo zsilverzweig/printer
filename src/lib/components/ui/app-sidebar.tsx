@@ -1,12 +1,13 @@
 "use client";
 
-import { Button } from "@/lib/components/ui/button";
-import { Separator } from "@/lib/components/ui/separator";
-import { cn } from "@/lib/utils/utils";
 import { Printer } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ReactNode } from "react";
+
+import { Button } from "@/lib/components/ui/button";
+import { Separator } from "@/lib/components/ui/separator";
+import { cn } from "@/lib/utils/utils";
 
 export interface SidebarItem {
   id: string;

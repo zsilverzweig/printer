@@ -1,7 +1,8 @@
 'use client'
 
-import { useAuth, UseAuthReturn } from '@/lib/hooks/use-auth'
 import { createContext, ReactNode, useContext } from 'react'
+
+import { useAuth, UseAuthReturn } from '@/lib/hooks/use-auth'
 
 interface AuthContextType extends UseAuthReturn {}
 

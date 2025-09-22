@@ -1,9 +1,10 @@
-import { log } from "@/lib/utils/logger";
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 
+import { log } from "@/lib/utils/logger";
+
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: "2024-12-18.acacia",
+  apiVersion: "2025-08-27.basil",
 });
 
 export async function POST(request: NextRequest) {
