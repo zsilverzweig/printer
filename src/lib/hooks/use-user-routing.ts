@@ -37,12 +37,11 @@ export function useUserRouting(): UseUserRoutingReturn {
       return null;
     }
 
-    // Admin users go to admin dashboard
+    // Admin users can access any page - don't force redirect to admin
     if (isAdmin) {
-      return {
-        path: "/admin",
-        reason: "Admin user - redirecting to admin dashboard",
-      };
+      // Allow admin users to stay on their current page
+      // Only redirect to admin if they're on a restricted page
+      return null; // No forced redirect for admin users
     }
 
     // Check if user is on waitlist

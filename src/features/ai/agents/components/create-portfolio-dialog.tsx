@@ -96,7 +96,7 @@ export function CreatePortfolioDialog({
       open={open}
       onOpenChange={onOpenChange}
       title="Create New Portfolio"
-      size="xl"
+      size="2xl"
       footer={footer}
     >
       <ModalForm id="create-portfolio-form" onSubmit={handleSubmit}>
@@ -147,19 +147,16 @@ export function CreatePortfolioDialog({
         </ModalField>
 
         {/* Agent Assignment */}
-        <div>
-          <label className="block text-sm font-medium mb-3">
-            Assign AI Agents (Optional)
-          </label>
-          <p className="text-sm text-gray-600 mb-4">
+        <ModalSection title="Assign AI Agents (Optional)">
+          <p className="text-sm text-muted-foreground mb-4">
             Select which AI agents should analyze this portfolio. You can assign
             agents later.
           </p>
 
           {availableAgents.length === 0 ? (
-            <Card className="border-yellow-200 bg-yellow-50">
+            <Card className="border-yellow-500/50 bg-yellow-500/10">
               <CardContent className="p-4">
-                <p className="text-yellow-800 text-sm">
+                <p className="text-yellow-600 dark:text-yellow-400 text-sm">
                   No active agents available. Contact your administrator to
                   create agents.
                 </p>
@@ -170,38 +167,44 @@ export function CreatePortfolioDialog({
               {availableAgents.map((agent) => (
                 <Card
                   key={agent.id}
-                  className={`cursor-pointer transition-colors ${
+                  className={`cursor-pointer transition-all duration-200 ${
                     formData.assignedAgentIds?.includes(agent.id)
-                      ? "ring-2 ring-blue-500 bg-blue-50"
-                      : "hover:bg-gray-50"
+                      ? "ring-2 ring-primary bg-primary/10 border-primary/50"
+                      : "hover:bg-muted/50 border-border"
                   }`}
                   onClick={() => handleAgentToggle(agent.id)}
                 >
-                  <CardHeader className="pb-2">
-                    <div className="flex items-center justify-between">
-                      <CardTitle className="text-sm">{agent.name}</CardTitle>
+                  <CardHeader className="pb-3">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <CardTitle className="text-sm font-medium">
+                          {agent.name}
+                        </CardTitle>
+                        <CardDescription className="text-xs mt-1">
+                          {agent.description}
+                        </CardDescription>
+                      </div>
                       <input
                         type="checkbox"
                         checked={
                           formData.assignedAgentIds?.includes(agent.id) || false
                         }
                         onChange={() => handleAgentToggle(agent.id)}
-                        className="rounded border-gray-300"
+                        className="ml-3 rounded border-border bg-background text-primary focus:ring-2 focus:ring-primary focus:ring-offset-0"
                       />
                     </div>
-                    <CardDescription className="text-xs">
-                      {agent.description}
-                    </CardDescription>
                   </CardHeader>
                   <CardContent className="pt-0">
-                    <div className="text-xs text-gray-600">
+                    <div className="text-xs text-muted-foreground space-y-1">
                       <div className="flex justify-between">
                         <span>Model:</span>
-                        <span>{agent.model.name}</span>
+                        <span className="font-medium">{agent.model.name}</span>
                       </div>
                       <div className="flex justify-between">
                         <span>Role:</span>
-                        <span>{agent.role.replace("_", " ")}</span>
+                        <span className="font-medium capitalize">
+                          {agent.role.replace("_", " ")}
+                        </span>
                       </div>
                     </div>
                   </CardContent>
@@ -209,7 +212,7 @@ export function CreatePortfolioDialog({
               ))}
             </div>
           )}
-        </div>
+        </ModalSection>
       </ModalForm>
     </Modal>
   );

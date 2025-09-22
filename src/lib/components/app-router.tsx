@@ -41,8 +41,8 @@ export function AppRouter({ children }: AppRouterProps) {
     if (!authLoading && !routingLoading && isAuthenticated && route) {
       const currentPath = window.location.pathname;
 
-      // Don't redirect admin users from admin sub-pages
-      if (isAdmin && currentPath.startsWith("/admin/")) {
+      // Don't redirect admin users - they can access any page
+      if (isAdmin) {
         return;
       }
 
@@ -74,11 +74,8 @@ export function AppRouter({ children }: AppRouterProps) {
   // Authenticated - determine which dashboard to show based on current path
   const currentPath = window.location.pathname;
 
-  // Admin users - allow access to admin dashboard and admin sub-pages
-  if (
-    isAdmin &&
-    (currentPath === "/admin" || currentPath.startsWith("/admin/"))
-  ) {
+  // Admin users - allow access to ANY page (admin, portfolios, home, etc.)
+  if (isAdmin) {
     return <>{children}</>;
   }
 
@@ -87,8 +84,20 @@ export function AppRouter({ children }: AppRouterProps) {
     return <WaitlistDashboard />;
   }
 
-  // Active users - allow access to home page
-  if (canAccessApp && currentPath === "/home") {
+  // Active users - allow access to authenticated pages
+  const allowedPaths = ["/home", "/portfolios", "/login"];
+  if (canAccessApp && allowedPaths.includes(currentPath)) {
+    return <>{children}</>;
+  }
+
+  // Allow authenticated users to access content pages (markdown docs, etc.)
+  // but not admin pages unless they're admin
+  if (
+    isAuthenticated &&
+    currentPath !== "/admin" &&
+    !currentPath.startsWith("/admin/") &&
+    !currentPath.startsWith("/api/")
+  ) {
     return <>{children}</>;
   }
 
