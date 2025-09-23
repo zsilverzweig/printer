@@ -1,7 +1,5 @@
 "use client";
 
-import { X } from "lucide-react";
-
 import { Button } from "@/lib/components/ui/button";
 import {
   Card,
@@ -11,6 +9,7 @@ import {
   CardTitle,
 } from "@/lib/components/ui/card";
 import { AlpacaPosition } from "@/lib/types/alpaca";
+import { X } from "lucide-react";
 
 interface PositionsListProps {
   positions: AlpacaPosition[];
@@ -162,7 +161,7 @@ export function PositionsList({
                           variant="outline"
                           size="sm"
                           onClick={() =>
-                            onClosePosition(position.symbol, Math.abs(qty))
+                            onClosePosition?.(position.symbol, Math.abs(qty))
                           }
                           disabled={isClosingPosition}
                           className="h-8 w-8 p-0 text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950 dark:hover:text-red-300"

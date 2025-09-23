@@ -1,4 +1,5 @@
 export { AccountSummary } from "./account-summary";
+export { ClosePositionModal } from "./close-position-modal";
 export { OrderConfirmationModal } from "./order-confirmation-modal";
 export { OrderForm } from "./order-form";
 export { PositionsList } from "./positions-list";

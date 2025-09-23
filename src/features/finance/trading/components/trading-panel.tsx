@@ -19,6 +19,7 @@ import {
 import { useTrading } from "../hooks/use-trading";
 
 import { AccountSummary } from "./account-summary";
+import { ClosePositionModal } from "./close-position-modal";
 import { OrderConfirmationModal } from "./order-confirmation-modal";
 import { OrderForm } from "./order-form";
 import { PositionsList } from "./positions-list";
@@ -65,10 +66,15 @@ function TradingPanelContent() {
   );
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [estimatedCost, setEstimatedCost] = useState<number | null>(null);
-  const [currentPrice, setCurrentPrice] = useState<number | null>(null);
+  const [_currentPrice, setCurrentPrice] = useState<number | null>(null);
   const [confirmationData, setConfirmationData] =
     useState<OrderConfirmationData | null>(null);
   const [isClosingPosition, setIsClosingPosition] = useState(false);
+  const [showCloseModal, setShowCloseModal] = useState(false);
+  const [selectedPosition, setSelectedPosition] = useState<{
+    symbol: string;
+    qty: number;
+  } | null>(null);
 
   const searchParams = useSearchParams();
 
@@ -101,14 +107,15 @@ function TradingPanelContent() {
     setOrderSuccess(null);
 
     // Calculate estimated cost using real price if available
-    const cost = price && orderData.side === "buy" 
-      ? orderData.qty * price 
-      : calculateEstimatedCost(
-          orderData.symbol,
-          orderData.qty,
-          orderData.side
-        );
-    
+    const cost =
+      price && orderData.side === "buy"
+        ? orderData.qty * price
+        : calculateEstimatedCost(
+            orderData.symbol,
+            orderData.qty,
+            orderData.side
+          );
+
     setEstimatedCost(cost);
     setCurrentPrice(price || null);
 
@@ -156,19 +163,28 @@ function TradingPanelContent() {
     }
   };
 
-  const handleClosePosition = async (symbol: string, qty: number) => {
+  const handleClosePositionClick = (symbol: string, qty: number) => {
+    setSelectedPosition({ symbol, qty });
+    setShowCloseModal(true);
+  };
+
+  const handleConfirmClosePosition = async () => {
+    if (!selectedPosition) return;
+
     setIsClosingPosition(true);
     setOrderError(null);
     setOrderSuccess(null);
 
     try {
       // Determine the side based on the position
-      const position = positions.find((p) => p.symbol === symbol);
+      const position = positions.find(
+        (p) => p.symbol === selectedPosition.symbol
+      );
       const side = position && Number(position.qty) > 0 ? "sell" : "buy";
 
       await placeOrder({
-        symbol,
-        qty,
+        symbol: selectedPosition.symbol,
+        qty: selectedPosition.qty,
         side: side as AlpacaOrderSide,
         type: "market",
         time_in_force: "day",
@@ -176,14 +192,23 @@ function TradingPanelContent() {
         position_side: "long", // This will be handled by the broker
       });
 
-      setOrderSuccess(`Closed position for ${symbol} (${qty} shares).`);
+      setOrderSuccess(
+        `Closed position for ${selectedPosition.symbol} (${selectedPosition.qty} shares).`
+      );
     } catch (err) {
       setOrderError(
         err instanceof Error ? err.message : "Failed to close position."
       );
     } finally {
       setIsClosingPosition(false);
+      setShowCloseModal(false);
+      setSelectedPosition(null);
     }
+  };
+
+  const handleCancelClosePosition = () => {
+    setShowCloseModal(false);
+    setSelectedPosition(null);
   };
 
   if (!user) {
@@ -274,7 +299,7 @@ function TradingPanelContent() {
             positions={positions}
             loading={loading}
             accountCurrency={accountCurrency}
-            onClosePosition={handleClosePosition}
+            onClosePosition={handleClosePositionClick}
             isClosingPosition={isClosingPosition}
           />
         </div>
@@ -303,6 +328,17 @@ function TradingPanelContent() {
           estimatedCost={estimatedCost}
           accountCurrency={accountCurrency}
           environment={environment}
+        />
+      )}
+
+      {selectedPosition && (
+        <ClosePositionModal
+          isOpen={showCloseModal}
+          onClose={handleCancelClosePosition}
+          onConfirm={handleConfirmClosePosition}
+          symbol={selectedPosition.symbol}
+          qty={selectedPosition.qty}
+          isClosing={isClosingPosition}
         />
       )}
     </div>

@@ -82,7 +82,7 @@ export function AccountSummary({ account, loading }: AccountSummaryProps) {
         </div>
       </CardHeader>
       <CardContent>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 grid-cols-2">
           <div className="space-y-1">
             <p className="text-sm text-muted-foreground">Buying Power</p>
             <p className="text-2xl font-bold">
