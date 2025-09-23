@@ -13,6 +13,7 @@ export interface UserProfile {
   role: UserRole;
   preferences: UserPreferences;
   metadata: UserMetadata;
+  alpacaConnection?: AlpacaConnection;
   createdAt: Date;
   updatedAt: Date;
   lastLoginAt?: Date;
@@ -56,6 +57,15 @@ export interface UserMetadata {
   lastActiveAt?: Date;
   sessionCount?: number;
   totalSessionTime?: number;
+}
+
+export interface AlpacaConnection {
+  alpacaUserId: string;
+  accessToken: string;
+  tokenType: string;
+  scope: string;
+  connectedAt: Date;
+  status: "active" | "expired" | "revoked";
 }
 
 export interface UserStatusUpdate {

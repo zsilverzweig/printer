@@ -2,11 +2,11 @@
 
 import { Loader2 } from "lucide-react";
 
-import { AlpacaTradingPanel } from "@/features/finance/trading/components/alpaca-trading-panel";
+import { TradingPanel } from "@/features/finance/trading/components/trading-panel";
 import { useAuthContext } from "@/lib/providers/auth-provider";
 
-export default function AdminAlpacaPage() {
-  const { isAuthenticated, isAdmin, loading } = useAuthContext();
+export default function TradingPage() {
+  const { isAuthenticated, loading } = useAuthContext();
 
   if (loading) {
     return (
@@ -25,20 +25,7 @@ export default function AdminAlpacaPage() {
         <div className="text-center">
           <h1 className="text-2xl font-bold mb-4">Authentication Required</h1>
           <p className="text-muted-foreground">
-            Please sign in to access this page.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!isAdmin) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold mb-4">Access Denied</h1>
-          <p className="text-muted-foreground">
-            You don't have permission to access this page.
+            Please sign in to access the trading interface.
           </p>
         </div>
       </div>
@@ -47,7 +34,7 @@ export default function AdminAlpacaPage() {
 
   return (
     <div className="container mx-auto p-6">
-      <AlpacaTradingPanel />
+      <TradingPanel />
     </div>
   );
 }

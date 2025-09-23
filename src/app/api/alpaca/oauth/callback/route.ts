@@ -1,4 +1,5 @@
 import { alpacaOAuthService } from "@/features/finance/lib/alpaca-oauth-service";
+import { userService } from "@/lib/services/user-service";
 import { log } from "@/lib/utils/logger";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -42,7 +43,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(
         `${
           process.env.NEXT_PUBLIC_APP_URL
-        }/portfolios?error=oauth_failed&message=${encodeURIComponent(error)}`
+        }/oauth-error?error=oauth_failed&message=${encodeURIComponent(error)}`
       );
     }
 
@@ -55,7 +56,11 @@ export async function GET(request: NextRequest) {
       );
 
       return NextResponse.redirect(
-        `${process.env.NEXT_PUBLIC_APP_URL}/portfolios?error=missing_parameters`
+        `${
+          process.env.NEXT_PUBLIC_APP_URL
+        }/oauth-error?error=missing_parameters&message=${encodeURIComponent(
+          "Missing required OAuth parameters"
+        )}`
       );
     }
 
@@ -65,7 +70,11 @@ export async function GET(request: NextRequest) {
       log.failure("Invalid state parameter", { state }, "AlpacaOAuth");
 
       return NextResponse.redirect(
-        `${process.env.NEXT_PUBLIC_APP_URL}/portfolios?error=invalid_state`
+        `${
+          process.env.NEXT_PUBLIC_APP_URL
+        }/oauth-error?error=invalid_state&message=${encodeURIComponent(
+          "Invalid state parameter"
+        )}`
       );
     }
 
@@ -86,9 +95,19 @@ export async function GET(request: NextRequest) {
     // Get user information
     const userInfo = await alpacaOAuthService.getUserInfo(tokens.access_token);
 
-    // TODO: Store tokens and user info in your database
-    // This is where you would save the OAuth tokens to associate with the user
-    // For now, we'll just log the success and redirect
+    // Store Alpaca connection data in user profile
+    const alpacaConnection = {
+      alpacaUserId: userInfo.id,
+      accessToken: tokens.access_token,
+      tokenType: tokens.token_type,
+      scope: tokens.scope,
+      connectedAt: new Date(),
+      status: "active" as const,
+    };
+
+    await userService.updateUserProfile(userId, {
+      alpacaConnection,
+    });
 
     log.success(
       "Successfully connected Alpaca account",
@@ -100,12 +119,12 @@ export async function GET(request: NextRequest) {
       "AlpacaOAuth"
     );
 
-    // Redirect to portfolios page with success message
+    // Redirect to trading page with success message
     return NextResponse.redirect(
       `${
         process.env.NEXT_PUBLIC_APP_URL
-      }/portfolios?success=alpaca_connected&message=${encodeURIComponent(
-        `Connected to Alpaca account: ${userInfo.email}`
+      }/trading?success=alpaca_connected&message=${encodeURIComponent(
+        `Successfully connected to Alpaca account (ID: ${userInfo.id})`
       )}`
     );
   } catch (error) {
@@ -118,7 +137,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(
       `${
         process.env.NEXT_PUBLIC_APP_URL
-      }/portfolios?error=oauth_callback_failed&message=${encodeURIComponent(
+      }/oauth-error?error=oauth_callback_failed&message=${encodeURIComponent(
         "Failed to connect Alpaca account"
       )}`
     );

@@ -51,6 +51,12 @@ export function MainAppSidebar() {
           href: "/portfolios",
           icon: <Briefcase className="h-4 w-4" />,
         },
+        {
+          id: "trading",
+          title: "Trading",
+          href: "/trading",
+          icon: <TrendingUp className="h-4 w-4" />,
+        },
       ],
     },
     {
@@ -90,12 +96,6 @@ export function MainAppSidebar() {
           title: "Agent Management",
           href: "/admin/agents",
           icon: <Bot className="h-4 w-4" />,
-        },
-        {
-          id: "alpaca-trading",
-          title: "Alpaca Trading Sandbox",
-          href: "/admin/alpaca",
-          icon: <TrendingUp className="h-4 w-4" />,
         },
         {
           id: "user-management",
