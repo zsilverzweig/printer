@@ -95,6 +95,15 @@ export interface AlpacaOrderRequest {
   position_side?: "long" | "short";
 }
 
+export interface AlpacaQuote {
+  symbol: string;
+  bid: number;
+  ask: number;
+  bid_size: number;
+  ask_size: number;
+  timestamp: string;
+}
+
 class AlpacaService {
   private readonly paperBaseUrl: string;
   private readonly liveBaseUrl: string;
@@ -169,7 +178,7 @@ class AlpacaService {
     try {
       responseData = responseText ? JSON.parse(responseText) : null;
     } catch (parseError) {
-      log.warning(
+      log.warn(
         "Failed to parse Alpaca API response as JSON",
         {
           url,
@@ -293,8 +302,8 @@ class AlpacaService {
   async getOrders(
     userId: string,
     environment: "paper" | "live",
-    status: string = "all",
-    limit: number = 25
+    status = "all",
+    limit = 25
   ): Promise<AlpacaOrder[]> {
     log.debug(
       "Fetching Alpaca orders",
@@ -412,6 +421,122 @@ class AlpacaService {
             qty: order.qty,
             notional: order.notional,
           },
+          errorStack: error instanceof Error ? error.stack : undefined,
+        },
+        "AlpacaService"
+      );
+      throw error;
+    }
+  }
+
+  async getQuote(
+    userId: string,
+    symbol: string,
+    environment: "paper" | "live"
+  ): Promise<AlpacaQuote> {
+    try {
+      log.debug(
+        "Fetching quote for symbol",
+        { userId, symbol, environment },
+        "AlpacaService"
+      );
+
+      // Get user's OAuth access token from their Alpaca connection
+      const userProfile = await userService.getUserProfile(userId);
+      const alpacaConnection = userProfile?.alpacaConnection;
+
+      if (!alpacaConnection || alpacaConnection.status !== "active") {
+        throw new Error(
+          "No active Alpaca connection found. Please connect your Alpaca account first."
+        );
+      }
+
+      // Use Alpaca's Market Data API with OAuth token
+      // Note: This requires a Market Data subscription from Alpaca
+      const sym = symbol.toUpperCase();
+      // Use the plural endpoint with symbols query per docs:
+      // https://docs.alpaca.markets/reference/stocklatestquotes-1
+      const response = await fetch(
+        `https://data.alpaca.markets/v2/stocks/quotes/latest?symbols=${encodeURIComponent(
+          sym
+        )}`,
+        {
+          headers: {
+            Authorization: `${alpacaConnection.tokenType} ${alpacaConnection.accessToken}`,
+            accept: "application/json",
+          },
+        }
+      );
+
+      const rawBody = await response.text();
+      if (!response.ok) {
+        log.failure(
+          "Market data HTTP error",
+          { status: response.status, body: rawBody },
+          "AlpacaService"
+        );
+        if (response.status === 401) {
+          throw new Error(
+            "Market Data API authentication failed. Please reconnect your Alpaca account."
+          );
+        } else if (response.status === 403) {
+          throw new Error(
+            "Market Data API subscription required. Please upgrade your Alpaca account to access real-time market data."
+          );
+        } else if (response.status === 404) {
+          throw new Error("Invalid stock symbol");
+        } else if (response.status === 429) {
+          throw new Error("Rate limit exceeded. Please try again later.");
+        }
+        throw new Error(`Market data service error: ${response.status}`);
+      }
+
+      let alpacaData: any;
+      try {
+        alpacaData = rawBody ? JSON.parse(rawBody) : {};
+      } catch {
+        throw new Error("Unexpected market data response");
+      }
+
+      // Expected shapes per Alpaca docs:
+      // 1) Single-symbol: { symbol: "AAPL", quote: { bp, bs, ap, as, t } }
+      // 2) Multi-symbol: { quotes: [{ S, bp, bs, ap, as, t }, ...] } OR { quotes: { AAPL: { ... } } }
+      let q: any = alpacaData?.quote;
+      if (!q && alpacaData?.quotes) {
+        if (Array.isArray(alpacaData.quotes)) {
+          q =
+            alpacaData.quotes.find((x: any) => (x.S || x.symbol) === sym) ||
+            alpacaData.quotes[0];
+        } else if (alpacaData.quotes[sym]) {
+          q = alpacaData.quotes[sym];
+        }
+      }
+      const quote: AlpacaQuote = {
+        symbol: alpacaData?.symbol ?? q?.S ?? sym,
+        bid: Number(q?.bp ?? q?.bid ?? 0),
+        ask: Number(q?.ap ?? q?.ask ?? 0),
+        bid_size: Number(q?.bs ?? q?.bidSize ?? 0),
+        ask_size: Number(q?.as ?? q?.askSize ?? 0),
+        timestamp: q?.t ?? alpacaData?.timestamp ?? new Date().toISOString(),
+      };
+
+      log.debug(
+        "Quote fetched successfully",
+        { userId, symbol, environment, quote },
+        "AlpacaService"
+      );
+
+      return quote;
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+      log.failure(
+        "Failed to fetch quote",
+        {
+          error: errorMessage,
+          userId,
+          symbol,
+          environment,
           errorStack: error instanceof Error ? error.stack : undefined,
         },
         "AlpacaService"
