@@ -1,6 +1,6 @@
-import { Timestamp } from "firebase/firestore"
+import { Timestamp } from "firebase/firestore";
 
-import { AIRequest, AIResponse } from "@/lib/types/ai"
+import { AIRequest, AIResponse } from "@/lib/types/ai";
 
 import {
   Agent,
@@ -10,41 +10,63 @@ import {
   AssignedAgent,
   Portfolio,
   PortfolioPosition,
-} from "../../types"
+} from "../../types";
 
-export type FirestoreDocument = Record<string, any>
+export type FirestoreDocument = Record<string, any>;
 
-export const omitUndefined = <T extends Record<string, unknown>>(obj: T): T =>
-  Object.fromEntries(
-    Object.entries(obj).filter(([, value]) => value !== undefined)
-  ) as T
+export const omitUndefined = <T extends Record<string, unknown>>(obj: T): T => {
+  const result: Record<string, unknown> = {};
+
+  for (const [key, value] of Object.entries(obj)) {
+    if (value === undefined) {
+      continue;
+    }
+
+    if (Array.isArray(value)) {
+      // Filter out undefined values from arrays
+      const filteredArray = value.filter((item) => item !== undefined);
+      if (filteredArray.length > 0) {
+        result[key] = filteredArray;
+      }
+    } else if (value && typeof value === "object") {
+      // Recursively clean nested objects
+      const cleanedNested = omitUndefined(value as Record<string, unknown>);
+      if (Object.keys(cleanedNested).length > 0) {
+        result[key] = cleanedNested;
+      }
+    } else {
+      result[key] = value;
+    }
+  }
+
+  return result as T;
+};
 
 export const toDate = (
   value: Timestamp | Date | null | undefined
 ): Date | undefined => {
-  if (!value) return undefined
+  if (!value) return undefined;
   if (value instanceof Timestamp) {
-    return value.toDate()
+    return value.toDate();
   }
   if (value instanceof Date) {
-    return value
+    return value;
   }
   if (typeof (value as { toDate?: () => Date }).toDate === "function") {
-    return (value as { toDate: () => Date }).toDate()
+    return (value as { toDate: () => Date }).toDate();
   }
-  return undefined
-}
+  return undefined;
+};
 
-export const requireDate = (
-  value: Timestamp | Date | null | undefined
-): Date => toDate(value) ?? new Date()
+export const requireDate = (value: Timestamp | Date | null | undefined): Date =>
+  toDate(value) ?? new Date();
 
 export const serializeAgent = (agent: Agent) =>
   omitUndefined({
     ...agent,
     createdAt: Timestamp.fromDate(agent.createdAt),
     updatedAt: Timestamp.fromDate(agent.updatedAt),
-  })
+  });
 
 export const deserializeAgent = (
   id: string,
@@ -65,13 +87,13 @@ export const deserializeAgent = (
   updatedAt: requireDate(data.updatedAt),
   createdBy: data.createdBy,
   metadata: data.metadata ?? undefined,
-})
+});
 
 export const serializeAgentVersion = (version: AgentVersion) =>
   omitUndefined({
     ...version,
     createdAt: Timestamp.fromDate(version.createdAt),
-  })
+  });
 
 export const deserializeAgentVersion = (
   id: string,
@@ -89,14 +111,14 @@ export const deserializeAgentVersion = (
   createdBy: data.createdBy,
   changeReason: data.changeReason ?? undefined,
   isActive: data.isActive,
-})
+});
 
 export const serializeTemplate = (template: AgentTemplate) =>
   omitUndefined({
     ...template,
     createdAt: Timestamp.fromDate(template.createdAt),
     updatedAt: Timestamp.fromDate(template.updatedAt),
-  })
+  });
 
 export const deserializeTemplate = (
   id: string,
@@ -115,7 +137,7 @@ export const deserializeTemplate = (
   isBuiltIn: data.isBuiltIn,
   createdAt: requireDate(data.createdAt),
   updatedAt: requireDate(data.updatedAt),
-})
+});
 
 export const serializeAssignedAgent = (assigned: AssignedAgent) =>
   omitUndefined({
@@ -128,7 +150,7 @@ export const serializeAssignedAgent = (assigned: AssignedAgent) =>
       ? Timestamp.fromDate(assigned.lastWorkedAt)
       : null,
     workCount: assigned.workCount,
-  })
+  });
 
 export const deserializeAssignedAgent = (
   data: FirestoreDocument
@@ -140,12 +162,12 @@ export const deserializeAssignedAgent = (
   isActive: data.isActive,
   lastWorkedAt: toDate(data.lastWorkedAt),
   workCount: data.workCount ?? 0,
-})
+});
 
 export const serializePortfolioPosition = (position: PortfolioPosition) =>
   omitUndefined({
     ...position,
-  })
+  });
 
 export const deserializePortfolioPosition = (
   data: FirestoreDocument
@@ -162,7 +184,7 @@ export const deserializePortfolioPosition = (
   stopLoss: data.stopLoss ?? undefined,
   timeHorizon: data.timeHorizon ?? undefined,
   metadata: data.metadata ?? undefined,
-})
+});
 
 export const serializePortfolio = (portfolio: Portfolio) =>
   omitUndefined({
@@ -181,7 +203,7 @@ export const serializePortfolio = (portfolio: Portfolio) =>
     updatedAt: Timestamp.fromDate(portfolio.updatedAt),
     isActive: portfolio.isActive,
     metadata: portfolio.metadata ?? undefined,
-  })
+  });
 
 export const deserializePortfolio = (
   id: string,
@@ -206,35 +228,35 @@ export const deserializePortfolio = (
   updatedAt: requireDate(data.updatedAt),
   isActive: data.isActive,
   metadata: data.metadata ?? undefined,
-})
+});
 
 export const serializeAIRequest = (request: AIRequest) =>
   omitUndefined({
     ...request,
     timestamp: Timestamp.fromDate(request.timestamp),
-  })
+  });
 
 export const deserializeAIRequest = (data: FirestoreDocument): AIRequest => {
-  const { timestamp, ...rest } = data
+  const { timestamp, ...rest } = data;
   return {
     ...(rest as Omit<AIRequest, "timestamp">),
     timestamp: requireDate(timestamp),
-  }
-}
+  };
+};
 
 export const serializeAIResponse = (response: AIResponse) =>
   omitUndefined({
     ...response,
     timestamp: Timestamp.fromDate(response.timestamp),
-  })
+  });
 
 export const deserializeAIResponse = (data: FirestoreDocument): AIResponse => {
-  const { timestamp, ...rest } = data
+  const { timestamp, ...rest } = data;
   return {
     ...(rest as Omit<AIResponse, "timestamp">),
     timestamp: requireDate(timestamp),
-  }
-}
+  };
+};
 
 export const serializeWork = (work: AgentWork) =>
   omitUndefined({
@@ -247,12 +269,10 @@ export const serializeWork = (work: AgentWork) =>
     request: work.request ? serializeAIRequest(work.request) : undefined,
     response: work.response ? serializeAIResponse(work.response) : undefined,
     startedAt: Timestamp.fromDate(work.startedAt),
-    completedAt: work.completedAt
-      ? Timestamp.fromDate(work.completedAt)
-      : null,
+    completedAt: work.completedAt ? Timestamp.fromDate(work.completedAt) : null,
     error: work.error ?? undefined,
     metadata: work.metadata ?? undefined,
-  })
+  });
 
 export const deserializeWork = (
   id: string,
@@ -270,4 +290,4 @@ export const deserializeWork = (
   completedAt: toDate(data.completedAt),
   error: data.error ?? undefined,
   metadata: data.metadata ?? undefined,
-})
+});

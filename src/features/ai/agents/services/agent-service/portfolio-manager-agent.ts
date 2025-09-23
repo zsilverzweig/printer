@@ -1,13 +1,13 @@
-import { AI_MODELS } from "@/lib/services/ai-service"
-import { log } from "@/lib/utils/logger"
+import { AI_MODELS } from "@/lib/services/ai-service";
+import { log } from "@/lib/utils/logger";
 
-import { Agent, Workflow, DEFAULT_WORKFLOW } from "../../types"
-import { AgentRepository } from "../firestore/agent-repository"
+import { Agent, DEFAULT_WORKFLOW, Workflow } from "../../types";
+import { AgentRepository } from "../firestore/agent-repository";
 
-const PORTFOLIO_MANAGER_AGENT_ID = "portfolio-manager-agent"
-const PORTFOLIO_MANAGER_NAME = "Portfolio Manager"
+const PORTFOLIO_MANAGER_AGENT_ID = "portfolio-manager-agent";
+const PORTFOLIO_MANAGER_NAME = "Portfolio Manager";
 const PORTFOLIO_MANAGER_DESCRIPTION =
-  "Transforms theses into trade-ready, structured portfolios for Alpaca"
+  "Transforms theses into trade-ready, structured portfolios for Alpaca";
 
 const PORTFOLIO_MANAGER_PROMPT = `You are the Portfolio Manager for Printer. Your mandate is to review an investment thesis and translate it into a structured set of trade instructions that Alpaca can execute. You make the final allocation decisions and must ensure risk controls are well defined.
 
@@ -19,10 +19,10 @@ Always respond with a strict JSON object that matches the provided schema. Do no
 - the status (draft, paper, or real_money)
 - a concise rationale summarizing the alignment with the thesis
 
-Whenever status is omitted, default it to "draft" so a human can review before capital is committed. Include portfolio-level summary and risk guidance fields to capture your broader thinking.`
+Whenever status is omitted, default it to "draft" so a human can review before capital is committed. Include portfolio-level summary and risk guidance fields to capture your broader thinking.`;
 
 const createPortfolioManagerWorkflow = (): Workflow => {
-  const timestamp = new Date()
+  const timestamp = new Date();
   return {
     ...DEFAULT_WORKFLOW,
     id: "portfolio-manager-workflow",
@@ -32,8 +32,8 @@ const createPortfolioManagerWorkflow = (): Workflow => {
     steps: DEFAULT_WORKFLOW.steps.map((step) => {
       const clonedStep = {
         ...step,
-        dependencies: step.dependencies ? [...step.dependencies] : undefined,
-      }
+        ...(step.dependencies && { dependencies: [...step.dependencies] }),
+      };
 
       if (step.id === "response-generation") {
         return {
@@ -74,38 +74,38 @@ const createPortfolioManagerWorkflow = (): Workflow => {
               },
             },
           },
-        }
+        };
       }
 
-      return clonedStep
+      return clonedStep;
     }),
     createdAt: timestamp,
     updatedAt: timestamp,
-  }
-}
+  };
+};
 
 export class PortfolioManagerAgentService {
-  private cachedAgent: Agent | null = null
+  private cachedAgent: Agent | null = null;
 
   constructor(private readonly repository: AgentRepository) {}
 
   async ensureAgent(): Promise<Agent> {
     if (this.cachedAgent) {
-      return this.cachedAgent
+      return this.cachedAgent;
     }
 
-    let agent = await this.repository.getAgent(PORTFOLIO_MANAGER_AGENT_ID)
+    let agent = await this.repository.getAgent(PORTFOLIO_MANAGER_AGENT_ID);
     if (!agent) {
-      agent = await this.createAgent()
+      agent = await this.createAgent();
     }
 
-    this.cachedAgent = agent
-    return agent
+    this.cachedAgent = agent;
+    return agent;
   }
 
   private async createAgent(): Promise<Agent> {
-    const workflow = createPortfolioManagerWorkflow()
-    const timestamp = new Date()
+    const workflow = createPortfolioManagerWorkflow();
+    const timestamp = new Date();
     const agent: Agent = {
       id: PORTFOLIO_MANAGER_AGENT_ID,
       name: PORTFOLIO_MANAGER_NAME,
@@ -126,16 +126,12 @@ export class PortfolioManagerAgentService {
         description:
           "Automatically maintains structured positions for every portfolio.",
       },
-    }
+    };
 
-    await this.repository.createAgent(agent)
-    log.info(
-      "Portfolio Manager agent created",
-      undefined,
-      "AgentService"
-    )
-    return agent
+    await this.repository.createAgent(agent);
+    log.info("Portfolio Manager agent created", undefined, "AgentService");
+    return agent;
   }
 }
 
-export const PORTFOLIO_MANAGER_ID = PORTFOLIO_MANAGER_AGENT_ID
+export const PORTFOLIO_MANAGER_ID = PORTFOLIO_MANAGER_AGENT_ID;

@@ -1,5 +1,5 @@
-import { AI_MODELS } from "@/lib/services/ai-service"
-import { log } from "@/lib/utils/logger"
+import { AI_MODELS } from "@/lib/services/ai-service";
+import { log } from "@/lib/utils/logger";
 
 import {
   Agent,
@@ -13,16 +13,16 @@ import {
   Portfolio,
   UpdateAgentRequest,
   UpdatePortfolioRequest,
-} from "../types"
+} from "../types";
 
+import { PortfolioManagerAgentService } from "./agent-service/portfolio-manager-agent";
+import { PortfolioPlanService } from "./agent-service/portfolio-plan-service";
+import { AgentTemplateInitializer } from "./agent-service/template-initializer";
 import {
   AgentRepository,
   FirestoreAgentRepository,
-} from "./firestore/agent-repository"
-import { AgentTemplateInitializer } from "./agent-service/template-initializer"
-import { PortfolioManagerAgentService } from "./agent-service/portfolio-manager-agent"
-import { PortfolioPlanService } from "./agent-service/portfolio-plan-service"
-import { AgentWorkExecutor } from "./workflow/agent-work-executor"
+} from "./firestore/agent-repository";
+import { AgentWorkExecutor } from "./workflow/agent-work-executor";
 
 export class AgentService {
   constructor(
@@ -30,15 +30,18 @@ export class AgentService {
     private readonly workExecutor: AgentWorkExecutor = new AgentWorkExecutor(
       repository
     ),
-    private readonly templateInitializer: AgentTemplateInitializer =
-      new AgentTemplateInitializer(repository),
-    private readonly portfolioManagerAgent: PortfolioManagerAgentService =
-      new PortfolioManagerAgentService(repository),
-    private readonly portfolioPlanService: PortfolioPlanService =
-      new PortfolioPlanService(portfolioManagerAgent)
+    private readonly templateInitializer: AgentTemplateInitializer = new AgentTemplateInitializer(
+      repository
+    ),
+    private readonly portfolioManagerAgent: PortfolioManagerAgentService = new PortfolioManagerAgentService(
+      repository
+    ),
+    private readonly portfolioPlanService: PortfolioPlanService = new PortfolioPlanService(
+      portfolioManagerAgent
+    )
   ) {
-    void this.templateInitializer.ensureDefaultTemplates()
-    void this.portfolioManagerAgent.ensureAgent()
+    void this.templateInitializer.ensureDefaultTemplates();
+    void this.portfolioManagerAgent.ensureAgent();
   }
 
   private resolveModel(
@@ -46,16 +49,15 @@ export class AgentService {
     fallback: Agent["model"]
   ): Agent["model"] {
     if (!requested) {
-      return fallback
+      return fallback;
     }
 
     if (typeof requested === "string") {
-      return (
-        AI_MODELS[requested as keyof typeof AI_MODELS] ?? fallback
-      ) as Agent["model"]
+      return (AI_MODELS[requested as keyof typeof AI_MODELS] ??
+        fallback) as Agent["model"];
     }
 
-    return requested
+    return requested;
   }
 
   // Agent Management
@@ -65,14 +67,13 @@ export class AgentService {
   ): Promise<Agent> {
     const template = request.templateId
       ? await this.repository.getTemplate(request.templateId)
-      : null
+      : null;
 
-    const defaultModelKey = template?.defaultModel ?? "gpt-4o-mini"
+    const defaultModelKey = template?.defaultModel ?? "gpt-4o-mini";
     const model =
-      (request.model &&
-        AI_MODELS[request.model as keyof typeof AI_MODELS]) ||
+      (request.model && AI_MODELS[request.model as keyof typeof AI_MODELS]) ||
       AI_MODELS[defaultModelKey as keyof typeof AI_MODELS] ||
-      AI_MODELS["gpt-4o-mini"]
+      AI_MODELS["gpt-4o-mini"];
 
     const agent: Agent = {
       id: this.generateId(),
@@ -91,30 +92,30 @@ export class AgentService {
       createdAt: new Date(),
       updatedAt: new Date(),
       createdBy,
-    }
+    };
 
-    const createdAgent = await this.repository.createAgent(agent)
+    const createdAgent = await this.repository.createAgent(agent);
 
     await this.createAgentVersion(
       createdAgent.id,
       createdBy,
       "Initial version"
-    )
+    );
 
     log.success(
       `Agent created: ${createdAgent.name}`,
       undefined,
       "AgentService"
-    )
-    return createdAgent
+    );
+    return createdAgent;
   }
 
   async getAgent(id: string): Promise<Agent | null> {
-    return this.repository.getAgent(id)
+    return this.repository.getAgent(id);
   }
 
   async getAllAgents(): Promise<Agent[]> {
-    return this.repository.getAllAgents()
+    return this.repository.getAllAgents();
   }
 
   async updateAgent(
@@ -122,48 +123,46 @@ export class AgentService {
     request: UpdateAgentRequest,
     updatedBy: string
   ): Promise<Agent> {
-    const existing = await this.repository.getAgent(id)
-    if (!existing) throw new Error(`Agent ${id} not found`)
+    const existing = await this.repository.getAgent(id);
+    if (!existing) throw new Error(`Agent ${id} not found`);
 
     const needsVersioning =
       (request.promptGuidance !== undefined &&
         request.promptGuidance !== existing.promptGuidance) ||
       (request.workflow !== undefined &&
-        JSON.stringify(request.workflow) !== JSON.stringify(existing.workflow))
+        JSON.stringify(request.workflow) !== JSON.stringify(existing.workflow));
 
-    let versionToApply = existing.version
+    let versionToApply = existing.version;
     if (needsVersioning) {
       await this.createAgentVersion(
         id,
         updatedBy,
         request.changeReason || "Configuration updated"
-      )
+      );
 
-      const versionParts = existing.version.split(".")
-      versionToApply = `${versionParts[0]}.${
-        parseInt(versionParts[1]) + 1
-      }.0`
+      const versionParts = existing.version.split(".");
+      versionToApply = `${versionParts[0]}.${parseInt(versionParts[1]) + 1}.0`;
     }
 
-    const { changeReason: _ignored, model, ...rest } = request
-    const updates: Partial<Agent> = { ...rest }
+    const { changeReason: _ignored, model, ...rest } = request;
+    const updates: Partial<Agent> = { ...rest };
 
     if (model !== undefined) {
-      updates.model = this.resolveModel(model, existing.model)
+      updates.model = this.resolveModel(model, existing.model);
     }
 
     if (needsVersioning) {
-      updates.version = versionToApply
+      updates.version = versionToApply;
     }
 
-    const updated = await this.repository.updateAgent(id, updates)
-    log.success(`Agent updated: ${updated.name}`, undefined, "AgentService")
-    return updated
+    const updated = await this.repository.updateAgent(id, updates);
+    log.success(`Agent updated: ${updated.name}`, undefined, "AgentService");
+    return updated;
   }
 
   async deleteAgent(id: string): Promise<void> {
-    await this.repository.deleteAgent(id)
-    log.info(`Agent deleted: ${id}`, undefined, "AgentService")
+    await this.repository.deleteAgent(id);
+    log.info(`Agent deleted: ${id}`, undefined, "AgentService");
   }
 
   // Version Management
@@ -172,8 +171,8 @@ export class AgentService {
     createdBy: string,
     changeReason?: string
   ): Promise<AgentVersion> {
-    const agent = await this.repository.getAgent(agentId)
-    if (!agent) throw new Error(`Agent ${agentId} not found`)
+    const agent = await this.repository.getAgent(agentId);
+    if (!agent) throw new Error(`Agent ${agentId} not found`);
 
     const version: AgentVersion = {
       id: this.generateId(),
@@ -188,13 +187,13 @@ export class AgentService {
       createdBy,
       changeReason,
       isActive: false,
-    }
+    };
 
-    return this.repository.createAgentVersion(version)
+    return this.repository.createAgentVersion(version);
   }
 
   async getAgentVersions(agentId: string): Promise<AgentVersion[]> {
-    return this.repository.getAgentVersions(agentId)
+    return this.repository.getAgentVersions(agentId);
   }
 
   async revertToVersion(
@@ -202,18 +201,18 @@ export class AgentService {
     versionId: string,
     revertedBy: string
   ): Promise<Agent> {
-    const versions = await this.repository.getAgentVersions(agentId)
-    const version = versions.find((v) => v.id === versionId)
-    if (!version) throw new Error(`Version ${versionId} not found`)
+    const versions = await this.repository.getAgentVersions(agentId);
+    const version = versions.find((v) => v.id === versionId);
+    if (!version) throw new Error(`Version ${versionId} not found`);
 
-    const agent = await this.repository.getAgent(agentId)
-    if (!agent) throw new Error(`Agent ${agentId} not found`)
+    const agent = await this.repository.getAgent(agentId);
+    if (!agent) throw new Error(`Agent ${agentId} not found`);
 
     await this.createAgentVersion(
       agentId,
       revertedBy,
       `Reverted to version ${version.version}`
-    )
+    );
 
     const updated = await this.repository.updateAgent(agentId, {
       promptGuidance: version.promptGuidance,
@@ -222,24 +221,24 @@ export class AgentService {
       temperature: version.temperature,
       maxTokens: version.maxTokens,
       version: `${version.version}.revert`,
-    })
+    });
 
     log.success(
       `Agent reverted to version ${version.version}`,
       undefined,
       "AgentService"
-    )
-    return updated
+    );
+    return updated;
   }
 
   // Template Management
   async getTemplates(): Promise<AgentTemplate[]> {
-    await this.templateInitializer.ensureDefaultTemplates()
-    return this.repository.getAllTemplates()
+    await this.templateInitializer.ensureDefaultTemplates();
+    return this.repository.getAllTemplates();
   }
 
   async getTemplate(id: string): Promise<AgentTemplate | null> {
-    return this.repository.getTemplate(id)
+    return this.repository.getTemplate(id);
   }
 
   // Portfolio Management
@@ -247,7 +246,7 @@ export class AgentService {
     request: CreatePortfolioRequest,
     userId: string
   ): Promise<Portfolio> {
-    const portfolioManager = await this.portfolioManagerAgent.ensureAgent()
+    const portfolioManager = await this.portfolioManagerAgent.ensureAgent();
     const portfolio: Portfolio = {
       id: this.generateId(),
       name: request.name,
@@ -260,37 +259,37 @@ export class AgentService {
       updatedAt: new Date(),
       isActive: request.isActive ?? true,
       metadata: request.metadata,
-    }
+    };
 
-    const createdPortfolio = await this.repository.createPortfolio(portfolio)
+    const createdPortfolio = await this.repository.createPortfolio(portfolio);
 
-    await this.assignAgent(createdPortfolio.id, portfolioManager.id, userId)
+    await this.assignAgent(createdPortfolio.id, portfolioManager.id, userId);
 
     if (request.assignedAgentIds) {
       for (const agentId of request.assignedAgentIds) {
-        if (agentId === portfolioManager.id) continue
-        await this.assignAgent(createdPortfolio.id, agentId, userId)
+        if (agentId === portfolioManager.id) continue;
+        await this.assignAgent(createdPortfolio.id, agentId, userId);
       }
     }
 
     const finalPortfolio =
       (await this.repository.getPortfolio(createdPortfolio.id)) ||
-      createdPortfolio
+      createdPortfolio;
 
     log.success(
       `Portfolio created: ${finalPortfolio.name}`,
       undefined,
       "AgentService"
-    )
-    return finalPortfolio
+    );
+    return finalPortfolio;
   }
 
   async getPortfolio(id: string): Promise<Portfolio | null> {
-    return this.repository.getPortfolio(id)
+    return this.repository.getPortfolio(id);
   }
 
   async getAllPortfolios(userId: string): Promise<Portfolio[]> {
-    return this.repository.getAllPortfolios(userId)
+    return this.repository.getAllPortfolios(userId);
   }
 
   async createPortfolioDraftFromThesis(
@@ -298,13 +297,13 @@ export class AgentService {
     userId: string,
     options: { name?: string; description?: string } = {}
   ): Promise<Portfolio> {
-    const trimmedThesis = thesis.trim()
+    const trimmedThesis = thesis.trim();
     if (!trimmedThesis) {
-      throw new Error("Thesis is required to generate a portfolio draft")
+      throw new Error("Thesis is required to generate a portfolio draft");
     }
 
-    const now = new Date()
-    const defaultName = `Draft Portfolio ${now.toISOString().split("T")[0]}`
+    const now = new Date();
+    const defaultName = `Draft Portfolio ${now.toISOString().split("T")[0]}`;
 
     const basePortfolio = await this.createPortfolio(
       {
@@ -321,13 +320,36 @@ export class AgentService {
         },
       },
       userId
-    )
+    );
 
     try {
-      const { plan, positions, raw } = await this.portfolioPlanService.generatePlan(
-        basePortfolio,
-        userId
-      )
+      log.info(
+        "Starting portfolio plan generation",
+        {
+          portfolioId: basePortfolio.id,
+          thesisLength: basePortfolio.thesis.length,
+          userId,
+        },
+        "AgentService"
+      );
+
+      const { plan, positions, raw } =
+        await this.portfolioPlanService.generatePlan(basePortfolio, userId);
+
+      log.info(
+        "Portfolio plan generation completed",
+        {
+          portfolioId: basePortfolio.id,
+          hasPlan: !!plan,
+          hasSummary: !!plan?.portfolio_summary,
+          hasRiskManagement: !!plan?.risk_management,
+          positionCount: positions.length,
+          rawResponseLength: raw.length,
+          rawResponsePreview:
+            raw.substring(0, 200) + (raw.length > 200 ? "..." : ""),
+        },
+        "AgentService"
+      );
 
       const updated = await this.repository.updatePortfolio(basePortfolio.id, {
         positions,
@@ -340,22 +362,22 @@ export class AgentService {
           portfolioManagerOutput: raw,
         },
         isActive: false,
-      })
+      });
 
       log.success(
         `Portfolio draft created with ${positions.length} positions`,
         undefined,
         "AgentService"
-      )
+      );
 
-      return updated
+      return updated;
     } catch (error) {
       log.failure(
         "Failed to generate portfolio positions from thesis",
         error,
         "AgentService"
-      )
-      return basePortfolio
+      );
+      return basePortfolio;
     }
   }
 
@@ -363,29 +385,30 @@ export class AgentService {
     id: string,
     request: UpdatePortfolioRequest
   ): Promise<Portfolio> {
-    const existing = await this.repository.getPortfolio(id)
-    if (!existing) throw new Error(`Portfolio ${id} not found`)
+    const existing = await this.repository.getPortfolio(id);
+    if (!existing) throw new Error(`Portfolio ${id} not found`);
 
-    const updates: Partial<Portfolio> & { assignedAgents?: AssignedAgent[] } = {}
+    const updates: Partial<Portfolio> & { assignedAgents?: AssignedAgent[] } =
+      {};
 
-    if (request.name !== undefined) updates.name = request.name
+    if (request.name !== undefined) updates.name = request.name;
     if (request.description !== undefined)
-      updates.description = request.description
-    if (request.thesis !== undefined) updates.thesis = request.thesis
-    if (request.positions !== undefined) updates.positions = request.positions
-    if (request.metadata !== undefined) updates.metadata = request.metadata
-    if (request.isActive !== undefined) updates.isActive = request.isActive
+      updates.description = request.description;
+    if (request.thesis !== undefined) updates.thesis = request.thesis;
+    if (request.positions !== undefined) updates.positions = request.positions;
+    if (request.metadata !== undefined) updates.metadata = request.metadata;
+    if (request.isActive !== undefined) updates.isActive = request.isActive;
 
     if (request.assignedAgentIds) {
-      const portfolioManager = await this.portfolioManagerAgent.ensureAgent()
+      const portfolioManager = await this.portfolioManagerAgent.ensureAgent();
       const normalizedAgentIds = Array.from(
         new Set([portfolioManager.id, ...request.assignedAgentIds])
-      )
+      );
 
-      const allAgents = await this.getAllAgents()
+      const allAgents = await this.getAllAgents();
       const assignedAgents = normalizedAgentIds.map((agentId) => {
-        const agent = allAgents.find((a) => a.id === agentId)
-        if (!agent) throw new Error(`Agent ${agentId} not found`)
+        const agent = allAgents.find((a) => a.id === agentId);
+        if (!agent) throw new Error(`Agent ${agentId} not found`);
 
         const assignment: AssignedAgent = {
           agentId,
@@ -394,27 +417,27 @@ export class AgentService {
           assignedBy: existing.userId,
           isActive: true,
           workCount: 0,
-        }
+        };
 
-        return assignment
-      })
+        return assignment;
+      });
 
-      updates.assignedAgents = assignedAgents
+      updates.assignedAgents = assignedAgents;
     }
 
-    const updated = await this.repository.updatePortfolio(id, updates)
+    const updated = await this.repository.updatePortfolio(id, updates);
 
     log.success(
       `Portfolio updated: ${updated.name}`,
       undefined,
       "AgentService"
-    )
-    return updated
+    );
+    return updated;
   }
 
   async deletePortfolio(id: string): Promise<void> {
-    await this.repository.deletePortfolio(id)
-    log.info(`Portfolio deleted: ${id}`, undefined, "AgentService")
+    await this.repository.deletePortfolio(id);
+    log.info(`Portfolio deleted: ${id}`, undefined, "AgentService");
   }
 
   async assignAgent(
@@ -422,19 +445,19 @@ export class AgentService {
     agentId: string,
     assignedBy: string
   ): Promise<void> {
-    const portfolio = await this.repository.getPortfolio(portfolioId)
-    if (!portfolio) throw new Error(`Portfolio ${portfolioId} not found`)
+    const portfolio = await this.repository.getPortfolio(portfolioId);
+    if (!portfolio) throw new Error(`Portfolio ${portfolioId} not found`);
 
-    const agent = await this.repository.getAgent(agentId)
-    if (!agent) throw new Error(`Agent ${agentId} not found`)
+    const agent = await this.repository.getAgent(agentId);
+    if (!agent) throw new Error(`Agent ${agentId} not found`);
 
     const existingAssignment = portfolio.assignedAgents.find(
       (a) => a.agentId === agentId
-    )
+    );
     if (existingAssignment) {
       throw new Error(
         `Agent ${agentId} is already assigned to portfolio ${portfolioId}`
-      )
+      );
     }
 
     const assignedAgent: AssignedAgent = {
@@ -444,41 +467,41 @@ export class AgentService {
       assignedBy,
       isActive: true,
       workCount: 0,
-    }
+    };
 
     await this.repository.updatePortfolio(portfolioId, {
       assignedAgents: [...portfolio.assignedAgents, assignedAgent],
-    })
+    });
 
     log.success(
       `Agent ${agent.name} assigned to portfolio ${portfolio.name}`,
       undefined,
       "AgentService"
-    )
+    );
   }
 
   async unassignAgent(portfolioId: string, agentId: string): Promise<void> {
-    const portfolioManager = await this.portfolioManagerAgent.ensureAgent()
+    const portfolioManager = await this.portfolioManagerAgent.ensureAgent();
     if (agentId === portfolioManager.id) {
-      throw new Error("The Portfolio Manager cannot be unassigned")
+      throw new Error("The Portfolio Manager cannot be unassigned");
     }
 
-    const portfolio = await this.repository.getPortfolio(portfolioId)
-    if (!portfolio) throw new Error(`Portfolio ${portfolioId} not found`)
+    const portfolio = await this.repository.getPortfolio(portfolioId);
+    if (!portfolio) throw new Error(`Portfolio ${portfolioId} not found`);
 
     const remainingAssignments = portfolio.assignedAgents.filter(
       (a) => a.agentId !== agentId
-    )
+    );
 
     await this.repository.updatePortfolio(portfolioId, {
       assignedAgents: remainingAssignments,
-    })
+    });
 
     log.info(
       `Agent ${agentId} unassigned from portfolio ${portfolioId}`,
       undefined,
       "AgentService"
-    )
+    );
   }
 
   // Work Execution
@@ -487,16 +510,16 @@ export class AgentService {
     agentId: string,
     userId: string
   ): Promise<AgentWork> {
-    const portfolio = await this.repository.getPortfolio(portfolioId)
-    if (!portfolio) throw new Error(`Portfolio ${portfolioId} not found`)
+    const portfolio = await this.repository.getPortfolio(portfolioId);
+    if (!portfolio) throw new Error(`Portfolio ${portfolioId} not found`);
 
     const assignedAgent = portfolio.assignedAgents.find(
       (a) => a.agentId === agentId
-    )
+    );
     if (!assignedAgent)
       throw new Error(
         `Agent ${agentId} is not assigned to portfolio ${portfolioId}`
-      )
+      );
 
     const work: AgentWork = {
       id: this.generateId(),
@@ -506,40 +529,40 @@ export class AgentService {
       thesis: portfolio.thesis,
       status: "pending",
       startedAt: new Date(),
-    }
+    };
 
-    const createdWork = await this.repository.createWork(work)
+    const createdWork = await this.repository.createWork(work);
 
-    void this.workExecutor.run(createdWork)
+    void this.workExecutor.run(createdWork);
 
-    return createdWork
+    return createdWork;
   }
 
   async getWork(id: string): Promise<AgentWork | null> {
-    return this.repository.getWork(id)
+    return this.repository.getWork(id);
   }
 
   async getWorkHistory(portfolioId: string): Promise<AgentWork[]> {
-    return this.repository.getWorkHistory(portfolioId)
+    return this.repository.getWorkHistory(portfolioId);
   }
 
   async cancelWork(id: string): Promise<void> {
-    const work = await this.repository.getWork(id)
-    if (!work) throw new Error(`Work ${id} not found`)
+    const work = await this.repository.getWork(id);
+    if (!work) throw new Error(`Work ${id} not found`);
 
     if (work.status === "running" || work.status === "pending") {
       await this.repository.updateWork(id, {
         status: "cancelled",
         completedAt: new Date(),
-      })
-      log.info(`Work cancelled: ${id}`, undefined, "AgentService")
+      });
+      log.info(`Work cancelled: ${id}`, undefined, "AgentService");
     }
   }
 
   private generateId(): string {
-    return `agent_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    return `agent_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
 }
 
-export const agentService = new AgentService()
-export default agentService
+export const agentService = new AgentService();
+export default agentService;

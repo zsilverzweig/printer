@@ -19,6 +19,7 @@ import { CreatePortfolioDialog } from "./create-portfolio-dialog";
 import { PortfolioDetailsDialog } from "./portfolio-details-dialog";
 import { PortfolioList } from "./portfolio-list";
 import { PortfolioWizardDialog } from "./portfolio-wizard-dialog";
+import { PortfolioWizardStreamDialog } from "./portfolio-wizard-stream-dialog";
 
 interface PortfolioManagementProps {
   userId: string;
@@ -37,6 +38,7 @@ export function PortfolioManagement({ userId }: PortfolioManagementProps) {
   const { agents } = useAgents();
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showWizardDialog, setShowWizardDialog] = useState(false);
+  const [showWizardStreamDialog, setShowWizardStreamDialog] = useState(false);
   const [selectedPortfolio, setSelectedPortfolio] = useState<Portfolio | null>(
     null
   );
@@ -74,6 +76,11 @@ export function PortfolioManagement({ userId }: PortfolioManagementProps) {
     } catch (error) {
       console.error("Failed to generate portfolio draft:", error);
     }
+  };
+
+  const handleWizardStreamComplete = (portfolio: Portfolio) => {
+    setShowWizardStreamDialog(false);
+    setSelectedPortfolio(portfolio);
   };
 
   const handleUpdatePortfolio = async (
@@ -135,11 +142,14 @@ export function PortfolioManagement({ userId }: PortfolioManagementProps) {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => setShowWizardDialog(true)}>
+            Portfolio Wizard
+          </Button>
           <Button
             variant="outline"
-            onClick={() => setShowWizardDialog(true)}
+            onClick={() => setShowWizardStreamDialog(true)}
           >
-            Portfolio Wizard
+            Streaming Wizard
           </Button>
           <Button onClick={() => setShowCreateDialog(true)}>
             Create Portfolio
@@ -217,6 +227,12 @@ export function PortfolioManagement({ userId }: PortfolioManagementProps) {
         open={showWizardDialog}
         onOpenChange={setShowWizardDialog}
         onGenerate={handleWizardCreate}
+      />
+
+      <PortfolioWizardStreamDialog
+        open={showWizardStreamDialog}
+        onOpenChange={setShowWizardStreamDialog}
+        onComplete={handleWizardStreamComplete}
       />
 
       <PortfolioDetailsDialog

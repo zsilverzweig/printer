@@ -1,6 +1,6 @@
 "use client";
 
-import { Bot, LineChart, Loader2, Settings, Users } from "lucide-react";
+import { Bot, Cpu, Loader2, Settings, Users } from "lucide-react";
 import Link from "next/link";
 
 import { Button } from "@/lib/components/ui/button";
@@ -87,16 +87,16 @@ export default function AdminPage() {
           <Card className="hover:shadow-md transition-shadow">
             <CardHeader>
               <div className="flex items-center space-x-2">
-                <LineChart className="h-5 w-5 text-indigo-600" />
-                <CardTitle>Alpaca Trading</CardTitle>
+                <Cpu className="h-5 w-5 text-indigo-600" />
+                <CardTitle>AI Sandbox</CardTitle>
               </div>
               <CardDescription>
-                Test paper buy and sell orders with Alpaca
+                Test AI functions, portfolio generation, and OpenAI integration
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <Link href="/admin/alpaca">
-                <Button className="w-full">Open Trading Sandbox</Button>
+              <Link href="/admin/ai-sandbox">
+                <Button className="w-full">Open AI Sandbox</Button>
               </Link>
             </CardContent>
           </Card>
