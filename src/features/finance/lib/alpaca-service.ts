@@ -1,215 +1,392 @@
-import {
-  AlpacaAccount,
-  AlpacaListOrdersParams,
-  AlpacaOrder,
-  AlpacaOrderRequest,
-  AlpacaPosition,
-} from "@/lib/types";
+import { userService } from "@/lib/services/user-service";
 import { log } from "@/lib/utils/logger";
 
-const DEFAULT_BASE_URL = "https://paper-api.alpaca.markets";
+export interface AlpacaAccount {
+  id: string;
+  account_number: string;
+  status: string;
+  currency: string;
+  buying_power: string;
+  cash: string;
+  equity: string;
+  portfolio_value: string;
+  shorting_enabled: boolean;
+  pattern_day_trader: boolean;
+  multiplier: string;
+  trading_blocked: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AlpacaPosition {
+  asset_id: string;
+  symbol: string;
+  exchange: string;
+  asset_class: string;
+  qty: string;
+  side: string;
+  market_value: string;
+  cost_basis: string;
+  unrealized_pl: string;
+  unrealized_plpc: string;
+  unrealized_plpc_2: string;
+  current_price: string;
+  lastday_price: string;
+  change_today: string;
+}
+
+export interface AlpacaOrder {
+  id: string;
+  client_order_id: string;
+  created_at: string;
+  updated_at: string;
+  submitted_at: string;
+  filled_at?: string;
+  expired_at?: string;
+  canceled_at?: string;
+  failed_at?: string;
+  replaced_at?: string;
+  replaced_by?: string;
+  replaces?: string;
+  asset_id: string;
+  symbol: string;
+  asset_class: string;
+  notional?: string;
+  qty?: string;
+  filled_qty: string;
+  filled_avg_price?: string;
+  order_class: string;
+  order_type: string;
+  type: string;
+  side: string;
+  time_in_force: string;
+  limit_price?: string;
+  stop_price?: string;
+  status: string;
+  extended_hours: boolean;
+  legs?: AlpacaOrder[];
+  trail_percent?: string;
+  trail_price?: string;
+  hwm?: string;
+  position_side?: string;
+}
+
+export interface AlpacaOrderRequest {
+  symbol: string;
+  qty?: number;
+  notional?: number;
+  side: "buy" | "sell";
+  type: "market" | "limit" | "stop" | "stop_limit" | "trailing_stop";
+  time_in_force: "day" | "gtc" | "ioc" | "fok";
+  limit_price?: number;
+  stop_price?: number;
+  extended_hours?: boolean;
+  client_order_id?: string;
+  order_class?: string;
+  take_profit?: {
+    limit_price: number;
+  };
+  stop_loss?: {
+    stop_price: number;
+    limit_price?: number;
+  };
+  trail_percent?: number;
+  trail_price?: number;
+  position_side?: "long" | "short";
+}
 
 class AlpacaService {
   private readonly baseUrl: string;
 
   constructor() {
-    this.baseUrl = process.env.ALPACA_API_BASE_URL || DEFAULT_BASE_URL;
+    this.baseUrl =
+      process.env.ALPACA_API_BASE_URL || "https://api.alpaca.markets";
   }
 
-  private ensureCredentials(): { apiKey: string; secretKey: string } {
-    const apiKey = process.env.ALPACA_API_KEY;
-    const secretKey = process.env.ALPACA_SECRET_KEY;
+  private async getAccessToken(userId: string): Promise<string> {
+    const userProfile = await userService.getUserProfile(userId);
 
-    if (!apiKey || !secretKey) {
-      throw new Error(
-        "Alpaca API credentials are not configured. Please set ALPACA_API_KEY and ALPACA_SECRET_KEY."
+    if (!userProfile?.alpacaConnection?.accessToken) {
+      throw new Error("No Alpaca connection found for user");
+    }
+
+    if (userProfile.alpacaConnection.status !== "active") {
+      throw new Error("Alpaca connection is not active");
+    }
+
+    return userProfile.alpacaConnection.accessToken;
+  }
+
+  private async makeAuthenticatedRequest<T>(
+    endpoint: string,
+    userId: string,
+    options: RequestInit = {}
+  ): Promise<T> {
+    const accessToken = await this.getAccessToken(userId);
+
+    const url = `${this.baseUrl}${endpoint}`;
+
+    log.debug(
+      "Making authenticated request to Alpaca API",
+      {
+        url,
+        method: options.method || "GET",
+        userId,
+        hasAccessToken: !!accessToken,
+        accessTokenPreview: accessToken
+          ? accessToken.substring(0, 10) + "..."
+          : "none",
+        requestBody: options.body
+          ? JSON.parse(options.body as string)
+          : undefined,
+      },
+      "AlpacaService"
+    );
+
+    const response = await fetch(url, {
+      ...options,
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        ...options.headers,
+      },
+    });
+
+    const responseText = await response.text();
+    let responseData: any = null;
+
+    try {
+      responseData = responseText ? JSON.parse(responseText) : null;
+    } catch (parseError) {
+      log.warning(
+        "Failed to parse Alpaca API response as JSON",
+        {
+          url,
+          status: response.status,
+          responseText: responseText.substring(0, 500),
+          parseError:
+            parseError instanceof Error
+              ? parseError.message
+              : "Unknown parse error",
+        },
+        "AlpacaService"
       );
     }
 
-    return { apiKey, secretKey };
-  }
+    if (!response.ok) {
+      log.error(
+        "Alpaca API request failed",
+        {
+          url,
+          method: options.method || "GET",
+          status: response.status,
+          statusText: response.statusText,
+          responseHeaders: Object.fromEntries(response.headers.entries()),
+          responseText: responseText.substring(0, 1000),
+          responseData,
+          userId,
+          requestBody: options.body
+            ? JSON.parse(options.body as string)
+            : undefined,
+        },
+        "AlpacaService"
+      );
 
-  private normalizeHeaders(headers?: HeadersInit): Record<string, string> {
-    if (!headers) {
-      return {};
+      // Try to extract a meaningful error message
+      let errorMessage = `Alpaca API error: ${response.status} ${response.statusText}`;
+
+      if (responseData?.message) {
+        errorMessage = responseData.message;
+      } else if (responseData?.error) {
+        errorMessage = responseData.error;
+      } else if (responseText) {
+        errorMessage = responseText.substring(0, 200);
+      }
+
+      throw new Error(errorMessage);
     }
-
-    if (headers instanceof Headers) {
-      const normalized: Record<string, string> = {};
-      headers.forEach((value, key) => {
-        normalized[key] = value;
-      });
-      return normalized;
-    }
-
-    if (Array.isArray(headers)) {
-      return headers.reduce<Record<string, string>>((acc, [key, value]) => {
-        acc[key] = value;
-        return acc;
-      }, {});
-    }
-
-    return headers;
-  }
-
-  private buildHeaders(headers?: HeadersInit): HeadersInit {
-    const { apiKey, secretKey } = this.ensureCredentials();
-    const normalized = this.normalizeHeaders(headers);
-
-    return {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-      "APCA-API-KEY-ID": apiKey,
-      "APCA-API-SECRET-KEY": secretKey,
-      ...normalized,
-    };
-  }
-
-  private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
-    const url = `${this.baseUrl}${path}`;
-    const headers = this.buildHeaders(init.headers);
 
     log.debug(
-      "Calling Alpaca API",
-      { path, method: init.method || "GET" },
+      "Alpaca API request successful",
+      {
+        url,
+        method: options.method || "GET",
+        status: response.status,
+        responseDataKeys: responseData ? Object.keys(responseData) : [],
+        userId,
+      },
+      "AlpacaService"
+    );
+
+    return responseData as T;
+  }
+
+  async getAccount(userId: string): Promise<AlpacaAccount> {
+    log.debug("Fetching Alpaca account", { userId }, "AlpacaService");
+
+    try {
+      const account = await this.makeAuthenticatedRequest<AlpacaAccount>(
+        "/v2/account",
+        userId
+      );
+
+      log.success(
+        "Successfully fetched Alpaca account",
+        { userId },
+        "AlpacaService"
+      );
+      return account;
+    } catch (error) {
+      log.failure("Failed to fetch Alpaca account", error, "AlpacaService");
+      throw error;
+    }
+  }
+
+  async getPositions(userId: string): Promise<AlpacaPosition[]> {
+    log.debug("Fetching Alpaca positions", { userId }, "AlpacaService");
+
+    try {
+      const positions = await this.makeAuthenticatedRequest<AlpacaPosition[]>(
+        "/v2/positions",
+        userId
+      );
+
+      log.success(
+        "Successfully fetched Alpaca positions",
+        { userId, count: positions.length },
+        "AlpacaService"
+      );
+      return positions;
+    } catch (error) {
+      log.failure("Failed to fetch Alpaca positions", error, "AlpacaService");
+      throw error;
+    }
+  }
+
+  async getOrders(
+    userId: string,
+    status: string = "all",
+    limit: number = 25
+  ): Promise<AlpacaOrder[]> {
+    log.debug(
+      "Fetching Alpaca orders",
+      { userId, status, limit },
       "AlpacaService"
     );
 
     try {
-      const response = await fetch(url, {
-        ...init,
-        headers,
+      const params = new URLSearchParams({
+        status,
+        limit: limit.toString(),
       });
 
-      const text = await response.text();
-      const data = text ? this.safeJsonParse(text) : null;
+      const orders = await this.makeAuthenticatedRequest<AlpacaOrder[]>(
+        `/v2/orders?${params.toString()}`,
+        userId
+      );
 
-      if (!response.ok) {
-        const message = this.extractErrorMessage(
-          data,
-          response.statusText || "Unexpected Alpaca API error"
-        );
+      log.success(
+        "Successfully fetched Alpaca orders",
+        { userId, count: orders.length },
+        "AlpacaService"
+      );
+      return orders;
+    } catch (error) {
+      log.failure("Failed to fetch Alpaca orders", error, "AlpacaService");
+      throw error;
+    }
+  }
 
-        throw new Error(`Alpaca API error (${response.status}): ${message}`);
+  async placeOrder(
+    userId: string,
+    order: AlpacaOrderRequest
+  ): Promise<AlpacaOrder> {
+    log.info(
+      "Placing Alpaca order",
+      {
+        userId,
+        order: {
+          symbol: order.symbol,
+          side: order.side,
+          type: order.type,
+          qty: order.qty,
+          notional: order.notional,
+          time_in_force: order.time_in_force,
+          limit_price: order.limit_price,
+          stop_price: order.stop_price,
+          extended_hours: order.extended_hours,
+          position_side: order.position_side,
+        },
+      },
+      "AlpacaService"
+    );
+
+    try {
+      // Validate order data before sending
+      if (!order.symbol) {
+        throw new Error("Symbol is required");
+      }
+      if (!order.side || !["buy", "sell"].includes(order.side)) {
+        throw new Error("Valid side (buy/sell) is required");
+      }
+      if (
+        !order.type ||
+        !["market", "limit", "stop", "stop_limit", "trailing_stop"].includes(
+          order.type
+        )
+      ) {
+        throw new Error("Valid order type is required");
+      }
+      if (!order.qty && !order.notional) {
+        throw new Error("Either quantity or notional amount is required");
       }
 
-      return data as T;
+      const placedOrder = await this.makeAuthenticatedRequest<AlpacaOrder>(
+        "/v2/orders",
+        userId,
+        {
+          method: "POST",
+          body: JSON.stringify(order),
+        }
+      );
+
+      log.success(
+        "Successfully placed Alpaca order",
+        {
+          userId,
+          orderId: placedOrder.id,
+          symbol: order.symbol,
+          side: order.side,
+          status: placedOrder.status,
+          submittedAt: placedOrder.submitted_at,
+        },
+        "AlpacaService"
+      );
+      return placedOrder;
     } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
       log.failure(
-        "Alpaca API request failed",
-        { path, method: init.method || "GET" },
+        "Failed to place Alpaca order",
+        {
+          error: errorMessage,
+          userId,
+          order: {
+            symbol: order.symbol,
+            side: order.side,
+            type: order.type,
+            qty: order.qty,
+            notional: order.notional,
+          },
+          errorStack: error instanceof Error ? error.stack : undefined,
+        },
         "AlpacaService"
       );
       throw error;
     }
   }
-
-  private safeJsonParse(payload: string): unknown {
-    try {
-      return JSON.parse(payload);
-    } catch {
-      return payload;
-    }
-  }
-
-  private extractErrorMessage(payload: unknown, fallback: string): string {
-    if (typeof payload === "string") {
-      return payload;
-    }
-
-    if (payload && typeof payload === "object") {
-      if (
-        "message" in payload &&
-        typeof (payload as { message: unknown }).message === "string"
-      ) {
-        return (payload as { message: string }).message;
-      }
-
-      if (
-        "error" in payload &&
-        typeof (payload as { error: unknown }).error === "string"
-      ) {
-        return (payload as { error: string }).error;
-      }
-    }
-
-    return fallback;
-  }
-
-  async getAccount(): Promise<AlpacaAccount> {
-    return this.request<AlpacaAccount>("/v2/account");
-  }
-
-  async getPositions(): Promise<AlpacaPosition[]> {
-    return this.request<AlpacaPosition[]>("/v2/positions");
-  }
-
-  async listOrders(
-    params: AlpacaListOrdersParams = {}
-  ): Promise<AlpacaOrder[]> {
-    const searchParams = new URLSearchParams();
-
-    if (params.status) {
-      searchParams.set("status", params.status);
-    }
-    if (typeof params.limit === "number") {
-      searchParams.set("limit", params.limit.toString());
-    }
-    if (params.direction) {
-      searchParams.set("direction", params.direction);
-    }
-    if (params.after) {
-      searchParams.set("after", params.after);
-    }
-    if (params.until) {
-      searchParams.set("until", params.until);
-    }
-    if (typeof params.nested === "boolean") {
-      searchParams.set("nested", params.nested ? "true" : "false");
-    }
-
-    const query = searchParams.toString();
-    const path = query ? `/v2/orders?${query}` : "/v2/orders";
-
-    return this.request<AlpacaOrder[]>(path);
-  }
-
-  async placeOrder(order: AlpacaOrderRequest): Promise<AlpacaOrder> {
-    const payload: Record<string, unknown> = {
-      symbol: order.symbol.toUpperCase(),
-      side: order.side,
-      type: order.type,
-      time_in_force: order.time_in_force,
-      extended_hours: order.extended_hours ?? false,
-    };
-
-    if (typeof order.qty === "number") {
-      payload.qty = order.qty.toString();
-    }
-
-    if (typeof order.notional === "number") {
-      payload.notional = order.notional.toString();
-    }
-
-    if (typeof order.limit_price === "number") {
-      payload.limit_price = order.limit_price;
-    }
-
-    if (typeof order.stop_price === "number") {
-      payload.stop_price = order.stop_price;
-    }
-
-    if (order.position_side) {
-      payload.position_side = order.position_side;
-    }
-
-    return this.request<AlpacaOrder>("/v2/orders", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
-  }
 }
 
 export const alpacaService = new AlpacaService();
-
 export default alpacaService;

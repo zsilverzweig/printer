@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { alpacaService } from "@/features/finance/lib/alpaca-service";
 import { log } from "@/lib/utils/logger";
 
 export async function GET(request: NextRequest) {
@@ -16,12 +17,10 @@ export async function GET(request: NextRequest) {
 
     log.debug("Fetching trading account data", { userId }, "TradingAccountAPI");
 
-    // TODO: Get user's OAuth tokens from database and use them to call Alpaca API
-    // For now, return an error indicating the feature is not yet implemented
-    return NextResponse.json(
-      { error: "Trading account integration not yet implemented" },
-      { status: 501 }
-    );
+    // Get account data from Alpaca using stored OAuth tokens
+    const account = await alpacaService.getAccount(userId);
+
+    return NextResponse.json({ account });
   } catch (error) {
     log.failure(
       "Failed to fetch trading account data",

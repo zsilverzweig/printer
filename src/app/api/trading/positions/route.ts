@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { alpacaService } from "@/features/finance/lib/alpaca-service";
 import { log } from "@/lib/utils/logger";
 
 export async function GET(request: NextRequest) {
@@ -16,12 +17,10 @@ export async function GET(request: NextRequest) {
 
     log.debug("Fetching trading positions", { userId }, "TradingPositionsAPI");
 
-    // TODO: Get user's OAuth tokens from database and use them to call Alpaca API
-    // For now, return an error indicating the feature is not yet implemented
-    return NextResponse.json(
-      { error: "Trading positions integration not yet implemented" },
-      { status: 501 }
-    );
+    // Get positions data from Alpaca using stored OAuth tokens
+    const positions = await alpacaService.getPositions(userId);
+
+    return NextResponse.json({ positions });
   } catch (error) {
     log.failure(
       "Failed to fetch trading positions",
