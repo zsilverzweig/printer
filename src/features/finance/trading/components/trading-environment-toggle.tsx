@@ -17,7 +17,7 @@ export function TradingEnvironmentToggle() {
   const {
     setEnvironment,
     isPaperTrading,
-    availableEnvironments,
+    // availableEnvironments,
     environmentLabel,
     environmentDescription,
   } = useTradingContext();
