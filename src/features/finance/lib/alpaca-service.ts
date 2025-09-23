@@ -1,108 +1,15 @@
 import { userService } from "@/lib/services/user-service";
 import { log } from "@/lib/utils/logger";
 
-export interface AlpacaAccount {
-  id: string;
-  account_number: string;
-  status: string;
-  currency: string;
-  buying_power: string;
-  cash: string;
-  equity: string;
-  portfolio_value: string;
-  shorting_enabled: boolean;
-  pattern_day_trader: boolean;
-  multiplier: string;
-  trading_blocked: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface AlpacaPosition {
-  asset_id: string;
-  symbol: string;
-  exchange: string;
-  asset_class: string;
-  qty: string;
-  side: string;
-  market_value: string;
-  cost_basis: string;
-  unrealized_pl: string;
-  unrealized_plpc: string;
-  unrealized_plpc_2: string;
-  current_price: string;
-  lastday_price: string;
-  change_today: string;
-}
-
-export interface AlpacaOrder {
-  id: string;
-  client_order_id: string;
-  created_at: string;
-  updated_at: string;
-  submitted_at: string;
-  filled_at?: string;
-  expired_at?: string;
-  canceled_at?: string;
-  failed_at?: string;
-  replaced_at?: string;
-  replaced_by?: string;
-  replaces?: string;
-  asset_id: string;
-  symbol: string;
-  asset_class: string;
-  notional?: string;
-  qty?: string;
-  filled_qty: string;
-  filled_avg_price?: string;
-  order_class: string;
-  order_type: string;
-  type: string;
-  side: string;
-  time_in_force: string;
-  limit_price?: string;
-  stop_price?: string;
-  status: string;
-  extended_hours: boolean;
-  legs?: AlpacaOrder[];
-  trail_percent?: string;
-  trail_price?: string;
-  hwm?: string;
-  position_side?: string;
-}
-
-export interface AlpacaOrderRequest {
-  symbol: string;
-  qty?: number;
-  notional?: number;
-  side: "buy" | "sell";
-  type: "market" | "limit" | "stop" | "stop_limit" | "trailing_stop";
-  time_in_force: "day" | "gtc" | "ioc" | "fok";
-  limit_price?: number;
-  stop_price?: number;
-  extended_hours?: boolean;
-  client_order_id?: string;
-  order_class?: string;
-  take_profit?: {
-    limit_price: number;
-  };
-  stop_loss?: {
-    stop_price: number;
-    limit_price?: number;
-  };
-  trail_percent?: number;
-  trail_price?: number;
-  position_side?: "long" | "short";
-}
-
-export interface AlpacaQuote {
-  symbol: string;
-  bid: number;
-  ask: number;
-  bid_size: number;
-  ask_size: number;
-  timestamp: string;
-}
+import {
+  AlpacaAccount,
+  AlpacaMarketDataResponse,
+  AlpacaOrder,
+  AlpacaOrderRequest,
+  AlpacaPosition,
+  AlpacaQuote,
+  AlpacaQuoteData,
+} from "./types/alpaca";
 
 class AlpacaService {
   private readonly paperBaseUrl: string;
@@ -173,7 +80,7 @@ class AlpacaService {
     });
 
     const responseText = await response.text();
-    let responseData: any = null;
+    let responseData: unknown = null;
 
     try {
       responseData = responseText ? JSON.parse(responseText) : null;
@@ -215,10 +122,13 @@ class AlpacaService {
       // Try to extract a meaningful error message
       let errorMessage = `Alpaca API error: ${response.status} ${response.statusText}`;
 
-      if (responseData?.message) {
-        errorMessage = responseData.message;
-      } else if (responseData?.error) {
-        errorMessage = responseData.error;
+      if (responseData && typeof responseData === "object") {
+        const data = responseData as Record<string, unknown>;
+        if (typeof data.message === "string") {
+          errorMessage = data.message;
+        } else if (typeof data.error === "string") {
+          errorMessage = data.error;
+        }
       } else if (responseText) {
         errorMessage = responseText.substring(0, 200);
       }
@@ -491,7 +401,7 @@ class AlpacaService {
         throw new Error(`Market data service error: ${response.status}`);
       }
 
-      let alpacaData: any;
+      let alpacaData: AlpacaMarketDataResponse;
       try {
         alpacaData = rawBody ? JSON.parse(rawBody) : {};
       } catch {
@@ -501,13 +411,16 @@ class AlpacaService {
       // Expected shapes per Alpaca docs:
       // 1) Single-symbol: { symbol: "AAPL", quote: { bp, bs, ap, as, t } }
       // 2) Multi-symbol: { quotes: [{ S, bp, bs, ap, as, t }, ...] } OR { quotes: { AAPL: { ... } } }
-      let q: any = alpacaData?.quote;
+      let q: AlpacaQuoteData | undefined = alpacaData?.quote;
       if (!q && alpacaData?.quotes) {
         if (Array.isArray(alpacaData.quotes)) {
           q =
-            alpacaData.quotes.find((x: any) => (x.S || x.symbol) === sym) ||
+            alpacaData.quotes.find((x) => (x.S || x.symbol) === sym) ||
             alpacaData.quotes[0];
-        } else if (alpacaData.quotes[sym]) {
+        } else if (
+          typeof alpacaData.quotes === "object" &&
+          alpacaData.quotes[sym]
+        ) {
           q = alpacaData.quotes[sym];
         }
       }

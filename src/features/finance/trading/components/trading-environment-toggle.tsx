@@ -10,22 +10,17 @@ import {
   CardHeader,
   CardTitle,
 } from "@/lib/components/ui/card";
+
 import { useTradingContext } from "../contexts/trading-context";
 
 export function TradingEnvironmentToggle() {
   const {
-    environment,
     setEnvironment,
     isPaperTrading,
     availableEnvironments,
     environmentLabel,
     environmentDescription,
   } = useTradingContext();
-
-  // Don't show toggle if user only has access to one environment
-  if (availableEnvironments.length <= 1) {
-    return null;
-  }
 
   return (
     <Card
@@ -35,15 +30,17 @@ export function TradingEnvironmentToggle() {
           : "border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950"
       }`}
     >
-      <CardHeader className="pb-3">
+      <CardHeader className="">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            {isPaperTrading ? (
-              <TestTube className="h-6 w-6 text-blue-600" />
-            ) : (
-              <DollarSign className="h-6 w-6 text-red-600" />
-            )}
-            <div>
+            <div className="flex items-center justify-center">
+              {isPaperTrading ? (
+                <TestTube className="h-6 w-6 text-blue-600" />
+              ) : (
+                <DollarSign className="h-6 w-6 text-red-600" />
+              )}
+            </div>
+            <div className="flex flex-col justify-center">
               <CardTitle className="text-lg">{environmentLabel}</CardTitle>
               <CardDescription className="text-sm">
                 {environmentDescription}

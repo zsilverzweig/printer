@@ -66,7 +66,6 @@ function TradingPanelContent() {
   );
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [estimatedCost, setEstimatedCost] = useState<number | null>(null);
-  const [_currentPrice, setCurrentPrice] = useState<number | null>(null);
   const [confirmationData, setConfirmationData] =
     useState<OrderConfirmationData | null>(null);
   const [isClosingPosition, setIsClosingPosition] = useState(false);
@@ -117,7 +116,6 @@ function TradingPanelContent() {
           );
 
     setEstimatedCost(cost);
-    setCurrentPrice(price || null);
 
     setConfirmationData({
       symbol: orderData.symbol,
