@@ -1,48 +1,64 @@
-'use client'
+"use client";
 
-import React from 'react'
+import { Badge } from "@/lib/components/ui/badge";
+import { Button } from "@/lib/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/lib/components/ui/card";
 
-import { Badge } from '@/lib/components/ui/badge'
-import { Button } from '@/lib/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/lib/components/ui/card'
-
-import { Agent } from '../types'
+import { Agent } from "../types";
 
 interface AgentListProps {
-  agents: Agent[]
-  onSelectAgent: (agent: Agent) => void
-  onDeleteAgent: (agentId: string) => void
+  agents: Agent[];
+  onSelectAgent: (agent: Agent) => void;
+  onDeleteAgent: (agentId: string) => void;
 }
 
-export function AgentList({ agents, onSelectAgent, onDeleteAgent }: AgentListProps) {
+export function AgentList({
+  agents,
+  onSelectAgent,
+  onDeleteAgent,
+}: AgentListProps) {
   if (agents.length === 0) {
     return (
       <Card>
         <CardContent className="p-8 text-center">
           <div className="text-gray-500">
             <h3 className="text-lg font-medium mb-2">No agents found</h3>
-            <p>Create your first agent to get started with AI-powered investment analysis.</p>
+            <p>
+              Create your first agent to get started with AI-powered investment
+              analysis.
+            </p>
           </div>
         </CardContent>
       </Card>
-    )
+    );
   }
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
       {agents.map((agent) => (
-        <Card key={agent.id} className="hover:shadow-md transition-shadow cursor-pointer">
+        <Card
+          key={agent.id}
+          className="hover:shadow-md transition-shadow cursor-pointer"
+        >
           <CardHeader className="pb-3">
             <div className="flex items-start justify-between">
               <div className="flex-1">
-                <CardTitle className="text-lg">{agent.name}</CardTitle>
+                <CardTitle className="text-lg">
+                  {agent.name || "Unnamed Agent"}
+                </CardTitle>
                 <CardDescription className="mt-1">
-                  {agent.description}
+                  {agent.description || "No description available"}
                 </CardDescription>
               </div>
               <div className="flex items-center space-x-2">
-                <Badge variant={agent.isActive ? 'default' : 'secondary'}>
-                  {agent.isActive ? 'Active' : 'Inactive'}
+                <Badge variant={agent.isActive ? "default" : "secondary"}>
+                  {agent.isActive ? "Active" : "Inactive"}
                 </Badge>
               </div>
             </div>
@@ -51,22 +67,26 @@ export function AgentList({ agents, onSelectAgent, onDeleteAgent }: AgentListPro
             <div className="space-y-3">
               <div>
                 <Badge variant="outline" className="text-xs">
-                  {agent.role.replace('_', ' ').toUpperCase()}
+                  {(agent.role || "unknown").replace("_", " ").toUpperCase()}
                 </Badge>
               </div>
-              
+
               <div className="text-sm text-gray-600">
                 <div className="flex justify-between">
                   <span>Model:</span>
-                  <span className="font-medium">{agent.model.name}</span>
+                  <span className="font-medium">
+                    {agent.model?.name || "Unknown"}
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span>Version:</span>
-                  <span className="font-medium">{agent.version}</span>
+                  <span className="font-medium">
+                    {agent.version || "1.0.0"}
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span>Temperature:</span>
-                  <span className="font-medium">{agent.temperature}</span>
+                  <span className="font-medium">{agent.temperature || 0}</span>
                 </div>
               </div>
 
@@ -93,5 +113,5 @@ export function AgentList({ agents, onSelectAgent, onDeleteAgent }: AgentListPro
         </Card>
       ))}
     </div>
-  )
+  );
 }

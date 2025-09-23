@@ -1,61 +1,76 @@
-'use client'
+"use client";
 
-import React, { useState } from 'react'
+import { useState } from "react";
 
-import { Button } from '@/lib/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/lib/components/ui/card'
-import { Input } from '@/lib/components/ui/input'
-
-import { useAgents } from '../hooks/use-agents'
+import { Button } from "@/lib/components/ui/button";
 import {
-  Agent,
-  CreateAgentRequest,
-  UpdateAgentRequest,
-} from '../types'
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/lib/components/ui/card";
+import { Input } from "@/lib/components/ui/input";
 
-import { AgentDetailsDialog } from './agent-details-dialog'
-import { AgentList } from './agent-list'
-import { CreateAgentDialog } from './create-agent-dialog'
+import { useAgents } from "../hooks/use-agents";
+import { Agent, CreateAgentRequest, UpdateAgentRequest } from "../types";
+
+import { AgentDetailsDialog } from "./agent-details-dialog";
+import { AgentList } from "./agent-list";
+import { CreateAgentDialog } from "./create-agent-dialog";
 
 export function AgentManagement() {
-  const { agents, templates, loading, error, createAgent, updateAgent, deleteAgent } = useAgents()
-  const [showCreateDialog, setShowCreateDialog] = useState(false)
-  const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null)
-  const [searchTerm, setSearchTerm] = useState('')
+  const {
+    agents,
+    templates,
+    loading,
+    error,
+    createAgent,
+    updateAgent,
+    deleteAgent,
+  } = useAgents();
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
 
-  const filteredAgents = agents.filter(agent =>
-    agent.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    agent.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    agent.role.toLowerCase().includes(searchTerm.toLowerCase())
-  )
+  const filteredAgents = agents.filter(
+    (agent) =>
+      (agent.name?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
+      (agent.description?.toLowerCase() || "").includes(
+        searchTerm.toLowerCase()
+      ) ||
+      (agent.role?.toLowerCase() || "").includes(searchTerm.toLowerCase())
+  );
 
   const handleCreateAgent = async (request: CreateAgentRequest) => {
     try {
-      await createAgent(request)
-      setShowCreateDialog(false)
+      await createAgent(request);
+      setShowCreateDialog(false);
     } catch (error) {
-      console.error('Failed to create agent:', error)
+      console.error("Failed to create agent:", error);
     }
-  }
+  };
 
-  const handleUpdateAgent = async (agentId: string, updates: UpdateAgentRequest) => {
+  const handleUpdateAgent = async (
+    agentId: string,
+    updates: UpdateAgentRequest
+  ) => {
     try {
-      await updateAgent(agentId, updates)
-      setSelectedAgent(null)
+      await updateAgent(agentId, updates);
+      setSelectedAgent(null);
     } catch (error) {
-      console.error('Failed to update agent:', error)
+      console.error("Failed to update agent:", error);
     }
-  }
+  };
 
   const handleDeleteAgent = async (agentId: string) => {
-    if (confirm('Are you sure you want to delete this agent?')) {
+    if (confirm("Are you sure you want to delete this agent?")) {
       try {
-        await deleteAgent(agentId)
+        await deleteAgent(agentId);
       } catch (error) {
-        console.error('Failed to delete agent:', error)
+        console.error("Failed to delete agent:", error);
       }
     }
-  }
+  };
 
   if (loading) {
     return (
@@ -65,7 +80,7 @@ export function AgentManagement() {
           <p className="text-gray-600">Loading agents...</p>
         </div>
       </div>
-    )
+    );
   }
 
   if (error) {
@@ -80,7 +95,7 @@ export function AgentManagement() {
           </CardContent>
         </Card>
       </div>
-    )
+    );
   }
 
   return (
@@ -88,21 +103,23 @@ export function AgentManagement() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Agent Management</h1>
+          <h1 className="text-3xl font-bold tracking-tight">
+            Agent Management
+          </h1>
           <p className="text-gray-600 mt-2">
             Create and manage AI agents for investment analysis
           </p>
         </div>
-        <Button onClick={() => setShowCreateDialog(true)}>
-          Create Agent
-        </Button>
+        <Button onClick={() => setShowCreateDialog(true)}>Create Agent</Button>
       </div>
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600">Total Agents</CardTitle>
+            <CardTitle className="text-sm font-medium text-gray-600">
+              Total Agents
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{agents.length}</div>
@@ -110,17 +127,21 @@ export function AgentManagement() {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600">Active Agents</CardTitle>
+            <CardTitle className="text-sm font-medium text-gray-600">
+              Active Agents
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {agents.filter(agent => agent.isActive).length}
+              {agents.filter((agent) => agent.isActive).length}
             </div>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600">Templates</CardTitle>
+            <CardTitle className="text-sm font-medium text-gray-600">
+              Templates
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{templates.length}</div>
@@ -162,5 +183,5 @@ export function AgentManagement() {
         onDeleteAgent={handleDeleteAgent}
       />
     </div>
-  )
+  );
 }

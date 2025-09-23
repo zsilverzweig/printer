@@ -36,7 +36,7 @@ export function Modal({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-[9999]">
       <div
         className={cn(
           "bg-background border border-border rounded-lg shadow-2xl w-full max-h-[95vh] overflow-hidden flex flex-col",
@@ -97,7 +97,11 @@ interface ModalSectionProps {
   className?: string;
 }
 
-export function ModalSection({ title, children, className }: ModalSectionProps) {
+export function ModalSection({
+  title,
+  children,
+  className,
+}: ModalSectionProps) {
   return (
     <div className={cn("space-y-4", className)}>
       <h3 className="text-lg font-semibold text-foreground">{title}</h3>
@@ -113,7 +117,12 @@ interface ModalFieldProps {
   className?: string;
 }
 
-export function ModalField({ label, children, required, className }: ModalFieldProps) {
+export function ModalField({
+  label,
+  children,
+  required,
+  className,
+}: ModalFieldProps) {
   return (
     <div className={cn("space-y-2", className)}>
       <label className="block text-sm font-medium text-foreground">

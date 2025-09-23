@@ -1,18 +1,19 @@
 // Comprehensive user hook that combines authentication with user profile management
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect } from "react";
 
 import { useUserAccess } from "@/lib/hooks/use-user-access";
 import { useUserProfile } from "@/lib/hooks/use-user-profile";
 import { useAuthContext } from "@/lib/providers/auth-provider";
+import type { AuthUser } from "@/lib/services/auth";
 import { userService } from "@/lib/services/user-service";
 import type { UserAccess, UserProfile, UserStatus } from "@/lib/types/user";
 import { log } from "@/lib/utils/logger";
 
 export interface UseUserReturn {
   // Authentication state
-  user: any | null;
+  user: AuthUser | null;
   isAuthenticated: boolean;
   isAdmin: boolean;
   loading: boolean;
@@ -45,29 +46,27 @@ export interface UseUserReturn {
 
 export function useUser(): UseUserReturn {
   const auth = useAuthContext();
+
   const {
     profile,
     access,
-    loading: profileLoading,
     error: profileError,
     updateProfile,
     updateStatus,
     refreshProfile,
   } = useUserProfile(auth.user?.uid || null);
+
   const {
     access: accessData,
-    loading: accessLoading,
     error: accessError,
     hasRestriction,
     refreshAccess,
   } = useUserAccess(auth.user?.uid || null);
-  const [initializing, setInitializing] = useState(true);
 
   // Initialize user profile when user signs in
   useEffect(() => {
     const initializeUser = async () => {
       if (!auth.user || profile) {
-        setInitializing(false);
         return;
       }
 
@@ -97,8 +96,6 @@ export function useUser(): UseUserReturn {
         await refreshAccess();
       } catch (error) {
         log.error("Failed to initialize user profile", error, "useUser");
-      } finally {
-        setInitializing(false);
       }
     };
 
@@ -129,12 +126,15 @@ export function useUser(): UseUserReturn {
     return profile?.photoURL || auth.user?.photoURL || null;
   }, [profile, auth.user]);
 
+  // Simplified loading logic - only show loading during initial auth check
+  const shouldShowLoading = auth.loading;
+
   return {
     // Authentication state
     user: auth.user,
     isAuthenticated: auth.isAuthenticated,
     isAdmin: auth.isAdmin,
-    loading: auth.loading || profileLoading || accessLoading || initializing,
+    loading: shouldShowLoading,
     error: auth.error || profileError || accessError,
 
     // User profile state

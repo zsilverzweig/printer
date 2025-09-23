@@ -21,6 +21,8 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
+  // console.log("[PERF] RootLayout rendering at:", new Date().toISOString());
+
   return (
     <html lang="en" className="dark">
       <meta name="apple-mobile-web-app-title" content="printer" />

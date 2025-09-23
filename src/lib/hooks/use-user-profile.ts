@@ -23,8 +23,8 @@ export function useUserProfile(uid: string | null): UseUserProfileReturn {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const loadProfile = useCallback(async () => {
-    if (!uid) {
+  const loadProfile = useCallback(async (userId: string | null) => {
+    if (!userId) {
       setProfile(null);
       setAccess(null);
       setLoading(false);
@@ -36,8 +36,8 @@ export function useUserProfile(uid: string | null): UseUserProfileReturn {
       setError(null);
 
       const [profileData, accessData] = await Promise.all([
-        userService.getUserProfile(uid),
-        userService.getUserAccess(uid),
+        userService.getUserProfile(userId),
+        userService.getUserAccess(userId),
       ]);
 
       setProfile(profileData);
@@ -50,11 +50,11 @@ export function useUserProfile(uid: string | null): UseUserProfileReturn {
     } finally {
       setLoading(false);
     }
-  }, [uid]);
+  }, []);
 
   useEffect(() => {
-    loadProfile();
-  }, [loadProfile]);
+    loadProfile(uid);
+  }, [uid, loadProfile]);
 
   const updateProfile = useCallback(
     async (updates: Partial<UserProfile>) => {
@@ -67,7 +67,7 @@ export function useUserProfile(uid: string | null): UseUserProfileReturn {
         await userService.updateUserProfile(uid, updates);
 
         // Refresh profile data
-        await loadProfile();
+        await loadProfile(uid);
       } catch (err) {
         const errorMessage =
           err instanceof Error ? err.message : "Failed to update profile";
@@ -90,7 +90,7 @@ export function useUserProfile(uid: string | null): UseUserProfileReturn {
         await userService.updateUserStatus(uid, status, reason);
 
         // Refresh profile data
-        await loadProfile();
+        await loadProfile(uid);
       } catch (err) {
         const errorMessage =
           err instanceof Error ? err.message : "Failed to update status";
@@ -103,8 +103,8 @@ export function useUserProfile(uid: string | null): UseUserProfileReturn {
   );
 
   const refreshProfile = useCallback(async () => {
-    await loadProfile();
-  }, [loadProfile]);
+    await loadProfile(uid);
+  }, [loadProfile, uid]);
 
   return {
     profile,

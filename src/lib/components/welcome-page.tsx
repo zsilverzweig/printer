@@ -1,6 +1,5 @@
-
-import Link from "next/link";
 import { ArrowRight, Check } from "lucide-react";
+import Link from "next/link";
 
 import { Button } from "@/lib/components/ui/button";
 import {
@@ -132,9 +131,9 @@ export function WelcomePage() {
           Turn investment ideas into portfolios you can track.
         </h1>
         <p className="mx-auto max-w-2xl text-lg text-muted-foreground">
-          Printer orchestrates specialized AI agents that research, construct, and
-          monitor investment strategies so you can focus on the decisions that
-          print money.
+          Printer orchestrates specialized AI agents that research, construct,
+          and monitor investment strategies so you can focus on the decisions
+          that print money.
         </p>
         <div className="flex flex-col items-center justify-center gap-3 sm:flex-row">
           <Button size="lg" asChild>
@@ -145,8 +144,8 @@ export function WelcomePage() {
           </Button>
         </div>
         <p className="text-sm text-muted-foreground">
-          Signing up today adds you to the waitlist. We will reach out as soon as
-          your spot is ready.
+          Signing up today adds you to the waitlist. We will reach out as soon
+          as your spot is ready.
         </p>
       </section>
 
@@ -202,8 +201,8 @@ export function WelcomePage() {
       <section className="rounded-lg border bg-muted/40 p-6">
         <h2 className="text-xl font-semibold">What you can expect</h2>
         <p className="mt-2 text-muted-foreground">
-          Better investment decisions that help you print money, with less effort
-          and more confidence.
+          Better investment decisions that help you print money, with less
+          effort and more confidence.
         </p>
       </section>
 
@@ -261,8 +260,8 @@ export function WelcomePage() {
           ))}
         </div>
         <p className="text-center text-sm text-muted-foreground">
-          We will confirm details before activating your account and starting any
-          billing for paid plans.
+          We will confirm details before activating your account and starting
+          any billing for paid plans.
         </p>
       </section>
     </div>
