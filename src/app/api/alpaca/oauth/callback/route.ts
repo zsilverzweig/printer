@@ -9,11 +9,33 @@ export async function GET(request: NextRequest) {
     const state = searchParams.get("state");
     const error = searchParams.get("error");
 
+    // Verbose OAuth2 callback logging
+    log.info(
+      "🔔 OAuth2 Callback Received",
+      {
+        url: request.url,
+        code: code ? code.substring(0, 10) + "..." : "missing",
+        codeLength: code?.length || 0,
+        state: state ? state.substring(0, 10) + "..." : "missing",
+        error: error || "none",
+        allParams: Object.fromEntries(searchParams.entries()),
+        userAgent: request.headers.get("user-agent"),
+        referer: request.headers.get("referer"),
+        timestamp: new Date().toISOString(),
+      },
+      "AlpacaOAuth"
+    );
+
     // Handle OAuth error
     if (error) {
       log.failure(
-        "OAuth authorization failed",
-        { error, state },
+        "❌ OAuth authorization failed",
+        {
+          error,
+          state,
+          fullUrl: request.url,
+          timestamp: new Date().toISOString(),
+        },
         "AlpacaOAuth"
       );
 

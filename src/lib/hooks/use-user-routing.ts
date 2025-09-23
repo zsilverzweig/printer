@@ -4,6 +4,7 @@
 import { useCallback } from "react";
 
 import { useUser } from "@/lib/hooks/use-user";
+import { UserAccess } from "@/lib/types/user";
 
 export interface UserRoute {
   path: string;
@@ -17,7 +18,7 @@ export interface UseUserRoutingReturn {
   isAdmin: boolean;
   isOnWaitlist: boolean;
   canAccessApp: boolean;
-  access: any;
+  access: UserAccess | null;
 }
 
 export function useUserRouting(): UseUserRoutingReturn {

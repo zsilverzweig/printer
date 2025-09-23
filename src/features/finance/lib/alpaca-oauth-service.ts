@@ -68,7 +68,7 @@ class AlpacaOAuthService {
       client_id: this.clientId,
       response_type: "code",
       redirect_uri: redirectUri,
-      scope: "trading:read trading:write account:read", // Request trading and account access
+      scope: "trading account:write", // Request trading and account write access
     });
 
     // Add environment parameter if specified
@@ -83,13 +83,19 @@ class AlpacaOAuthService {
 
     const authUrl = `${this.authUrl}?${params.toString()}`;
 
-    log.debug(
-      "Generated OAuth authorization URL",
+    // Verbose logging for OAuth2 debugging
+    log.info(
+      "🔗 OAuth2 Authorization URL Generated",
       {
         environment: environment || "both",
         clientId: this.clientId.substring(0, 8) + "...",
+        clientIdLength: this.clientId.length,
         redirectUri,
         hasState: !!state,
+        stateValue: state ? state.substring(0, 10) + "..." : "none",
+        authUrl: authUrl.substring(0, 100) + "...",
+        fullParams: Object.fromEntries(params.entries()),
+        timestamp: new Date().toISOString(),
       },
       "AlpacaOAuthService"
     );
@@ -113,9 +119,25 @@ class AlpacaOAuthService {
       redirect_uri: redirectUri,
     });
 
-    log.debug(
-      "Exchanging authorization code for token",
-      { code: code.substring(0, 10) + "..." },
+    // Verbose logging for OAuth2 debugging
+    log.info(
+      "🔄 OAuth2 Token Exchange Request",
+      {
+        code: code.substring(0, 10) + "...",
+        codeLength: code.length,
+        redirectUri,
+        tokenUrl: this.tokenUrl,
+        clientId: this.clientId.substring(0, 8) + "...",
+        hasClientSecret: !!this.clientSecret,
+        requestBody: {
+          grant_type: "authorization_code",
+          client_id: this.clientId.substring(0, 8) + "...",
+          client_secret: this.clientSecret ? "[REDACTED]" : "missing",
+          code: code.substring(0, 10) + "...",
+          redirect_uri: redirectUri,
+        },
+        timestamp: new Date().toISOString(),
+      },
       "AlpacaOAuthService"
     );
 
@@ -128,8 +150,34 @@ class AlpacaOAuthService {
         body: body.toString(),
       });
 
+      // Log response details
+      log.info(
+        "📡 OAuth2 Token Exchange Response",
+        {
+          status: response.status,
+          statusText: response.statusText,
+          ok: response.ok,
+          headers: Object.fromEntries(response.headers.entries()),
+          url: response.url,
+          timestamp: new Date().toISOString(),
+        },
+        "AlpacaOAuthService"
+      );
+
       if (!response.ok) {
         const errorText = await response.text();
+        log.error(
+          "❌ OAuth2 Token Exchange Failed",
+          {
+            status: response.status,
+            statusText: response.statusText,
+            errorText,
+            responseHeaders: Object.fromEntries(response.headers.entries()),
+            requestUrl: this.tokenUrl,
+            requestBody: Object.fromEntries(body.entries()),
+          },
+          "AlpacaOAuthService"
+        );
         throw new Error(
           `Token exchange failed: ${response.status} ${errorText}`
         );
@@ -138,16 +186,31 @@ class AlpacaOAuthService {
       const tokens = (await response.json()) as AlpacaOAuthTokens;
 
       log.success(
-        "Successfully exchanged code for tokens",
-        { token_type: tokens.token_type, scope: tokens.scope },
+        "✅ OAuth2 Token Exchange Successful",
+        {
+          token_type: tokens.token_type,
+          scope: tokens.scope,
+          expires_in: tokens.expires_in,
+          has_refresh_token: !!tokens.refresh_token,
+          access_token_preview: tokens.access_token.substring(0, 10) + "...",
+          refresh_token_preview:
+            tokens.refresh_token?.substring(0, 10) + "..." || "none",
+          timestamp: new Date().toISOString(),
+        },
         "AlpacaOAuthService"
       );
 
       return tokens;
     } catch (error) {
       log.failure(
-        "Failed to exchange authorization code for token",
-        { error: error instanceof Error ? error.message : "Unknown error" },
+        "💥 OAuth2 Token Exchange Error",
+        {
+          error: error instanceof Error ? error.message : "Unknown error",
+          errorStack: error instanceof Error ? error.stack : undefined,
+          requestUrl: this.tokenUrl,
+          requestBody: Object.fromEntries(body.entries()),
+          timestamp: new Date().toISOString(),
+        },
         "AlpacaOAuthService"
       );
       throw error;

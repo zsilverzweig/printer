@@ -11,7 +11,31 @@ export async function GET(request: NextRequest) {
       | "live"
       | null;
 
+    // Verbose OAuth2 authorization request logging
+    log.info(
+      "🚀 OAuth2 Authorization Request",
+      {
+        url: request.url,
+        userId: userId ? userId.substring(0, 8) + "..." : "missing",
+        environment: environment || "both",
+        allParams: Object.fromEntries(searchParams.entries()),
+        userAgent: request.headers.get("user-agent"),
+        referer: request.headers.get("referer"),
+        timestamp: new Date().toISOString(),
+      },
+      "AlpacaOAuth"
+    );
+
     if (!userId) {
+      log.error(
+        "❌ OAuth2 Authorization Failed - Missing User ID",
+        {
+          url: request.url,
+          allParams: Object.fromEntries(searchParams.entries()),
+          timestamp: new Date().toISOString(),
+        },
+        "AlpacaOAuth"
+      );
       return NextResponse.json(
         { error: "User ID is required" },
         { status: 400 }

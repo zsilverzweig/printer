@@ -150,20 +150,23 @@ export function useAgents(): UseAgentsReturn {
     }
   }, []);
 
-  const getAgentVersions = useCallback(async (): Promise<AgentVersion[]> => {
-    try {
-      setError(null);
-      // For now, return empty array since we don't have a versions API endpoint yet
-      // TODO: Implement versions API endpoint
-      return [];
-    } catch (err) {
-      const errorMessage =
-        err instanceof Error ? err.message : "Failed to get agent versions";
-      setError(errorMessage);
-      log.failure("Failed to get agent versions", err, "useAgents");
-      throw err;
-    }
-  }, []);
+  const getAgentVersions = useCallback(
+    async (agentId: string): Promise<AgentVersion[]> => {
+      try {
+        setError(null);
+        // For now, return empty array since we don't have a versions API endpoint yet
+        // TODO: Implement versions API endpoint
+        return [];
+      } catch (err) {
+        const errorMessage =
+          err instanceof Error ? err.message : "Failed to get agent versions";
+        setError(errorMessage);
+        log.failure("Failed to get agent versions", err, "useAgents");
+        throw err;
+      }
+    },
+    []
+  );
 
   const revertToVersion = useCallback(
     async (agentId: string): Promise<Agent> => {
