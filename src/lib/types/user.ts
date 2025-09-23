@@ -66,6 +66,7 @@ export interface AlpacaConnection {
   scope: string;
   connectedAt: Date;
   status: "active" | "expired" | "revoked";
+  environment: "paper" | "live" | "both";
 }
 
 export interface UserStatusUpdate {

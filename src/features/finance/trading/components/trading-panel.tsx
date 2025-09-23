@@ -1,38 +1,42 @@
 "use client";
 
-import {
-  ArrowUpRight,
-  CheckCircle,
-  Loader2,
-  RefreshCw,
-  TrendingUp,
-} from "lucide-react";
+import { CheckCircle, RefreshCw } from "lucide-react";
 import { useSearchParams } from "next/navigation";
-import type { ChangeEvent, FormEvent } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
-import { Badge } from "@/lib/components/ui/badge";
 import { Button } from "@/lib/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/lib/components/ui/card";
-import { Input } from "@/lib/components/ui/input";
+import { useAuth } from "@/lib/hooks/use-auth";
 import {
   AlpacaOrderSide,
-  AlpacaPosition,
   AlpacaPositionSide,
   AlpacaTimeInForce,
-} from "@/lib/types";
+} from "@/lib/types/alpaca";
 
+import {
+  TradingProvider,
+  useTradingContext,
+} from "../contexts/trading-context";
 import { useTrading } from "../hooks/use-trading";
 
-const TIME_IN_FORCE_OPTIONS: AlpacaTimeInForce[] = ["day", "gtc", "ioc"];
+import { AccountSummary } from "./account-summary";
+import { ClosePositionModal } from "./close-position-modal";
+import { OrderConfirmationModal } from "./order-confirmation-modal";
+import { OrderForm } from "./order-form";
+import { PositionsList } from "./positions-list";
+import { RecentOrdersList } from "./recent-orders-list";
+import { TradingEnvironmentToggle } from "./trading-environment-toggle";
 
-interface OrderFormState {
+interface OrderFormData {
+  symbol: string;
+  qty: number;
+  side: AlpacaOrderSide;
+  type: "market";
+  time_in_force: AlpacaTimeInForce;
+  extended_hours: boolean;
+  position_side: AlpacaPositionSide;
+}
+
+interface OrderConfirmationData {
   symbol: string;
   qty: string;
   side: AlpacaOrderSide;
@@ -41,194 +45,108 @@ interface OrderFormState {
   extendedHours: boolean;
 }
 
-const DEFAULT_FORM_STATE: OrderFormState = {
-  symbol: "",
-  qty: "1",
-  side: "buy",
-  positionSide: "long",
-  timeInForce: "day",
-  extendedHours: false,
-};
-
-function formatCurrency(value: string | number, currency = "USD"): string {
-  const numeric = typeof value === "string" ? Number.parseFloat(value) : value;
-  if (!Number.isFinite(numeric)) {
-    return "-";
-  }
-
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency,
-    maximumFractionDigits: 2,
-  }).format(numeric);
-}
-
-function formatNumber(value: string | number, fractionDigits = 2): string {
-  const numeric = typeof value === "string" ? Number.parseFloat(value) : value;
-  if (!Number.isFinite(numeric)) {
-    return "-";
-  }
-
-  return new Intl.NumberFormat("en-US", {
-    maximumFractionDigits: fractionDigits,
-  }).format(numeric);
-}
-
-function formatPercent(value: string | number): string {
-  const numeric = typeof value === "string" ? Number.parseFloat(value) : value;
-  if (!Number.isFinite(numeric)) {
-    return "-";
-  }
-
-  return `${(numeric * 100).toFixed(2)}%`;
-}
-
-function getOrderStatusVariant(status: string) {
-  const normalized = status.toLowerCase();
-
-  if (normalized === "filled" || normalized === "accepted") {
-    return "secondary" as const;
-  }
-
-  if (
-    normalized.includes("pending") ||
-    normalized === "new" ||
-    normalized === "partially_filled"
-  ) {
-    return "default" as const;
-  }
-
-  if (
-    normalized.includes("rejected") ||
-    normalized.includes("canceled") ||
-    normalized.includes("replaced")
-  ) {
-    return "destructive" as const;
-  }
-
-  return "outline" as const;
-}
-
-export function TradingPanel() {
+function TradingPanelContent() {
+  const { user } = useAuth();
+  const { environment } = useTradingContext();
   const {
     account,
     positions,
     orders,
     loading,
     isPlacingOrder,
-    error,
-    lastUpdated,
     isConnected,
     refresh,
     placeOrder,
   } = useTrading();
 
-  const [formState, setFormState] =
-    useState<OrderFormState>(DEFAULT_FORM_STATE);
   const [orderError, setOrderError] = useState<string | null>(null);
   const [orderSuccess, setOrderSuccess] = useState<string | null>(null);
   const [connectionSuccess, setConnectionSuccess] = useState<string | null>(
     null
   );
+  const [showConfirmation, setShowConfirmation] = useState(false);
+  const [estimatedCost, setEstimatedCost] = useState<number | null>(null);
+  const [confirmationData, setConfirmationData] =
+    useState<OrderConfirmationData | null>(null);
+  const [isClosingPosition, setIsClosingPosition] = useState(false);
+  const [showCloseModal, setShowCloseModal] = useState(false);
+  const [selectedPosition, setSelectedPosition] = useState<{
+    symbol: string;
+    qty: number;
+  } | null>(null);
 
   const searchParams = useSearchParams();
 
   // Check for success message from OAuth callback
   useEffect(() => {
     const success = searchParams.get("success");
-    const message = searchParams.get("message");
-
-    if (success === "alpaca_connected" && message) {
-      setConnectionSuccess(decodeURIComponent(message));
-      // Clear the URL parameters
-      const url = new URL(window.location.href);
-      url.searchParams.delete("success");
-      url.searchParams.delete("message");
-      window.history.replaceState({}, "", url.toString());
+    if (success === "alpaca_connected") {
+      setConnectionSuccess("Alpaca account connected successfully!");
+      // Clear the success message after 5 seconds
+      setTimeout(() => setConnectionSuccess(null), 5000);
     }
   }, [searchParams]);
 
   const accountCurrency = account?.currency || "USD";
 
-  const openPositions = useMemo<AlpacaPosition[]>(() => {
-    return [...positions].sort((a, b) => a.symbol.localeCompare(b.symbol));
-  }, [positions]);
-
-  const recentOrders = useMemo(() => {
-    return [...orders].sort((a, b) => {
-      return (
-        new Date(b.submitted_at).getTime() - new Date(a.submitted_at).getTime()
-      );
-    });
-  }, [orders]);
-
-  const handleInputChange = (
-    event: ChangeEvent<HTMLInputElement | HTMLSelectElement>
+  // Calculate estimated cost for market orders
+  const calculateEstimatedCost = (
+    symbol: string,
+    qty: number,
+    side: string
   ) => {
-    const { name, value } = event.target;
-
-    if (name === "symbol") {
-      setFormState((prev) => ({ ...prev, symbol: value.toUpperCase() }));
-      return;
-    }
-
-    if (name === "qty") {
-      setFormState((prev) => ({ ...prev, qty: value }));
-      return;
-    }
-
-    if (name === "side") {
-      setFormState((prev) => ({ ...prev, side: value as AlpacaOrderSide }));
-      return;
-    }
-
-    if (name === "positionSide") {
-      setFormState((prev) => ({
-        ...prev,
-        positionSide: value as AlpacaPositionSide,
-      }));
-      return;
-    }
-
-    if (name === "timeInForce") {
-      setFormState((prev) => ({
-        ...prev,
-        timeInForce: value as AlpacaTimeInForce,
-      }));
-      return;
-    }
-
-    if (name === "extendedHours") {
-      const input = event.target as HTMLInputElement;
-      setFormState((prev) => ({ ...prev, extendedHours: input.checked }));
-    }
+    // For market orders, we can't get exact price, but we can estimate
+    // This is a placeholder - in a real app, you'd fetch current market price
+    const estimatedPrice = 100; // Placeholder price
+    return side === "buy" ? qty * estimatedPrice : 0;
   };
 
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const handleOrderSubmit = (orderData: OrderFormData, price?: number) => {
     setOrderError(null);
     setOrderSuccess(null);
 
-    if (!formState.symbol) {
-      setOrderError("Enter a stock symbol to trade.");
-      return;
-    }
+    // Calculate estimated cost using real price if available
+    const cost =
+      price && orderData.side === "buy"
+        ? orderData.qty * price
+        : calculateEstimatedCost(
+            orderData.symbol,
+            orderData.qty,
+            orderData.side
+          );
 
-    const qty = Number.parseFloat(formState.qty);
-    if (!Number.isFinite(qty) || qty <= 0) {
-      setOrderError("Quantity must be a positive number.");
-      return;
-    }
+    setEstimatedCost(cost);
+
+    setConfirmationData({
+      symbol: orderData.symbol,
+      qty: orderData.qty.toString(),
+      side: orderData.side,
+      positionSide: orderData.position_side,
+      timeInForce: orderData.time_in_force,
+      extendedHours: orderData.extended_hours,
+    });
+
+    setShowConfirmation(true);
+  };
+
+  const handleConfirmOrder = async () => {
+    if (!confirmationData) return;
+
+    setShowConfirmation(false);
+    setOrderError(null);
+    setOrderSuccess(null);
+
+    const qty = Number.parseFloat(confirmationData.qty);
 
     try {
       const order = await placeOrder({
-        symbol: formState.symbol,
+        symbol: confirmationData.symbol,
         qty,
-        side: formState.side,
+        side: confirmationData.side,
         type: "market",
-        time_in_force: formState.timeInForce,
-        extended_hours: formState.extendedHours,
-        position_side: formState.positionSide,
+        time_in_force: confirmationData.timeInForce,
+        extended_hours: confirmationData.extendedHours,
+        position_side: confirmationData.positionSide,
       });
 
       setOrderSuccess(
@@ -236,7 +154,6 @@ export function TradingPanel() {
           order.qty || qty
         }).`
       );
-      setFormState((prev) => ({ ...prev, symbol: "", qty: "1" }));
     } catch (err) {
       setOrderError(
         err instanceof Error ? err.message : "Failed to submit order."
@@ -244,474 +161,192 @@ export function TradingPanel() {
     }
   };
 
+  const handleClosePositionClick = (symbol: string, qty: number) => {
+    setSelectedPosition({ symbol, qty });
+    setShowCloseModal(true);
+  };
+
+  const handleConfirmClosePosition = async () => {
+    if (!selectedPosition) return;
+
+    setIsClosingPosition(true);
+    setOrderError(null);
+    setOrderSuccess(null);
+
+    try {
+      // Determine the side based on the position
+      const position = positions.find(
+        (p) => p.symbol === selectedPosition.symbol
+      );
+      const side = position && Number(position.qty) > 0 ? "sell" : "buy";
+
+      await placeOrder({
+        symbol: selectedPosition.symbol,
+        qty: selectedPosition.qty,
+        side: side as AlpacaOrderSide,
+        type: "market",
+        time_in_force: "day",
+        extended_hours: false,
+        position_side: "long", // This will be handled by the broker
+      });
+
+      setOrderSuccess(
+        `Closed position for ${selectedPosition.symbol} (${selectedPosition.qty} shares).`
+      );
+    } catch (err) {
+      setOrderError(
+        err instanceof Error ? err.message : "Failed to close position."
+      );
+    } finally {
+      setIsClosingPosition(false);
+      setShowCloseModal(false);
+      setSelectedPosition(null);
+    }
+  };
+
+  const handleCancelClosePosition = () => {
+    setShowCloseModal(false);
+    setSelectedPosition(null);
+  };
+
+  if (!user) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold text-muted-foreground">
+            Please log in to access trading
+          </h2>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isConnected) {
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h1 className="text-3xl font-bold">Trading Dashboard</h1>
+            <p className="text-muted-foreground">
+              Manage your investment portfolio with real-time trading
+              capabilities. Place orders, monitor positions, and track your
+              performance.
+            </p>
+          </div>
+          <Button onClick={refresh} variant="outline" size="sm">
+            <RefreshCw className="mr-2 h-4 w-4" />
+            Refresh data
+          </Button>
+        </div>
+
+        {connectionSuccess && (
+          <div className="rounded-md border border-green-200 bg-green-50 p-4 text-green-800 dark:border-green-800 dark:bg-green-950 dark:text-green-200">
+            <div className="flex items-center gap-2">
+              <CheckCircle className="h-4 w-4" />
+              {connectionSuccess}
+            </div>
+          </div>
+        )}
+
+        <div className="flex items-center justify-center py-12">
+          <div className="text-center">
+            <h2 className="text-2xl font-bold text-muted-foreground">
+              Trading account integration not yet implemented
+            </h2>
+            <p className="text-muted-foreground mt-2">
+              Connect your Alpaca account to start trading.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">
-            Trading Dashboard
-          </h1>
-          <p className="text-muted-foreground mt-2">
+          <h1 className="text-3xl font-bold">Trading Dashboard</h1>
+          <p className="text-muted-foreground">
             Manage your investment portfolio with real-time trading
             capabilities. Place orders, monitor positions, and track your
             performance.
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          {lastUpdated && (
-            <span className="text-sm text-muted-foreground">
-              Last updated {lastUpdated.toLocaleTimeString()}
-            </span>
-          )}
-          <Button onClick={refresh} variant="outline" disabled={loading}>
-            {loading ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <RefreshCw className="mr-2 h-4 w-4" />
-            )}
-            Refresh data
-          </Button>
+        <Button onClick={refresh} variant="outline" size="sm">
+          <RefreshCw className="mr-2 h-4 w-4" />
+          Refresh data
+        </Button>
+      </div>
+
+      {connectionSuccess && (
+        <div className="rounded-md border border-green-200 bg-green-50 p-4 text-green-800 dark:border-green-800 dark:bg-green-950 dark:text-green-200">
+          <div className="flex items-center gap-2">
+            <CheckCircle className="h-4 w-4" />
+            {connectionSuccess}
+          </div>
+        </div>
+      )}
+
+      <TradingEnvironmentToggle />
+
+      <div className="grid gap-6 lg:grid-cols-3">
+        <div className="lg:col-span-2 space-y-6">
+          <AccountSummary account={account} loading={loading} />
+          <PositionsList
+            positions={positions}
+            loading={loading}
+            accountCurrency={accountCurrency}
+            onClosePosition={handleClosePositionClick}
+            isClosingPosition={isClosingPosition}
+          />
+        </div>
+        <div className="space-y-6">
+          <OrderForm
+            onSubmit={handleOrderSubmit}
+            isPlacingOrder={isPlacingOrder}
+            orderError={orderError}
+            orderSuccess={orderSuccess}
+          />
+          <RecentOrdersList
+            orders={orders}
+            loading={loading}
+            accountCurrency={accountCurrency}
+          />
         </div>
       </div>
 
-      {!isConnected && (
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-center space-y-4">
-              <div className="text-muted-foreground">
-                <p className="text-lg font-medium">
-                  Connect Your Trading Account
-                </p>
-                <p className="text-sm">
-                  To start trading, you need to connect your account in your
-                  Profile settings.
-                </p>
-              </div>
-              <Button
-                onClick={() => (window.location.href = "/profile")}
-                variant="outline"
-              >
-                Go to Profile
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+      {confirmationData && (
+        <OrderConfirmationModal
+          isOpen={showConfirmation}
+          onClose={() => setShowConfirmation(false)}
+          onConfirm={handleConfirmOrder}
+          isPlacingOrder={isPlacingOrder}
+          orderData={confirmationData}
+          estimatedCost={estimatedCost}
+          accountCurrency={accountCurrency}
+          environment={environment}
+        />
       )}
 
-      {connectionSuccess && (
-        <div className="rounded-md border border-green-200 bg-green-50 p-4 text-sm text-green-800">
-          <div className="flex items-center gap-2">
-            <CheckCircle className="h-4 w-4" />
-            <span>{connectionSuccess}</span>
-          </div>
-        </div>
-      )}
-
-      {error && (
-        <div className="rounded-md border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
-          {error}
-        </div>
-      )}
-
-      {isConnected && (
-        <>
-          <div className="grid gap-6 lg:grid-cols-2">
-            <Card>
-              <CardHeader className="flex flex-row items-start justify-between">
-                <div>
-                  <CardTitle>Account Overview</CardTitle>
-                  <CardDescription>
-                    Monitor buying power, equity, and account status.
-                  </CardDescription>
-                </div>
-                {account && (
-                  <Badge
-                    variant={
-                      account.trading_blocked ? "destructive" : "secondary"
-                    }
-                  >
-                    {account.status.toUpperCase()}
-                  </Badge>
-                )}
-              </CardHeader>
-              <CardContent>
-                {loading && !account ? (
-                  <div className="flex items-center justify-center py-8">
-                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                  </div>
-                ) : account ? (
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div>
-                      <p className="text-sm text-muted-foreground">
-                        Buying Power
-                      </p>
-                      <p className="text-xl font-semibold">
-                        {formatCurrency(account.buying_power, accountCurrency)}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Cash</p>
-                      <p className="text-xl font-semibold">
-                        {formatCurrency(account.cash, accountCurrency)}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Equity</p>
-                      <p className="text-xl font-semibold">
-                        {formatCurrency(account.equity, accountCurrency)}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">
-                        Portfolio Value
-                      </p>
-                      <p className="text-xl font-semibold">
-                        {formatCurrency(
-                          account.portfolio_value,
-                          accountCurrency
-                        )}
-                      </p>
-                    </div>
-                    <div className="sm:col-span-2 grid grid-cols-2 gap-4 rounded-md border p-4">
-                      <div>
-                        <p className="text-xs text-muted-foreground uppercase tracking-wide">
-                          Shorting Enabled
-                        </p>
-                        <p className="text-sm font-medium">
-                          {account.shorting_enabled ? "Yes" : "No"}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground uppercase tracking-wide">
-                          Pattern Day Trader
-                        </p>
-                        <p className="text-sm font-medium">
-                          {account.pattern_day_trader ? "Yes" : "No"}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground uppercase tracking-wide">
-                          Multiplier
-                        </p>
-                        <p className="text-sm font-medium">
-                          {formatNumber(account.multiplier, 2)}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground uppercase tracking-wide">
-                          Trading Blocked
-                        </p>
-                        <p className="text-sm font-medium">
-                          {account.trading_blocked ? "Yes" : "No"}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground">
-                    Unable to load account details. Please connect your trading
-                    account.
-                  </p>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Place Order</CardTitle>
-                <CardDescription>
-                  Submit market orders to buy or sell securities.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <form className="space-y-4" onSubmit={handleSubmit}>
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div>
-                      <label
-                        className="mb-1 block text-sm font-medium text-muted-foreground"
-                        htmlFor="symbol"
-                      >
-                        Symbol
-                      </label>
-                      <Input
-                        id="symbol"
-                        name="symbol"
-                        placeholder="AAPL"
-                        value={formState.symbol}
-                        onChange={handleInputChange}
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label
-                        className="mb-1 block text-sm font-medium text-muted-foreground"
-                        htmlFor="qty"
-                      >
-                        Quantity
-                      </label>
-                      <Input
-                        id="qty"
-                        name="qty"
-                        type="number"
-                        min="0"
-                        step="1"
-                        value={formState.qty}
-                        onChange={handleInputChange}
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid gap-4 sm:grid-cols-3">
-                    <div>
-                      <label className="mb-1 block text-sm font-medium text-muted-foreground">
-                        Side
-                      </label>
-                      <select
-                        name="side"
-                        value={formState.side}
-                        onChange={handleInputChange}
-                        className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                      >
-                        <option value="buy">Buy</option>
-                        <option value="sell">Sell</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-sm font-medium text-muted-foreground">
-                        Position Side
-                      </label>
-                      <select
-                        name="positionSide"
-                        value={formState.positionSide}
-                        onChange={handleInputChange}
-                        className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                      >
-                        <option value="long">Long</option>
-                        <option value="short">Short</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-sm font-medium text-muted-foreground">
-                        Time in Force
-                      </label>
-                      <select
-                        name="timeInForce"
-                        value={formState.timeInForce}
-                        onChange={handleInputChange}
-                        className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                      >
-                        {TIME_IN_FORCE_OPTIONS.map((option) => (
-                          <option key={option} value={option}>
-                            {option.toUpperCase()}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center space-x-2">
-                    <input
-                      id="extendedHours"
-                      name="extendedHours"
-                      type="checkbox"
-                      checked={formState.extendedHours}
-                      onChange={handleInputChange}
-                      className="h-4 w-4 rounded border-input text-primary focus:ring-primary"
-                    />
-                    <label
-                      htmlFor="extendedHours"
-                      className="text-sm text-muted-foreground"
-                    >
-                      Allow extended hours trading
-                    </label>
-                  </div>
-
-                  <div className="flex items-center justify-between rounded-md border border-dashed p-3 text-sm">
-                    <div>
-                      <p className="font-medium">Order Type</p>
-                      <p className="text-muted-foreground">
-                        Market order for immediate execution.
-                      </p>
-                    </div>
-                    <Badge variant="outline" className="uppercase">
-                      Market
-                    </Badge>
-                  </div>
-
-                  {orderError && (
-                    <div className="text-sm text-destructive">{orderError}</div>
-                  )}
-
-                  {orderSuccess && (
-                    <div className="text-sm text-green-600">{orderSuccess}</div>
-                  )}
-
-                  <Button
-                    type="submit"
-                    disabled={isPlacingOrder}
-                    className="w-full"
-                  >
-                    {isPlacingOrder ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                      <ArrowUpRight className="mr-2 h-4 w-4" />
-                    )}
-                    Submit Order
-                  </Button>
-                </form>
-              </CardContent>
-            </Card>
-          </div>
-
-          <div className="grid gap-6 lg:grid-cols-2">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between">
-                <div>
-                  <CardTitle>Open Positions</CardTitle>
-                  <CardDescription>
-                    Current holdings across long and short positions.
-                  </CardDescription>
-                </div>
-                <TrendingUp className="h-5 w-5 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                {loading && openPositions.length === 0 ? (
-                  <div className="flex items-center justify-center py-8">
-                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                  </div>
-                ) : openPositions.length > 0 ? (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead className="text-left text-muted-foreground">
-                        <tr>
-                          <th className="py-2">Symbol</th>
-                          <th className="py-2">Side</th>
-                          <th className="py-2 text-right">Quantity</th>
-                          <th className="py-2 text-right">Market Value</th>
-                          <th className="py-2 text-right">Unrealized P/L</th>
-                          <th className="py-2 text-right">P/L %</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {openPositions.map((position) => (
-                          <tr key={position.symbol} className="border-t">
-                            <td className="py-2 font-medium">
-                              {position.symbol}
-                            </td>
-                            <td className="py-2 capitalize">{position.side}</td>
-                            <td className="py-2 text-right">
-                              {formatNumber(position.qty, 4)}
-                            </td>
-                            <td className="py-2 text-right">
-                              {formatCurrency(
-                                position.market_value,
-                                accountCurrency
-                              )}
-                            </td>
-                            <td
-                              className={`py-2 text-right ${
-                                Number.parseFloat(position.unrealized_pl) >= 0
-                                  ? "text-green-600"
-                                  : "text-red-600"
-                              }`}
-                            >
-                              {formatCurrency(
-                                position.unrealized_pl,
-                                accountCurrency
-                              )}
-                            </td>
-                            <td
-                              className={`py-2 text-right ${
-                                Number.parseFloat(position.unrealized_plpc) >= 0
-                                  ? "text-green-600"
-                                  : "text-red-600"
-                              }`}
-                            >
-                              {formatPercent(position.unrealized_plpc)}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground">
-                    No open positions found.
-                  </p>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Recent Orders</CardTitle>
-                <CardDescription>
-                  Track your most recent trading activity.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {loading && recentOrders.length === 0 ? (
-                  <div className="flex items-center justify-center py-8">
-                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                  </div>
-                ) : recentOrders.length > 0 ? (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead className="text-left text-muted-foreground">
-                        <tr>
-                          <th className="py-2">Submitted</th>
-                          <th className="py-2">Symbol</th>
-                          <th className="py-2">Side</th>
-                          <th className="py-2 text-right">Quantity</th>
-                          <th className="py-2">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {recentOrders.map((order) => (
-                          <tr key={order.id} className="border-t">
-                            <td className="py-2 text-muted-foreground">
-                              {new Date(order.submitted_at).toLocaleString()}
-                            </td>
-                            <td className="py-2 font-medium">{order.symbol}</td>
-                            <td className="py-2 capitalize">
-                              {order.side}
-                              {order.position_side
-                                ? ` (${order.position_side})`
-                                : ""}
-                            </td>
-                            <td className="py-2 text-right">
-                              {order.qty
-                                ? formatNumber(order.qty, 4)
-                                : order.notional
-                                ? formatCurrency(
-                                    order.notional,
-                                    accountCurrency
-                                  )
-                                : "-"}
-                            </td>
-                            <td className="py-2">
-                              <Badge
-                                variant={getOrderStatusVariant(order.status)}
-                              >
-                                {order.status.replace(/_/g, " ")}
-                              </Badge>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground">
-                    No recent orders found.
-                  </p>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-        </>
+      {selectedPosition && (
+        <ClosePositionModal
+          isOpen={showCloseModal}
+          onClose={handleCancelClosePosition}
+          onConfirm={handleConfirmClosePosition}
+          symbol={selectedPosition.symbol}
+          qty={selectedPosition.qty}
+          isClosing={isClosingPosition}
+        />
       )}
     </div>
+  );
+}
+
+export function TradingPanel() {
+  return (
+    <TradingProvider>
+      <TradingPanelContent />
+    </TradingProvider>
   );
 }

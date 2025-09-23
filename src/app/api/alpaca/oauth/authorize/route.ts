@@ -63,7 +63,8 @@ export async function GET(request: NextRequest) {
     );
 
     // Generate state parameter for security (should match user session)
-    const state = `${userId}_${Date.now()}`;
+    // Format: userId_environment_timestamp
+    const state = `${userId}_${environment || "both"}_${Date.now()}`;
 
     // Get the redirect URI from the request or use a default
     const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/alpaca/oauth/callback`;

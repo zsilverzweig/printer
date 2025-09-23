@@ -148,15 +148,32 @@ export function useAlpacaOAuth() {
         "useAlpacaOAuth"
       );
 
-      // TODO: Implement API call to check if user has connected Alpaca account
-      // This would check your database for stored OAuth tokens
+      // Check connection status via API
+      const url = new URL("/api/trading/status", window.location.origin);
+      url.searchParams.set("userId", user.uid);
 
-      // For now, return a mock status
+      const response = await fetch(url.toString());
+
+      if (!response.ok) {
+        throw new Error(
+          `Failed to check connection status: ${response.status}`
+        );
+      }
+
+      const { connected } = await response.json();
+
       setStatus((prev) => ({
         ...prev,
-        isConnected: false, // This should come from your database
+        isConnected: connected,
         isLoading: false,
+        error: null,
       }));
+
+      log.debug(
+        "Alpaca connection status checked",
+        { userId: user.uid, connected },
+        "useAlpacaOAuth"
+      );
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";

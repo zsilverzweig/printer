@@ -10,6 +10,7 @@ import {
   AlpacaPosition,
 } from "@/lib/types";
 import { log } from "@/lib/utils/logger";
+import { useTradingContext } from "../contexts/trading-context";
 
 export interface UseTradingReturn {
   account: AlpacaAccount | null;
@@ -42,13 +43,37 @@ async function fetchJson<T>(
 
   if (!response.ok) {
     let message: string | undefined;
+    let details: string | undefined;
+
     if (typeof payload === "string") {
       message = payload;
-    } else if (payload && typeof payload === "object" && "error" in payload) {
-      message = String((payload as Record<string, unknown>).error);
+    } else if (payload && typeof payload === "object") {
+      const payloadObj = payload as Record<string, unknown>;
+      if ("error" in payloadObj) {
+        message = String(payloadObj.error);
+      }
+      if ("details" in payloadObj) {
+        details = String(payloadObj.details);
+      }
     }
 
-    throw new Error(message || response.statusText || "Request failed");
+    const errorMessage = message || response.statusText || "Request failed";
+    const fullError = details ? `${errorMessage} (${details})` : errorMessage;
+
+    log.error(
+      "API request failed",
+      {
+        url: input.toString(),
+        status: response.status,
+        statusText: response.statusText,
+        responseText: text.substring(0, 500),
+        payload,
+        method: init?.method || "GET",
+      },
+      "fetchJson"
+    );
+
+    throw new Error(fullError);
   }
 
   if (typeof payload === "string" || payload === null) {
@@ -60,6 +85,7 @@ async function fetchJson<T>(
 
 export function useTrading(): UseTradingReturn {
   const { user } = useAuthContext();
+  const { environment } = useTradingContext();
   const [account, setAccount] = useState<AlpacaAccount | null>(null);
   const [positions, setPositions] = useState<AlpacaPosition[]>([]);
   const [orders, setOrders] = useState<AlpacaOrder[]>([]);
@@ -115,13 +141,13 @@ export function useTrading(): UseTradingReturn {
       const [accountResponse, positionsResponse, ordersResponse] =
         await Promise.all([
           fetchJson<{ account: AlpacaAccount }>(
-            `/api/trading/account?userId=${user.uid}`
+            `/api/trading/account?userId=${user.uid}&environment=${environment}`
           ),
           fetchJson<{ positions: AlpacaPosition[] }>(
-            `/api/trading/positions?userId=${user.uid}`
+            `/api/trading/positions?userId=${user.uid}&environment=${environment}`
           ),
           fetchJson<{ orders: AlpacaOrder[] }>(
-            `/api/trading/orders?userId=${user.uid}&status=all&limit=25`
+            `/api/trading/orders?userId=${user.uid}&environment=${environment}&status=all&limit=25`
           ),
         ]);
 
@@ -162,19 +188,39 @@ export function useTrading(): UseTradingReturn {
   const placeOrder = useCallback(
     async (order: AlpacaOrderRequest): Promise<AlpacaOrder> => {
       if (!user?.uid) {
-        throw new Error("User not authenticated");
+        const error = "User not authenticated";
+        setError(error);
+        throw new Error(error);
       }
 
       if (!isConnected) {
-        throw new Error("Trading account not connected");
+        const error = "Trading account not connected";
+        setError(error);
+        throw new Error(error);
       }
 
       try {
         setIsPlacingOrder(true);
         setError(null);
 
+        log.debug(
+          "Submitting order via API",
+          {
+            userId: user.uid,
+            order: {
+              symbol: order.symbol,
+              side: order.side,
+              type: order.type,
+              qty: order.qty,
+              notional: order.notional,
+              time_in_force: order.time_in_force,
+            },
+          },
+          "useTrading"
+        );
+
         const response = await fetchJson<{ order: AlpacaOrder }>(
-          `/api/trading/orders?userId=${user.uid}`,
+          `/api/trading/orders?userId=${user.uid}&environment=${environment}`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -182,13 +228,40 @@ export function useTrading(): UseTradingReturn {
           }
         );
 
+        log.success(
+          "Order submitted successfully",
+          {
+            userId: user.uid,
+            orderId: response.order.id,
+            symbol: order.symbol,
+            status: response.order.status,
+          },
+          "useTrading"
+        );
+
         await loadTradingData();
         return response.order;
       } catch (err) {
         const message =
           err instanceof Error ? err.message : "Failed to submit order";
+
+        log.failure(
+          "Failed to submit order",
+          {
+            error: message,
+            userId: user.uid,
+            order: {
+              symbol: order.symbol,
+              side: order.side,
+              type: order.type,
+              qty: order.qty,
+            },
+            errorStack: err instanceof Error ? err.stack : undefined,
+          },
+          "useTrading"
+        );
+
         setError(message);
-        log.error("Failed to submit order", err, "useTrading");
         throw err;
       } finally {
         setIsPlacingOrder(false);
