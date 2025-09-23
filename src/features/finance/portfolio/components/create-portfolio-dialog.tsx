@@ -156,6 +156,14 @@ export function CreatePortfolioDialog({
             Select which AI agents should analyze this portfolio. You can assign
             agents later.
           </p>
+          <div className="mb-4 rounded-md border border-blue-200 bg-blue-50 p-4 text-xs text-blue-900">
+            <p className="font-semibold">Portfolio Manager included</p>
+            <p>
+              Our Portfolio Manager agent is automatically assigned to every
+              portfolio. It transforms theses into structured, Alpaca-ready
+              positions while coordinating final trade decisions.
+            </p>
+          </div>
 
           {availableAgents.length === 0 ? (
             <Card className="border-yellow-200 bg-yellow-50">

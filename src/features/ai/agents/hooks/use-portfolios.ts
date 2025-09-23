@@ -81,6 +81,57 @@ export function usePortfolios(userId: string): UsePortfoliosReturn {
     []
   );
 
+  const createPortfolioDraftFromThesis = useCallback(
+    async (
+      thesis: string,
+      options: { name?: string; description?: string } = {}
+    ): Promise<Portfolio> => {
+      try {
+        setError(null);
+        const payload = {
+          thesis,
+          ...(options.name ? { name: options.name } : {}),
+          ...(options.description ? { description: options.description } : {}),
+        };
+
+        const response = await fetch("/api/portfolios/wizard", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+        });
+
+        if (!response.ok) {
+          throw new Error("Failed to generate portfolio draft");
+        }
+
+        const data = await response.json();
+        const draftPortfolio = data.portfolio as Portfolio;
+        setPortfolios((prev) => [...prev, draftPortfolio]);
+        log.success(
+          `Portfolio draft created: ${draftPortfolio.name}`,
+          undefined,
+          "usePortfolios"
+        );
+        return draftPortfolio;
+      } catch (err) {
+        const errorMessage =
+          err instanceof Error
+            ? err.message
+            : "Failed to create portfolio draft";
+        setError(errorMessage);
+        log.failure(
+          "Failed to create portfolio draft",
+          err,
+          "usePortfolios"
+        );
+        throw err;
+      }
+    },
+    []
+  );
+
   const updatePortfolio = useCallback(
     async (
       portfolioId: string,
@@ -225,6 +276,7 @@ export function usePortfolios(userId: string): UsePortfoliosReturn {
     loading,
     error,
     createPortfolio,
+    createPortfolioDraftFromThesis,
     updatePortfolio,
     deletePortfolio,
     assignAgent,

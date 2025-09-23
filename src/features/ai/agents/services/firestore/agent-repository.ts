@@ -203,6 +203,7 @@ export class FirestoreAgentRepository implements AgentRepository {
     if (updates.thesis !== undefined) updated.thesis = updates.thesis
     if (updates.assignedAgents !== undefined)
       updated.assignedAgents = updates.assignedAgents
+    if (updates.positions !== undefined) updated.positions = updates.positions
     if (updates.metadata !== undefined) updated.metadata = updates.metadata
     if (updates.isActive !== undefined) updated.isActive = updates.isActive
 

@@ -19,34 +19,26 @@ import {
   AgentRepository,
   FirestoreAgentRepository,
 } from "./firestore/agent-repository"
-import { createDefaultAgentTemplates } from "./templates/default-agent-templates"
+import { AgentTemplateInitializer } from "./agent-service/template-initializer"
+import { PortfolioManagerAgentService } from "./agent-service/portfolio-manager-agent"
+import { PortfolioPlanService } from "./agent-service/portfolio-plan-service"
 import { AgentWorkExecutor } from "./workflow/agent-work-executor"
 
 export class AgentService {
-  private initialized = false
-
   constructor(
     private readonly repository: AgentRepository = new FirestoreAgentRepository(),
     private readonly workExecutor: AgentWorkExecutor = new AgentWorkExecutor(
       repository
-    )
+    ),
+    private readonly templateInitializer: AgentTemplateInitializer =
+      new AgentTemplateInitializer(repository),
+    private readonly portfolioManagerAgent: PortfolioManagerAgentService =
+      new PortfolioManagerAgentService(repository),
+    private readonly portfolioPlanService: PortfolioPlanService =
+      new PortfolioPlanService(portfolioManagerAgent)
   ) {
-    void this.initializeDefaultTemplates()
-  }
-
-  private async initializeDefaultTemplates(): Promise<void> {
-    if (this.initialized) return
-
-    const defaultTemplates = createDefaultAgentTemplates()
-    for (const template of defaultTemplates) {
-      const existingTemplate = await this.repository.getTemplate(template.id)
-      if (!existingTemplate) {
-        await this.repository.createTemplate(template)
-      }
-    }
-
-    this.initialized = true
-    log.info("Default agent templates initialized", undefined, "AgentService")
+    void this.templateInitializer.ensureDefaultTemplates()
+    void this.portfolioManagerAgent.ensureAgent()
   }
 
   private resolveModel(
@@ -242,7 +234,7 @@ export class AgentService {
 
   // Template Management
   async getTemplates(): Promise<AgentTemplate[]> {
-    await this.initializeDefaultTemplates()
+    await this.templateInitializer.ensureDefaultTemplates()
     return this.repository.getAllTemplates()
   }
 
@@ -255,32 +247,42 @@ export class AgentService {
     request: CreatePortfolioRequest,
     userId: string
   ): Promise<Portfolio> {
+    const portfolioManager = await this.portfolioManagerAgent.ensureAgent()
     const portfolio: Portfolio = {
       id: this.generateId(),
       name: request.name,
       description: request.description,
       thesis: request.thesis,
       assignedAgents: [],
+      positions: request.positions ?? [],
       userId,
       createdAt: new Date(),
       updatedAt: new Date(),
-      isActive: true,
+      isActive: request.isActive ?? true,
+      metadata: request.metadata,
     }
 
     const createdPortfolio = await this.repository.createPortfolio(portfolio)
 
+    await this.assignAgent(createdPortfolio.id, portfolioManager.id, userId)
+
     if (request.assignedAgentIds) {
       for (const agentId of request.assignedAgentIds) {
+        if (agentId === portfolioManager.id) continue
         await this.assignAgent(createdPortfolio.id, agentId, userId)
       }
     }
 
+    const finalPortfolio =
+      (await this.repository.getPortfolio(createdPortfolio.id)) ||
+      createdPortfolio
+
     log.success(
-      `Portfolio created: ${createdPortfolio.name}`,
+      `Portfolio created: ${finalPortfolio.name}`,
       undefined,
       "AgentService"
     )
-    return createdPortfolio
+    return finalPortfolio
   }
 
   async getPortfolio(id: string): Promise<Portfolio | null> {
@@ -289,6 +291,72 @@ export class AgentService {
 
   async getAllPortfolios(userId: string): Promise<Portfolio[]> {
     return this.repository.getAllPortfolios(userId)
+  }
+
+  async createPortfolioDraftFromThesis(
+    thesis: string,
+    userId: string,
+    options: { name?: string; description?: string } = {}
+  ): Promise<Portfolio> {
+    const trimmedThesis = thesis.trim()
+    if (!trimmedThesis) {
+      throw new Error("Thesis is required to generate a portfolio draft")
+    }
+
+    const now = new Date()
+    const defaultName = `Draft Portfolio ${now.toISOString().split("T")[0]}`
+
+    const basePortfolio = await this.createPortfolio(
+      {
+        name: options.name?.trim() || defaultName,
+        description:
+          options.description?.trim() ||
+          "Draft portfolio generated via the Portfolio Wizard.",
+        thesis: trimmedThesis,
+        assignedAgentIds: [],
+        isActive: false,
+        metadata: {
+          origin: "wizard",
+          stage: "draft",
+        },
+      },
+      userId
+    )
+
+    try {
+      const { plan, positions, raw } = await this.portfolioPlanService.generatePlan(
+        basePortfolio,
+        userId
+      )
+
+      const updated = await this.repository.updatePortfolio(basePortfolio.id, {
+        positions,
+        metadata: {
+          ...(basePortfolio.metadata ?? {}),
+          origin: "wizard",
+          stage: "draft",
+          portfolioSummary: plan.portfolio_summary,
+          riskManagement: plan.risk_management,
+          portfolioManagerOutput: raw,
+        },
+        isActive: false,
+      })
+
+      log.success(
+        `Portfolio draft created with ${positions.length} positions`,
+        undefined,
+        "AgentService"
+      )
+
+      return updated
+    } catch (error) {
+      log.failure(
+        "Failed to generate portfolio positions from thesis",
+        error,
+        "AgentService"
+      )
+      return basePortfolio
+    }
   }
 
   async updatePortfolio(
@@ -304,10 +372,18 @@ export class AgentService {
     if (request.description !== undefined)
       updates.description = request.description
     if (request.thesis !== undefined) updates.thesis = request.thesis
+    if (request.positions !== undefined) updates.positions = request.positions
+    if (request.metadata !== undefined) updates.metadata = request.metadata
+    if (request.isActive !== undefined) updates.isActive = request.isActive
 
     if (request.assignedAgentIds) {
+      const portfolioManager = await this.portfolioManagerAgent.ensureAgent()
+      const normalizedAgentIds = Array.from(
+        new Set([portfolioManager.id, ...request.assignedAgentIds])
+      )
+
       const allAgents = await this.getAllAgents()
-      const assignedAgents = request.assignedAgentIds.map((agentId) => {
+      const assignedAgents = normalizedAgentIds.map((agentId) => {
         const agent = allAgents.find((a) => a.id === agentId)
         if (!agent) throw new Error(`Agent ${agentId} not found`)
 
@@ -382,6 +458,11 @@ export class AgentService {
   }
 
   async unassignAgent(portfolioId: string, agentId: string): Promise<void> {
+    const portfolioManager = await this.portfolioManagerAgent.ensureAgent()
+    if (agentId === portfolioManager.id) {
+      throw new Error("The Portfolio Manager cannot be unassigned")
+    }
+
     const portfolio = await this.repository.getPortfolio(portfolioId)
     if (!portfolio) throw new Error(`Portfolio ${portfolioId} not found`)
 

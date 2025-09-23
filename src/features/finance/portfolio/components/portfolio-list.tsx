@@ -73,6 +73,36 @@ export function PortfolioList({
                 </p>
               </div>
 
+              <div>
+                <label className="block text-sm font-medium text-gray-600 mb-1">
+                  Draft Positions
+                </label>
+                {portfolio.positions.length === 0 ? (
+                  <span className="text-sm text-gray-500">
+                    No positions generated yet
+                  </span>
+                ) : (
+                  <div className="flex flex-wrap items-center gap-2">
+                    {portfolio.positions.slice(0, 3).map((position) => (
+                      <Badge
+                        key={position.id}
+                        variant="secondary"
+                        className="text-xs"
+                      >
+                        {position.symbol} · {position.side.toUpperCase()} ·
+                        {" "}
+                        {position.status.replace("_", " ")}
+                      </Badge>
+                    ))}
+                    {portfolio.positions.length > 3 && (
+                      <span className="text-xs text-gray-500">
+                        +{portfolio.positions.length - 3} more
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+
               {/* Assigned Agents */}
               <div>
                 <label className="block text-sm font-medium text-gray-600 mb-1">

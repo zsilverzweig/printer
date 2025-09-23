@@ -9,6 +9,7 @@ import {
   AgentWork,
   AssignedAgent,
   Portfolio,
+  PortfolioPosition,
 } from "../../types"
 
 export type FirestoreDocument = Record<string, any>
@@ -141,6 +142,28 @@ export const deserializeAssignedAgent = (
   workCount: data.workCount ?? 0,
 })
 
+export const serializePortfolioPosition = (position: PortfolioPosition) =>
+  omitUndefined({
+    ...position,
+  })
+
+export const deserializePortfolioPosition = (
+  data: FirestoreDocument
+): PortfolioPosition => ({
+  id: data.id,
+  symbol: data.symbol,
+  side: data.side,
+  positionSide: data.positionSide,
+  quantity: data.quantity ?? 0,
+  status: data.status,
+  rationale: data.rationale ?? "",
+  confidence: data.confidence ?? undefined,
+  targetPrice: data.targetPrice ?? undefined,
+  stopLoss: data.stopLoss ?? undefined,
+  timeHorizon: data.timeHorizon ?? undefined,
+  metadata: data.metadata ?? undefined,
+})
+
 export const serializePortfolio = (portfolio: Portfolio) =>
   omitUndefined({
     id: portfolio.id,
@@ -149,6 +172,9 @@ export const serializePortfolio = (portfolio: Portfolio) =>
     thesis: portfolio.thesis,
     assignedAgents: (portfolio.assignedAgents || []).map((assignment) =>
       serializeAssignedAgent(assignment)
+    ),
+    positions: (portfolio.positions || []).map((position) =>
+      serializePortfolioPosition(position)
     ),
     userId: portfolio.userId,
     createdAt: Timestamp.fromDate(portfolio.createdAt),
@@ -168,6 +194,11 @@ export const deserializePortfolio = (
   assignedAgents: Array.isArray(data.assignedAgents)
     ? data.assignedAgents.map((assignment: FirestoreDocument) =>
         deserializeAssignedAgent(assignment)
+      )
+    : [],
+  positions: Array.isArray(data.positions)
+    ? data.positions.map((position: FirestoreDocument) =>
+        deserializePortfolioPosition(position)
       )
     : [],
   userId: data.userId,

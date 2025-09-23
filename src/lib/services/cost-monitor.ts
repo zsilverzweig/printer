@@ -47,6 +47,7 @@ class CostMonitor {
         company_research: 10,
         trade_analysis: 5,
         thesis_generation: 3,
+        portfolio_generation: 4,
         pattern_matching: 2,
         risk_assessment: 2,
         market_analysis: 3,

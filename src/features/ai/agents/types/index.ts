@@ -1,6 +1,10 @@
 // Agent management types for Printer AI system
 
 import { AIModel, AIRequest, AIResponse } from "@/lib/types/ai";
+import {
+  AlpacaOrderSide,
+  AlpacaPositionSide,
+} from "@/lib/types/alpaca";
 
 // Core Agent Types
 export interface Agent {
@@ -92,6 +96,7 @@ export type AgentRole =
   | "market_analyst"
   | "financial_analyst"
   | "competitive_analyst"
+  | "portfolio_manager"
   | "custom";
 
 export type AgentCategory =
@@ -101,12 +106,30 @@ export type AgentCategory =
   | "custom";
 
 // Portfolio Types
+export type PortfolioPositionStatus = "draft" | "paper" | "real_money";
+
+export interface PortfolioPosition {
+  id: string;
+  symbol: string;
+  side: AlpacaOrderSide;
+  positionSide: AlpacaPositionSide;
+  quantity: number;
+  status: PortfolioPositionStatus;
+  rationale: string;
+  confidence?: "low" | "medium" | "high";
+  targetPrice?: number;
+  stopLoss?: number;
+  timeHorizon?: string;
+  metadata?: Record<string, unknown>;
+}
+
 export interface Portfolio {
   id: string;
   name: string;
   description: string;
   thesis: string; // User-written investment thesis
   assignedAgents: AssignedAgent[];
+  positions: PortfolioPosition[];
   userId: string;
   createdAt: Date;
   updatedAt: Date;
@@ -176,6 +199,9 @@ export interface CreatePortfolioRequest {
   description: string;
   thesis: string;
   assignedAgentIds?: string[];
+  positions?: PortfolioPosition[];
+  metadata?: Record<string, unknown>;
+  isActive?: boolean;
 }
 
 export interface UpdatePortfolioRequest {
@@ -183,6 +209,9 @@ export interface UpdatePortfolioRequest {
   description?: string;
   thesis?: string;
   assignedAgentIds?: string[];
+  positions?: PortfolioPosition[];
+  metadata?: Record<string, unknown>;
+  isActive?: boolean;
 }
 
 // Hook Return Types
@@ -194,7 +223,7 @@ export interface UseAgentsReturn {
   createAgent: (request: CreateAgentRequest) => Promise<Agent>;
   updateAgent: (agentId: string, request: UpdateAgentRequest) => Promise<Agent>;
   deleteAgent: (agentId: string) => Promise<void>;
-  getAgentVersions: () => Promise<AgentVersion[]>;
+  getAgentVersions: (agentId: string) => Promise<AgentVersion[]>;
   revertToVersion: (agentId: string) => Promise<Agent>;
 }
 
@@ -210,6 +239,13 @@ export interface UsePortfoliosReturn {
   deletePortfolio: (portfolioId: string) => Promise<void>;
   assignAgent: (portfolioId: string, agentId: string) => Promise<void>;
   unassignAgent: (portfolioId: string, agentId: string) => Promise<void>;
+  createPortfolioDraftFromThesis: (
+    thesis: string,
+    options?: {
+      name?: string;
+      description?: string;
+    }
+  ) => Promise<Portfolio>;
 }
 
 export interface UseAgentWorkReturn {

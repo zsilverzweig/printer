@@ -69,10 +69,11 @@ export interface AgentExecution {
   metadata?: Record<string, unknown>
 }
 
-export type AIOperation = 
+export type AIOperation =
   | 'company_research'
   | 'trade_analysis'
   | 'thesis_generation'
+  | 'portfolio_generation'
   | 'pattern_matching'
   | 'risk_assessment'
   | 'market_analysis'
