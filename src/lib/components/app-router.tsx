@@ -159,12 +159,19 @@ export function AppRouter({ children }: AppRouterProps) {
     );
   }
 
-  // Show loading while redirecting
+  // If we reach here, something unexpected happened
+  // For admin users, just show the children (they should have been handled above)
+  if (isAdmin) {
+    return <>{children}</>;
+  }
+
+  // For other cases, show a generic error or redirect to home
   return (
     <div className="min-h-screen flex items-center justify-center bg-background">
       <div className="text-center">
-        <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-primary" />
-        <p className="text-muted-foreground">Redirecting...</p>
+        <p className="text-muted-foreground">
+          Something went wrong. Please try refreshing the page.
+        </p>
       </div>
     </div>
   );

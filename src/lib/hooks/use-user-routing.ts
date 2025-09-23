@@ -37,11 +37,9 @@ export function useUserRouting(): UseUserRoutingReturn {
       return null;
     }
 
-    // Admin users can access any page - don't force redirect to admin
+    // Admin users can access any page - never force redirects
     if (isAdmin) {
-      // Allow admin users to stay on their current page
-      // Only redirect to admin if they're on a restricted page
-      return null; // No forced redirect for admin users
+      return null;
     }
 
     // Check if user is on waitlist
@@ -60,7 +58,7 @@ export function useUserRouting(): UseUserRoutingReturn {
       };
     }
 
-    // User doesn't have access - redirect to waitlist or show restrictions
+    // User doesn't have access - redirect to waitlist
     return {
       path: "/waitlist",
       reason: "User access restricted - redirecting to waitlist",
