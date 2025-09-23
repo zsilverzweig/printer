@@ -64,8 +64,11 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Extract userId from state (format: userId_timestamp)
-    const userId = state.split("_")[0];
+    // Extract userId and environment from state (format: userId_environment_timestamp)
+    const stateParts = state.split("_");
+    const userId = stateParts[0];
+    const environment = stateParts[1] as "paper" | "live" | "both" | undefined;
+
     if (!userId) {
       log.failure("Invalid state parameter", { state }, "AlpacaOAuth");
 
@@ -103,6 +106,7 @@ export async function GET(request: NextRequest) {
       scope: tokens.scope,
       connectedAt: new Date(),
       status: "active" as const,
+      environment: environment || ("both" as const),
     };
 
     await userService.updateUserProfile(userId, {

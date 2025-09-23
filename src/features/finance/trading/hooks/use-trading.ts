@@ -10,6 +10,7 @@ import {
   AlpacaPosition,
 } from "@/lib/types";
 import { log } from "@/lib/utils/logger";
+import { useTradingContext } from "../contexts/trading-context";
 
 export interface UseTradingReturn {
   account: AlpacaAccount | null;
@@ -84,6 +85,7 @@ async function fetchJson<T>(
 
 export function useTrading(): UseTradingReturn {
   const { user } = useAuthContext();
+  const { environment } = useTradingContext();
   const [account, setAccount] = useState<AlpacaAccount | null>(null);
   const [positions, setPositions] = useState<AlpacaPosition[]>([]);
   const [orders, setOrders] = useState<AlpacaOrder[]>([]);
@@ -139,13 +141,13 @@ export function useTrading(): UseTradingReturn {
       const [accountResponse, positionsResponse, ordersResponse] =
         await Promise.all([
           fetchJson<{ account: AlpacaAccount }>(
-            `/api/trading/account?userId=${user.uid}`
+            `/api/trading/account?userId=${user.uid}&environment=${environment}`
           ),
           fetchJson<{ positions: AlpacaPosition[] }>(
-            `/api/trading/positions?userId=${user.uid}`
+            `/api/trading/positions?userId=${user.uid}&environment=${environment}`
           ),
           fetchJson<{ orders: AlpacaOrder[] }>(
-            `/api/trading/orders?userId=${user.uid}&status=all&limit=25`
+            `/api/trading/orders?userId=${user.uid}&environment=${environment}&status=all&limit=25`
           ),
         ]);
 
@@ -218,7 +220,7 @@ export function useTrading(): UseTradingReturn {
         );
 
         const response = await fetchJson<{ order: AlpacaOrder }>(
-          `/api/trading/orders?userId=${user.uid}`,
+          `/api/trading/orders?userId=${user.uid}&environment=${environment}`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },

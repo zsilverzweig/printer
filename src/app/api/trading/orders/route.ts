@@ -7,6 +7,10 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get("userId");
+    const environment = searchParams.get("environment") as
+      | "paper"
+      | "live"
+      | null;
     const status = searchParams.get("status") || "all";
     const limit = searchParams.get("limit") || "25";
 
@@ -17,15 +21,23 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    if (!environment || !["paper", "live"].includes(environment)) {
+      return NextResponse.json(
+        { error: "Valid environment (paper/live) is required" },
+        { status: 400 }
+      );
+    }
+
     log.debug(
       "Fetching trading orders",
-      { userId, status, limit },
+      { userId, environment, status, limit },
       "TradingOrdersAPI"
     );
 
     // Get orders data from Alpaca using stored OAuth tokens
     const orders = await alpacaService.getOrders(
       userId,
+      environment,
       status,
       Number.parseInt(limit)
     );
@@ -45,6 +57,10 @@ export async function POST(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get("userId");
+    const environment = searchParams.get("environment") as
+      | "paper"
+      | "live"
+      | null;
 
     if (!userId) {
       log.error(
@@ -54,6 +70,13 @@ export async function POST(request: NextRequest) {
       );
       return NextResponse.json(
         { error: "User ID is required" },
+        { status: 400 }
+      );
+    }
+
+    if (!environment || !["paper", "live"].includes(environment)) {
+      return NextResponse.json(
+        { error: "Valid environment (paper/live) is required" },
         { status: 400 }
       );
     }
@@ -83,6 +106,7 @@ export async function POST(request: NextRequest) {
       "Placing trading order",
       {
         userId,
+        environment,
         orderData: {
           symbol: orderData.symbol,
           side: orderData.side,
@@ -100,12 +124,17 @@ export async function POST(request: NextRequest) {
     );
 
     // Place order via Alpaca using stored OAuth tokens
-    const order = await alpacaService.placeOrder(userId, orderData);
+    const order = await alpacaService.placeOrder(
+      userId,
+      orderData,
+      environment
+    );
 
     log.success(
       "Successfully placed trading order",
       {
         userId,
+        environment,
         orderId: order.id,
         symbol: order.symbol,
         side: order.side,

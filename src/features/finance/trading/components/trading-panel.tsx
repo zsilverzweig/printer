@@ -3,6 +3,7 @@
 import {
   ArrowUpRight,
   CheckCircle,
+  Info,
   Loader2,
   RefreshCw,
   TrendingUp,
@@ -22,15 +23,40 @@ import {
 } from "@/lib/components/ui/card";
 import { Input } from "@/lib/components/ui/input";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/lib/components/ui/tooltip";
+import {
   AlpacaOrderSide,
   AlpacaPosition,
   AlpacaPositionSide,
   AlpacaTimeInForce,
 } from "@/lib/types";
 
+import { TradingProvider } from "../contexts/trading-context";
 import { useTrading } from "../hooks/use-trading";
 
+import { TradingEnvironmentBanner } from "./trading-environment-banner";
+
 const TIME_IN_FORCE_OPTIONS: AlpacaTimeInForce[] = ["day", "gtc", "ioc"];
+
+// Helper component for info tooltips
+function InfoTooltip({ content }: { content: string }) {
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Info className="h-4 w-4 text-muted-foreground cursor-help" />
+        </TooltipTrigger>
+        <TooltipContent className="max-w-xs">
+          <p className="text-sm">{content}</p>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
 
 interface OrderFormState {
   symbol: string;
@@ -109,7 +135,7 @@ function getOrderStatusVariant(status: string) {
   return "outline" as const;
 }
 
-export function TradingPanel() {
+function TradingPanelContent() {
   const {
     account,
     positions,
@@ -273,6 +299,8 @@ export function TradingPanel() {
           </Button>
         </div>
       </div>
+
+      <TradingEnvironmentBanner />
 
       {!isConnected && (
         <Card>
@@ -464,8 +492,9 @@ export function TradingPanel() {
 
                   <div className="grid gap-4 sm:grid-cols-3">
                     <div>
-                      <label className="mb-1 block text-sm font-medium text-muted-foreground">
-                        Side
+                      <label className="mb-1 flex items-center gap-1 text-sm font-medium text-muted-foreground">
+                        Order Side
+                        <InfoTooltip content="Buy = Purchase shares, Sell = Sell shares you own" />
                       </label>
                       <select
                         name="side"
@@ -478,8 +507,9 @@ export function TradingPanel() {
                       </select>
                     </div>
                     <div>
-                      <label className="mb-1 block text-sm font-medium text-muted-foreground">
-                        Position Side
+                      <label className="mb-1 flex items-center gap-1 text-sm font-medium text-muted-foreground">
+                        Position Type
+                        <InfoTooltip content="Long = Profit when price goes up, Short = Profit when price goes down (requires borrowing shares)" />
                       </label>
                       <select
                         name="positionSide"
@@ -492,8 +522,9 @@ export function TradingPanel() {
                       </select>
                     </div>
                     <div>
-                      <label className="mb-1 block text-sm font-medium text-muted-foreground">
+                      <label className="mb-1 flex items-center gap-1 text-sm font-medium text-muted-foreground">
                         Time in Force
+                        <InfoTooltip content="DAY = Expires at market close, GTC = Good until cancelled, IOC = Immediate or cancel" />
                       </label>
                       <select
                         name="timeInForce"
@@ -521,11 +552,42 @@ export function TradingPanel() {
                     />
                     <label
                       htmlFor="extendedHours"
-                      className="text-sm text-muted-foreground"
+                      className="flex items-center gap-1 text-sm text-muted-foreground"
                     >
                       Allow extended hours trading
+                      <InfoTooltip content="Trade before 9:30 AM or after 4:00 PM ET. Higher volatility and wider spreads." />
                     </label>
                   </div>
+
+                  {/* Shorting Explanation */}
+                  {formState.positionSide === "short" && (
+                    <div className="rounded-md border border-amber-200 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950">
+                      <div className="flex items-start gap-2">
+                        <Info className="h-4 w-4 text-amber-600 mt-0.5" />
+                        <div className="text-sm">
+                          <p className="font-medium text-amber-800 dark:text-amber-200">
+                            Short Selling Order
+                          </p>
+                          <p className="text-amber-700 dark:text-amber-300 mt-1">
+                            To short a stock, you need to:
+                          </p>
+                          <ul className="list-disc list-inside text-amber-700 dark:text-amber-300 mt-1 space-y-1">
+                            <li>
+                              Set <strong>Order Side</strong> to
+                              &quot;Sell&quot;
+                            </li>
+                            <li>
+                              Set <strong>Position Type</strong> to
+                              &quot;Short&quot;
+                            </li>
+                            <li>Your broker will borrow shares to sell</li>
+                            <li>You profit if the stock price goes down</li>
+                            <li>You lose if the stock price goes up</li>
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="flex items-center justify-between rounded-md border border-dashed p-3 text-sm">
                     <div>
@@ -656,51 +718,43 @@ export function TradingPanel() {
                     <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                   </div>
                 ) : recentOrders.length > 0 ? (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead className="text-left text-muted-foreground">
-                        <tr>
-                          <th className="py-2">Submitted</th>
-                          <th className="py-2">Symbol</th>
-                          <th className="py-2">Side</th>
-                          <th className="py-2 text-right">Quantity</th>
-                          <th className="py-2">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {recentOrders.map((order) => (
-                          <tr key={order.id} className="border-t">
-                            <td className="py-2 text-muted-foreground">
-                              {new Date(order.submitted_at).toLocaleString()}
-                            </td>
-                            <td className="py-2 font-medium">{order.symbol}</td>
-                            <td className="py-2 capitalize">
-                              {order.side}
-                              {order.position_side
-                                ? ` (${order.position_side})`
-                                : ""}
-                            </td>
-                            <td className="py-2 text-right">
-                              {order.qty
-                                ? formatNumber(order.qty, 4)
-                                : order.notional
-                                ? formatCurrency(
-                                    order.notional,
-                                    accountCurrency
-                                  )
-                                : "-"}
-                            </td>
-                            <td className="py-2">
-                              <Badge
-                                variant={getOrderStatusVariant(order.status)}
-                              >
-                                {order.status.replace(/_/g, " ")}
-                              </Badge>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                  <div className="space-y-2">
+                    {recentOrders.map((order) => (
+                      <div
+                        key={order.id}
+                        className="flex items-center justify-between rounded-md border p-3"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">{order.symbol}</span>
+                            <Badge
+                              variant={getOrderStatusVariant(order.status)}
+                              className="text-xs"
+                            >
+                              {order.status.replace(/_/g, " ")}
+                            </Badge>
+                          </div>
+                          <div className="text-sm text-muted-foreground">
+                            {order.side.toUpperCase()}
+                            {order.position_side
+                              ? ` (${order.position_side})`
+                              : ""}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-sm font-medium">
+                            {order.qty
+                              ? formatNumber(order.qty, 4)
+                              : order.notional
+                              ? formatCurrency(order.notional, accountCurrency)
+                              : "-"}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {new Date(order.submitted_at).toLocaleString()}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 ) : (
                   <p className="text-sm text-muted-foreground">
@@ -713,5 +767,13 @@ export function TradingPanel() {
         </>
       )}
     </div>
+  );
+}
+
+export function TradingPanel() {
+  return (
+    <TradingProvider>
+      <TradingPanelContent />
+    </TradingProvider>
   );
 }

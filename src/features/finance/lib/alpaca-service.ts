@@ -96,11 +96,19 @@ export interface AlpacaOrderRequest {
 }
 
 class AlpacaService {
-  private readonly baseUrl: string;
+  private readonly paperBaseUrl: string;
+  private readonly liveBaseUrl: string;
 
   constructor() {
-    this.baseUrl =
-      process.env.ALPACA_API_BASE_URL || "https://api.alpaca.markets";
+    this.paperBaseUrl =
+      process.env.ALPACA_PAPER_API_BASE_URL ||
+      "https://paper-api.alpaca.markets";
+    this.liveBaseUrl =
+      process.env.ALPACA_LIVE_API_BASE_URL || "https://api.alpaca.markets";
+  }
+
+  private getBaseUrl(environment: "paper" | "live"): string {
+    return environment === "paper" ? this.paperBaseUrl : this.liveBaseUrl;
   }
 
   private async getAccessToken(userId: string): Promise<string> {
@@ -120,11 +128,13 @@ class AlpacaService {
   private async makeAuthenticatedRequest<T>(
     endpoint: string,
     userId: string,
+    environment: "paper" | "live",
     options: RequestInit = {}
   ): Promise<T> {
     const accessToken = await this.getAccessToken(userId);
+    const baseUrl = this.getBaseUrl(environment);
 
-    const url = `${this.baseUrl}${endpoint}`;
+    const url = `${baseUrl}${endpoint}`;
 
     log.debug(
       "Making authenticated request to Alpaca API",
@@ -222,18 +232,26 @@ class AlpacaService {
     return responseData as T;
   }
 
-  async getAccount(userId: string): Promise<AlpacaAccount> {
-    log.debug("Fetching Alpaca account", { userId }, "AlpacaService");
+  async getAccount(
+    userId: string,
+    environment: "paper" | "live"
+  ): Promise<AlpacaAccount> {
+    log.debug(
+      "Fetching Alpaca account",
+      { userId, environment },
+      "AlpacaService"
+    );
 
     try {
       const account = await this.makeAuthenticatedRequest<AlpacaAccount>(
         "/v2/account",
-        userId
+        userId,
+        environment
       );
 
       log.success(
         "Successfully fetched Alpaca account",
-        { userId },
+        { userId, environment },
         "AlpacaService"
       );
       return account;
@@ -243,18 +261,26 @@ class AlpacaService {
     }
   }
 
-  async getPositions(userId: string): Promise<AlpacaPosition[]> {
-    log.debug("Fetching Alpaca positions", { userId }, "AlpacaService");
+  async getPositions(
+    userId: string,
+    environment: "paper" | "live"
+  ): Promise<AlpacaPosition[]> {
+    log.debug(
+      "Fetching Alpaca positions",
+      { userId, environment },
+      "AlpacaService"
+    );
 
     try {
       const positions = await this.makeAuthenticatedRequest<AlpacaPosition[]>(
         "/v2/positions",
-        userId
+        userId,
+        environment
       );
 
       log.success(
         "Successfully fetched Alpaca positions",
-        { userId, count: positions.length },
+        { userId, environment, count: positions.length },
         "AlpacaService"
       );
       return positions;
@@ -266,12 +292,13 @@ class AlpacaService {
 
   async getOrders(
     userId: string,
+    environment: "paper" | "live",
     status: string = "all",
     limit: number = 25
   ): Promise<AlpacaOrder[]> {
     log.debug(
       "Fetching Alpaca orders",
-      { userId, status, limit },
+      { userId, environment, status, limit },
       "AlpacaService"
     );
 
@@ -283,12 +310,13 @@ class AlpacaService {
 
       const orders = await this.makeAuthenticatedRequest<AlpacaOrder[]>(
         `/v2/orders?${params.toString()}`,
-        userId
+        userId,
+        environment
       );
 
       log.success(
         "Successfully fetched Alpaca orders",
-        { userId, count: orders.length },
+        { userId, environment, count: orders.length },
         "AlpacaService"
       );
       return orders;
@@ -300,12 +328,14 @@ class AlpacaService {
 
   async placeOrder(
     userId: string,
-    order: AlpacaOrderRequest
+    order: AlpacaOrderRequest,
+    environment: "paper" | "live"
   ): Promise<AlpacaOrder> {
     log.info(
       "Placing Alpaca order",
       {
         userId,
+        environment,
         order: {
           symbol: order.symbol,
           side: order.side,
@@ -345,6 +375,7 @@ class AlpacaService {
       const placedOrder = await this.makeAuthenticatedRequest<AlpacaOrder>(
         "/v2/orders",
         userId,
+        environment,
         {
           method: "POST",
           body: JSON.stringify(order),
@@ -355,6 +386,7 @@ class AlpacaService {
         "Successfully placed Alpaca order",
         {
           userId,
+          environment,
           orderId: placedOrder.id,
           symbol: order.symbol,
           side: order.side,
@@ -372,6 +404,7 @@ class AlpacaService {
         {
           error: errorMessage,
           userId,
+          environment,
           order: {
             symbol: order.symbol,
             side: order.side,
