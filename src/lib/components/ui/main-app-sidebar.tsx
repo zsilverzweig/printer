@@ -9,6 +9,7 @@ import {
   Settings,
   Shield,
   TrendingUp,
+  User,
   Users,
 } from "lucide-react";
 
@@ -32,6 +33,12 @@ export function MainAppSidebar() {
           title: "Dashboard",
           href: "/home",
           icon: <Home className="h-4 w-4" />,
+        },
+        {
+          id: "profile",
+          title: "Profile",
+          href: "/profile",
+          icon: <User className="h-4 w-4" />,
         },
       ],
     },
