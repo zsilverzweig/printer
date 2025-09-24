@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Badge } from "@/lib/components/ui/badge";
 import { Button } from "@/lib/components/ui/button";
@@ -62,6 +62,7 @@ export function PortfolioWizardStreamDialog({
   const [portfolioName, setPortfolioName] = useState("");
   const [thesis, setThesis] = useState("");
   const [showDebug, setShowDebug] = useState(false);
+  const hasCompletedRef = useRef(false);
 
   const {
     isStreaming,
@@ -89,15 +90,20 @@ export function PortfolioWizardStreamDialog({
       setShowDebug(false);
       stopStream();
       hideDebugPanel();
+      hasCompletedRef.current = false;
     }
   }, [open, stopStream, hideDebugPanel]);
 
   useEffect(() => {
-    if (portfolio) {
-      onComplete(portfolio);
-      onOpenChange(false);
+    if (portfolio && !isStreaming && !hasCompletedRef.current) {
+      hasCompletedRef.current = true;
+      const handleComplete = async () => {
+        await onComplete(portfolio);
+        onOpenChange(false);
+      };
+      handleComplete();
     }
-  }, [portfolio, onComplete, onOpenChange]);
+  }, [portfolio, isStreaming, onComplete, onOpenChange]);
 
   // Convert stream events to debug logs
   useEffect(() => {

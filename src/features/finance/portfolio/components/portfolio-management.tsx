@@ -78,9 +78,18 @@ export function PortfolioManagement({ userId }: PortfolioManagementProps) {
     }
   };
 
-  const handleWizardStreamComplete = (portfolio: Portfolio) => {
-    setShowWizardStreamDialog(false);
-    setSelectedPortfolio(portfolio);
+  const handleWizardStreamComplete = async (portfolio: Portfolio) => {
+    try {
+      // The portfolio is already created by the streaming API, just add it to the local state
+      setPortfolios((prev) => [...prev, portfolio]);
+      setShowWizardStreamDialog(false);
+      setSelectedPortfolio(portfolio);
+    } catch (error) {
+      console.error("Failed to handle portfolio completion:", error);
+      // Still close the dialog and show the portfolio even if there's an error
+      setShowWizardStreamDialog(false);
+      setSelectedPortfolio(portfolio);
+    }
   };
 
   const handleUpdatePortfolio = async (

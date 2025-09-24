@@ -16,14 +16,7 @@ export function usePortfolios(userId: string): UsePortfoliosReturn {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Load initial data
-  useEffect(() => {
-    if (userId) {
-      loadPortfolios();
-    }
-  }, [userId]);
-
-  const loadPortfolios = async () => {
+  const loadPortfolios = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -43,7 +36,14 @@ export function usePortfolios(userId: string): UsePortfoliosReturn {
     } finally {
       setLoading(false);
     }
-  };
+  }, [userId]);
+
+  // Load initial data
+  useEffect(() => {
+    if (userId) {
+      loadPortfolios();
+    }
+  }, [userId, loadPortfolios]);
 
   const createPortfolio = useCallback(
     async (request: CreatePortfolioRequest): Promise<Portfolio> => {
@@ -121,11 +121,7 @@ export function usePortfolios(userId: string): UsePortfoliosReturn {
             ? err.message
             : "Failed to create portfolio draft";
         setError(errorMessage);
-        log.failure(
-          "Failed to create portfolio draft",
-          err,
-          "usePortfolios"
-        );
+        log.failure("Failed to create portfolio draft", err, "usePortfolios");
         throw err;
       }
     },
