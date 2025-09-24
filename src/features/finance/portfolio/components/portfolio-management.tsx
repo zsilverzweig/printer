@@ -252,7 +252,9 @@ export function PortfolioManagement({ userId }: PortfolioManagementProps) {
         portfolio={selectedPortfolio}
         availableAgents={agents.filter((agent) => agent.isActive)}
         onClose={() => {
-          console.log("PortfolioManagement onClose called, setting selectedPortfolio to null");
+          console.log(
+            "PortfolioManagement onClose called, setting selectedPortfolio to null"
+          );
           setSelectedPortfolio(null);
         }}
         onUpdatePortfolio={handleUpdatePortfolio}

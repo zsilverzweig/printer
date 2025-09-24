@@ -129,10 +129,13 @@ export function PortfolioDetailsDialog({
       className="max-w-6xl"
       footer={
         <>
-          <Button variant="outline" onClick={() => {
-            console.log("PortfolioDetailsDialog Close button clicked");
-            onClose();
-          }}>
+          <Button
+            variant="outline"
+            onClick={() => {
+              console.log("PortfolioDetailsDialog Close button clicked");
+              onClose();
+            }}
+          >
             Close
           </Button>
           <Button variant="destructive" onClick={handleDelete}>
@@ -269,7 +272,9 @@ export function PortfolioDetailsDialog({
               <div className="overflow-x-auto">
                 {portfolioMetadata.portfolioSummary && (
                   <div className="mb-4 rounded-md border border-border bg-muted/50 p-3 text-sm">
-                    <p className="font-medium text-foreground">Portfolio Summary</p>
+                    <p className="font-medium text-foreground">
+                      Portfolio Summary
+                    </p>
                     <p className="text-muted-foreground">
                       {portfolioMetadata.portfolioSummary}
                     </p>
@@ -315,10 +320,13 @@ export function PortfolioDetailsDialog({
                         </td>
                         <td className="py-3 pr-4">
                           {position.targetPrice !== undefined
-                            ? `$${position.targetPrice.toLocaleString(undefined, {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2,
-                              })}`
+                            ? `$${position.targetPrice.toLocaleString(
+                                undefined,
+                                {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                }
+                              )}`
                             : "—"}
                         </td>
                         <td className="py-3 pr-4">
