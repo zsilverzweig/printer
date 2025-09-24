@@ -34,6 +34,7 @@ export function PortfolioManagement({ userId }: PortfolioManagementProps) {
     createPortfolioDraftFromThesis,
     updatePortfolio,
     deletePortfolio,
+    addPortfolio,
   } = usePortfolios(userId);
   const { agents } = useAgents();
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -81,7 +82,7 @@ export function PortfolioManagement({ userId }: PortfolioManagementProps) {
   const handleWizardStreamComplete = async (portfolio: Portfolio) => {
     try {
       // The portfolio is already created by the streaming API, just add it to the local state
-      setPortfolios((prev) => [...prev, portfolio]);
+      addPortfolio(portfolio);
       setShowWizardStreamDialog(false);
       setSelectedPortfolio(portfolio);
     } catch (error) {

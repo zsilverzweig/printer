@@ -267,6 +267,17 @@ export function usePortfolios(userId: string): UsePortfoliosReturn {
     [portfolios, updatePortfolio]
   );
 
+  const addPortfolio = useCallback((portfolio: Portfolio): void => {
+    setPortfolios((prev) => {
+      // Check if portfolio already exists to avoid duplicates
+      const exists = prev.some((p) => p.id === portfolio.id);
+      if (exists) {
+        return prev;
+      }
+      return [...prev, portfolio];
+    });
+  }, []);
+
   return {
     portfolios,
     loading,
@@ -277,5 +288,6 @@ export function usePortfolios(userId: string): UsePortfoliosReturn {
     deletePortfolio,
     assignAgent,
     unassignAgent,
+    addPortfolio,
   };
 }

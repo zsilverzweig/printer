@@ -1,10 +1,7 @@
 // Agent management types for Printer AI system
 
 import { AIModel, AIRequest, AIResponse } from "@/lib/types/ai";
-import {
-  AlpacaOrderSide,
-  AlpacaPositionSide,
-} from "@/lib/types/alpaca";
+import { AlpacaOrderSide, AlpacaPositionSide } from "@/lib/types/alpaca";
 
 // Core Agent Types
 export interface Agent {
@@ -246,6 +243,7 @@ export interface UsePortfoliosReturn {
       description?: string;
     }
   ) => Promise<Portfolio>;
+  addPortfolio: (portfolio: Portfolio) => void;
 }
 
 export interface UseAgentWorkReturn {
