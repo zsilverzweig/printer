@@ -16,15 +16,15 @@ interface SidebarProps {
 
 export function Sidebar({ files, currentSlug }: SidebarProps) {
   const pathname = usePathname()
-  
+
   // Filter out README and organize files by category
   const filteredFiles = files.filter(file => file.slug !== 'README')
-  
+
   // Separate files into categories
   const mainDocs = filteredFiles.filter(file => !file.slug.includes('/'))
   const devPlanningFiles = filteredFiles.filter(file => file.slug.startsWith('Development Planning/'))
   const fundProspectusFiles = filteredFiles.filter(file => file.slug.startsWith('Fund Prospectus/'))
-  
+
   return (
     <div className="w-80 border-r bg-card">
       <div className="p-6">
@@ -32,7 +32,7 @@ export function Sidebar({ files, currentSlug }: SidebarProps) {
           <Printer className="h-6 w-6 text-primary mr-2" />
           <h2 className="text-lg font-semibold">Printer</h2>
         </div>
-        
+
         <nav className="space-y-4">
           <div>
             <Link href="/">
@@ -45,7 +45,7 @@ export function Sidebar({ files, currentSlug }: SidebarProps) {
               </Button>
             </Link>
           </div>
-          
+
           {mainDocs.length > 0 && (
             <div>
               <h3 className="text-sm font-medium text-muted-foreground mb-2">Documentation</h3>
@@ -64,7 +64,7 @@ export function Sidebar({ files, currentSlug }: SidebarProps) {
               </div>
             </div>
           )}
-          
+
           {devPlanningFiles.length > 0 && (
             <div>
               <h3 className="text-sm font-medium text-muted-foreground mb-2">Development Planning</h3>
@@ -83,7 +83,7 @@ export function Sidebar({ files, currentSlug }: SidebarProps) {
               </div>
             </div>
           )}
-          
+
           {fundProspectusFiles.length > 0 && (
             <div>
               <h3 className="text-sm font-medium text-muted-foreground mb-2">Fund Prospectus</h3>
@@ -103,7 +103,7 @@ export function Sidebar({ files, currentSlug }: SidebarProps) {
             </div>
           )}
         </nav>
-        
+
         {/* User Profile Section */}
         <div className="mt-auto p-6 border-t">
           <UserProfile />

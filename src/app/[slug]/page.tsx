@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 
-import { MarkdownViewer } from "@/features/welcome-page/components/markdown-viewer";
+import { MarkdownViewer } from "@/lib/components/ui/markdown-viewer";
 import { getMarkdownFile, getMarkdownFiles } from "@/lib/services/markdown";
 
 interface PageProps {

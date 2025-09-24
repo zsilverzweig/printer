@@ -22,7 +22,7 @@ export function UserProfile() {
 
   if (!user) {
     return (
-      <Button 
+      <Button
         onClick={() => router.push('/login')}
         variant="outline"
         className="w-full"
@@ -77,21 +77,21 @@ export function UserProfile() {
           </div>
         </Button>
       </DropdownMenuTrigger>
-      
+
       <DropdownMenuContent align="end" className="w-56">
         <DropdownMenuLabel>My Account</DropdownMenuLabel>
         <DropdownMenuSeparator />
-        
+
         <DropdownMenuItem onClick={() => router.push('/profile')}>
           <User className="mr-2 h-4 w-4" />
           Profile
         </DropdownMenuItem>
-        
+
         <DropdownMenuItem onClick={() => router.push('/settings')}>
           <Settings className="mr-2 h-4 w-4" />
           Settings
         </DropdownMenuItem>
-        
+
         {isAdmin && (
           <>
             <DropdownMenuSeparator />
@@ -101,9 +101,9 @@ export function UserProfile() {
             </DropdownMenuItem>
           </>
         )}
-        
+
         <DropdownMenuSeparator />
-        <DropdownMenuItem 
+        <DropdownMenuItem
           onClick={handleSignOut}
           disabled={loading}
           className="text-destructive focus:text-destructive"
