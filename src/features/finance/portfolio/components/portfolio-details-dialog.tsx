@@ -16,6 +16,7 @@ import {
 } from "@/lib/components/ui/card";
 import { Input } from "@/lib/components/ui/input";
 import { Modal } from "@/lib/components/ui/modal";
+import { Textarea } from "@/lib/components/ui/textarea";
 import { log } from "@/lib/utils/logger";
 
 import { Portfolio, UpdatePortfolioRequest } from "../types";
@@ -223,13 +224,13 @@ export function PortfolioDetailsDialog({
           </CardHeader>
           <CardContent>
             {editing ? (
-              <textarea
+              <Textarea
                 value={formData.thesis || ""}
                 onChange={(e) =>
                   setFormData({ ...formData, thesis: e.target.value })
                 }
-                className="w-full px-3 py-2 bg-background border border-border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
                 rows={6}
+                className="resize-vertical"
               />
             ) : (
               <div className="bg-muted p-4 rounded-md">

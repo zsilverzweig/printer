@@ -13,6 +13,7 @@ import { useState } from "react";
 
 import { Button } from "@/lib/components/ui/button";
 import { Card } from "@/lib/components/ui/card";
+import { Input } from "@/lib/components/ui/input";
 import { log } from "@/lib/utils/logger";
 
 import { useAdmin } from "../hooks/use-admin";
@@ -236,13 +237,13 @@ export function AdminDashboard() {
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Number of invites
             </label>
-            <input
+            <Input
               type="number"
               min="1"
               max="100"
               value={inviteCount}
               onChange={(e) => setInviteCount(parseInt(e.target.value) || 1)}
-              className="w-20 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-24"
             />
           </div>
           <Button

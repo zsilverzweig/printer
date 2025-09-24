@@ -17,6 +17,7 @@ import {
   ModalForm,
   ModalSection,
 } from "@/lib/components/ui/modal";
+import { Textarea } from "@/lib/components/ui/textarea";
 import {
   Tooltip,
   TooltipContent,
@@ -86,7 +87,7 @@ export function CreateAgentDialog({
         maxTokens: 2000,
       });
       setSelectedTemplate(null);
-    } catch (error) {
+    } catch {
       // Error handling is done by the parent component
     } finally {
       setLoading(false);
@@ -204,15 +205,15 @@ export function CreateAgentDialog({
 
         {/* Prompt Guidance */}
         <ModalField label="Prompt Guidance" required>
-          <textarea
+          <Textarea
             value={formData.promptGuidance}
             onChange={(e) =>
               setFormData({ ...formData, promptGuidance: e.target.value })
             }
             placeholder="Define the agent's specific instructions and guidance..."
-            className="w-full px-3 py-2 bg-background border border-border rounded-md text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent resize-vertical"
             rows={6}
             required
+            className="resize-vertical"
           />
         </ModalField>
 

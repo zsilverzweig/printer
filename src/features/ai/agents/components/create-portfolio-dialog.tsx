@@ -17,6 +17,7 @@ import {
   ModalForm,
   ModalSection,
 } from "@/lib/components/ui/modal";
+import { Textarea } from "@/lib/components/ui/textarea";
 
 import { Agent, CreatePortfolioRequest } from "../types";
 
@@ -130,15 +131,15 @@ export function CreatePortfolioDialog({
 
         {/* Investment Thesis */}
         <ModalField label="Investment Thesis" required>
-          <textarea
+          <Textarea
             value={formData.thesis}
             onChange={(e) =>
               setFormData({ ...formData, thesis: e.target.value })
             }
             placeholder="Write your investment thesis here. This will be analyzed by the assigned AI agents..."
-            className="w-full px-3 py-2 bg-background border border-border rounded-md text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent resize-vertical"
             rows={6}
             required
+            className="resize-vertical"
           />
           <p className="text-sm text-muted-foreground mt-2">
             This thesis will be analyzed by your assigned AI agents to provide

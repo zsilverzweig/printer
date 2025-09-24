@@ -13,6 +13,7 @@ import {
 } from "@/lib/components/ui/card";
 import { Input } from "@/lib/components/ui/input";
 import { Modal } from "@/lib/components/ui/modal";
+import { Textarea } from "@/lib/components/ui/textarea";
 import { log } from "@/lib/utils/logger";
 
 import { useAgentWork } from "../hooks/use-agent-work";
@@ -229,13 +230,13 @@ export function PortfolioDetailsDialog({
           </CardHeader>
           <CardContent>
             {editing ? (
-              <textarea
+              <Textarea
                 value={formData.thesis || ""}
                 onChange={(e) =>
                   setFormData({ ...formData, thesis: e.target.value })
                 }
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 rows={6}
+                className="resize-vertical"
               />
             ) : (
               <div className="bg-gray-50 p-4 rounded-md">
