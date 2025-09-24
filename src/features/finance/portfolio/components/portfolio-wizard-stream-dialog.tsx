@@ -101,7 +101,9 @@ export function PortfolioWizardStreamDialog({
 
   // Convert stream events to debug logs
   useEffect(() => {
-    events.forEach((event) => {
+    // Only process new events to avoid infinite loops
+    const newEvents = events.slice(debugLogs.length);
+    newEvents.forEach((event) => {
       addLog({
         level:
           event.event === "error"
@@ -114,7 +116,7 @@ export function PortfolioWizardStreamDialog({
         context: event.data,
       });
     });
-  }, [events, addLog]);
+  }, [events.length, addLog, debugLogs.length]);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();

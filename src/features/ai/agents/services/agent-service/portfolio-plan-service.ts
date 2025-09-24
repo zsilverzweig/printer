@@ -255,8 +255,56 @@ export class PortfolioPlanService {
         : [];
 
       // Handle both expected format (risk_management) and actual format (risk_guidance)
-      const riskManagement =
-        parsed.risk_management || parsed.risk_guidance || "";
+      let riskManagement = parsed.risk_management || "";
+
+      // If risk_guidance exists and is an object, convert it to a string
+      if (!riskManagement && parsed.risk_guidance) {
+        if (typeof parsed.risk_guidance === "string") {
+          riskManagement = parsed.risk_guidance;
+        } else if (typeof parsed.risk_guidance === "object") {
+          // Convert object to readable string format
+          riskManagement = Object.entries(parsed.risk_guidance)
+            .map(([key, value]) => {
+              // Handle nested objects
+              if (typeof value === "object" && value !== null) {
+                return `${key}: ${JSON.stringify(value)}`;
+              }
+              return `${key}: ${value}`;
+            })
+            .join(". ");
+        }
+      }
+
+      // Ensure portfolio_summary is a string (in case it's an object)
+      let portfolioSummary = parsed.portfolio_summary;
+      if (typeof portfolioSummary === "object" && portfolioSummary !== null) {
+        portfolioSummary = JSON.stringify(portfolioSummary);
+      }
+
+      // Sanitize any other potential object fields that might cause React rendering issues
+      const sanitizeObject = (obj: any): any => {
+        if (obj === null || obj === undefined) return obj;
+        if (typeof obj !== "object") return obj;
+        if (Array.isArray(obj)) return obj.map(sanitizeObject);
+
+        const sanitized: any = {};
+        for (const [key, value] of Object.entries(obj)) {
+          if (
+            typeof value === "object" &&
+            value !== null &&
+            !Array.isArray(value)
+          ) {
+            // Convert nested objects to strings to prevent React rendering issues
+            sanitized[key] = JSON.stringify(value);
+          } else {
+            sanitized[key] = sanitizeObject(value);
+          }
+        }
+        return sanitized;
+      };
+
+      // Sanitize the entire parsed object to prevent any React rendering issues
+      const sanitizedParsed = sanitizeObject(parsed);
 
       log.info(
         "Plan parsing successful",
@@ -274,7 +322,7 @@ export class PortfolioPlanService {
       );
 
       return {
-        portfolio_summary: parsed.portfolio_summary,
+        portfolio_summary: portfolioSummary,
         risk_management: riskManagement,
         positions,
       };
