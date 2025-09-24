@@ -228,7 +228,10 @@ export function PortfolioManagement({ userId }: PortfolioManagementProps) {
       {/* Dialogs */}
       <CreatePortfolioDialog
         open={showCreateDialog}
-        onOpenChange={setShowCreateDialog}
+        onOpenChange={(open) => {
+          console.log("CreatePortfolioDialog onOpenChange called with:", open);
+          setShowCreateDialog(open);
+        }}
         availableAgents={agents.filter((agent) => agent.isActive)}
         onCreatePortfolio={handleCreatePortfolio}
       />
@@ -248,7 +251,10 @@ export function PortfolioManagement({ userId }: PortfolioManagementProps) {
       <PortfolioDetailsDialog
         portfolio={selectedPortfolio}
         availableAgents={agents.filter((agent) => agent.isActive)}
-        onClose={() => setSelectedPortfolio(null)}
+        onClose={() => {
+          console.log("PortfolioManagement onClose called, setting selectedPortfolio to null");
+          setSelectedPortfolio(null);
+        }}
         onUpdatePortfolio={handleUpdatePortfolio}
         onDeletePortfolio={handleDeletePortfolio}
       />

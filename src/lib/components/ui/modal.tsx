@@ -36,7 +36,15 @@ export function Modal({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-[9999]">
+    <div 
+      className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-[9999]"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          console.log("Modal backdrop clicked");
+          onOpenChange(false);
+        }
+      }}
+    >
       <div
         className={cn(
           "bg-background border border-border rounded-lg shadow-2xl w-full max-h-[95vh] overflow-hidden flex flex-col",
@@ -50,7 +58,10 @@ export function Modal({
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => onOpenChange(false)}
+            onClick={() => {
+              console.log("Modal X button clicked");
+              onOpenChange(false);
+            }}
             className="text-muted-foreground hover:text-foreground"
           >
             <X className="h-4 w-4" />

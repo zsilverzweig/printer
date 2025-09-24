@@ -76,7 +76,10 @@ export function CreatePortfolioDialog({
       <Button
         type="button"
         variant="outline"
-        onClick={() => onOpenChange(false)}
+        onClick={() => {
+          console.log("CreatePortfolioDialog Cancel button clicked");
+          onOpenChange(false);
+        }}
         disabled={loading}
       >
         Cancel

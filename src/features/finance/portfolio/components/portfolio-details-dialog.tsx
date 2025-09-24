@@ -118,7 +118,9 @@ export function PortfolioDetailsDialog({
     <Modal
       open={Boolean(portfolio)}
       onOpenChange={(open) => {
+        console.log("PortfolioDetailsDialog onOpenChange called with:", open);
         if (!open) {
+          console.log("PortfolioDetailsDialog calling onClose");
           onClose();
         }
       }}
@@ -127,7 +129,10 @@ export function PortfolioDetailsDialog({
       className="max-w-6xl"
       footer={
         <>
-          <Button variant="outline" onClick={onClose}>
+          <Button variant="outline" onClick={() => {
+            console.log("PortfolioDetailsDialog Close button clicked");
+            onClose();
+          }}>
             Close
           </Button>
           <Button variant="destructive" onClick={handleDelete}>

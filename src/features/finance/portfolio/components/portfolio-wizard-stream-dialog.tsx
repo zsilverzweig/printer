@@ -98,8 +98,13 @@ export function PortfolioWizardStreamDialog({
     if (portfolio && !isStreaming && !hasCompletedRef.current) {
       hasCompletedRef.current = true;
       const handleComplete = async () => {
-        await onComplete(portfolio);
-        onOpenChange(false);
+        try {
+          await onComplete(portfolio);
+        } catch (error) {
+          console.error("Error in completion handler:", error);
+        } finally {
+          onOpenChange(false);
+        }
       };
       handleComplete();
     }
@@ -198,8 +203,12 @@ export function PortfolioWizardStreamDialog({
         <Button
           type="button"
           variant="outline"
-          onClick={() => onOpenChange(false)}
-          disabled={isStreaming}
+          onClick={() => {
+            if (isStreaming) {
+              stopStream();
+            }
+            onOpenChange(false);
+          }}
         >
           Cancel
         </Button>
