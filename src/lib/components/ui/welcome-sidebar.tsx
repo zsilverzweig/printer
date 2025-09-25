@@ -36,15 +36,16 @@ export function WelcomeSidebar() {
 
   if (loading) {
     return (
-      <div className="w-80 border-r bg-card p-6">
-        <div className="flex items-center mb-4">
-          <Printer className="h-6 w-6 text-primary" />
-          <h2 className="text-lg font-semibold ml-2">Printer</h2>
-        </div>
-        <div className="flex items-center justify-center py-8">
+      <AppSidebar
+        title="Printer"
+        logo={<Printer className="h-6 w-6 text-primary" />}
+        sections={[]}
+        footer={<UserProfile />}
+      >
+        <div className="flex items-center justify-center rounded-md border border-sidebar-border/60 bg-card/40 px-3 py-8">
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
         </div>
-      </div>
+      </AppSidebar>
     );
   }
   // Get current slug from pathname

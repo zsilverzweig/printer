@@ -6,6 +6,7 @@ import { useUserRouting } from "@/lib/hooks/use-user-routing";
 import { useAuthContext } from "@/lib/providers/auth-provider";
 
 import { MainAppSidebar } from "./ui/main-app-sidebar";
+import { SidebarInset, SidebarProvider, SidebarTrigger } from "./ui/sidebar";
 import { WelcomeSidebar } from "./ui/welcome-sidebar";
 
 interface AppLayoutProps {
@@ -30,12 +31,17 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   // Render layout with appropriate sidebar
   return (
-    <div className="flex h-screen bg-background">
-      {/* Sidebar */}
+    <SidebarProvider>
       {!isAuthenticated ? <WelcomeSidebar /> : <MainAppSidebar />}
-
-      {/* Main content */}
-      <main className="flex-1 overflow-auto">{children}</main>
-    </div>
+      <SidebarInset className="bg-background">
+        <div className="flex items-center gap-2 border-b border-border/60 px-4 py-2 md:hidden">
+          <SidebarTrigger />
+          <span className="text-sm font-semibold text-muted-foreground">
+            Menu
+          </span>
+        </div>
+        <div className="flex-1 overflow-auto">{children}</div>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }
