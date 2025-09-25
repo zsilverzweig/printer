@@ -6,11 +6,32 @@ import { useUserRouting } from "@/lib/hooks/use-user-routing";
 import { useAuthContext } from "@/lib/providers/auth-provider";
 
 import { MainAppSidebar } from "./ui/main-app-sidebar";
-import { SidebarInset, SidebarProvider, SidebarTrigger } from "./ui/sidebar";
+import {
+  SidebarInset,
+  SidebarProvider,
+  SidebarTrigger,
+  useSidebar,
+} from "./ui/sidebar";
 import { WelcomeSidebar } from "./ui/welcome-sidebar";
 
 interface AppLayoutProps {
   children: React.ReactNode;
+}
+
+// Floating sidebar trigger that only appears when sidebar is collapsed
+function FloatingSidebarTrigger() {
+  const { state } = useSidebar();
+
+  // Only show when sidebar is collapsed
+  if (state !== "collapsed") {
+    return null;
+  }
+
+  return (
+    <div className="fixed top-4 left-4 z-50">
+      <SidebarTrigger className="h-10 w-10 shadow-lg" />
+    </div>
+  );
 }
 
 export function AppLayout({ children }: AppLayoutProps) {
@@ -34,12 +55,7 @@ export function AppLayout({ children }: AppLayoutProps) {
     <SidebarProvider>
       {!isAuthenticated ? <WelcomeSidebar /> : <MainAppSidebar />}
       <SidebarInset className="bg-background">
-        <div className="flex items-center gap-2 border-b border-border/60 px-4 py-2 md:hidden">
-          <SidebarTrigger />
-          <span className="text-sm font-semibold text-muted-foreground">
-            Menu
-          </span>
-        </div>
+        <FloatingSidebarTrigger />
         <div className="flex-1 overflow-auto">{children}</div>
       </SidebarInset>
     </SidebarProvider>

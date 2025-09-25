@@ -5,11 +5,9 @@ import {
   Bot,
   Briefcase,
   FileText,
-  Home,
   Settings,
   Shield,
   TrendingUp,
-  User,
   Users,
 } from "lucide-react";
 
@@ -26,28 +24,11 @@ export function MainAppSidebar() {
   // Base navigation items for all authenticated users
   const baseSections: SidebarSection[] = [
     {
-      title: "Main",
-      items: [
-        {
-          id: "home",
-          title: "Dashboard",
-          href: "/home",
-          icon: <Home className="h-4 w-4" />,
-        },
-        {
-          id: "profile",
-          title: "Profile",
-          href: "/profile",
-          icon: <User className="h-4 w-4" />,
-        },
-      ],
-    },
-    {
       title: "Investment",
       items: [
         {
           id: "portfolios",
-          title: "My Portfolios",
+          title: "Portfolios",
           href: "/portfolios",
           icon: <Briefcase className="h-4 w-4" />,
         },
@@ -98,18 +79,10 @@ export function MainAppSidebar() {
           icon: <Bot className="h-4 w-4" />,
         },
         {
-          id: "user-management",
-          title: "User Management",
-          href: "/admin/users",
-          icon: <Users className="h-4 w-4" />,
-          disabled: true,
-        },
-        {
           id: "admin-settings",
           title: "Admin Settings",
           href: "/admin/settings",
           icon: <Settings className="h-4 w-4" />,
-          disabled: true,
         },
       ],
     },
