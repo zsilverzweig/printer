@@ -3,11 +3,22 @@
 import { Printer } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ReactNode } from "react";
+import { ReactNode, useMemo } from "react";
 
-import { Button } from "@/lib/components/ui/button";
-import { Separator } from "@/lib/components/ui/separator";
-import { cn } from "@/lib/utils/utils";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarRail,
+  SidebarTrigger,
+} from "@/lib/components/ui/sidebar";
 
 export interface SidebarItem {
   id: string;
@@ -29,7 +40,7 @@ interface AppSidebarProps {
   sections?: SidebarSection[];
   footer?: ReactNode;
   className?: string;
-  width?: string;
+  children?: ReactNode;
 }
 
 export function AppSidebar({
@@ -38,83 +49,103 @@ export function AppSidebar({
   sections = [],
   footer,
   className,
-  width = "w-80",
+  children,
 }: AppSidebarProps) {
   const pathname = usePathname();
 
+  const isRouteActive = useMemo(() => {
+    return (item: SidebarItem) => {
+      if (item.isActive) {
+        return true;
+      }
+
+      if (pathname === item.href) {
+        return true;
+      }
+
+      if (pathname.startsWith(`${item.href}/`)) {
+        const hasMoreSpecificRoute = sections.some((section) =>
+          section.items.some((otherItem) => {
+            if (otherItem.href === item.href) {
+              return false;
+            }
+
+            const isChildRoute = otherItem.href.startsWith(
+              `${item.href}/`
+            );
+
+            return isChildRoute && pathname.startsWith(otherItem.href);
+          })
+        );
+
+        return !hasMoreSpecificRoute;
+      }
+
+      return false;
+    };
+  }, [pathname, sections]);
+
   return (
-    <div className={cn(width, "border-r bg-card", className)}>
-      <div className="p-6">
-        {/* Header */}
-        <div className="flex items-center mb-4">
-          {logo}
-          <h2 className="text-lg font-semibold ml-2">{title}</h2>
+    <Sidebar className={className}>
+      <SidebarHeader className="border-b border-sidebar-border px-4 py-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            {logo}
+            <h2 className="text-lg font-semibold">{title}</h2>
+          </div>
+          <SidebarTrigger className="h-8 w-8 text-sidebar-foreground" />
         </div>
+      </SidebarHeader>
+      <SidebarContent className="gap-4 px-2 py-4">
+        {children}
+        {sections.map((section) => (
+          <SidebarGroup key={section.title}>
+            <SidebarGroupLabel>{section.title}</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {section.items.map((item) => {
+                  const content = (
+                    <>
+                      {item.icon}
+                      <span className="truncate">{item.title}</span>
+                    </>
+                  );
 
-        {/* Navigation */}
-        <nav className="space-y-4">
-          {sections.map((section, sectionIndex) => (
-            <div key={section.title}>
-              <h3 className="text-sm font-medium text-muted-foreground mb-2">
-                {section.title}
-              </h3>
-              <div className="space-y-1">
-                {section.items.map((item) =>
-                  item.disabled ? (
-                    <Button
-                      key={item.id}
-                      variant="ghost"
-                      className="w-full justify-start opacity-50 cursor-not-allowed"
-                      disabled
-                    >
-                      {item.icon && <span className="mr-2">{item.icon}</span>}
-                      {item.title}
-                    </Button>
-                  ) : (
-                    <Link key={item.id} href={item.href}>
-                      <Button
-                        variant={(() => {
-                          if (item.isActive) return "default";
-                          if (pathname === item.href) return "default";
-                          // Only activate parent routes if there are no more specific child routes
-                          if (pathname.startsWith(item.href + "/")) {
-                            // Check if there's a more specific route that should be active instead
-                            const hasMoreSpecificRoute = sections.some(
-                              (section) =>
-                                section.items.some(
-                                  (otherItem) =>
-                                    otherItem.href !== item.href &&
-                                    otherItem.href.startsWith(
-                                      item.href + "/"
-                                    ) &&
-                                    pathname.startsWith(otherItem.href)
-                                )
-                            );
-                            return hasMoreSpecificRoute ? "ghost" : "default";
-                          }
-                          return "ghost";
-                        })()}
-                        className="w-full justify-start"
+                  if (item.disabled) {
+                    return (
+                      <SidebarMenuItem key={item.id}>
+                        <SidebarMenuButton
+                          disabled
+                          className="cursor-not-allowed opacity-50"
+                        >
+                          {content}
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    );
+                  }
+
+                  return (
+                    <SidebarMenuItem key={item.id}>
+                      <SidebarMenuButton
+                        asChild
+                        isActive={isRouteActive(item)}
                       >
-                        {item.icon && <span className="mr-2">{item.icon}</span>}
-                        {item.title}
-                      </Button>
-                    </Link>
-                  )
-                )}
-              </div>
-            </div>
-          ))}
-        </nav>
-
-        {/* Footer */}
-        {footer && (
-          <>
-            <Separator className="my-6" />
-            <div className="mt-auto">{footer}</div>
-          </>
-        )}
-      </div>
-    </div>
+                        <Link href={item.href}>{content}</Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  );
+                })}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        ))}
+      </SidebarContent>
+      {footer ? (
+        <SidebarFooter className="border-t border-sidebar-border px-4 py-3">
+          {footer}
+        </SidebarFooter>
+      ) : null}
+      <SidebarRail />
+    </Sidebar>
   );
 }
