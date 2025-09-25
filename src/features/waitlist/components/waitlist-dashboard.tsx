@@ -64,11 +64,20 @@ export function WaitlistDashboard({ onJoinWaitlist }: WaitlistDashboardProps) {
           <div className="text-center">
             <h2 className="text-2xl font-bold mb-2">Join the Waitlist</h2>
             <p className="text-gray-600 mb-4">
-              You&apos;re not on the waitlist yet. Join now to get early access!
+              You&apos;re not on the waitlist yet. Join now to get early access
+              to Printer!
             </p>
-            <Button onClick={onJoinWaitlist} className="w-full">
-              Join Waitlist
+            <Button
+              onClick={onJoinWaitlist}
+              className="w-full"
+              disabled={loading}
+            >
+              {loading ? "Joining..." : "Join Waitlist"}
             </Button>
+            <p className="text-xs text-gray-500 mt-4">
+              By joining, you&apos;ll get early access to our AI-powered
+              investment research platform.
+            </p>
           </div>
         </Card>
       </div>

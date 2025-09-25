@@ -5,6 +5,7 @@ import { Loader2 } from "lucide-react";
 import { useUserRouting } from "@/lib/hooks/use-user-routing";
 import { useAuthContext } from "@/lib/providers/auth-provider";
 
+import { LandingPage } from "./landing-page";
 import { MainAppSidebar } from "./ui/main-app-sidebar";
 import {
   SidebarInset,
@@ -12,7 +13,6 @@ import {
   SidebarTrigger,
   useSidebar,
 } from "./ui/sidebar";
-import { WelcomeSidebar } from "./ui/welcome-sidebar";
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -50,10 +50,24 @@ export function AppLayout({ children }: AppLayoutProps) {
     );
   }
 
-  // Render layout with appropriate sidebar
+  // For unauthenticated users, show landing page except for auth pages
+  if (!isAuthenticated) {
+    const currentPath = window.location.pathname;
+    const authPaths = ["/login", "/signup"];
+
+    // Allow access to auth pages
+    if (authPaths.includes(currentPath)) {
+      return <>{children}</>;
+    }
+
+    // Show landing page for all other paths
+    return <LandingPage />;
+  }
+
+  // For authenticated users, show app with sidebar
   return (
     <SidebarProvider>
-      {!isAuthenticated ? <WelcomeSidebar /> : <MainAppSidebar />}
+      <MainAppSidebar />
       <SidebarInset className="bg-background">
         <FloatingSidebarTrigger />
         <div className="flex-1 overflow-auto">{children}</div>

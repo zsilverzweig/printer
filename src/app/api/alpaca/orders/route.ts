@@ -2,14 +2,20 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { alpacaService } from "@/features/finance/lib/alpaca-service";
 import {
-  AlpacaListOrdersParams,
   AlpacaOrder,
   AlpacaOrderRequest,
   AlpacaOrderSide,
-  AlpacaOrderType,
   AlpacaPositionSide,
   AlpacaTimeInForce,
-} from "@/lib/types";
+} from "@/features/finance/lib/types/alpaca";
+
+type AlpacaOrderType =
+  | "market"
+  | "limit"
+  | "stop"
+  | "stop_limit"
+  | "trailing_stop"
+  | "take_profit";
 
 const ORDER_TYPES: AlpacaOrderType[] = [
   "market",
@@ -32,42 +38,30 @@ const TIME_IN_FORCE_OPTIONS: AlpacaTimeInForce[] = [
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const params: AlpacaListOrdersParams = {};
-
-    const status = searchParams.get("status");
-    if (status === "open" || status === "closed" || status === "all") {
-      params.status = status;
-    }
-
+    const userId = searchParams.get("userId");
+    const environment = searchParams.get("environment") as "paper" | "live";
+    const status = searchParams.get("status") || "all";
     const limit = searchParams.get("limit");
-    if (limit) {
-      const parsedLimit = Number.parseInt(limit, 10);
-      if (!Number.isNaN(parsedLimit)) {
-        params.limit = parsedLimit;
-      }
+
+    if (!userId || !environment) {
+      return NextResponse.json(
+        { error: "userId and environment parameters are required" },
+        { status: 400 }
+      );
     }
 
-    const direction = searchParams.get("direction");
-    if (direction === "asc" || direction === "desc") {
-      params.direction = direction;
-    }
+    const parsedLimit = limit ? Number.parseInt(limit, 10) : 25;
+    const validStatus =
+      status === "open" || status === "closed" || status === "all"
+        ? status
+        : "all";
 
-    const after = searchParams.get("after");
-    if (after) {
-      params.after = after;
-    }
-
-    const until = searchParams.get("until");
-    if (until) {
-      params.until = until;
-    }
-
-    const nested = searchParams.get("nested");
-    if (nested === "true" || nested === "false") {
-      params.nested = nested === "true";
-    }
-
-    const orders = await alpacaService.listOrders(params);
+    const orders = await alpacaService.getOrders(
+      userId,
+      environment,
+      validStatus,
+      parsedLimit
+    );
     return NextResponse.json({ orders });
   } catch (error) {
     const message =
@@ -80,8 +74,17 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+    const userId = body.userId;
+    const environment = body.environment as "paper" | "live";
     const symbolInput =
       typeof body.symbol === "string" ? body.symbol.trim() : "";
+
+    if (!userId || !environment) {
+      return NextResponse.json(
+        { error: "userId and environment are required" },
+        { status: 400 }
+      );
+    }
 
     if (!symbolInput) {
       return NextResponse.json(
@@ -210,7 +213,11 @@ export async function POST(request: NextRequest) {
       position_side: positionSide,
     };
 
-    const order: AlpacaOrder = await alpacaService.placeOrder(orderRequest);
+    const order: AlpacaOrder = await alpacaService.placeOrder(
+      userId,
+      orderRequest,
+      environment
+    );
     return NextResponse.json({ order });
   } catch (error) {
     const message =

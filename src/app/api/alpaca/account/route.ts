@@ -1,10 +1,21 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 import { alpacaService } from "@/features/finance/lib/alpaca-service";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const account = await alpacaService.getAccount();
+    const { searchParams } = new URL(request.url);
+    const userId = searchParams.get("userId");
+    const environment = searchParams.get("environment") as "paper" | "live";
+
+    if (!userId || !environment) {
+      return NextResponse.json(
+        { error: "userId and environment parameters are required" },
+        { status: 400 }
+      );
+    }
+
+    const account = await alpacaService.getAccount(userId, environment);
     return NextResponse.json({ account });
   } catch (error) {
     const message =

@@ -38,9 +38,12 @@ export function useUserRouting(): UseUserRoutingReturn {
       return null;
     }
 
-    // Admin users can access any page - never force redirects
+    // Admin users get redirected to Portfolios page by default
     if (isAdmin) {
-      return null;
+      return {
+        path: "/portfolios",
+        reason: "Admin user - redirecting to portfolios page",
+      };
     }
 
     // Check if user is on waitlist
@@ -54,15 +57,15 @@ export function useUserRouting(): UseUserRoutingReturn {
     // Check if user has active access
     if (canAccessApp) {
       return {
-        path: "/home",
-        reason: "Active user - redirecting to home page",
+        path: "/portfolios",
+        reason: "Active user - redirecting to portfolios page",
       };
     }
 
-    // User doesn't have access - redirect to waitlist
+    // For pending users, redirect to signup info page to complete profile
     return {
-      path: "/waitlist",
-      reason: "User access restricted - redirecting to waitlist",
+      path: "/signup-info",
+      reason: "Pending user - redirecting to complete profile setup",
     };
   }, [isAuthenticated, user, isAdmin, isOnWaitlist, canAccessApp]);
 
