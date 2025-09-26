@@ -74,6 +74,10 @@ export class AuthService {
    */
   async signOutUser(): Promise<void> {
     try {
+      // Clear server-side cookies first
+      await this.clearServerCookies();
+
+      // Then sign out from Firebase
       await signOut(auth);
       log.success("Sign-out successful", undefined, "AuthService");
     } catch (error) {
@@ -206,7 +210,7 @@ export class AuthService {
   }
 
   /**
-   * Handle auto-add to waitlist if enabled
+   * Handle auto-add to waitlist if enabled and set server-side cookies
    */
   private async handleAutoWaitlist(user: AuthUser): Promise<void> {
     try {
@@ -214,20 +218,83 @@ export class AuthService {
       const { userService } = await import("@/lib/services/user-service");
 
       // Create or update user profile - this will handle waitlist logic
-      await userService.createUserProfile(user, {
+      const userProfile = await userService.createUserProfile(user, {
         signupSource: "google",
         lastActiveAt: new Date(),
         sessionCount: 1,
       });
 
+      // Get ID token for server-side authentication
+      const idToken = await this.getIdToken();
+      if (idToken) {
+        // Set server-side cookies for middleware and server components
+        await this.setServerCookies(userProfile, idToken);
+      }
+
       log.success(
         "User profile created/updated",
-        { email: user.email },
+        { email: user.email, status: userProfile.status },
         "AuthService"
       );
     } catch (error) {
       // Don't throw error to avoid breaking sign-in flow
       log.error("Failed to handle user profile creation", error, "AuthService");
+    }
+  }
+
+  /**
+   * Set server-side cookies for authentication
+   */
+  private async setServerCookies(
+    userProfile: any,
+    idToken: string
+  ): Promise<void> {
+    try {
+      // Call API route to set server-side cookies
+      const response = await fetch("/api/auth/set-cookies", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          user: userProfile,
+          token: idToken,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to set server cookies");
+      }
+
+      log.success(
+        "Server cookies set",
+        { uid: userProfile.uid },
+        "AuthService"
+      );
+    } catch (error) {
+      log.error("Failed to set server cookies", error, "AuthService");
+    }
+  }
+
+  /**
+   * Clear server-side cookies on sign out
+   */
+  private async clearServerCookies(): Promise<void> {
+    try {
+      const response = await fetch("/api/auth/clear-cookies", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to clear server cookies");
+      }
+
+      log.success("Server cookies cleared", undefined, "AuthService");
+    } catch (error) {
+      log.error("Failed to clear server cookies", error, "AuthService");
     }
   }
 

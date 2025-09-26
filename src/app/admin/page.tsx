@@ -1,8 +1,7 @@
-"use client";
-
-import { Bot, Cpu, Loader2, Settings, Users } from "lucide-react";
+import { Bot, Cpu, Settings, Users } from "lucide-react";
 import Link from "next/link";
 
+import { requireAdmin } from "@/lib/auth/server";
 import { Button } from "@/lib/components/ui/button";
 import {
   Card,
@@ -11,49 +10,21 @@ import {
   CardHeader,
   CardTitle,
 } from "@/lib/components/ui/card";
-import { useAuthContext } from "@/lib/providers/auth-provider";
 
-export default function AdminPage() {
-  const { isAuthenticated, isAdmin, loading } = useAuthContext();
+/**
+ * Server Component - runs on the server before page renders
+ *
+ * Benefits:
+ * - Admin authentication check happens on server
+ * - No flash of protected content
+ * - Better security
+ * - Faster page loads
+ */
+export default async function AdminPage() {
+  // This runs on the server and redirects if user is not admin
+  const user = await requireAdmin();
 
-  // Show loading state while determining authentication
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-primary" />
-          <p className="text-muted-foreground">Loading...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Check if user is authenticated and is admin
-  if (!isAuthenticated) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold mb-4">Authentication Required</h1>
-          <p className="text-muted-foreground">
-            Please sign in to access this page.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!isAdmin) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold mb-4">Access Denied</h1>
-          <p className="text-muted-foreground">
-            You don't have permission to access this page.
-          </p>
-        </div>
-      </div>
-    );
-  }
+  // If we reach here, user is authenticated and is admin
   return (
     <div className="container mx-auto p-6">
       <div className="space-y-6">

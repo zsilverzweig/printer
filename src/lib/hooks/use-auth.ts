@@ -3,6 +3,7 @@
 
 import { useEffect, useState } from "react";
 
+import type { ServerUser } from "@/lib/auth/server";
 import { authService, AuthUser } from "@/lib/services/auth";
 import { log } from "@/lib/utils/logger";
 
@@ -18,16 +19,35 @@ export interface UseAuthReturn {
   photoURL: string | null;
 }
 
-export function useAuth(): UseAuthReturn {
+export function useAuth(initialUser?: ServerUser | null): UseAuthReturn {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Set initial user state
-    const currentUser = authService.getCurrentUser();
-    setUser(currentUser);
-    setLoading(false);
+    // If we have an initial user from server-side, use it
+    if (initialUser) {
+      // Convert ServerUser to AuthUser format
+      const authUser: AuthUser = {
+        uid: initialUser.uid,
+        email: initialUser.email,
+        displayName: initialUser.displayName,
+        photoURL: initialUser.photoURL,
+        emailVerified: true, // Assume verified if from server
+        isAnonymous: false,
+        metadata: {
+          creationTime: undefined,
+          lastSignInTime: undefined,
+        },
+      };
+      setUser(authUser);
+      setLoading(false);
+    } else {
+      // Set initial user state from client-side auth
+      const currentUser = authService.getCurrentUser();
+      setUser(currentUser);
+      setLoading(false);
+    }
 
     // Listen for auth state changes
     const unsubscribe = authService.onAuthStateChange((newUser) => {
@@ -37,7 +57,7 @@ export function useAuth(): UseAuthReturn {
     });
 
     return unsubscribe;
-  }, []);
+  }, [initialUser]);
 
   const signInWithGoogle = async (): Promise<void> => {
     try {

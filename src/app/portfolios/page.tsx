@@ -1,43 +1,30 @@
-"use client";
-
-import { Loader2 } from "lucide-react";
-
 import { PortfolioManagement } from "@/features/finance/portfolio/components/portfolio-management";
-import { useAuthContext } from "@/lib/providers/auth-provider";
+import { requireAppAccess } from "@/lib/auth/server";
 
-export default function PortfoliosPage() {
-  const { isAuthenticated, user, loading } = useAuthContext();
+/**
+ * Server Component - runs on the server before page renders
+ *
+ * Benefits:
+ * - Authentication check happens on server
+ * - No flash of protected content
+ * - Better SEO
+ * - Faster page loads
+ * - More secure
+ */
+export default async function PortfoliosPage() {
+  // This runs on the server and redirects if user doesn't have access
+  const user = await requireAppAccess();
 
-  // Show loading state while determining authentication
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-primary" />
-          <p className="text-muted-foreground">Loading...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // For development, allow access even when not authenticated
-  // TODO: Re-enable authentication check in production
-  // if (!isAuthenticated || !user) {
-  //   return (
-  //     <div className="min-h-screen flex items-center justify-center bg-background">
-  //       <div className="text-center">
-  //         <h1 className="text-2xl font-bold mb-4">Authentication Required</h1>
-  //         <p className="text-muted-foreground">
-  //           Please sign in to access this page.
-  //         </p>
-  //       </div>
-  //     </div>
-  //   );
-  // }
-
+  // If we reach here, user is authenticated and has app access
   return (
     <div className="container mx-auto p-6">
-      <PortfolioManagement userId={user?.uid || "current-user"} />
+      <h1 className="text-2xl font-bold mb-4">Portfolios</h1>
+      <p className="text-muted-foreground mb-6">
+        Welcome back, {user.displayName}!
+      </p>
+
+      {/* Pass user data to client component */}
+      <PortfolioManagement userId={user.uid} />
     </div>
   );
 }
