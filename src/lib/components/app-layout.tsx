@@ -1,6 +1,31 @@
 "use client";
 
+/**
+ * AppLayout Component
+ * 
+ * PURPOSE: Manages UI layout decisions based on authentication state and current route.
+ * 
+ * ROLE IN ARCHITECTURE:
+ * - Middleware handles: Route protection and redirects (server-side)
+ * - AppLayout handles: UI layout decisions (client-side)
+ * 
+ * KEY RESPONSIBILITIES:
+ * 1. Auth pages: Always render children (login, signup, etc.)
+ * 2. Loading states: Show spinner only for authenticated users loading data
+ * 3. Layout switching: Landing page vs App with sidebar
+ * 
+ * AUTH PAGE HANDLING:
+ * - Auth pages bypass loading states to prevent login page from being blocked
+ * - Includes: /login, /signup, /signup-info, /waitlist, /waitlist-signup
+ * 
+ * LAYOUT TYPES:
+ * - Unauthenticated + non-auth page: LandingPage component
+ * - Authenticated: App with sidebar (SidebarProvider + MainAppSidebar)
+ * - Auth pages: Direct children rendering
+ */
+
 import { Loader2 } from "lucide-react";
+import { usePathname } from "next/navigation";
 
 import { useUserRouting } from "@/lib/hooks/use-user-routing";
 import { useAuthContext } from "@/lib/providers/auth-provider";
@@ -36,10 +61,19 @@ function FloatingSidebarTrigger() {
 
 export function AppLayout({ children }: AppLayoutProps) {
   const { isAuthenticated, loading: authLoading } = useAuthContext();
-  const { loading: routingLoading } = useUserRouting();
+  const currentPath = usePathname();
 
-  // Show loading state while determining authentication and routing
-  if (authLoading || routingLoading) {
+  // Check if we're on an auth page that should always be accessible
+  const authPaths = ["/login", "/signup", "/signup-info", "/waitlist", "/waitlist-signup"];
+  const isAuthPage = authPaths.includes(currentPath);
+
+  // For auth pages, always allow access - middleware handles routing
+  if (isAuthPage) {
+    return <>{children}</>;
+  }
+
+  // Show loading state only for authenticated users loading their data
+  if (authLoading && isAuthenticated) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center">
@@ -50,17 +84,8 @@ export function AppLayout({ children }: AppLayoutProps) {
     );
   }
 
-  // For unauthenticated users, show landing page except for auth pages
+  // For unauthenticated users on non-auth pages, show landing page
   if (!isAuthenticated) {
-    const currentPath = window.location.pathname;
-    const authPaths = ["/login", "/signup"];
-
-    // Allow access to auth pages
-    if (authPaths.includes(currentPath)) {
-      return <>{children}</>;
-    }
-
-    // Show landing page for all other paths
     return <LandingPage />;
   }
 

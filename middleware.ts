@@ -2,12 +2,35 @@ import { NextRequest, NextResponse } from "next/server";
 
 /**
  * Next.js 14 Middleware for Authentication and Route Protection
- *
- * This runs at the edge before any page renders, providing:
- * - Server-side authentication checks
- * - Route protection
- * - Redirects before content loads
- * - Better security and performance
+ * 
+ * PURPOSE: Handles all server-side routing logic before pages render.
+ * 
+ * ROLE IN ARCHITECTURE:
+ * - Middleware handles: Authentication checks, route protection, redirects (server-side)
+ * - AppLayout handles: UI layout decisions (client-side)
+ * 
+ * KEY RESPONSIBILITIES:
+ * 1. Authentication checks using cookies (auth-token, user-role, user-status)
+ * 2. Route protection (public vs protected routes)
+ * 3. Status-based redirects (pending → signup-info, waitlist → waitlist, etc.)
+ * 4. Admin route protection
+ * 
+ * PERFORMANCE BENEFITS:
+ * - Runs at the edge before any React code loads
+ * - Prevents unnecessary page renders for unauthorized users
+ * - Fast redirects without client-side JavaScript
+ * 
+ * COOKIE DEPENDENCIES:
+ * - auth-token: Main authentication token
+ * - user-role: admin, super_admin, user
+ * - user-status: pending, active, waitlist, invited, suspended, banned
+ * 
+ * REDIRECT LOGIC:
+ * - Unauthenticated + protected route → /login
+ * - Non-admin + admin route → /unauthorized  
+ * - Pending user + non-signup route → /signup-info
+ * - Waitlist user + non-waitlist route → /waitlist
+ * - Active user + signup-info → /portfolios
  */
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;

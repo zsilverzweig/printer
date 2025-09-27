@@ -1,4 +1,32 @@
-// Comprehensive user hook that combines authentication with user profile management
+/**
+ * useUser Hook
+ * 
+ * PURPOSE: Central hook that combines authentication state with user profile and access management.
+ * 
+ * ARCHITECTURE ROLE:
+ * - Aggregates auth state (useAuth) + profile data (useUserProfile) + access data (useUserAccess)
+ * - Provides unified loading states across all user-related data
+ * - Handles user initialization and profile creation
+ * 
+ * KEY FEATURES:
+ * 1. Unified loading state: Waits for auth + profile + access data
+ * 2. Auto-initialization: Creates profile for new users
+ * 3. Status checks: isOnWaitlist, canAccessApp, isAdmin, etc.
+ * 4. Profile management: updateProfile, updateStatus, refreshUser
+ * 
+ * LOADING STATE LOGIC:
+ * - Shows loading during initial auth check OR when profile/access data is loading
+ * - This prevents the infinite loading spinner issue
+ * - Only shows loading when actually needed (not indefinitely)
+ * 
+ * DEPENDENCIES:
+ * - useAuth: Authentication state and actions
+ * - useUserProfile: Profile data and management
+ * - useUserAccess: Access permissions and restrictions
+ * 
+ * USAGE: Used by useUserRouting and individual components for user state
+ */
+
 "use client";
 
 import { useCallback, useEffect } from "react";
