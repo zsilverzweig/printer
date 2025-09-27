@@ -2,20 +2,20 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { agentService } from "@/features/ai/agents/services/agent-service";
 import { CreatePortfolioRequest } from "@/features/ai/agents/types";
+import { getServerUser } from "@/lib/auth/server";
 
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url);
-    const userId = searchParams.get("userId");
-
-    if (!userId) {
+    // Get authenticated user from server-side cookies
+    const user = await getServerUser();
+    if (!user) {
       return NextResponse.json(
-        { error: "User ID is required" },
-        { status: 400 }
+        { error: "Authentication required" },
+        { status: 401 }
       );
     }
 
-    const portfolios = await agentService.getAllPortfolios(userId);
+    const portfolios = await agentService.getAllPortfolios(user.uid);
     return NextResponse.json({ portfolios });
   } catch (error) {
     console.error("Failed to fetch portfolios:", error);
@@ -28,15 +28,21 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    // Get authenticated user from server-side cookies
+    const user = await getServerUser();
+    if (!user) {
+      return NextResponse.json(
+        { error: "Authentication required" },
+        { status: 401 }
+      );
+    }
+
     const body = await request.json();
     const portfolioRequest: CreatePortfolioRequest = body;
 
-    // TODO: Get actual user ID from authentication
-    const userId = "current-user";
-
     const portfolio = await agentService.createPortfolio(
       portfolioRequest,
-      userId
+      user.uid
     );
     return NextResponse.json({ portfolio });
   } catch (error) {

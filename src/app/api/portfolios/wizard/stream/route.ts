@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 
 import { agentService } from "@/features/ai/agents/services/agent-service";
+import { getServerUser } from "@/lib/auth/server";
 import { log } from "@/lib/utils/logger";
 
 export async function POST(request: NextRequest) {
@@ -34,8 +35,20 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // TODO: Replace with authenticated user ID once auth is integrated server-side
-    const userId = "current-user";
+    // Get authenticated user from server-side cookies
+    const user = await getServerUser();
+    if (!user) {
+      log.warn(
+        "Portfolio wizard streaming request rejected - no authentication",
+        { requestId },
+        "PortfolioWizardStreamAPI"
+      );
+      return new Response(JSON.stringify({ error: "Authentication required" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    const userId = user.uid;
 
     // Create a readable stream for Server-Sent Events
     const stream = new ReadableStream({

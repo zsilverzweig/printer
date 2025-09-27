@@ -2,12 +2,22 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { agentService } from "@/features/ai/agents/services/agent-service";
 import { UpdatePortfolioRequest } from "@/features/ai/agents/types";
+import { getServerUser } from "@/lib/auth/server";
 
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
+    // Get authenticated user from server-side cookies
+    const user = await getServerUser();
+    if (!user) {
+      return NextResponse.json(
+        { error: "Authentication required" },
+        { status: 401 }
+      );
+    }
+
     const portfolio = await agentService.getPortfolio(params.id);
     if (!portfolio) {
       return NextResponse.json(
@@ -15,6 +25,15 @@ export async function GET(
         { status: 404 }
       );
     }
+
+    // Verify portfolio belongs to the authenticated user
+    if (portfolio.userId !== user.uid) {
+      return NextResponse.json(
+        { error: "Portfolio not found" },
+        { status: 404 }
+      );
+    }
+
     return NextResponse.json({ portfolio });
   } catch (error) {
     console.error("Failed to fetch portfolio:", error);
@@ -30,6 +49,24 @@ export async function PUT(
   { params }: { params: { id: string } }
 ) {
   try {
+    // Get authenticated user from server-side cookies
+    const user = await getServerUser();
+    if (!user) {
+      return NextResponse.json(
+        { error: "Authentication required" },
+        { status: 401 }
+      );
+    }
+
+    // Verify portfolio exists and belongs to user
+    const existingPortfolio = await agentService.getPortfolio(params.id);
+    if (!existingPortfolio || existingPortfolio.userId !== user.uid) {
+      return NextResponse.json(
+        { error: "Portfolio not found" },
+        { status: 404 }
+      );
+    }
+
     const body = await request.json();
     const updateRequest: UpdatePortfolioRequest = body;
 
@@ -52,6 +89,24 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
+    // Get authenticated user from server-side cookies
+    const user = await getServerUser();
+    if (!user) {
+      return NextResponse.json(
+        { error: "Authentication required" },
+        { status: 401 }
+      );
+    }
+
+    // Verify portfolio exists and belongs to user
+    const existingPortfolio = await agentService.getPortfolio(params.id);
+    if (!existingPortfolio || existingPortfolio.userId !== user.uid) {
+      return NextResponse.json(
+        { error: "Portfolio not found" },
+        { status: 404 }
+      );
+    }
+
     await agentService.deletePortfolio(params.id);
     return NextResponse.json({ success: true });
   } catch (error) {

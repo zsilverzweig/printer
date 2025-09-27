@@ -30,8 +30,8 @@ export function PortfolioList({
           <div className="text-gray-500">
             <h3 className="text-lg font-medium mb-2">No portfolios found</h3>
             <p>
-              Create your first portfolio to start working with AI agents on
-              your investment theses.
+              Click "Create Portfolio" to use our AI wizard and generate your first portfolio 
+              from your investment thesis.
             </p>
           </div>
         </CardContent>

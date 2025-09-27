@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { agentService } from "@/features/ai/agents/services/agent-service";
+import { getServerUser } from "@/lib/auth/server";
 import { log } from "@/lib/utils/logger";
 
 export async function POST(request: NextRequest) {
@@ -46,8 +47,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // TODO: Replace with authenticated user ID once auth is integrated server-side
-    const userId = "current-user";
+    // Get authenticated user from server-side cookies
+    const user = await getServerUser();
+    if (!user) {
+      log.warn(
+        "Portfolio wizard request rejected - no authentication",
+        { requestId },
+        "PortfolioWizardAPI"
+      );
+      return NextResponse.json(
+        { error: "Authentication required" },
+        { status: 401 }
+      );
+    }
+    const userId = user.uid;
 
     log.info(
       "Starting portfolio draft generation",

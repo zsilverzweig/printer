@@ -21,7 +21,7 @@ export function usePortfolios(userId: string): UsePortfoliosReturn {
       setLoading(true);
       setError(null);
 
-      const response = await fetch(`/api/portfolios?userId=${userId}`);
+      const response = await fetch(`/api/portfolios`);
       if (!response.ok) {
         throw new Error("Failed to fetch portfolios");
       }

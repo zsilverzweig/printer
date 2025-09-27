@@ -13,13 +13,11 @@ import {
 import { Input } from "@/lib/components/ui/input";
 
 import { usePortfolios } from "../hooks/use-portfolios";
-import { CreatePortfolioRequest, Portfolio } from "../types";
+import { Portfolio } from "../types";
 
-import { CreatePortfolioDialog } from "./create-portfolio-dialog";
 import { PortfolioDetailsDialog } from "./portfolio-details-dialog";
 import { PortfolioList } from "./portfolio-list";
 import { PortfolioWizardDialog } from "./portfolio-wizard-dialog";
-import { PortfolioWizardStreamDialog } from "./portfolio-wizard-stream-dialog";
 
 interface PortfolioManagementProps {
   userId: string;
@@ -30,16 +28,12 @@ export function PortfolioManagement({ userId }: PortfolioManagementProps) {
     portfolios,
     loading,
     error,
-    createPortfolio,
     createPortfolioDraftFromThesis,
     updatePortfolio,
     deletePortfolio,
-    addPortfolio,
   } = usePortfolios(userId);
   const { agents } = useAgents();
-  const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showWizardDialog, setShowWizardDialog] = useState(false);
-  const [showWizardStreamDialog, setShowWizardStreamDialog] = useState(false);
   const [selectedPortfolio, setSelectedPortfolio] = useState<Portfolio | null>(
     null
   );
@@ -57,14 +51,6 @@ export function PortfolioManagement({ userId }: PortfolioManagementProps) {
     0
   );
 
-  const handleCreatePortfolio = async (request: CreatePortfolioRequest) => {
-    try {
-      await createPortfolio(request);
-      setShowCreateDialog(false);
-    } catch (error) {
-      console.error("Failed to create portfolio:", error);
-    }
-  };
 
   const handleWizardCreate = async (
     thesis: string,
@@ -74,25 +60,12 @@ export function PortfolioManagement({ userId }: PortfolioManagementProps) {
       const draft = await createPortfolioDraftFromThesis(thesis, options);
       setShowWizardDialog(false);
       setSelectedPortfolio(draft);
-    } catch (error) {
-      console.error("Failed to generate portfolio draft:", error);
+    } catch {
+      // Error handling is done in the hook
     }
   };
 
-  const handleWizardStreamComplete = async (portfolio: Portfolio) => {
-    try {
-      // The portfolio is already created by the streaming API, just add it to the local state
-      addPortfolio(portfolio);
-      setShowWizardStreamDialog(false);
-      setSelectedPortfolio(portfolio);
-    } catch (error) {
-      console.error("Failed to handle portfolio completion:", error);
-      // Still close the dialog and show the portfolio even if there's an error
-      setShowWizardStreamDialog(false);
-      setSelectedPortfolio(portfolio);
-    }
-  };
-
+  
   const handleUpdatePortfolio = async (
     portfolioId: string,
     updates: Partial<Portfolio>
@@ -100,8 +73,8 @@ export function PortfolioManagement({ userId }: PortfolioManagementProps) {
     try {
       await updatePortfolio(portfolioId, updates);
       setSelectedPortfolio(null);
-    } catch (error) {
-      console.error("Failed to update portfolio:", error);
+    } catch {
+      // Error handling is done in the hook
     }
   };
 
@@ -109,8 +82,8 @@ export function PortfolioManagement({ userId }: PortfolioManagementProps) {
     if (confirm("Are you sure you want to delete this portfolio?")) {
       try {
         await deletePortfolio(portfolioId);
-      } catch (error) {
-        console.error("Failed to delete portfolio:", error);
+      } catch {
+        // Error handling is done in the hook
       }
     }
   };
@@ -148,20 +121,11 @@ export function PortfolioManagement({ userId }: PortfolioManagementProps) {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">My Portfolios</h1>
           <p className="text-gray-600 mt-2">
-            Create and manage your investment portfolios with AI agents
+            Use AI to generate portfolios from your investment theses
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => setShowWizardDialog(true)}>
-            Portfolio Wizard
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => setShowWizardStreamDialog(true)}
-          >
-            Streaming Wizard
-          </Button>
-          <Button onClick={() => setShowCreateDialog(true)}>
+          <Button onClick={() => setShowWizardDialog(true)}>
             Create Portfolio
           </Button>
         </div>
@@ -226,37 +190,16 @@ export function PortfolioManagement({ userId }: PortfolioManagementProps) {
       />
 
       {/* Dialogs */}
-      <CreatePortfolioDialog
-        open={showCreateDialog}
-        onOpenChange={(open) => {
-          console.log("CreatePortfolioDialog onOpenChange called with:", open);
-          setShowCreateDialog(open);
-        }}
-        availableAgents={agents.filter((agent) => agent.isActive)}
-        onCreatePortfolio={handleCreatePortfolio}
-      />
-
       <PortfolioWizardDialog
         open={showWizardDialog}
         onOpenChange={setShowWizardDialog}
         onGenerate={handleWizardCreate}
       />
 
-      <PortfolioWizardStreamDialog
-        open={showWizardStreamDialog}
-        onOpenChange={setShowWizardStreamDialog}
-        onComplete={handleWizardStreamComplete}
-      />
-
       <PortfolioDetailsDialog
         portfolio={selectedPortfolio}
         availableAgents={agents.filter((agent) => agent.isActive)}
-        onClose={() => {
-          console.log(
-            "PortfolioManagement onClose called, setting selectedPortfolio to null"
-          );
-          setSelectedPortfolio(null);
-        }}
+        onClose={() => setSelectedPortfolio(null)}
         onUpdatePortfolio={handleUpdatePortfolio}
         onDeletePortfolio={handleDeletePortfolio}
       />
