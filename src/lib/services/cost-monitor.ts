@@ -349,10 +349,24 @@ export function estimateCost(
   estimatedInputTokens: number,
   estimatedOutputTokens: number
 ): number {
+  log.info('Cost estimation called', {
+    model,
+    modelType: typeof model,
+    estimatedInputTokens,
+    estimatedOutputTokens,
+    modelLowerCase: model.toLowerCase(),
+    availableModels: Object.keys(costMonitor['pricing'])
+  }, 'CostMonitor');
+  
   const pricing = costMonitor['pricing'][model.toLowerCase() as keyof typeof costMonitor['pricing']]
   
   if (!pricing) {
-    log.warn('⚠️ Unknown model pricing for estimation', { model }, 'CostMonitor')
+    log.warn('⚠️ Unknown model pricing for estimation', { 
+      model, 
+      modelType: typeof model,
+      modelLowerCase: model.toLowerCase(),
+      availableModels: Object.keys(costMonitor['pricing'])
+    }, 'CostMonitor')
     return 0
   }
 

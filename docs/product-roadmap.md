@@ -17,20 +17,33 @@ This roadmap focuses on building the core Printer system to achieve the Company 
 
 **Goal**: Build the system for creating and managing AI agents
 
-- ✅ **Agent Management System** - Create, edit, and version AI agents
-- ✅ **Agent Templates** - Pre-built agent configurations
-- ✅ **Agent Builder UI** - Visual interface for creating agents
-- ✅ **Agent Versioning** - Git-like version control for agents
-- ✅ **Agent Testing Framework** - Built-in testing and validation
+- ✅ **Agent Management System** - Create, edit, and version AI agents // LETS NOT DO THIS, LET'S DEFINE OUR AGENTS IN CODE ON THE BACK-END.
+- ✅ **Agent Templates** - Pre-built agent configurations - NOT NEEDED.
+- ✅ **Agent Builder UI** - Visual interface for creating agents - NOT NEEDED.
+- ✅ **Agent Versioning** - Git-like version control for agents - NOT NEEDED.
+- ✅ **Agent Testing Framework** - Built-in testing and validation - NOT NEEDED.
+
+
+In short, we now want to just have agents that we have established to do each job in the hedge fund. That is our model. We are a hedge fund. At first we produce research reports, then we invest our own money, then we raise money.
 
 ## Phase 3: Portfolio Management ✅ COMPLETED
 
 **Goal**: Build the system for portfolio management and agent assignment
+DONE - Capture positions in a draft portfolio
+Need to:
+Allow a user to execute the trade postions
+Expand the size of the portfolio
+Save the portfolio as a history of trades
+Allow trades within a portfolio
 
-- ✅ **Portfolio Management System** - Create, edit, and manage portfolios
-- ✅ **Portfolio-Agent Assignment** - Link agents to portfolios for analysis
-- ✅ **Portfolio UI Components** - Complete portfolio management interface
-- ✅ **Agent Work Execution** - System for agents to work on portfolios
+Final flow:
+Portfolio Strategist - Refine thesis with AI
+Market Research - Identifies 20-100 companies that would meet the criteria
+Company Researcher - Send 20 calls to do our Company Research
+Financial Analyst - Needs to set a price target, can take company research and come up with a todo-list to effectively get a target. Needs to just use basic AI calls (no financial data!)
+Portfolio Manager - Score and rank investment ideas, save the ranking, conviction, summary
+
+
 
 ## Phase 4: Trading Infrastructure ✅ COMPLETED
 

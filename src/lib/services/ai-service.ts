@@ -92,6 +92,16 @@ export class AIService {
       // Estimate cost before making request
       const estimatedInputTokens = this.estimateTokens(request.prompt);
       const estimatedOutputTokens = Math.min(agent.maxTokens, 2000); // Conservative estimate
+      
+      log.info("Cost estimation inputs", {
+        modelName: agent.model.name,
+        modelNameType: typeof agent.model.name,
+        modelObject: agent.model,
+        modelObjectType: typeof agent.model,
+        estimatedInputTokens,
+        estimatedOutputTokens
+      }, "AIService");
+      
       const estimatedCost = estimateCost(
         agent.model.name,
         estimatedInputTokens,
@@ -191,6 +201,14 @@ export class AIService {
       }
 
       // Make API request
+      log.info("Making OpenAI API request", {
+        model: agent.model.name,
+        maxTokens: agent.maxTokens,
+        temperature: agent.temperature,
+        systemPromptLength: agent.systemPrompt?.length,
+        userPromptLength: request.prompt?.length
+      }, "AIService");
+
       const completion = await openai.chat.completions.create({
         model: agent.model.name,
         messages: [
@@ -205,8 +223,15 @@ export class AIService {
         ],
         max_tokens: agent.maxTokens,
         temperature: agent.temperature,
-        response_format: { type: "json_object" }, // Force structured output
+        // response_format: { type: "json_object" }, // Force structured output - disabled for company research
       });
+
+      log.info("OpenAI API response received", {
+        model: agent.model.name,
+        completionId: completion.id,
+        finishReason: completion.choices[0]?.finish_reason,
+        contentLength: completion.choices[0]?.message?.content?.length
+      }, "AIService");
 
       const content = completion.choices[0]?.message?.content;
       if (!content) {

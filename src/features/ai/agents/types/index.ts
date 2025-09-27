@@ -94,6 +94,7 @@ export type AgentRole =
   | "financial_analyst"
   | "competitive_analyst"
   | "portfolio_manager"
+  | "research_analyst"
   | "custom";
 
 export type AgentCategory =

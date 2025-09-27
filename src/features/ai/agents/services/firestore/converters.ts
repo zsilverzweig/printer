@@ -61,33 +61,59 @@ export const toDate = (
 export const requireDate = (value: Timestamp | Date | null | undefined): Date =>
   toDate(value) ?? new Date();
 
-export const serializeAgent = (agent: Agent) =>
-  omitUndefined({
+export const serializeAgent = (agent: Agent) => {
+  const serialized = omitUndefined({
     ...agent,
     createdAt: Timestamp.fromDate(agent.createdAt),
     updatedAt: Timestamp.fromDate(agent.updatedAt),
   });
+  
+  // Debug logging for model object
+  console.log("Serializing agent model:", {
+    agentId: agent.id,
+    model: agent.model,
+    modelType: typeof agent.model,
+    modelName: agent.model?.name,
+    modelNameType: typeof agent.model?.name
+  });
+  
+  return serialized;
+};
 
 export const deserializeAgent = (
   id: string,
   data: FirestoreDocument
-): Agent => ({
-  id,
-  name: data.name,
-  description: data.description,
-  role: data.role,
-  promptGuidance: data.promptGuidance,
-  workflow: data.workflow,
-  model: data.model,
-  temperature: data.temperature,
-  maxTokens: data.maxTokens,
-  version: data.version,
-  isActive: data.isActive,
-  createdAt: requireDate(data.createdAt),
-  updatedAt: requireDate(data.updatedAt),
-  createdBy: data.createdBy,
-  metadata: data.metadata ?? undefined,
-});
+): Agent => {
+  const deserialized = {
+    id,
+    name: data.name,
+    description: data.description,
+    role: data.role,
+    promptGuidance: data.promptGuidance,
+    workflow: data.workflow,
+    model: data.model,
+    temperature: data.temperature,
+    maxTokens: data.maxTokens,
+    version: data.version,
+    isActive: data.isActive,
+    createdAt: requireDate(data.createdAt),
+    updatedAt: requireDate(data.updatedAt),
+    createdBy: data.createdBy,
+    metadata: data.metadata ?? undefined,
+  };
+  
+  // Debug logging for model object
+  console.log("Deserializing agent model:", {
+    agentId: id,
+    model: data.model,
+    modelType: typeof data.model,
+    modelName: data.model?.name,
+    modelNameType: typeof data.model?.name,
+    deserializedModel: deserialized.model
+  });
+  
+  return deserialized;
+};
 
 export const serializeAgentVersion = (version: AgentVersion) =>
   omitUndefined({
@@ -290,4 +316,47 @@ export const deserializeWork = (
   completedAt: toDate(data.completedAt),
   error: data.error ?? undefined,
   metadata: data.metadata ?? undefined,
+});
+
+// Company Research Converters
+export const serializeCompanyResearch = (research: Record<string, unknown>) =>
+  omitUndefined({
+    id: research.id,
+    userId: research.userId,
+    companyTicker: research.companyTicker,
+    companyName: research.companyName ?? undefined,
+    agentId: research.agentId,
+    agentName: research.agentName,
+    researchReport: research.researchReport,
+    executiveSummary: research.executiveSummary ?? undefined,
+    keyMetrics: research.keyMetrics ?? undefined,
+    embeddings: research.embeddings ?? undefined,
+    researchContext: research.researchContext ?? undefined,
+    createdAt: Timestamp.fromDate(research.createdAt as Date),
+    updatedAt: Timestamp.fromDate(research.updatedAt as Date),
+    completedAt: research.completedAt ? Timestamp.fromDate(research.completedAt as Date) : undefined,
+    status: research.status,
+    errorMessage: research.errorMessage ?? undefined,
+  });
+
+export const deserializeCompanyResearch = (
+  id: string,
+  data: FirestoreDocument
+) => ({
+  id,
+  userId: data.userId,
+  companyTicker: data.companyTicker,
+  companyName: data.companyName ?? undefined,
+  agentId: data.agentId,
+  agentName: data.agentName,
+  researchReport: data.researchReport,
+  executiveSummary: data.executiveSummary ?? undefined,
+  keyMetrics: data.keyMetrics ?? undefined,
+  embeddings: data.embeddings ?? undefined,
+  researchContext: data.researchContext ?? undefined,
+  createdAt: toDate(data.createdAt) ?? new Date(),
+  updatedAt: toDate(data.updatedAt) ?? new Date(),
+  completedAt: toDate(data.completedAt),
+  status: data.status,
+  errorMessage: data.errorMessage ?? undefined,
 });

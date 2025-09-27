@@ -30,7 +30,7 @@ export function PortfolioList({
           <div className="text-gray-500">
             <h3 className="text-lg font-medium mb-2">No portfolios found</h3>
             <p>
-              Click "Create Portfolio" to use our AI wizard and generate your first portfolio 
+              Click &quot;Create Portfolio&quot; to use our AI wizard and generate your first portfolio 
               from your investment thesis.
             </p>
           </div>

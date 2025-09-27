@@ -177,7 +177,7 @@ export function AgentDetailsDialog({
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <label className="block text-sm font-medium mb-2">Model</label>
-                <p className="text-foreground">{agent.model.name}</p>
+                <p className="text-foreground">{agent.model?.name || (typeof agent.model === 'string' ? agent.model : "Unknown")}</p>
               </div>
               <div>
                 <label className="block text-sm font-medium mb-2">

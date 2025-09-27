@@ -4,6 +4,7 @@ import {
   BarChart3,
   Bot,
   Briefcase,
+  Building2,
   FileText,
   Settings,
   Shield,
@@ -43,6 +44,12 @@ export function MainAppSidebar() {
     {
       title: "Research",
       items: [
+        {
+          id: "company-research",
+          title: "Company Research",
+          href: "/company-research",
+          icon: <Building2 className="h-4 w-4" />,
+        },
         {
           id: "analysis",
           title: "Analysis",
