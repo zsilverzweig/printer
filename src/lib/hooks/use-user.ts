@@ -50,6 +50,7 @@ export function useUser(): UseUserReturn {
   const {
     profile,
     access,
+    loading: profileLoading,
     error: profileError,
     updateProfile,
     updateStatus,
@@ -58,6 +59,7 @@ export function useUser(): UseUserReturn {
 
   const {
     access: accessData,
+    loading: accessLoading,
     error: accessError,
     hasRestriction,
     refreshAccess,
@@ -126,8 +128,8 @@ export function useUser(): UseUserReturn {
     return profile?.photoURL || auth.user?.photoURL || null;
   }, [profile, auth.user]);
 
-  // Simplified loading logic - only show loading during initial auth check
-  const shouldShowLoading = auth.loading;
+  // Loading logic: show loading during initial auth check OR when profile/access data is loading
+  const shouldShowLoading = auth.loading || (auth.isAuthenticated && (profileLoading || accessLoading));
 
   return {
     // Authentication state

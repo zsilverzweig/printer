@@ -42,7 +42,7 @@ export function AppRouter({ children }: AppRouterProps) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-primary" />
+          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-primary" data-testid="loading-spinner" />
           <p className="text-muted-foreground">Loading...</p>
         </div>
       </div>
