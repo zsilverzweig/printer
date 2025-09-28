@@ -2,18 +2,17 @@
 // PORTFOLIO MANAGER AGENT
 // ============================================================================
 
-export const PortfolioManagerAgent = {
+import { AI_MODELS } from "@/lib/models/ai-models";
+import { AIAgent,  } from "@/lib/services/ai-service";
+
+export const PortfolioManagerAgent: AIAgent = {
   id: "portfolio-manager",
   name: "Portfolio Manager",
   description: "Expert in transforming investment theses into structured portfolios",
   systemPrompt: "I am the Portfolio Manager. I ultimately decide what we invest in. I understand why we invest in what we invest in, and make judgements balancing all the information I have across returns, risks, and other factors.",
-  
+
   // Agent Configuration
-  model: {
-    name: "gpt-4o-mini",
-    temperature: 0.2,
-    maxTokens: 2000,
-  },
+  model: AI_MODELS.balanced, // Use the balanced model for portfolio management tasks
 
   // ============================================================================
   // JOBS

@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { getServerUser } from "@/lib/auth/server";
 import { log } from "@/lib/utils/logger";
-import { aiService, createAIRequest, AIAgent } from "@/lib/services/ai-service";
+import { aiService, createAIRequest } from "@/lib/services/ai-service";
+import { withSecurity, aiRequestSecurity } from "@/lib/services/security-wrapper";
 
 import { PortfolioManagerAgent, RefineThesisInput, RefineThesisOutput } from "@/features/agents/portfolio-manager";
 
-export async function POST(request: NextRequest) {
+export const POST = withSecurity(aiRequestSecurity, async (request: NextRequest) => {
   try {
     const body = await request.json();
     const { thesis } = body;
@@ -33,28 +34,15 @@ export async function POST(request: NextRequest) {
       thesisLength: thesis.length
     }, "RefineThesisAPI");
 
-    // Create AI agent from our agent definition
-    const agent: AIAgent = {
-      id: PortfolioManagerAgent.id,
-      name: PortfolioManagerAgent.name,
-      description: PortfolioManagerAgent.description,
-      systemPrompt: PortfolioManagerAgent.systemPrompt,
-      model: {
-        name: PortfolioManagerAgent.model.name,
-        temperature: PortfolioManagerAgent.model.temperature,
-        maxTokens: PortfolioManagerAgent.model.maxTokens,
-      },
-    };
-
     // Create AI request
     const aiRequest = createAIRequest(
-      agent.id,
+      PortfolioManagerAgent.id,
       PortfolioManagerAgent.jobs.refineThesis.prompt({ thesis }),
       user.uid
     );
 
-    // Execute with AI service
-    const response = await aiService.generateResponse(agent, aiRequest, "thesis_generation");
+    // Execute with AI service - pass agent directly
+    const response = await aiService.generateResponse(PortfolioManagerAgent, aiRequest, "thesis_generation");
     
     // Parse JSON response
     let result: RefineThesisOutput;
@@ -94,4 +82,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+});

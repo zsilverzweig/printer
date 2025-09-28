@@ -3,77 +3,25 @@ import OpenAI from "openai";
 
 import { log } from "@/lib/utils/logger";
 import { estimateCost, recordAICost } from "./cost-monitor";
-
-// ============================================================================
-// AI MODELS CONFIGURATION
-// ============================================================================
-
-export const AI_MODELS = {
-  "gpt-4o": {
-    name: "gpt-4o",
-    provider: "openai" as const,
-    maxTokens: 128000,
-    costPerInputToken: 2.5 / 1000000,
-    costPerOutputToken: 10.0 / 1000000,
-    capabilities: ["text", "vision", "function_calling"],
-    contextWindow: 128000,
-  },
-  "gpt-4o-mini": {
-    name: "gpt-4o-mini",
-    provider: "openai" as const,
-    maxTokens: 128000,
-    costPerInputToken: 0.15 / 1000000,
-    costPerOutputToken: 0.6 / 1000000,
-    capabilities: ["text", "function_calling"],
-    contextWindow: 128000,
-  },
-  "gpt-4-turbo": {
-    name: "gpt-4-turbo",
-    provider: "openai" as const,
-    maxTokens: 4096,
-    costPerInputToken: 10.0 / 1000000,
-    costPerOutputToken: 30.0 / 1000000,
-    capabilities: ["text", "function_calling"],
-    contextWindow: 128000,
-  },
-  "gpt-3.5-turbo": {
-    name: "gpt-3.5-turbo",
-    provider: "openai" as const,
-    maxTokens: 4096,
-    costPerInputToken: 0.5 / 1000000,
-    costPerOutputToken: 1.5 / 1000000,
-    capabilities: ["text", "function_calling"],
-    contextWindow: 16385,
-  },
-} as const;
+import { AI_MODELS } from "@/lib/models/ai-models";
 
 // ============================================================================
 // TYPES
 // ============================================================================
+
+export interface AgentJob {
+  name: string;
+  description: string;
+  prompt: (input: any) => string;
+}
 
 export interface AIAgent {
   id: string;
   name: string;
   description: string;
   systemPrompt: string;
-  model: {
-    name: keyof typeof AI_MODELS;
-    temperature: number;
-    maxTokens: number;
-  };
-}
-
-// Generic agent interface that can accept any agent structure
-export interface GenericAgent {
-  id: string;
-  name: string;
-  description: string;
-  systemPrompt: string;
-  model: {
-    name: string;
-    temperature: number;
-    maxTokens: number;
-  };
+  model: typeof AI_MODELS[keyof typeof AI_MODELS];
+  jobs: Record<string, AgentJob>;
 }
 
 export interface AIRequest {
@@ -172,8 +120,8 @@ export class AIService {
       // Make OpenAI API request
       log.info("Making OpenAI API request", {
         model: agent.model.name,
-        maxTokens: agent.model.maxTokens,
-        temperature: agent.model.temperature,
+        maxTokens: agent.model.maxTokens || 2000,
+        temperature: (agent.model as any).temperature || 0.2,
       }, "AIService");
 
       const completion = await this.openai.chat.completions.create({
@@ -188,8 +136,8 @@ export class AIService {
             content: request.prompt,
           },
         ],
-        max_tokens: agent.model.maxTokens,
-        temperature: agent.model.temperature,
+        max_tokens: agent.model.maxTokens || 2000,
+        temperature: (agent.model as any).temperature || 0.2,
         response_format: { type: "json_object" },
       });
 
