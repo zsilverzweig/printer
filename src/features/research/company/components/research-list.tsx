@@ -83,24 +83,24 @@ export function ResearchList() {
           {researchResults.map((research) => (
             <div
               key={research.id}
-              className={`border rounded-lg p-4 transition-all duration-200 cursor-pointer hover:shadow-md hover:border-gray-300 ${
+              className={`border rounded-lg p-4 transition-all duration-200 cursor-pointer hover:shadow-md hover:border-border/80 ${
                 selectedResearch?.id === research.id
-                  ? 'border-blue-500 bg-blue-50 shadow-sm'
-                  : 'border-gray-200 bg-white hover:bg-gray-50'
+                  ? 'border-primary bg-primary/10 shadow-sm'
+                  : 'border-border bg-card hover:bg-accent/50'
               }`}
               onClick={() => selectResearch(research)}
             >
               <div className="flex items-start justify-between">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-2">
-                    <h3 className="font-semibold text-lg truncate text-gray-900">
+                    <h3 className="font-semibold text-lg truncate text-foreground">
                       {research.companyName}
                     </h3>
-                    <Badge variant="outline" className="text-xs bg-gray-100 text-gray-800 border-gray-300">
+                    <Badge variant="outline" className="text-xs">
                       {research.ticker}
                     </Badge>
                     {selectedResearch?.id === research.id && (
-                      <Badge variant="default" className="text-xs bg-green-600 text-white">
+                      <Badge variant="default" className="text-xs">
                         Selected
                       </Badge>
                     )}
@@ -117,7 +117,9 @@ export function ResearchList() {
                     </div>
                     <div className="flex items-center gap-1">
                       <TrendingUp className="h-3 w-3" />
-                      {research.recommendation.split('.')[0]}...
+                      <span className="truncate max-w-[200px]">
+                        {research.recommendation.split('.')[0]}...
+                      </span>
                     </div>
                   </div>
                 </div>
