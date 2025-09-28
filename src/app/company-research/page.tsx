@@ -23,16 +23,6 @@ export default async function CompanyResearchPage() {
   // If we reach here, user is authenticated and has app access
   return (
     <div className="container mx-auto p-6">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold tracking-tight">Company Research</h1>
-        <p className="text-muted-foreground mt-2">
-          Use AI agents to conduct deep research on companies and build your investment knowledge base.
-          <span className="block mt-1 text-sm text-blue-600">
-            ✨ Live updates - watch your research progress in real-time!
-          </span>
-        </p>
-      </div>
-
       {/* Wrap with provider for real-time updates */}
       <CompanyResearchProvider userId={user.uid}>
         <CompanyResearchManagementWithProvider />

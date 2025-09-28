@@ -63,6 +63,28 @@ export function CompanyResearchDetails({
     }
   };
 
+  const getRecommendationColor = (recommendation: string) => {
+    const rec = recommendation?.toUpperCase();
+    if (rec?.includes('BUY') || rec?.includes('STRONG BUY')) {
+      return 'bg-green-100 text-green-800';
+    } else if (rec?.includes('HOLD')) {
+      return 'bg-yellow-100 text-yellow-800';
+    } else if (rec?.includes('SELL') || rec?.includes('STRONG SELL')) {
+      return 'bg-red-100 text-red-800';
+    }
+    return 'bg-gray-100 text-gray-800';
+  };
+
+  const getRecommendationLabel = (recommendation: string) => {
+    const rec = recommendation?.toUpperCase();
+    if (rec?.includes('STRONG BUY')) return 'Strong Buy';
+    if (rec?.includes('BUY')) return 'Buy';
+    if (rec?.includes('HOLD')) return 'Hold';
+    if (rec?.includes('STRONG SELL')) return 'Strong Sell';
+    if (rec?.includes('SELL')) return 'Sell';
+    return recommendation || 'No Rating';
+  };
+
   const formatDate = (date: Date) => {
     return new Date(date).toLocaleString('en-US', {
       year: 'numeric',
@@ -161,9 +183,21 @@ export function CompanyResearchDetails({
               </CardDescription>
             </div>
             <div className="flex items-center gap-2">
-              <Badge className={getStatusColor(research.status)}>
-                {getStatusLabel(research.status)}
-              </Badge>
+              {research.status === 'completed' ? (
+                research.recommendation ? (
+                  <Badge className={getRecommendationColor(research.recommendation)}>
+                    {getRecommendationLabel(research.recommendation)}
+                  </Badge>
+                ) : (
+                  <Badge className="bg-gray-100 text-gray-800">
+                    No Rating
+                  </Badge>
+                )
+              ) : (
+                <Badge className={getStatusColor(research.status)}>
+                  {getStatusLabel(research.status)}
+                </Badge>
+              )}
               {research.status === 'in_progress' && (
                 <div className="flex items-center gap-2 text-sm text-blue-600">
                   <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>

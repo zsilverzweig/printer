@@ -20,6 +20,7 @@ export interface CompanyResearch {
   researchReport: string;
   executiveSummary?: string;
   keyMetrics?: CompanyMetrics;
+  recommendation?: string;
   
   // Vector embeddings for semantic search
   embeddings: {

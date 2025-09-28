@@ -77,6 +77,28 @@ export function CompanyResearchList({
     }
   };
 
+  const getRecommendationColor = (recommendation: string) => {
+    const rec = recommendation?.toUpperCase();
+    if (rec?.includes('BUY') || rec?.includes('STRONG BUY')) {
+      return 'bg-green-100 text-green-800';
+    } else if (rec?.includes('HOLD')) {
+      return 'bg-yellow-100 text-yellow-800';
+    } else if (rec?.includes('SELL') || rec?.includes('STRONG SELL')) {
+      return 'bg-red-100 text-red-800';
+    }
+    return 'bg-gray-100 text-gray-800';
+  };
+
+  const getRecommendationLabel = (recommendation: string) => {
+    const rec = recommendation?.toUpperCase();
+    if (rec?.includes('STRONG BUY')) return 'Strong Buy';
+    if (rec?.includes('BUY')) return 'Buy';
+    if (rec?.includes('HOLD')) return 'Hold';
+    if (rec?.includes('STRONG SELL')) return 'Strong Sell';
+    if (rec?.includes('SELL')) return 'Sell';
+    return recommendation || 'No Rating';
+  };
+
   const formatDate = (date: Date) => {
     return new Date(date).toLocaleDateString('en-US', {
       month: 'short',
@@ -138,9 +160,21 @@ export function CompanyResearchList({
                     <h4 className="font-semibold text-sm truncate">
                       {item.companyTicker}
                     </h4>
-                    <Badge className={getStatusColor(item.status)}>
-                      {getStatusLabel(item.status)}
-                    </Badge>
+                    {item.status === 'completed' ? (
+                      item.recommendation ? (
+                        <Badge className={getRecommendationColor(item.recommendation)}>
+                          {getRecommendationLabel(item.recommendation)}
+                        </Badge>
+                      ) : (
+                        <Badge className="bg-gray-100 text-gray-800">
+                          No Rating
+                        </Badge>
+                      )
+                    ) : (
+                      <Badge className={getStatusColor(item.status)}>
+                        {getStatusLabel(item.status)}
+                      </Badge>
+                    )}
                   </div>
                   
                   {item.companyName && (
