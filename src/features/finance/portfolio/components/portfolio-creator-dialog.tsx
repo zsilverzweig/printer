@@ -16,6 +16,7 @@ import { Switch } from "@/lib/components/ui/switch";
 import { Textarea } from "@/lib/components/ui/textarea";
 
 import { usePortfolio } from "../hooks/use-portfolio";
+import { useThesis } from "../hooks/use-thesis";
 
 interface PortfolioCreatorDialogProps {
   open: boolean;
@@ -35,10 +36,12 @@ export function PortfolioCreatorDialog({
   const [portfolioName, setPortfolioName] = useState("");
   const [thesis, setThesis] = useState("");
   const [description, setDescription] = useState("");
-  const [refineThesis, setRefineThesis] = useState(false);
   const [creationState, setCreationState] = useState<CreationState>("idle");
 
   const { createPortfolio, creating, error } = usePortfolio(userId);
+  
+  // Get thesis operations from dedicated hook
+  const { refineThesis, refiningThesis } = useThesis();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -54,7 +57,7 @@ export function PortfolioCreatorDialog({
         thesis: thesis.trim(),
         positions: [], // Will be populated by agents later
         metadata: {
-          wasRefined: refineThesis,
+          wasRefined: false, // We'll track this based on whether the button was used
           originalThesis: thesis.trim()
         }
       });
@@ -67,7 +70,6 @@ export function PortfolioCreatorDialog({
       setPortfolioName("");
       setThesis("");
       setDescription("");
-      setRefineThesis(false);
       setCreationState("idle");
       
     } catch (err) {
@@ -80,6 +82,30 @@ export function PortfolioCreatorDialog({
     onOpenChange(false);
     setCreationState("idle");
   };
+
+  const handleRefineThesis = async () => {
+    try {
+      const inputThesis = thesis.trim() || `${portfolioName.trim()} ${description.trim()}`.trim();
+      
+      const result = await refineThesis(inputThesis);
+      
+      // Update form fields with refined content
+      if (result.thesis_title) {
+        setPortfolioName(result.thesis_title);
+      }
+      if (result.thesis_description) {
+        setDescription(result.thesis_description);
+      }
+      if (result.rationale) {
+        setThesis(result.rationale);
+      }
+    } catch (err) {
+      console.error("Failed to refine thesis:", err);
+    }
+  };
+
+  // Check if any field has content to enable the refine button
+  const hasContent = portfolioName.trim() || description.trim() || thesis.trim();
 
   const getStateContent = () => {
     switch (creationState) {
@@ -153,15 +179,16 @@ export function PortfolioCreatorDialog({
               </ModalField>
               
               <ModalField>
-                <div className="flex items-center space-x-2">
-                  <Switch
-                    id="refine-thesis"
-                    checked={refineThesis}
-                    onCheckedChange={setRefineThesis}
-                  />
-                  <Label htmlFor="refine-thesis">
-                    Refine thesis with AI
-                  </Label>
+                <div className="flex items-center justify-end">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleRefineThesis}
+                    disabled={!hasContent || refiningThesis}
+                  >
+                    {refiningThesis ? "Refining..." : "Refine Thesis"}
+                  </Button>
                 </div>
                 <p className="text-xs text-gray-500 mt-1">
                   Let AI improve and structure your investment thesis

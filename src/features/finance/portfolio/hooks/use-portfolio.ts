@@ -1,7 +1,6 @@
 // Single hook for all portfolio operations - orchestrates service + provider
 import { useCallback, useState } from "react";
 
-
 import { usePortfolioContext } from "../providers/portfolio-provider";
 import { PortfolioService } from "../services/portfolio-service";
 import { CreatePortfolioRequest, Portfolio, UpdatePortfolioRequest } from "../types";
@@ -96,6 +95,7 @@ export function usePortfolio(_userId: string): UsePortfolioReturn {
     },
     [selectedPortfolio, selectPortfolio]
   );
+
 
 
   return {
