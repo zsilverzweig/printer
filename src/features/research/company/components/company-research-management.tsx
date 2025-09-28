@@ -3,22 +3,7 @@
 import { useState } from "react";
 
 import { Button } from "@/lib/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/lib/components/ui/card";
-import { Input } from "@/lib/components/ui/input";
-import { Label } from "@/lib/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/lib/components/ui/select";
+import { Card, CardContent } from "@/lib/components/ui/card";
 
 import { useCompanyResearch } from "../hooks/use-company-research";
 import { CreateCompanyResearchRequest } from "../types";
@@ -75,46 +60,22 @@ export function CompanyResearchManagement({ userId }: CompanyResearchManagementP
 
   return (
     <div className="space-y-6">
-      {/* Search and Create Section */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Research Companies</CardTitle>
-          <CardDescription>
+      {/* Header with New Research Button */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Company Research</h1>
+          <p className="text-muted-foreground">
             Use AI agents to conduct deep research on companies and build your investment knowledge base.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Quick Search */}
-          <div className="flex items-center gap-4">
-            <div className="flex-1">
-              <Label htmlFor="search">Search Research History</Label>
-              <Input
-                id="search"
-                placeholder="Search by ticker, company name, or agent..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="mt-1"
-              />
-            </div>
-            <div className="pt-6">
-              <Button onClick={() => setShowCreateDialog(true)}>
-                New Research
-              </Button>
-            </div>
-          </div>
-
-          {/* Agent Info */}
-          <div className="text-sm text-muted-foreground">
-            <span>
-              AI-powered company research agent available for comprehensive analysis
-            </span>
-          </div>
-        </CardContent>
-      </Card>
+          </p>
+        </div>
+        <Button onClick={() => setShowCreateDialog(true)}>
+          New Research
+        </Button>
+      </div>
 
       {/* Research List and Details */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Research History */}
+        {/* Research Archive */}
         <div className="lg:col-span-1">
           <CompanyResearchList
             research={filteredResearch}
@@ -122,6 +83,8 @@ export function CompanyResearchManagement({ userId }: CompanyResearchManagementP
             onSelectResearch={selectResearch}
             onDeleteResearch={deleteResearch}
             loading={loading}
+            searchTerm={searchTerm}
+            onSearchChange={setSearchTerm}
           />
         </div>
 
@@ -139,7 +102,7 @@ export function CompanyResearchManagement({ userId }: CompanyResearchManagementP
                   <h3 className="text-lg font-medium mb-2">Select Research to View</h3>
                   <p>
                     Choose a research report from the list to view the detailed analysis, 
-                    or create new research using the "New Research" button.
+                    or create new research using the &quot;New Research&quot; button.
                   </p>
                 </div>
               </CardContent>

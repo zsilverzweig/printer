@@ -9,6 +9,9 @@ import {
   CardHeader,
   CardTitle,
 } from "@/lib/components/ui/card";
+import { Input } from "@/lib/components/ui/input";
+import { Label } from "@/lib/components/ui/label";
+import { ListItem } from "@/lib/components/ui/list-item";
 
 import { CompanyResearch } from "../types";
 
@@ -18,6 +21,8 @@ interface CompanyResearchListProps {
   onSelectResearch: (research: CompanyResearch | null) => void;
   onDeleteResearch: (id: string) => void;
   loading: boolean;
+  searchTerm?: string;
+  onSearchChange?: (term: string) => void;
 }
 
 export function CompanyResearchList({
@@ -26,6 +31,8 @@ export function CompanyResearchList({
   onSelectResearch,
   onDeleteResearch,
   loading,
+  searchTerm = "",
+  onSearchChange,
 }: CompanyResearchListProps) {
   
   // Debug logging to see if list component is receiving updates
@@ -78,7 +85,7 @@ export function CompanyResearchList({
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Research History</CardTitle>
+          <CardTitle>Research Archive</CardTitle>
           <CardDescription>Your company research reports</CardDescription>
         </CardHeader>
         <CardContent className="p-8 text-center">
@@ -96,19 +103,29 @@ export function CompanyResearchList({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Research History</CardTitle>
+        <CardTitle>Research Archive</CardTitle>
         <CardDescription>
           {research.length} research report{research.length !== 1 ? 's' : ''}
         </CardDescription>
+        {onSearchChange && (
+          <div className="mt-4">
+            <Label htmlFor="search-history">Search Research Archive</Label>
+            <Input
+              id="search-history"
+              placeholder="Search by ticker, company name, or agent..."
+              value={searchTerm}
+              onChange={(e) => onSearchChange(e.target.value)}
+              className="mt-1"
+            />
+          </div>
+        )}
       </CardHeader>
       <CardContent className="p-0">
         <div className="divide-y">
           {research.map((item) => (
-            <div
+            <ListItem
               key={item.id}
-              className={`p-4 hover:bg-gray-50 cursor-pointer transition-colors ${
-                selectedResearch?.id === item.id ? 'bg-blue-50 border-l-4 border-l-blue-500' : ''
-              }`}
+              selected={selectedResearch?.id === item.id}
               onClick={() => onSelectResearch(item)}
             >
               <div className="flex items-start justify-between">
@@ -155,7 +172,7 @@ export function CompanyResearchList({
                   ×
                 </Button>
               </div>
-            </div>
+            </ListItem>
           ))}
         </div>
       </CardContent>

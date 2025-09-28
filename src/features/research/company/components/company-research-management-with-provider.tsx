@@ -3,20 +3,12 @@
 import { useState, useCallback } from "react";
 
 import { Button } from "@/lib/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/lib/components/ui/card";
-import { Input } from "@/lib/components/ui/input";
-import { Label } from "@/lib/components/ui/label";
+import { Card, CardContent } from "@/lib/components/ui/card";
 
 import { log } from "@/lib/utils/logger";
 
-import { CreateCompanyResearchRequest } from "../types";
 import { useCompanyResearchContext } from "../providers/company-research-provider";
+import { CreateCompanyResearchRequest } from "../types";
 
 import { CompanyResearchDetails } from "./company-research-details";
 import { CompanyResearchList } from "./company-research-list";
@@ -35,14 +27,6 @@ export function CompanyResearchManagementWithProvider() {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [creating, setCreating] = useState(false);
 
-  // Debug logging to see if component is receiving updates
-  console.log("CompanyResearchManagementWithProvider render", {
-    researchCount: research.length,
-    selectedResearchId: selectedResearch?.id,
-    selectedResearchStatus: selectedResearch?.status,
-    loading,
-    error
-  });
 
   const handleCreateResearch = useCallback(async (request: CreateCompanyResearchRequest) => {
     try {
@@ -156,60 +140,22 @@ export function CompanyResearchManagementWithProvider() {
 
   return (
     <div className="space-y-6">
-      {/* Search and Create Section */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Research Companies</CardTitle>
-          <CardDescription>
+      {/* Header with New Research Button */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Company Research</h1>
+          <p className="text-muted-foreground">
             Use AI agents to conduct deep research on companies and build your investment knowledge base.
-            {research.length > 0 && (
-              <span className="block mt-1 text-sm">
-                {research.filter(r => r.status === 'in_progress').length > 0 && (
-                  <span className="text-blue-600">
-                    {research.filter(r => r.status === 'in_progress').length} research in progress
-                  </span>
-                )}
-                {research.filter(r => r.status === 'completed').length > 0 && (
-                  <span className="text-green-600 ml-2">
-                    {research.filter(r => r.status === 'completed').length} completed
-                  </span>
-                )}
-              </span>
-            )}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Quick Search */}
-          <div className="flex items-center gap-4">
-            <div className="flex-1">
-              <Label htmlFor="search">Search Research History</Label>
-              <Input
-                id="search"
-                placeholder="Search by ticker, company name, or agent..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="mt-1"
-              />
-            </div>
-            <div className="pt-6">
-              <Button onClick={() => setShowCreateDialog(true)}>
-                New Research
-              </Button>
-            </div>
-          </div>
-
-          {/* Agent Info */}
-          <div className="text-sm text-muted-foreground">
-            <span>
-              AI-powered company research agent available for comprehensive analysis
-            </span>
-          </div>
-        </CardContent>
-      </Card>
+          </p>
+        </div>
+        <Button onClick={() => setShowCreateDialog(true)}>
+          New Research
+        </Button>
+      </div>
 
       {/* Research List and Details */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Research History */}
+        {/* Research Archive */}
         <div className="lg:col-span-1">
           <CompanyResearchList
             research={filteredResearch}
@@ -217,6 +163,8 @@ export function CompanyResearchManagementWithProvider() {
             onSelectResearch={selectResearch}
             onDeleteResearch={handleDeleteResearch}
             loading={loading}
+            searchTerm={searchTerm}
+            onSearchChange={setSearchTerm}
           />
         </div>
 
@@ -233,7 +181,7 @@ export function CompanyResearchManagementWithProvider() {
                   <h3 className="text-lg font-medium mb-2">Select Research to View</h3>
                   <p>
                     Choose a research report from the list to view the detailed analysis, 
-                    or create new research using the "New Research" button.
+                    or create new research using the &quot;New Research&quot; button.
                   </p>
                 </div>
               </CardContent>
