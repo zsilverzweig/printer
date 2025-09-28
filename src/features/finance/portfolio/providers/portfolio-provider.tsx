@@ -61,8 +61,9 @@ export function PortfolioProvider({ userId, children }: PortfolioProviderProps) 
     // Create Firestore query for user's portfolios, ordered by creation date (newest first)
     const q = query(
       collection(db, COLLECTIONS.PORTFOLIOS),
-      where("userId", "==", userId),
-      orderBy("createdAt", "desc")
+      where("userId", "==", userId)
+      // Temporarily remove orderBy to avoid index issues
+      // orderBy("createdAt", "desc")
     );
 
     // Set up real-time listener
@@ -75,11 +76,25 @@ export function PortfolioProvider({ userId, children }: PortfolioProviderProps) 
           log.debug("Firestore snapshot received", {
             docsCount: snapshot.docs.length,
             userId,
+            hasData: snapshot.docs.length > 0,
+            firstDoc: snapshot.docs.length > 0 ? snapshot.docs[0].data() : null
           }, "PortfolioProvider");
 
-          const portfolioData: PortfolioType[] = snapshot.docs.map((doc) => 
-            deserializePortfolio(doc.id, doc.data())
-          );
+          const portfolioData: PortfolioType[] = snapshot.docs.map((doc) => {
+            try {
+              return deserializePortfolio(doc.id, doc.data());
+            } catch (error) {
+              log.error("Failed to deserialize portfolio", {
+                docId: doc.id,
+                error: error instanceof Error ? error.message : "Unknown error",
+                data: doc.data()
+              }, "PortfolioProvider");
+              throw error;
+            }
+          });
+
+          // Sort by creation date (newest first) since we removed orderBy from query
+          portfolioData.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 
           log.debug("Deserialized portfolio data", {
             count: portfolioData.length,
