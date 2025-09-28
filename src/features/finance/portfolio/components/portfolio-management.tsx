@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 
-import { useAgents } from "@/features/ai/agents/hooks/use-agents";
 import { Button } from "@/lib/components/ui/button";
 import {
   Card,
@@ -31,7 +30,6 @@ export function PortfolioManagement({ userId }: PortfolioManagementProps) {
     updatePortfolio,
     deletePortfolio,
   } = usePortfolio(userId);
-  const { agents } = useAgents();
   const [showCreatorDialog, setShowCreatorDialog] = useState(false);
   const [selectedPortfolio, setSelectedPortfolio] = useState<Portfolio | null>(
     null
@@ -190,7 +188,6 @@ export function PortfolioManagement({ userId }: PortfolioManagementProps) {
 
       <PortfolioDetailsDialog
         portfolio={selectedPortfolio}
-        availableAgents={agents.filter((agent) => agent.isActive)}
         onClose={() => setSelectedPortfolio(null)}
         onUpdatePortfolio={handleUpdatePortfolio}
         onDeletePortfolio={handleDeletePortfolio}

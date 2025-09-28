@@ -10,9 +10,9 @@ import {
 } from "firebase/firestore";
 import React, { createContext, useContext, useEffect, useState, useRef, ReactNode } from "react";
 
-import { deserializePortfolio } from "@/features/ai/agents/services/firestore/converters";
 import { db, COLLECTIONS } from "@/lib/services/firebase";
 import { log } from "@/lib/utils/logger";
+import { convertPortfolioDocument } from "@/lib/utils/firebase-converters";
 
 import { Portfolio } from "../types";
 
@@ -80,7 +80,7 @@ export function PortfolioProvider({ userId, children }: PortfolioProviderProps) 
 
           const portfolioData: Portfolio[] = snapshot.docs.map((doc) => {
             try {
-              return deserializePortfolio(doc.id, doc.data());
+              return convertPortfolioDocument({ id: doc.id, data: () => doc.data() });
             } catch (error) {
               log.error("Failed to deserialize portfolio", {
                 docId: doc.id,

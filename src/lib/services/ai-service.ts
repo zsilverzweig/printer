@@ -177,6 +177,7 @@ export class AIService {
         ],
         max_tokens: agent.model.maxTokens,
         temperature: agent.model.temperature,
+        response_format: { type: "json_object" },
       });
 
       const content = completion.choices[0]?.message?.content;

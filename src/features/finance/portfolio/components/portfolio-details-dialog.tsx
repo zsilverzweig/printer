@@ -2,9 +2,6 @@
 
 import React, { useState } from "react";
 
-import { AgentWorkCard } from "@/features/ai/agents/components/agent-work-card";
-import { useAgentWork } from "@/features/ai/agents/hooks/use-agent-work";
-import { Agent } from "@/features/ai/agents/types";
 import { Badge } from "@/lib/components/ui/badge";
 import { Button } from "@/lib/components/ui/button";
 import {
@@ -18,34 +15,26 @@ import { Input } from "@/lib/components/ui/input";
 import { Modal } from "@/lib/components/ui/modal";
 import { log } from "@/lib/utils/logger";
 
-import { Portfolio, UpdatePortfolioRequest } from "../types";
+import { Portfolio, PortfolioPosition, UpdatePortfolioRequest } from "../types";
 
 interface PortfolioDetailsDialogProps {
   portfolio: Portfolio | null;
-  availableAgents: Agent[];
   onClose: () => void;
   onUpdatePortfolio: (
     portfolioId: string,
-    updates: Partial<Portfolio>
+    updates: UpdatePortfolioRequest
   ) => Promise<void>;
   onDeletePortfolio: (portfolioId: string) => void;
 }
 
 export function PortfolioDetailsDialog({
   portfolio,
-  availableAgents,
   onClose,
   onUpdatePortfolio,
   onDeletePortfolio,
 }: PortfolioDetailsDialogProps) {
-  const {
-    workHistory,
-    executeWork,
-    loading: workLoading,
-  } = useAgentWork(portfolio?.id || "");
   const [editing, setEditing] = useState(false);
   const [formData, setFormData] = useState<UpdatePortfolioRequest>({});
-  const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
 
   React.useEffect(() => {
     if (portfolio) {
@@ -54,7 +43,6 @@ export function PortfolioDetailsDialog({
         description: portfolio.description,
         thesis: portfolio.thesis,
       });
-      setSelectedAgentIds(portfolio.assignedAgents.map((a) => a.agentId));
     }
   }, [portfolio]);
 
@@ -62,17 +50,10 @@ export function PortfolioDetailsDialog({
     if (!portfolio) return;
 
     try {
-      await onUpdatePortfolio(portfolio.id, {
-        ...formData,
-        assignedAgentIds: selectedAgentIds,
-      } as any);
+      await onUpdatePortfolio(portfolio.id, formData);
       setEditing(false);
     } catch (error) {
-      log.failure(
-        "Failed to update portfolio",
-        error,
-        "PortfolioDetailsDialog"
-      );
+      log.error("Failed to update portfolio", error, "PortfolioDetailsDialog");
     }
   };
 
@@ -86,24 +67,6 @@ export function PortfolioDetailsDialog({
     ) {
       onDeletePortfolio(portfolio.id);
       onClose();
-    }
-  };
-
-  const handleAgentToggle = (agentId: string) => {
-    setSelectedAgentIds((prev) =>
-      prev.includes(agentId)
-        ? prev.filter((id) => id !== agentId)
-        : [...prev, agentId]
-    );
-  };
-
-  const handleExecuteWork = async (agentId: string) => {
-    if (!portfolio) return;
-
-    try {
-      await executeWork(portfolio.id, agentId);
-    } catch (error) {
-      log.failure("Failed to execute work", error, "PortfolioDetailsDialog");
     }
   };
 
@@ -300,7 +263,7 @@ export function PortfolioDetailsDialog({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
-                    {portfolio.positions.map((position) => (
+                    {portfolio.positions.map((position: PortfolioPosition) => (
                       <tr key={position.id} className="align-top">
                         <td className="py-3 pr-4 font-semibold text-foreground">
                           {position.symbol}
@@ -351,118 +314,6 @@ export function PortfolioDetailsDialog({
           </CardContent>
         </Card>
 
-        {/* Assigned Agents */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Assigned AI Agents</CardTitle>
-            <CardDescription>
-              {editing
-                ? "Select agents to analyze this portfolio"
-                : "Agents assigned to analyze this portfolio"}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {editing ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {availableAgents.map((agent) => (
-                  <Card
-                    key={agent.id}
-                    className={`cursor-pointer transition-colors ${
-                      selectedAgentIds.includes(agent.id)
-                        ? "ring-2 ring-primary bg-primary/10"
-                        : "hover:bg-muted/50"
-                    }`}
-                    onClick={() => handleAgentToggle(agent.id)}
-                  >
-                    <CardHeader className="pb-2">
-                      <div className="flex items-center justify-between">
-                        <CardTitle className="text-sm">{agent.name}</CardTitle>
-                        <input
-                          type="checkbox"
-                          checked={selectedAgentIds.includes(agent.id)}
-                          onChange={() => handleAgentToggle(agent.id)}
-                          className="rounded border-border"
-                        />
-                      </div>
-                      <CardDescription className="text-xs">
-                        {agent.description}
-                      </CardDescription>
-                    </CardHeader>
-                  </Card>
-                ))}
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {portfolio.assignedAgents.length === 0 ? (
-                  <p className="text-muted-foreground text-center py-4">
-                    No agents assigned
-                  </p>
-                ) : (
-                  portfolio.assignedAgents.map((assignedAgent) => (
-                    <div
-                      key={assignedAgent.agentId}
-                      className="flex items-center justify-between p-3 border rounded-md"
-                    >
-                      <div className="flex-1">
-                        <h4 className="font-medium">
-                          {assignedAgent.agent.name}
-                        </h4>
-                        <p className="text-sm text-muted-foreground">
-                          {assignedAgent.agent.description}
-                        </p>
-                        <div className="flex items-center space-x-4 mt-2 text-xs text-muted-foreground">
-                          <span>Model: {assignedAgent.agent.model.name}</span>
-                          <span>
-                            Role: {assignedAgent.agent.role.replace("_", " ")}
-                          </span>
-                          <span>Work Count: {assignedAgent.workCount}</span>
-                          {assignedAgent.lastWorkedAt && (
-                            <span>
-                              Last Worked:{" "}
-                              {new Date(
-                                assignedAgent.lastWorkedAt
-                              ).toLocaleDateString()}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <Button
-                        onClick={() => handleExecuteWork(assignedAgent.agentId)}
-                        disabled={workLoading}
-                        size="sm"
-                      >
-                        {workLoading ? "Working..." : "Work"}
-                      </Button>
-                    </div>
-                  ))
-                )}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Work History */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Work History</CardTitle>
-            <CardDescription>
-              Recent AI agent analysis and responses
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {workHistory.length === 0 ? (
-              <p className="text-muted-foreground text-center py-4">
-                No work history available
-              </p>
-            ) : (
-              <div className="space-y-4">
-                {workHistory.map((work) => (
-                  <AgentWorkCard key={work.id} work={work} />
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
       </div>
     </Modal>
   );
