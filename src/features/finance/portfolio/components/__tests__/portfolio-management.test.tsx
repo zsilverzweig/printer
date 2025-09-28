@@ -24,13 +24,13 @@ jest.mock("../../hooks/use-portfolio", () => ({
 }));
 
 // Mock the useAgents hook
-jest.mock("@/features/ai/agents/hooks/use-agents", () => ({
-  useAgents: () => ({
-    agents: [],
-    loading: false,
-    error: null,
-  }),
-}));
+// jest.mock("@/features/ai/agents/hooks/use-agents", () => ({
+//   useAgents: () => ({
+//     agents: [],
+//     loading: false,
+//     error: null,
+//   }),
+// }));
 
 // Mock the portfolio creator dialog
 jest.mock("../portfolio-creator-dialog", () => ({

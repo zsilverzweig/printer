@@ -1,4 +1,4 @@
-import { Bot, Cpu, Settings, Users, Wrench } from "lucide-react";
+import { Cpu, Settings, Users, Wrench } from "lucide-react";
 import Link from "next/link";
 
 import { requireAdmin } from "@/lib/auth/server";
@@ -37,23 +37,7 @@ export default async function AdminPage() {
         </div>
 
         {/* Admin Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <Card className="hover:shadow-md transition-shadow">
-            <CardHeader>
-              <div className="flex items-center space-x-2">
-                <Bot className="h-5 w-5 text-blue-600" />
-                <CardTitle>Agent Management</CardTitle>
-              </div>
-              <CardDescription>
-                Create and manage AI agents for investment analysis
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Link href="/admin/agents">
-                <Button className="w-full">Manage Agents</Button>
-              </Link>
-            </CardContent>
-          </Card>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
 
           <Card className="hover:shadow-md transition-shadow">
             <CardHeader>
@@ -135,12 +119,12 @@ export default async function AdminPage() {
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-gray-600">
-                Active Agents
+                AI Operations
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">4</div>
-              <p className="text-xs text-gray-600">Built-in templates</p>
+              <div className="text-2xl font-bold">2</div>
+              <p className="text-xs text-gray-600">Portfolio & Thesis</p>
             </CardContent>
           </Card>
           <Card>
