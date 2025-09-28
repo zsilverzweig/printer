@@ -1,4 +1,5 @@
 import { PortfolioManagement } from "@/features/finance/portfolio/components/portfolio-management";
+import { PortfolioProvider } from "@/features/finance/portfolio/providers/portfolio-provider";
 import { requireAppAccess } from "@/lib/auth/server";
 
 /**
@@ -23,8 +24,10 @@ export default async function PortfoliosPage() {
         Welcome back, {user.displayName}!
       </p>
 
-      {/* Pass user data to client component */}
-      <PortfolioManagement userId={user.uid} />
+      {/* Wrap with PortfolioProvider for real-time updates */}
+      <PortfolioProvider userId={user.uid}>
+        <PortfolioManagement userId={user.uid} />
+      </PortfolioProvider>
     </div>
   );
 }

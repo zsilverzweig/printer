@@ -1,0 +1,172 @@
+"use client";
+
+import { 
+  collection, 
+  query, 
+  where, 
+  onSnapshot, 
+  orderBy,
+  QuerySnapshot,
+  DocumentData 
+} from "firebase/firestore";
+import React, { createContext, useContext, useEffect, useState, useRef, ReactNode } from "react";
+
+
+import { deserializePortfolio } from "@/features/ai/agents/services/firestore/converters";
+import { db, COLLECTIONS } from "@/lib/services/firebase";
+import { log } from "@/lib/utils/logger";
+
+import { PortfolioType } from "../types";
+
+export interface PortfolioContextType {
+  // Data
+  portfolios: PortfolioType[];
+  selectedPortfolio: PortfolioType | null;
+  
+  // Loading states
+  loading: boolean;
+  error: string | null;
+  
+  // Actions
+  selectPortfolio: (portfolio: PortfolioType | null) => void;
+  refreshPortfolios: () => void;
+}
+
+const PortfolioContext = createContext<PortfolioContextType | undefined>(undefined);
+
+interface PortfolioProviderProps {
+  userId: string;
+  children: ReactNode;
+}
+
+export function PortfolioProvider({ userId, children }: PortfolioProviderProps) {
+  const [portfolios, setPortfolios] = useState<PortfolioType[]>([]);
+  const [selectedPortfolio, setSelectedPortfolio] = useState<PortfolioType | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const selectedPortfolioRef = useRef<PortfolioType | null>(null);
+
+  useEffect(() => {
+    if (!userId) {
+      setPortfolios([]);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    log.info("Setting up portfolio real-time listener", { userId }, "PortfolioProvider");
+
+    // Create Firestore query for user's portfolios, ordered by creation date (newest first)
+    const q = query(
+      collection(db, COLLECTIONS.PORTFOLIOS),
+      where("userId", "==", userId),
+      orderBy("createdAt", "desc")
+    );
+
+    // Set up real-time listener
+    log.info("Setting up Firestore listener for portfolios", { userId }, "PortfolioProvider");
+    
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot: QuerySnapshot<DocumentData>) => {
+        try {
+          log.debug("Firestore snapshot received", {
+            docsCount: snapshot.docs.length,
+            userId,
+          }, "PortfolioProvider");
+
+          const portfolioData: PortfolioType[] = snapshot.docs.map((doc) => 
+            deserializePortfolio(doc.id, doc.data())
+          );
+
+          log.debug("Deserialized portfolio data", {
+            count: portfolioData.length,
+            portfolios: portfolioData.map(p => ({ id: p.id, name: p.name, status: p.isActive ? 'active' : 'inactive' }))
+          }, "PortfolioProvider");
+
+          setPortfolios(portfolioData);
+          setError(null);
+
+          log.info("Portfolio data updated", {
+            count: portfolioData.length,
+            userId,
+            portfolios: portfolioData.map(p => ({ id: p.id, name: p.name, positions: p.positions.length }))
+          }, "PortfolioProvider");
+
+          // If we have a selected portfolio, update it with the latest data
+          if (selectedPortfolioRef.current) {
+            const updatedSelected = portfolioData.find(p => p.id === selectedPortfolioRef.current?.id);
+            if (updatedSelected) {
+              log.debug("Updating selected portfolio", {
+                oldName: selectedPortfolioRef.current.name,
+                newName: updatedSelected.name,
+                portfolioId: selectedPortfolioRef.current.id
+              }, "PortfolioProvider");
+              setSelectedPortfolio(updatedSelected);
+            }
+          }
+
+        } catch (err) {
+          const errorMessage = err instanceof Error ? err.message : "Failed to process portfolio data";
+          setError(errorMessage);
+          log.error("Error processing portfolio data", err, "PortfolioProvider");
+        }
+      },
+      (err) => {
+        const errorMessage = err instanceof Error ? err.message : "Failed to listen to portfolio updates";
+        setError(errorMessage);
+        setLoading(false);
+        log.error("Portfolio listener error", err, "PortfolioProvider");
+      }
+    );
+
+    setLoading(false);
+
+    // Cleanup listener on unmount
+    return () => {
+      log.info("Cleaning up portfolio listener", { userId }, "PortfolioProvider");
+      unsubscribe();
+    };
+  }, [userId]);
+
+  const selectPortfolio = (portfolio: PortfolioType | null) => {
+    selectedPortfolioRef.current = portfolio;
+    setSelectedPortfolio(portfolio);
+  };
+
+  const refreshPortfolios = () => {
+    // With real-time listeners, we don't need manual refresh
+    // But we can trigger a re-render by updating state
+    log.info("Manual refresh requested", { portfolioCount: portfolios.length }, "PortfolioProvider");
+  };
+
+  const value: PortfolioContextType = {
+    // Data
+    portfolios,
+    selectedPortfolio,
+    
+    // Loading states
+    loading,
+    error,
+    
+    // Actions
+    selectPortfolio,
+    refreshPortfolios,
+  };
+
+  return (
+    <PortfolioContext.Provider value={value}>
+      {children}
+    </PortfolioContext.Provider>
+  );
+}
+
+export function usePortfolioContext(): PortfolioContextType {
+  const context = useContext(PortfolioContext);
+  if (context === undefined) {
+    throw new Error("usePortfolioContext must be used within a PortfolioProvider");
+  }
+  return context;
+}

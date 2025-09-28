@@ -14,6 +14,7 @@ import {
 import { ConfirmationDialog } from "@/lib/components/ui/confirmation-dialog";
 import { ListItem } from "@/lib/components/ui/list-item";
 import { SearchBar } from "@/lib/components/ui/search-bar";
+import { log } from "@/lib/utils/logger";
 
 import { CompanyResearch } from "../types";
 
@@ -41,7 +42,7 @@ export function CompanyResearchList({
   const [isDeleting, setIsDeleting] = useState(false);
   
   // Debug logging to see if list component is receiving updates
-  console.log("CompanyResearchList render", {
+  log.info("CompanyResearchList render", {
     researchCount: research.length,
     researchStatuses: research.map(r => ({ id: r.id, ticker: r.companyTicker, status: r.status })),
     selectedResearchId: selectedResearch?.id,
@@ -231,7 +232,7 @@ export function CompanyResearchList({
               setDeleteConfirmOpen(false);
               setResearchToDelete(null);
             } catch (error) {
-              console.error("Failed to delete research:", error);
+              log.error("Failed to delete research:", error);
             } finally {
               setIsDeleting(false);
             }

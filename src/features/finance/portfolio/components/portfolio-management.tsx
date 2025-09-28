@@ -12,8 +12,8 @@ import {
 } from "@/lib/components/ui/card";
 import { Input } from "@/lib/components/ui/input";
 
-import { usePortfolios } from "../hooks/use-portfolios";
-import { Portfolio } from "../types";
+import { usePortfolioContext } from "../hooks/use-portfolio-context";
+import { PortfolioType } from "../types";
 
 import { PortfolioDetailsDialog } from "./portfolio-details-dialog";
 import { PortfolioList } from "./portfolio-list";
@@ -23,17 +23,17 @@ interface PortfolioManagementProps {
   userId: string;
 }
 
-export function PortfolioManagement({ userId }: PortfolioManagementProps) {
+export function PortfolioManagement({  }: PortfolioManagementProps) {
   const {
     portfolios,
     loading,
     error,
     updatePortfolio,
     deletePortfolio,
-  } = usePortfolios(userId);
+  } = usePortfolioContext();
   const { agents } = useAgents();
   const [showWizardDialog, setShowWizardDialog] = useState(false);
-  const [selectedPortfolio, setSelectedPortfolio] = useState<Portfolio | null>(
+  const [selectedPortfolio, setSelectedPortfolio] = useState<PortfolioType | null>(
     null
   );
   const [searchTerm, setSearchTerm] = useState("");
@@ -51,7 +51,7 @@ export function PortfolioManagement({ userId }: PortfolioManagementProps) {
   );
 
 
-  const handleWizardComplete = (portfolio: Portfolio) => {
+  const handleWizardComplete = (portfolio: PortfolioType) => {
     setShowWizardDialog(false);
     setSelectedPortfolio(portfolio);
   };
@@ -59,7 +59,7 @@ export function PortfolioManagement({ userId }: PortfolioManagementProps) {
   
   const handleUpdatePortfolio = async (
     portfolioId: string,
-    updates: Partial<Portfolio>
+    updates: Partial<PortfolioType>
   ) => {
     try {
       await updatePortfolio(portfolioId, updates);
