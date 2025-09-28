@@ -36,6 +36,7 @@ export function PortfolioCreatorDialog({
   const [portfolioName, setPortfolioName] = useState("");
   const [thesis, setThesis] = useState("");
   const [description, setDescription] = useState("");
+  const [refinementGuidance, setRefinementGuidance] = useState("");
   const [creationState, setCreationState] = useState<CreationState>("idle");
 
   const { createPortfolio, creating, error } = usePortfolio(userId);
@@ -70,6 +71,7 @@ export function PortfolioCreatorDialog({
       setPortfolioName("");
       setThesis("");
       setDescription("");
+      setRefinementGuidance("");
       setCreationState("idle");
       
     } catch (err) {
@@ -85,7 +87,15 @@ export function PortfolioCreatorDialog({
 
   const handleRefineThesis = async () => {
     try {
-      const inputThesis = thesis.trim() || `${portfolioName.trim()} ${description.trim()}`.trim();
+      // Combine all four fields into comprehensive input for AI refinement
+      const inputParts = [
+        portfolioName.trim(),
+        description.trim(), 
+        thesis.trim(),
+        refinementGuidance.trim()
+      ].filter(part => part.length > 0);
+      
+      const inputThesis = inputParts.join(' ');
       
       const result = await refineThesis(inputThesis);
       
@@ -96,8 +106,8 @@ export function PortfolioCreatorDialog({
       if (result.thesis_description) {
         setDescription(result.thesis_description);
       }
-      if (result.rationale) {
-        setThesis(result.rationale);
+      if (result.thesis) {
+        setThesis(result.thesis);
       }
     } catch (err) {
       console.error("Failed to refine thesis:", err);
@@ -147,22 +157,23 @@ export function PortfolioCreatorDialog({
           <ModalForm onSubmit={handleSubmit} id="portfolio-creator-form">
             <ModalSection>
               <ModalField>
-                <Label htmlFor="portfolio-name">Portfolio Name</Label>
+                <Label htmlFor="portfolio-name">Thesis Title</Label>
                 <Input
                   id="portfolio-name"
                   value={portfolioName}
                   onChange={(e) => setPortfolioName(e.target.value)}
-                  placeholder="Enter portfolio name"
+                  placeholder="Enter compelling thesis title"
                 />
               </ModalField>
               
               <ModalField>
-                <Label htmlFor="description">Description (Optional)</Label>
-                <Input
+                <Label htmlFor="description">Thesis Description</Label>
+                <Textarea
                   id="description"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Brief description of your portfolio"
+                  placeholder="Clear, specific, and actionable thesis description..."
+                  rows={3}
                 />
               </ModalField>
               
@@ -177,27 +188,42 @@ export function PortfolioCreatorDialog({
                   required
                 />
               </ModalField>
-              
+
               <ModalField>
-                <div className="flex items-center justify-end">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={handleRefineThesis}
-                    disabled={!hasContent || refiningThesis}
-                  >
-                    {refiningThesis ? "Refining..." : "Refine Thesis"}
-                  </Button>
-                </div>
-                <p className="text-xs text-gray-500 mt-1">
-                  Let AI improve and structure your investment thesis
+                <Label htmlFor="refinement-guidance">Refinement Guidance (Optional)</Label>
+                <Textarea
+                  id="refinement-guidance"
+                  value={refinementGuidance}
+                  onChange={(e) => setRefinementGuidance(e.target.value)}
+                  placeholder="Generally describe the refinements you want and our Portfolio Manager will do the rest..."
+                  rows={2}
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Tell the AI what specific changes or improvements you'd like to see
                 </p>
               </ModalField>
             </ModalSection>
           </ModalForm>
         );
     }
+  };
+
+  const getFooterActions = () => {
+    if (creationState === "idle" && hasContent) {
+      return (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={handleRefineThesis}
+          disabled={refiningThesis}
+          className="bg-gradient-to-r from-purple-500 via-pink-500 to-red-500 text-white border-0 hover:from-purple-600 hover:via-pink-600 hover:to-red-600 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {refiningThesis ? "Refining..." : "✨ Refine Thesis"}
+        </Button>
+      );
+    }
+    return null;
   };
 
   const getFooter = () => {
@@ -240,7 +266,7 @@ export function PortfolioCreatorDialog({
       open={open}
       onOpenChange={handleClose}
       title="Create Portfolio"
-      description="Create a new investment portfolio with your thesis"
+      footerActions={getFooterActions()}
       footer={getFooter()}
     >
       {getStateContent()}

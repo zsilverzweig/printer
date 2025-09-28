@@ -69,7 +69,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Basic output validation
-    if (!result.thesis_title || !result.thesis_description || !result.rationale) {
+    if (!result.thesis_title || !result.thesis_description || !result.thesis) {
       log.error("AI response missing required fields", { result }, "RefineThesisAPI");
       return NextResponse.json(
         { error: "AI response is missing required fields" },
@@ -81,6 +81,7 @@ export async function POST(request: NextRequest) {
       userId: user.uid,
       titleLength: result.thesis_title.length,
       descriptionLength: result.thesis_description.length,
+      thesisLength: result.thesis.length,
       tokensUsed: response.tokensUsed.totalTokens,
       cost: response.cost
     }, "RefineThesisAPI");

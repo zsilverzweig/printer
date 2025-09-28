@@ -12,6 +12,7 @@ interface ModalProps {
   title: string;
   children: ReactNode;
   footer?: ReactNode;
+  footerActions?: ReactNode;
   size?: "sm" | "md" | "lg" | "xl" | "2xl";
   className?: string;
 }
@@ -30,6 +31,7 @@ export function Modal({
   title,
   children,
   footer,
+  footerActions,
   size = "lg",
   className,
 }: ModalProps) {
@@ -72,9 +74,14 @@ export function Modal({
         <div className="flex-1 overflow-y-auto p-6">{children}</div>
 
         {/* Footer */}
-        {footer && (
-          <div className="flex justify-end space-x-3 p-6 border-t border-border bg-muted/30">
-            {footer}
+        {(footer || footerActions) && (
+          <div className="flex justify-between items-center p-6 border-t border-border bg-muted/30">
+            <div className="flex items-center">
+              {footerActions}
+            </div>
+            <div className="flex justify-end space-x-3">
+              {footer}
+            </div>
           </div>
         )}
       </div>

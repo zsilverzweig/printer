@@ -31,12 +31,28 @@ export const PortfolioManagerAgent = {
       // Job Execution Prompt
       prompt: (input: { thesis: string }) => `
 When refining an investment thesis, I need to:
-1. Analyze the provided investment thesis
+1. Analyze the provided investment thesis and any refinement guidance
 2. Create a compelling thesis title that captures the core investment idea
 3. Write a refined thesis description that is clear, specific, and actionable
-4. Explain my rationale for the improvements
+4. Develop a detailed, nuanced thesis that thoughtfully extends and builds upon the original ideas
 
-Return a JSON object with: thesis_title, thesis_description, rationale
+IMPORTANT: If refinement guidance is provided, make targeted adjustments rather than wholesale rewrites. Focus on the specific changes requested while preserving the core investment logic.
+
+For the thesis field, create a comprehensive, well-structured investment thesis that:
+- Builds thoughtfully on the original concept
+- Includes specific market dynamics and catalysts
+- Addresses potential risks and counterarguments
+- Provides clear investment rationale with supporting evidence
+- Uses professional investment language and frameworks
+- Is detailed enough to guide actual investment decisions
+- Incorporates any specific refinement guidance provided
+
+Return a JSON object matching this TypeScript interface:
+interface RefineThesisOutput {
+  thesis_title: string;      // Compelling title capturing the core investment idea
+  thesis_description: string; // Clear, specific, and actionable thesis description
+  thesis: string;           // Detailed, nuanced investment thesis with supporting analysis
+}
 
 Here's what the user provided: ${input.thesis}
       `.trim(),
@@ -53,25 +69,25 @@ Here's what the user provided: ${input.thesis}
       prompt: (input: { thesis: string }) => `
 Create a diversified investment portfolio based on this investment thesis: ${input.thesis}
 
-Return a JSON object with the following structure:
-{
-  "name": "Portfolio name that captures the investment theme",
-  "description": "Brief description of the portfolio strategy",
-  "thesis": "The refined investment thesis",
-  "positions": [
-    {
-      "id": "unique_position_id",
-      "symbol": "AAPL",
-      "side": "buy",
-      "status": "draft",
-      "quantity": 100,
-      "rationale": "Why this position fits the thesis",
-      "confidence": "high",
-      "target_price": 200,
-      "stop_loss": 150,
-      "time_horizon": "12 months"
-    }
-  ],
+Return a JSON object matching this TypeScript interface:
+interface CreatePortfolioOutput {
+  name: string;              // Portfolio name that captures the investment theme
+  description: string;       // Brief description of the portfolio strategy
+  thesis: string;           // The refined investment thesis
+  positions: PortfolioPosition[];
+}
+
+interface PortfolioPosition {
+  id: string;               // Unique position identifier
+  symbol: string;           // Stock symbol (e.g., "AAPL")
+  side: "buy" | "sell";     // Position direction
+  status: "draft" | "pending" | "executed" | "cancelled"; // Position status
+  quantity: number;         // Number of shares
+  rationale: string;        // Why this position fits the thesis
+  confidence: "low" | "medium" | "high"; // Confidence level
+  target_price?: number;    // Target price (optional)
+  stop_loss?: number;       // Stop loss price (optional)
+  time_horizon?: string;    // Investment time horizon (optional)
 }
 
 Generate positions that align with the investment thesis.
@@ -91,7 +107,7 @@ export interface RefineThesisInput {
 export interface RefineThesisOutput {
   thesis_title: string;
   thesis_description: string;
-  rationale: string;
+  thesis: string;
 }
 
 export interface CreatePortfolioInput {
