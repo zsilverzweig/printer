@@ -2,6 +2,7 @@ import { JSONSchema7 } from "json-schema";
 
 import { Work } from "@/features/agents/lib/types/work";
 import { log } from "@/lib/utils/logger";
+
 import { CompanyResearchInput, CompanyResearchOutput, WORK_TYPES } from "../types/work-types";
 
 const COMPANY_RESEARCH_INPUT_SCHEMA: JSONSchema7 = {

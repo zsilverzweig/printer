@@ -2,16 +2,16 @@
 
 import { useCallback, useState } from "react";
 
-import { log } from "@/lib/utils/logger";
 import { useAuth } from "@/lib/providers/auth-provider";
+import { log } from "@/lib/utils/logger";
 
 import { CompanyResearchAgent } from "../agents/company-research/company-research-agent";
 import {
   CompanyResearchInput,
   CompanyResearchOutput,
 } from "../agents/company-research/types/work-types";
-import { schemaValidator } from "../lib/utils/schema-validator";
 import { WorkContext } from "../lib/types/work";
+import { schemaValidator } from "../lib/utils/schema-validator";
 
 export function useCompanyResearch() {
   const { user } = useAuth();

@@ -10,24 +10,23 @@ import {
 } from "firebase/firestore";
 import React, { createContext, useContext, useEffect, useState, useRef, ReactNode } from "react";
 
-
 import { deserializePortfolio } from "@/features/ai/agents/services/firestore/converters";
 import { db, COLLECTIONS } from "@/lib/services/firebase";
 import { log } from "@/lib/utils/logger";
 
-import { PortfolioType } from "../types";
+import { Portfolio } from "../types";
 
 export interface PortfolioContextType {
   // Data
-  portfolios: PortfolioType[];
-  selectedPortfolio: PortfolioType | null;
+  portfolios: Portfolio[];
+  selectedPortfolio: Portfolio | null;
   
   // Loading states
   loading: boolean;
   error: string | null;
   
   // Actions
-  selectPortfolio: (portfolio: PortfolioType | null) => void;
+  selectPortfolio: (portfolio: Portfolio | null) => void;
   refreshPortfolios: () => void;
 }
 
@@ -39,11 +38,11 @@ interface PortfolioProviderProps {
 }
 
 export function PortfolioProvider({ userId, children }: PortfolioProviderProps) {
-  const [portfolios, setPortfolios] = useState<PortfolioType[]>([]);
-  const [selectedPortfolio, setSelectedPortfolio] = useState<PortfolioType | null>(null);
+  const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
+  const [selectedPortfolio, setSelectedPortfolio] = useState<Portfolio | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const selectedPortfolioRef = useRef<PortfolioType | null>(null);
+  const selectedPortfolioRef = useRef<Portfolio | null>(null);
 
   useEffect(() => {
     if (!userId) {
@@ -79,7 +78,7 @@ export function PortfolioProvider({ userId, children }: PortfolioProviderProps) 
             firstDoc: snapshot.docs.length > 0 ? snapshot.docs[0].data() : null
           }, "PortfolioProvider");
 
-          const portfolioData: PortfolioType[] = snapshot.docs.map((doc) => {
+          const portfolioData: Portfolio[] = snapshot.docs.map((doc) => {
             try {
               return deserializePortfolio(doc.id, doc.data());
             } catch (error) {
@@ -145,7 +144,7 @@ export function PortfolioProvider({ userId, children }: PortfolioProviderProps) 
     };
   }, [userId]);
 
-  const selectPortfolio = (portfolio: PortfolioType | null) => {
+  const selectPortfolio = (portfolio: Portfolio | null) => {
     selectedPortfolioRef.current = portfolio;
     setSelectedPortfolio(portfolio);
   };

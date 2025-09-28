@@ -2,23 +2,24 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import { PortfolioManagement } from "../portfolio-management";
 
-// Mock the usePortfolios hook
-const mockAddPortfolio = jest.fn();
+// Mock the usePortfolio hook
 const mockCreatePortfolio = jest.fn();
 const mockUpdatePortfolio = jest.fn();
 const mockDeletePortfolio = jest.fn();
-const mockCreatePortfolioDraftFromThesis = jest.fn();
 
-jest.mock("../../hooks/use-portfolios", () => ({
-  usePortfolios: () => ({
+jest.mock("../../hooks/use-portfolio", () => ({
+  usePortfolio: () => ({
     portfolios: [],
     loading: false,
+    creating: false,
+    updating: false,
+    deleting: false,
     error: null,
     createPortfolio: mockCreatePortfolio,
-    createPortfolioDraftFromThesis: mockCreatePortfolioDraftFromThesis,
     updatePortfolio: mockUpdatePortfolio,
     deletePortfolio: mockDeletePortfolio,
-    addPortfolio: mockAddPortfolio,
+    selectPortfolio: jest.fn(),
+    refreshPortfolios: jest.fn(),
   }),
 }));
 
@@ -31,10 +32,10 @@ jest.mock("@/features/ai/agents/hooks/use-agents", () => ({
   }),
 }));
 
-// Mock the wizard stream dialog
-jest.mock("../portfolio-wizard-stream-dialog", () => ({
-  PortfolioWizardStreamDialog: ({ onComplete, onOpenChange }: any) => (
-    <div data-testid="wizard-stream-dialog">
+// Mock the portfolio creator dialog
+jest.mock("../portfolio-creator-dialog", () => ({
+  PortfolioCreatorDialog: ({ onComplete, onOpenChange }: any) => (
+    <div data-testid="portfolio-creator-dialog">
       <button
         onClick={() => {
           onComplete({
@@ -52,7 +53,7 @@ jest.mock("../portfolio-wizard-stream-dialog", () => ({
           onOpenChange(false);
         }}
       >
-        Complete Wizard
+        Complete Creation
       </button>
     </div>
   ),

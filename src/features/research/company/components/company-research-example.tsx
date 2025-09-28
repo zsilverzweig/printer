@@ -1,17 +1,17 @@
 "use client";
 
+import { Loader2 } from "lucide-react";
 import React, { useState } from "react";
 
+import { CompanyResearchInput } from "@/features/agents/agents/company-research/types/work-types";
+import { useCompanyResearch } from "@/features/agents/hooks/use-company-research";
 import { Button } from "@/lib/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/lib/components/ui/card";
 import { Input } from "@/lib/components/ui/input";
 import { Label } from "@/lib/components/ui/label";
-import { Textarea } from "@/lib/components/ui/textarea";
-import { useToast } from "@/lib/hooks/use-toast";
-import { Loader2 } from "lucide-react";
 
-import { useCompanyResearch } from "@/features/agents/hooks/use-company-research";
-import { CompanyResearchInput } from "@/features/agents/agents/company-research/types/work-types";
+import { useToast } from "@/lib/hooks/use-toast";
+
 
 export function CompanyResearchExample() {
   const { conductCompanyResearch, isResearching, researchError } = useCompanyResearch();

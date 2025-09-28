@@ -12,12 +12,12 @@ import {
 } from "@/lib/components/ui/card";
 import { Input } from "@/lib/components/ui/input";
 
-import { usePortfolioContext } from "../hooks/use-portfolio-context";
-import { PortfolioType } from "../types";
+import { usePortfolio } from "../hooks/use-portfolio";
+import { Portfolio } from "../types";
 
+import { PortfolioCreatorDialog } from "./portfolio-creator-dialog";
 import { PortfolioDetailsDialog } from "./portfolio-details-dialog";
 import { PortfolioList } from "./portfolio-list";
-import { PortfolioWizardStreamDialog } from "./portfolio-wizard-stream-dialog";
 
 interface PortfolioManagementProps {
   userId: string;
@@ -30,10 +30,10 @@ export function PortfolioManagement({ userId }: PortfolioManagementProps) {
     error,
     updatePortfolio,
     deletePortfolio,
-  } = usePortfolioContext();
+  } = usePortfolio(userId);
   const { agents } = useAgents();
-  const [showWizardDialog, setShowWizardDialog] = useState(false);
-  const [selectedPortfolio, setSelectedPortfolio] = useState<PortfolioType | null>(
+  const [showCreatorDialog, setShowCreatorDialog] = useState(false);
+  const [selectedPortfolio, setSelectedPortfolio] = useState<Portfolio | null>(
     null
   );
   const [searchTerm, setSearchTerm] = useState("");
@@ -51,15 +51,15 @@ export function PortfolioManagement({ userId }: PortfolioManagementProps) {
   );
 
 
-  const handleWizardComplete = (portfolio: PortfolioType) => {
-    setShowWizardDialog(false);
+  const handleCreatorComplete = (portfolio: Portfolio) => {
+    setShowCreatorDialog(false);
     setSelectedPortfolio(portfolio);
   };
 
   
   const handleUpdatePortfolio = async (
     portfolioId: string,
-    updates: Partial<PortfolioType>
+    updates: Partial<Portfolio>
   ) => {
     try {
       await updatePortfolio(portfolioId, updates);
@@ -116,7 +116,7 @@ export function PortfolioManagement({ userId }: PortfolioManagementProps) {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button onClick={() => setShowWizardDialog(true)}>
+          <Button onClick={() => setShowCreatorDialog(true)}>
             Create Portfolio
           </Button>
         </div>
@@ -181,10 +181,11 @@ export function PortfolioManagement({ userId }: PortfolioManagementProps) {
       />
 
       {/* Dialogs */}
-      <PortfolioWizardStreamDialog
-        open={showWizardDialog}
-        onOpenChange={setShowWizardDialog}
-        onComplete={handleWizardComplete}
+      <PortfolioCreatorDialog
+        open={showCreatorDialog}
+        onOpenChange={setShowCreatorDialog}
+        onComplete={handleCreatorComplete}
+        userId={userId}
       />
 
       <PortfolioDetailsDialog

@@ -1,6 +1,7 @@
 import { AI_MODELS } from "@/lib/services/ai-service";
 
 import { BaseAgent } from "../../lib/types/base-agent";
+
 import { companyResearchWork } from "./work/company-research";
 
 export const COMPANY_RESEARCH_AGENT_ID = "company-research-agent";

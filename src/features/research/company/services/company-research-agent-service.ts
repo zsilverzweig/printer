@@ -5,10 +5,10 @@
  * This service bridges the old interface with the new agent system.
  */
 
+import { CompanyResearchInput } from "@/features/agents/agents/company-research/types/work-types";
+import { useCompanyResearch } from "@/features/agents/hooks/use-company-research";
 import { log } from "@/lib/utils/logger";
 
-import { useCompanyResearch } from "@/features/agents/hooks/use-company-research";
-import { CompanyResearchInput } from "@/features/agents/agents/company-research/types/work-types";
 
 import { SimpleResearchResponse } from "../types";
 

@@ -2,8 +2,8 @@
 
 import { useCallback, useMemo } from "react";
 
-import { useCompanyResearch } from "@/features/agents/hooks/use-company-research";
 import { CompanyResearchInput } from "@/features/agents/agents/company-research/types/work-types";
+import { useCompanyResearch } from "@/features/agents/hooks/use-company-research";
 
 import { SimpleResearchResponse } from "../types";
 

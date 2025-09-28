@@ -2,9 +2,7 @@
 
 import { useCallback, useMemo } from "react";
 
-import { useCompanyResearchAgent } from "./use-company-research-agent";
 import { FirestoreCompanyResearchRepository } from "../services/firestore-company-research-repository";
-
 import {
   CompanyResearch,
   CreateCompanyResearchRequest,
@@ -12,6 +10,8 @@ import {
   AgentContext,
   MarketContext,
 } from "../types";
+
+import { useCompanyResearchAgent } from "./use-company-research-agent";
 
 /**
  * Hook that provides the company research service functionality
