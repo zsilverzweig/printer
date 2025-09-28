@@ -244,34 +244,43 @@ Provide comprehensive, well-structured analysis with specific data points and ac
     additionalContext?: Record<string, unknown>
   ): string {
     const basePrompt = `
-Conduct comprehensive investment research on ${ticker}. Provide detailed qualitative analysis covering:
+Conduct comprehensive investment research on ${ticker}. Provide detailed qualitative analysis using **Markdown formatting** with proper headers, bullet points, and emphasis.
 
-1. Company Overview
-   - Business model and operations
-   - Market position and competitive advantages
-   - Management team and corporate governance
+Structure your response with clear markdown sections:
 
-2. Financial Analysis
-   - Revenue growth and profitability trends
-   - Balance sheet strength and cash flow
-   - Financial health assessment
+# Company Overview
+- Business model and operations
+- Market position and competitive advantages
+- Management team and corporate governance
 
-3. Market Analysis
-   - Industry dynamics and trends
-   - Competitive landscape
-   - Market positioning and competitive moats
+# Financial Analysis
+- Revenue growth and profitability trends
+- Balance sheet strength and cash flow
+- Financial health assessment
 
-4. Investment Thesis
-   - Key strengths and growth opportunities
-   - Risks and challenges
-   - Strategic positioning and competitive advantages
+# Market Analysis
+- Industry dynamics and trends
+- Competitive landscape
+- Market positioning and competitive moats
 
-5. Investment Recommendation
-   - Clear recommendation: BUY, HOLD, or SELL
-   - Rationale for the recommendation
-   - Key factors driving the decision
+# Investment Thesis
+- Key strengths and growth opportunities
+- Risks and challenges
+- Strategic positioning and competitive advantages
 
-Focus on qualitative insights, strategic analysis, and investment rationale. Structure your response with clear sections and conclude with a definitive investment recommendation (BUY/HOLD/SELL) and the reasoning behind it.
+# Investment Recommendation
+- Clear recommendation: **BUY**, **HOLD**, or **SELL**
+- Rationale for the recommendation
+- Key factors driving the decision
+
+Use proper markdown formatting including:
+- Headers with # and ##
+- **Bold text** for emphasis
+- Bullet points with -
+- Numbered lists where appropriate
+- Tables if relevant data is available
+
+Focus on qualitative insights, strategic analysis, and investment rationale. Structure your response with clear markdown sections and conclude with a definitive investment recommendation (BUY/HOLD/SELL) and the reasoning behind it.
 `;
 
     let enhancedPrompt = basePrompt;

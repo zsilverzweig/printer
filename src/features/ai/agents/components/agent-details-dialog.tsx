@@ -177,7 +177,29 @@ export function AgentDetailsDialog({
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <label className="block text-sm font-medium mb-2">Model</label>
-                <p className="text-foreground">{agent.model?.name || (typeof agent.model === 'string' ? agent.model : "Unknown")}</p>
+                <p className="text-foreground">
+                  {(() => {
+                    // Debug logging
+                    console.log("Agent model object:", {
+                      model: agent.model,
+                      modelType: typeof agent.model,
+                      modelName: agent.model?.name,
+                      modelNameType: typeof agent.model?.name,
+                      modelKeys: agent.model ? Object.keys(agent.model) : 'no model'
+                    });
+                    
+                    if (agent.model?.name) {
+                      return agent.model.name;
+                    } else if (typeof agent.model === 'string') {
+                      return agent.model;
+                    } else if (agent.model && typeof agent.model === 'object') {
+                      // Try to extract name from object structure
+                      return agent.model.name || agent.model.model || JSON.stringify(agent.model);
+                    } else {
+                      return "Unknown";
+                    }
+                  })()}
+                </p>
               </div>
               <div>
                 <label className="block text-sm font-medium mb-2">

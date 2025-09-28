@@ -12,16 +12,27 @@ import {
 import { Separator } from "@/lib/components/ui/separator";
 
 import { CompanyResearch } from "../types";
+import { MarkdownResearchViewer } from "./markdown-research-viewer";
 
 interface CompanyResearchDetailsProps {
   research: CompanyResearch;
-  onRefresh: () => Promise<void>;
+  onRefresh?: () => void;
 }
 
 export function CompanyResearchDetails({
   research,
   onRefresh,
 }: CompanyResearchDetailsProps) {
+  
+  // Debug logging to see if details component is receiving updates
+  console.log("CompanyResearchDetails render", {
+    researchId: research.id,
+    ticker: research.companyTicker,
+    status: research.status,
+    hasReport: !!research.researchReport,
+    reportLength: research.researchReport?.length,
+    hasSummary: !!research.executiveSummary
+  });
   const getStatusColor = (status: CompanyResearch['status']) => {
     switch (status) {
       case 'completed':
@@ -153,9 +164,12 @@ export function CompanyResearchDetails({
               <Badge className={getStatusColor(research.status)}>
                 {getStatusLabel(research.status)}
               </Badge>
-              <Button variant="outline" size="sm" onClick={onRefresh}>
-                Refresh
-              </Button>
+              {research.status === 'in_progress' && (
+                <div className="flex items-center gap-2 text-sm text-blue-600">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                  <span>Live Updates</span>
+                </div>
+              )}
             </div>
           </div>
         </CardHeader>
@@ -221,7 +235,7 @@ export function CompanyResearchDetails({
                 <CardTitle className="text-lg">Executive Summary</CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-sm leading-relaxed">{research.executiveSummary}</p>
+                <MarkdownResearchViewer content={research.executiveSummary} />
               </CardContent>
             </Card>
           )}
@@ -245,11 +259,7 @@ export function CompanyResearchDetails({
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="prose prose-sm max-w-none">
-                <div className="whitespace-pre-wrap text-sm leading-relaxed">
-                  {research.researchReport}
-                </div>
-              </div>
+              <MarkdownResearchViewer content={research.researchReport} />
             </CardContent>
           </Card>
 

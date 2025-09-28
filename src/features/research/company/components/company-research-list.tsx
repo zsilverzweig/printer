@@ -27,6 +27,14 @@ export function CompanyResearchList({
   onDeleteResearch,
   loading,
 }: CompanyResearchListProps) {
+  
+  // Debug logging to see if list component is receiving updates
+  console.log("CompanyResearchList render", {
+    researchCount: research.length,
+    researchStatuses: research.map(r => ({ id: r.id, ticker: r.companyTicker, status: r.status })),
+    selectedResearchId: selectedResearch?.id,
+    loading
+  });
   const getStatusColor = (status: CompanyResearch['status']) => {
     switch (status) {
       case 'completed':
