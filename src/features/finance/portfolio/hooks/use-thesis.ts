@@ -5,7 +5,7 @@ import { apiService } from "@/lib/services/api-service";
 export interface RefineThesisResult {
   thesis_title: string;
   thesis_description: string;
-  rationale: string;
+  thesis: string;
 }
 
 export interface UseThesisReturn {

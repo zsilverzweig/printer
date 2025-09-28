@@ -155,8 +155,8 @@ export function PortfolioCreatorDialog({
       default:
         return (
           <ModalForm onSubmit={handleSubmit} id="portfolio-creator-form">
-            <ModalSection>
-              <ModalField>
+            <ModalSection title="Portfolio Details">
+              <ModalField label="Thesis Title">
                 <Label htmlFor="portfolio-name">Thesis Title</Label>
                 <Input
                   id="portfolio-name"
@@ -166,7 +166,7 @@ export function PortfolioCreatorDialog({
                 />
               </ModalField>
               
-              <ModalField>
+              <ModalField label="Thesis Description">
                 <Label htmlFor="description">Thesis Description</Label>
                 <Textarea
                   id="description"
@@ -177,7 +177,7 @@ export function PortfolioCreatorDialog({
                 />
               </ModalField>
               
-              <ModalField>
+              <ModalField label="Investment Thesis">
                 <Label htmlFor="thesis">Investment Thesis</Label>
                 <Textarea
                   id="thesis"
@@ -189,7 +189,7 @@ export function PortfolioCreatorDialog({
                 />
               </ModalField>
 
-              <ModalField>
+              <ModalField label="Refinement Guidance (Optional)">
                 <Label htmlFor="refinement-guidance">Refinement Guidance (Optional)</Label>
                 <Textarea
                   id="refinement-guidance"
