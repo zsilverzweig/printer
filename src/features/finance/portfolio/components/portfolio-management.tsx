@@ -17,7 +17,7 @@ import { Portfolio } from "../types";
 
 import { PortfolioDetailsDialog } from "./portfolio-details-dialog";
 import { PortfolioList } from "./portfolio-list";
-import { PortfolioWizardDialog } from "./portfolio-wizard-dialog";
+import { PortfolioWizardStreamDialog } from "./portfolio-wizard-stream-dialog";
 
 interface PortfolioManagementProps {
   userId: string;
@@ -28,7 +28,6 @@ export function PortfolioManagement({ userId }: PortfolioManagementProps) {
     portfolios,
     loading,
     error,
-    createPortfolioDraftFromThesis,
     updatePortfolio,
     deletePortfolio,
   } = usePortfolios(userId);
@@ -52,17 +51,9 @@ export function PortfolioManagement({ userId }: PortfolioManagementProps) {
   );
 
 
-  const handleWizardCreate = async (
-    thesis: string,
-    options: { name?: string; description?: string }
-  ) => {
-    try {
-      const draft = await createPortfolioDraftFromThesis(thesis, options);
-      setShowWizardDialog(false);
-      setSelectedPortfolio(draft);
-    } catch {
-      // Error handling is done in the hook
-    }
+  const handleWizardComplete = (portfolio: Portfolio) => {
+    setShowWizardDialog(false);
+    setSelectedPortfolio(portfolio);
   };
 
   
@@ -190,10 +181,10 @@ export function PortfolioManagement({ userId }: PortfolioManagementProps) {
       />
 
       {/* Dialogs */}
-      <PortfolioWizardDialog
+      <PortfolioWizardStreamDialog
         open={showWizardDialog}
         onOpenChange={setShowWizardDialog}
-        onGenerate={handleWizardCreate}
+        onComplete={handleWizardComplete}
       />
 
       <PortfolioDetailsDialog
