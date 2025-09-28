@@ -63,6 +63,19 @@ export interface AIAgent {
   };
 }
 
+// Generic agent interface that can accept any agent structure
+export interface GenericAgent {
+  id: string;
+  name: string;
+  description: string;
+  systemPrompt: string;
+  model: {
+    name: string;
+    temperature: number;
+    maxTokens: number;
+  };
+}
+
 export interface AIRequest {
   id: string;
   agentId: string;
