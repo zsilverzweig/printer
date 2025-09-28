@@ -2,110 +2,115 @@
 
 ## System Overview
 
-Printer is built as a Next.js web application with Firebase backend, orchestrating a multi-agent AI system for investment research and decision-making.
+Printer is built as a Next.js 14 web application with Firebase backend, orchestrating a multi-agent AI system for investment research and decision-making. The system uses TypeScript throughout with a modern React-based frontend and serverless backend architecture.
 
 ## Architecture Stack
 
-### Frontend & Orchestration
+### Frontend & UI Framework
 
-- **Next.js** - React-based web interface for monitoring and control
-- **Firebase Hosting** - Static site deployment
-- **Real-time updates** - Live portfolio monitoring and agent status
+- **Next.js 14** - React-based web interface with App Router
+- **React 18** - Modern React with hooks and concurrent features
+- **TypeScript** - Full type safety across the application
+- **Tailwind CSS** - Utility-first CSS framework for styling
+- **Radix UI** - Accessible component primitives (dialogs, dropdowns, etc.)
+- **ShadCN/UI** - Pre-built component library with consistent design system
+- **Lucide React** - Icon library for consistent iconography
 
 ### Backend & Data
 
-- **Firebase Functions** - Serverless API endpoints (TypeScript)
-- **Firestore** - Primary database with native vector search capabilities
-- **Event Logging** - Simple event-based data model for trades and decisions
-- **Firebase Authentication** - User management and security
+- **Next.js API Routes** - Serverless API endpoints (TypeScript)
+- **Firebase Firestore** - Primary NoSQL database with real-time capabilities
+- **Firebase Authentication** - Google OAuth and user management
+- **Firebase Hosting** - Static site deployment and CDN
+- **Event-based Architecture** - Real-time updates for portfolio and agent status
 
 ### AI & ML Infrastructure
 
-- **Multi-Agent System** - Custom-built specialized AI agents with persistent context
-- **Custom Orchestration** - TypeScript-based agent coordination (no external frameworks initially)
-- **Vector Database** - Firestore's native vector search for semantic similarity
-- **OpenAI GPT-4/Claude** - Primary reasoning engines with built-in market knowledge
-- **Local Models** - Llama 3/Mistral for cost-sensitive operations
-- **AI-First Approach** - Leverage LLM training data for company analysis and sector insights
+- **OpenAI GPT Models** - Primary AI reasoning engines
+  - GPT-4o (128k context, vision, function calling)
+  - GPT-4o-mini (cost-optimized for high-volume tasks)
+  - GPT-4-turbo (high-quality analysis)
+  - GPT-3.5-turbo (basic tasks)
+- **Custom Agent System** - TypeScript-based agent orchestration
+- **Cost Monitoring** - Real-time AI usage tracking and budgeting
+- **Model Selection** - Dynamic model selection based on task complexity and cost
 
-### Data Sources & APIs (Phase 1 - Free/Low-Cost)
+### External APIs & Data Sources
 
-- **AI Model Knowledge** - GPT-4/Claude training data for company analysis and sector knowledge (primary source)
-- **Public Financial Data** - Yahoo Finance API (free), SEC EDGAR (free), company websites
-- **News & Sentiment** - RSS feeds, public news APIs, social media scraping
-- **Web Scraping** - Company investor relations pages, earnings transcripts, press releases
-- **Open Data** - Government economic data, industry reports, academic research
+#### Currently Integrated
+- **Alpaca Markets API** - Paper and live trading, account management, real-time quotes
+- **OpenAI API** - GPT models for AI reasoning and analysis
+- **Stripe API** - Payment processing for subscriptions and upgrades
+- **Sentry** - Error tracking and performance monitoring
 
-### Future Data Sources (Phase 2+)
+#### Planned Integration (Phase 1)
+- **SEC EDGAR API** - Free access to SEC filings (10-K, 10-Q, 8-K)
+- **Web Search APIs** - Google Search API for recent company news
+- **News APIs** - Financial news aggregation and sentiment analysis
+- **Financial Data APIs** - Yahoo Finance, Alpha Vantage for market data
 
-- **Premium Market Data** - Alpha Vantage, IEX Cloud, Bloomberg Terminal API
+#### Future Data Sources (Phase 2+)
+- **Premium Market Data** - Bloomberg Terminal API, IEX Cloud
 - **Professional News** - Reuters, AP, financial news APIs
 - **Alternative Data** - Glassdoor, GitHub, Patent databases
 - **Real-time Feeds** - High-frequency market data, live news streams
 
 ### Development & Deployment
 
-- **Vercel** - Frontend deployment and CI/CD
+- **Next.js Build System** - Optimized production builds with TypeScript
 - **Firebase CLI** - Backend deployment and management
+- **Jest** - Testing framework with React Testing Library
+- **ESLint** - Code linting and formatting
 - **Git** - Version control and collaboration
 
 ## Agent Architecture
 
-### What Makes an "Agent"
+### Current Implementation
 
+**Predefined Agent Archetypes**
+- **Portfolio Manager** - Transforms theses into trade-ready positions
+- **Business Fundamentals Agent** - Analyzes revenue, margins, growth metrics
+- **Risk Assessment Agent** - Identifies and quantifies investment risks
+- **Narrative Analyst** - Analyzes market sentiment and investment narratives
+- **Counterpoint Agent** - Provides adversarial testing and challenges
+- **Research Analyst** - Conducts comprehensive company research
+
+**Agent System Features**
 - **Persistent Context** - Each agent maintains memory of previous analyses
-- **Specialized Role** - Tailored prompts and responsibilities
-- **Consistent Approach** - Same agent handles similar situations similarly
-- **Learning Capability** - Agents improve over time with more context
+- **Specialized Roles** - Tailored prompts and responsibilities for each archetype
+- **Cost Optimization** - Dynamic model selection based on task complexity
+- **Real-time Monitoring** - Live tracking of agent performance and costs
+- **Error Handling** - Robust error recovery and retry mechanisms
 
-### Agent Management System
+### Agent Configuration
 
-**Agent Builder UI**
+**Core Properties**
+- **Role Definition** - Specific responsibilities and expertise areas
+- **Prompt Templates** - Structured prompts with variable substitution
+- **Model Selection** - GPT-4o, GPT-4o-mini, GPT-4-turbo, GPT-3.5-turbo
+- **Temperature Settings** - Optimized for different analysis types
+- **Token Limits** - Cost-aware token management
+- **Output Schemas** - Structured JSON responses for consistent parsing
 
-- Visual interface for creating and editing agents
-- Drag-and-drop prompt template builder
-- Real-time agent testing and validation
-- Configuration parameter management
+### Cost Management & Monitoring
 
-**Agent Configuration**
+**Real-time Cost Tracking**
+- **Daily/Hourly Limits** - Configurable cost thresholds
+- **Per-request Limits** - Individual request cost controls
+- **Token Usage Tracking** - Detailed token consumption monitoring
+- **Model Cost Optimization** - Automatic model selection based on budget
 
-- Role definition and responsibilities
-- Prompt templates with variables
-- Context management settings
-- Output format schemas
-- Performance and error handling settings
-- Cost management and model tier selection
-- Model compatibility across GPT stack
+**Cost Monitoring Features**
+- **Real-time Alerts** - Notifications when approaching limits
+- **Cost Analytics** - Detailed breakdown by agent, operation, and user
+- **Budget Management** - Automatic throttling when limits exceeded
+- **Historical Tracking** - Cost trends and optimization insights
 
-**Agent Version Control**
-
-- Git-like versioning for agent configurations
-- Branching system for experimental variants
-- A/B testing framework
-- Rollback and deployment management
-
-### Cost Management & Model Compatibility
-
-**Model Tier System**
-
-- GPT-3.5, GPT-4, GPT-4 Turbo, Claude, Llama, etc.
-- Seamless switching between model providers
-- Cost-aware model selection algorithms
-- Development vs production model configurations
-
-**Cost Optimization**
-
-- Real-time cost tracking and budgeting
-- Token usage optimization and prompt compression
-- Model fallback system for budget limits
-- A/B testing across model tiers for cost/quality balance
-
-**Model Compatibility**
-
-- Unified API interface across different models
-- Prompt adaptation for model-specific requirements
-- Output format standardization
-- Performance benchmarking across model tiers
+**Model Selection Strategy**
+- **GPT-4o** - High-complexity analysis and reasoning
+- **GPT-4o-mini** - Cost-effective for routine tasks
+- **GPT-4-turbo** - Balanced quality and cost for standard analysis
+- **GPT-3.5-turbo** - Basic tasks and simple operations
 
 ### Agent Team System
 
@@ -154,74 +159,134 @@ Printer is built as a Next.js web application with Firebase backend, orchestrati
 ## Data Flow
 
 ```
-External APIs → Firebase Functions → Firestore
+External APIs (Alpaca, OpenAI) → Next.js API Routes → Firebase Firestore
                     ↓
             Custom Agent Orchestration (TypeScript)
                     ↓
             Event Logging → Firestore Collections
                     ↓
-            Vector Embeddings → Firestore Vector Search
-                    ↓
-            Next.js Dashboard ← Real-time Updates
+            Real-time Updates → Next.js Dashboard
 ```
 
-## Event-Based Data Model
+## Database Schema
 
-**Simple Event Structure:**
+**Firestore Collections:**
+- **agents** - Agent configurations and metadata
+- **portfolios** - Portfolio data and positions
+- **company_research** - Research reports and analysis
+- **agent_work** - Agent execution history and results
+- **ai_requests** - AI API request logging
+- **ai_responses** - AI response caching
+- **cost_entries** - Cost tracking and monitoring
+- **user_sessions** - User activity and preferences
 
-- **Event Types**: TRADE_EXECUTED, THESIS_CREATED, AGENT_ANALYSIS, etc.
-- **Event Data**: Structured JSON with relevant context
-- **Audit Trail**: Complete history of all decisions and actions
-- **Real-time Updates**: Dashboard updates immediately on new events
+**Data Model Features:**
+- **Real-time Updates** - Live dashboard updates via Firestore listeners
+- **Structured Data** - TypeScript interfaces for type safety
+- **Audit Trail** - Complete history of all decisions and actions
+- **Caching** - Response caching for performance optimization
+- **Cost Tracking** - Detailed cost monitoring and analytics
 
-**Future ETL to SQL:**
+## Environment Configuration
 
-- Complex reporting needs will trigger ETL to Cloud SQL
-- Maintains simple MVP approach while enabling advanced analytics
+### Required Environment Variables
+
+**Firebase Configuration:**
+```bash
+NEXT_PUBLIC_FIREBASE_API_KEY=your_firebase_api_key
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=your_project_id
+NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=your_project.appspot.com
+NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
+NEXT_PUBLIC_FIREBASE_APP_ID=your_app_id
+NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID=your_measurement_id
+```
+
+**AI Services:**
+```bash
+OPENAI_API_KEY=your_openai_api_key
+```
+
+**Trading Integration:**
+```bash
+ALPACA_CLIENT_ID=your_alpaca_client_id
+ALPACA_CLIENT_SECRET=your_alpaca_client_secret
+ALPACA_API_BASE_URL=https://api.alpaca.markets
+ALPACA_PAPER_API_BASE_URL=https://paper-api.alpaca.markets
+```
+
+**Payment Processing:**
+```bash
+NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_test_...
+STRIPE_SECRET_KEY=sk_test_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+```
+
+**Monitoring & Security:**
+```bash
+NEXT_PUBLIC_SENTRY_DSN=your_sentry_dsn
+SENTRY_AUTH_TOKEN=your_sentry_auth_token
+JWT_SECRET=your_jwt_secret
+ADMIN_API_KEY=your_admin_api_key
+```
+
+**Cost Management:**
+```bash
+DAILY_COST_LIMIT=50
+HOURLY_COST_LIMIT=10
+PER_REQUEST_COST_LIMIT=5
+```
 
 ## Development Phases
 
-### Phase 1: MVP (Firebase + Next.js)
+### Phase 1: Current MVP ✅ COMPLETED
 
-- Custom-built agent system with TypeScript
-- Event-based data model in Firestore
-- Simple web interface for monitoring
-- Core portfolio tracking with event logging
-- Manual trade execution with audit trail
+- ✅ Next.js 14 with TypeScript and modern React
+- ✅ Firebase Firestore for data persistence
+- ✅ OpenAI GPT models for AI reasoning
+- ✅ Alpaca Markets integration for trading
+- ✅ Stripe integration for payments
+- ✅ Real-time dashboard with live updates
+- ✅ Cost monitoring and budget controls
 
-### Phase 2: Scale (Hybrid Architecture)
+### Phase 2: Enhanced Research 🚧 IN PROGRESS
 
-- Keep Next.js frontend
-- Migrate heavy computation to AWS
-- Add advanced ML pipelines
-- Automated trade execution
+- 🚧 SEC EDGAR API integration for filings
+- 🚧 Web search integration for current information
+- 🚧 Enhanced company research capabilities
+- 🚧 Multi-source data synthesis
+- 🚧 Advanced research output with source attribution
 
-### Phase 3: Enterprise (Full AWS)
+### Phase 3: Scale & Optimization 🚧 PLANNED
 
-- Complete migration to AWS infrastructure
-- High-frequency trading capabilities
-- Advanced analytics and reporting
-- Multi-user support
+- 🚧 Advanced caching and performance optimization
+- 🚧 Enhanced monitoring and analytics
+- 🚧 Automated trade execution
+- 🚧 Advanced portfolio management features
 
 ## Security & Compliance
 
-- **Firebase Security Rules** - Database access control
-- **API Key Management** - Secure external API integration
-- **Audit Logging** - Complete decision trail
-- **Data Encryption** - At rest and in transit
-- **Compliance Tracking** - Regulatory requirement monitoring
+- **Firebase Security Rules** - Database access control and user permissions
+- **API Key Management** - Secure external API integration with environment variables
+- **OAuth Integration** - Secure Alpaca account linking with token management
+- **Audit Logging** - Complete decision trail and user activity tracking
+- **Data Encryption** - At rest and in transit via Firebase and HTTPS
+- **Rate Limiting** - Built-in rate limiting for API endpoints and AI requests
 
 ## Performance Considerations
 
-- **Real-time Updates** - Firebase real-time listeners for live data
-- **Vector Search Optimization** - Efficient similarity queries
-- **Agent Context Management** - Balanced memory vs. performance
-- **API Rate Limiting** - Respect external service limits
-- **Cost Optimization** - Smart use of paid AI services
+- **Real-time Updates** - Firebase real-time listeners for live dashboard updates
+- **Response Caching** - AI response caching to reduce costs and improve performance
+- **Cost Optimization** - Smart model selection and token usage optimization
+- **API Rate Limiting** - Respect external service limits (Alpaca, OpenAI)
+- **Error Handling** - Robust error recovery and retry mechanisms
+- **Loading States** - Optimistic UI updates for better user experience
 
 ## Monitoring & Observability
 
-- **Firebase Analytics** - User behavior and system usage
-- **Performance Monitoring** - Agent response times and accuracy
-- **Error Tracking** - System failures and recovery
-- **Business Metrics** - Portfolio performance and decision quality
+- **Sentry Integration** - Error tracking and performance monitoring
+- **Cost Monitoring** - Real-time AI usage tracking and budget alerts
+- **Firebase Analytics** - User behavior and system usage analytics
+- **Performance Metrics** - Agent response times and accuracy tracking
+- **Business Metrics** - Portfolio performance and decision quality monitoring
+- **Debug Logging** - Comprehensive logging for development and troubleshooting

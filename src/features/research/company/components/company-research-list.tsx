@@ -203,7 +203,8 @@ export function CompanyResearchList({
                   size="sm"
                   onClick={(e) => {
                     e.stopPropagation();
-                    onDeleteResearch(item.id);
+                    setResearchToDelete(item);
+                    setDeleteConfirmOpen(true);
                   }}
                   className="ml-2 text-red-600 hover:text-red-700 hover:bg-red-50"
                 >
@@ -214,6 +215,36 @@ export function CompanyResearchList({
           ))}
         </div>
       </CardContent>
+
+      {/* Delete Confirmation Dialog */}
+      <ConfirmationDialog
+        isOpen={deleteConfirmOpen}
+        onClose={() => {
+          setDeleteConfirmOpen(false);
+          setResearchToDelete(null);
+        }}
+        onConfirm={async () => {
+          if (researchToDelete) {
+            setIsDeleting(true);
+            try {
+              await onDeleteResearch(researchToDelete.id);
+              setDeleteConfirmOpen(false);
+              setResearchToDelete(null);
+            } catch (error) {
+              console.error("Failed to delete research:", error);
+            } finally {
+              setIsDeleting(false);
+            }
+          }
+        }}
+        title="Delete Research Report"
+        description={`Are you sure you want to delete the research report for ${researchToDelete?.companyTicker}? This action cannot be undone.`}
+        variant="destructive"
+        confirmText="Delete"
+        cancelText="Cancel"
+        isLoading={isDeleting}
+        loadingText="Deleting..."
+      />
     </Card>
   );
 }

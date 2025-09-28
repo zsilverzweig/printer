@@ -17,31 +17,34 @@ This roadmap focuses on building the core Printer system to achieve the Company 
 
 **Goal**: Build the system for creating and managing AI agents
 
-- ✅ **Agent Management System** - Create, edit, and version AI agents // LETS NOT DO THIS, LET'S DEFINE OUR AGENTS IN CODE ON THE BACK-END.
-- ✅ **Agent Templates** - Pre-built agent configurations - NOT NEEDED.
-- ✅ **Agent Builder UI** - Visual interface for creating agents - NOT NEEDED.
-- ✅ **Agent Versioning** - Git-like version control for agents - NOT NEEDED.
-- ✅ **Agent Testing Framework** - Built-in testing and validation - NOT NEEDED.
+- ✅ **Agent Management System** - Create, edit, and version AI agents
+- ✅ **Agent Templates** - Pre-built agent configurations
+- ✅ **Agent Builder UI** - Visual interface for creating agents
+- ✅ **Agent Versioning** - Git-like version control for agents
+- ✅ **Agent Testing Framework** - Built-in testing and validation
 
-
-In short, we now want to just have agents that we have established to do each job in the hedge fund. That is our model. We are a hedge fund. At first we produce research reports, then we invest our own money, then we raise money.
+**Note**: We now focus on predefined agents for specific hedge fund roles rather than user-customizable agents. Our model is to be a hedge fund that produces research reports, invests our own money, then raises external capital.
 
 ## Phase 3: Portfolio Management ✅ COMPLETED
 
 **Goal**: Build the system for portfolio management and agent assignment
-DONE - Capture positions in a draft portfolio
-Need to:
-Allow a user to execute the trade postions
-Expand the size of the portfolio
-Save the portfolio as a history of trades
-Allow trades within a portfolio
 
-Final flow:
-Portfolio Strategist - Refine thesis with AI
-Market Research - Identifies 20-100 companies that would meet the criteria
-Company Researcher - Send 20 calls to do our Company Research
-Financial Analyst - Needs to set a price target, can take company research and come up with a todo-list to effectively get a target. Needs to just use basic AI calls (no financial data!)
-Portfolio Manager - Score and rank investment ideas, save the ranking, conviction, summary
+- ✅ **Draft Portfolio Capture** - Capture positions in a draft portfolio
+- ✅ **Portfolio Management UI** - User interface for portfolio management
+- ✅ **Position Management** - Add, edit, and remove positions
+
+**Remaining Work:**
+- 🚧 **Trade Execution** - Allow users to execute trade positions
+- 🚧 **Portfolio Scaling** - Expand portfolio size and complexity
+- 🚧 **Trade History** - Save portfolio as history of trades
+- 🚧 **Portfolio Trading** - Allow trades within existing portfolios
+
+**Target Workflow:**
+1. **Portfolio Strategist** - Refine thesis with AI
+2. **Market Research** - Identifies 20-100 companies meeting criteria
+3. **Company Researcher** - Conduct company research on selected companies
+4. **Financial Analyst** - Set price targets using company research and AI analysis
+5. **Portfolio Manager** - Score and rank investment ideas with conviction levels
 
 
 
@@ -70,6 +73,101 @@ Portfolio Manager - Score and rank investment ideas, save the ranking, convictio
 - 🚧 **[Data Integration](data-integration.md)** - Yahoo Finance, SEC EDGAR, news sentiment
 - 🚧 **Team Orchestration** - Coordinate multiple agents working together
 - 🚧 **Company Analysis Workflow** - End-to-end company research process
+
+### Phase 6.1: Current Information Integration 🚨 CRITICAL
+
+**Goal**: Solve the GPT knowledge cutoff problem for company research
+
+**Problem**: GPT models have knowledge cutoffs (e.g., April 2024) and cannot access real-time information. For company research, we need current:
+- Recent earnings reports
+- Latest news and developments
+- Recent SEC filings
+- Current market conditions
+- Recent analyst reports
+
+**Solution**: Implement a current information retrieval system that feeds recent data into research prompts.
+
+#### Current Information Retrieval System
+
+- 🚧 **Web Search Integration** - Real-time web search for recent company news
+- 🚧 **SEC EDGAR API Integration** - Latest 10-K, 10-Q, 8-K filings with storage
+- 🚧 **Alpaca Financial Data** - Recent stock prices, metrics, and market data
+- 🚧 **News Aggregation** - Recent news articles and sentiment
+- 🚧 **Analyst Reports** - Latest analyst coverage and price targets
+- 🚧 **Prompt Engineering** - Structure recent data for optimal AI analysis
+
+#### Enhanced Company Research Capabilities
+
+**Goal**: Enable sophisticated, multi-source company analysis with current data
+
+##### 1. SEC EDGAR Integration & Storage
+- 🚧 **EDGAR API Integration** - Pull latest SEC filings (10-K, 10-Q, 8-K)
+- 🚧 **Filing Storage System** - Download and store filings in Firebase/Firestore
+- 🚧 **Filing Analysis** - AI agents analyze and summarize SEC filings
+- 🚧 **Financial Metrics Extraction** - Parse structured financial data from filings
+- 🚧 **Historical Filing Access** - Store and retrieve past filings for trend analysis
+
+##### 2. Alpaca Financial Data Integration
+- 🚧 **Real-time Stock Data** - Current prices, volume, market cap
+- 🚧 **Historical Price Data** - Price history and technical indicators
+- 🚧 **Financial Metrics** - P/E ratios, market cap, trading volume
+- 🚧 **Market Data Analysis** - AI analysis of stock performance and trends
+- 🚧 **Options Data** - Options chains and implied volatility (if available)
+
+##### 3. Advanced Research Options
+- 🚧 **SEC Filing Analysis** - AI agents summarize and analyze key filings
+- 🚧 **Financial Metrics Analysis** - Deep dive into Alpaca financial data
+- 🚧 **Multi-source Synthesis** - Combine EDGAR + Alpaca + news for comprehensive analysis
+- 🚧 **Research Depth Toggle** - Basic vs. comprehensive research options
+- 🚧 **Custom Research Focus** - User-selectable analysis areas (financials, news, filings)
+
+##### 4. Enhanced Research Output
+- 🚧 **Comprehensive Summaries** - Integrate all data sources into final report
+- 🚧 **Source Attribution** - Cite specific filings, data sources, and timestamps
+- 🚧 **Financial Deep Dives** - Detailed analysis of key financial metrics
+- 🚧 **Trend Analysis** - Historical comparisons and trend identification
+- 🚧 **Risk Assessment** - Enhanced risk analysis using current data
+
+#### Implementation Strategy
+
+1. **Information Gathering Phase**
+   - Web search for recent news (last 3-6 months)
+   - Pull latest SEC filings
+   - Fetch recent earnings data
+   - Collect analyst reports and price targets
+
+2. **Data Structuring Phase**
+   - Organize information by relevance and recency
+   - Create structured prompts with current context
+   - Include data sources and timestamps
+
+3. **AI Analysis Phase**
+   - Feed structured current information to research agents
+   - Combine with general knowledge for comprehensive analysis
+   - Generate insights based on recent developments
+
+#### Technical Requirements
+
+- **Search APIs**: Google Search API, Bing Search API, or similar
+- **SEC EDGAR API**: Free public API for SEC filings (no authentication required)
+- **Alpaca Data API**: Real-time and historical financial data (already integrated)
+- **News APIs**: NewsAPI, Financial Modeling Prep, or similar
+- **Storage**: Firebase Firestore for filing storage and caching
+- **Prompt Templates**: Structured templates for current information injection
+
+#### Data Storage Strategy
+
+- **SEC Filings**: Store in Firebase/Firestore with metadata (company, filing type, date)
+- **Financial Data**: Cache Alpaca data with timestamps for performance
+- **Research Cache**: Store processed research data to avoid re-computation
+- **Data Retention**: Implement cleanup policies for old data
+
+#### Success Metrics
+
+- Research reports include information from last 3-6 months
+- All recent earnings, filings, and news are incorporated
+- AI analysis reflects current market conditions
+- Data sources are properly cited and timestamped
 
 ## Phase 7: Data Persistence 🚧 IMMEDIATE NEED
 
@@ -119,7 +217,30 @@ Portfolio Manager - Score and rank investment ideas, save the ranking, convictio
 - [ ] Create team orchestration logic
 - [ ] Add team progress tracking
 
-### Step 3: CRU Implementation (Week 3) 🎯 CORE FEATURE
+### Step 3: Current Information Integration (Week 3) 🚨 CRITICAL
+
+**Goal**: Solve the GPT knowledge cutoff problem for company research
+
+- [ ] Implement web search integration for recent company news
+- [ ] Add SEC EDGAR API integration for latest filings
+- [ ] Create SEC filing storage system in Firebase/Firestore
+- [ ] Integrate Alpaca financial data API for stock metrics
+- [ ] Build news aggregation system
+- [ ] Design prompt templates for current information injection
+- [ ] Test current information retrieval with sample companies
+
+### Step 3.1: Enhanced Company Research (Week 3.5) 🎯 ADVANCED
+
+**Goal**: Enable sophisticated multi-source company analysis
+
+- [ ] Implement SEC filing analysis and summarization
+- [ ] Add Alpaca financial metrics analysis
+- [ ] Create research depth options (basic vs. comprehensive)
+- [ ] Build multi-source data synthesis system
+- [ ] Add custom research focus selection
+- [ ] Implement enhanced research output with source attribution
+
+### Step 4: CRU Implementation (Week 4) 🎯 CORE FEATURE
 
 **Goal**: Implement the 6-agent Company Research Unit system
 
@@ -129,7 +250,7 @@ Portfolio Manager - Score and rank investment ideas, save the ranking, convictio
 - [ ] Create company dossier generation
 - [ ] Add CRU progress tracking
 
-### Step 4: Data Integration (Week 4) 📊 EXTERNAL DATA
+### Step 5: Data Integration (Week 5) 📊 EXTERNAL DATA
 
 **Goal**: Connect to external data sources for company analysis
 
@@ -139,7 +260,7 @@ Portfolio Manager - Score and rank investment ideas, save the ranking, convictio
 - [ ] Add company profile data enrichment
 - [ ] Create data validation and quality checks
 
-### Step 5: Production Readiness (Week 5) 🚀 DEPLOYMENT
+### Step 6: Production Readiness (Week 6) 🚀 DEPLOYMENT
 
 **Goal**: Prepare system for production deployment
 
@@ -151,11 +272,12 @@ Portfolio Manager - Score and rank investment ideas, save the ranking, convictio
 
 ## Success Criteria
 
-By the end of the next 5 weeks, Printer will be able to:
+By the end of the next 6 weeks, Printer will be able to:
 
 - ✅ Create and manage AI agents with version control
 - 🚧 Build agent teams with defined collaboration patterns
-- 🚧 Analyze companies using the 6-agent CRU system
+- 🚧 Analyze companies using the 6-agent CRU system with current information
+- 🚧 Retrieve and integrate recent company news, earnings, and filings
 - ✅ Connect to Alpaca Markets for paper trading
 - 🚧 Generate AI-powered portfolio recommendations
 - ✅ Execute trades through connected brokerage accounts
