@@ -11,7 +11,9 @@ import {
   CardHeader,
   CardTitle,
 } from "@/lib/components/ui/card";
+import { Switch } from "@/lib/components/ui/switch";
 import { Input } from "@/lib/components/ui/input";
+import { Label } from "@/lib/components/ui/label";
 import {
   Modal,
   ModalField,
@@ -23,6 +25,7 @@ import { Textarea } from "@/lib/components/ui/textarea";
 
 import { useWizardStream } from "../hooks/use-wizard-stream";
 
+import { ThesisRefinementDialog } from "./thesis-refinement-dialog";
 import { WizardDebugPanel, useWizardDebugLogs } from "./wizard-debug-panel";
 
 const SAMPLE_THESES = [
@@ -63,6 +66,8 @@ export function PortfolioWizardStreamDialog({
   const [portfolioName, setPortfolioName] = useState("");
   const [thesis, setThesis] = useState("");
   const [showDebug, setShowDebug] = useState(false);
+  const [showRefinementDialog, setShowRefinementDialog] = useState(false);
+  const [autoRefineThesis, setAutoRefineThesis] = useState(false);
   const hasCompletedRef = useRef(false);
 
   const {
@@ -89,6 +94,8 @@ export function PortfolioWizardStreamDialog({
       setPortfolioName("");
       setThesis("");
       setShowDebug(false);
+      setShowRefinementDialog(false);
+      setAutoRefineThesis(false);
       stopStream();
       hideDebugPanel();
       hasCompletedRef.current = false;
@@ -130,6 +137,16 @@ export function PortfolioWizardStreamDialog({
     });
   }, [events.length, addLog, debugLogs.length]);
 
+  const handleRefinementComplete = (refinement: {
+    title: string;
+    description: string;
+    rationale: string;
+  }) => {
+    // Update the thesis with the refined description
+    setThesis(refinement.description);
+    setShowRefinementDialog(false);
+  };
+
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!thesis.trim()) {
@@ -138,6 +155,7 @@ export function PortfolioWizardStreamDialog({
 
     await startStream(thesis, {
       name: portfolioName.trim() || undefined,
+      autoRefineThesis, // Pass the refinement flag to the stream
     });
   };
 
@@ -340,21 +358,56 @@ export function PortfolioWizardStreamDialog({
                 />
               </ModalField>
               <ModalField label="Investment Thesis" required>
-                <Textarea
-                  value={thesis}
-                  onChange={(event) => setThesis(event.target.value)}
-                  placeholder="Share the core idea, catalysts, and risk considerations behind your investment thesis."
-                  rows={8}
-                />
+                <div className="space-y-3">
+                  <Textarea
+                    value={thesis}
+                    onChange={(event) => setThesis(event.target.value)}
+                    placeholder="Share the core idea, catalysts, and risk considerations behind your investment thesis."
+                    rows={8}
+                  />
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowRefinementDialog(true)}
+                      disabled={!thesis.trim()}
+                    >
+                      Refine Thesis
+                    </Button>
+                  </div>
+                </div>
               </ModalField>
-              <div className="rounded-md border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900 space-y-1">
-                <p className="font-semibold">How the streaming wizard works</p>
-                <p>
-                  Our Portfolio Manager agent reviews your thesis and
-                  automatically drafts positions using Alpaca's trade
-                  parameters. This version shows real-time progress as the AI
-                  works through each step.
-                </p>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-1">
+                    <Label htmlFor="auto-refine" className="text-sm font-medium">
+                      Auto-refine thesis
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Let the Portfolio Manager improve your thesis before generating the portfolio
+                    </p>
+                  </div>
+                  <Switch
+                    id="auto-refine"
+                    checked={autoRefineThesis}
+                    onCheckedChange={setAutoRefineThesis}
+                  />
+                </div>
+                <div className="rounded-md border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900 space-y-1">
+                  <p className="font-semibold">How the streaming wizard works</p>
+                  <p>
+                    Our Portfolio Manager agent reviews your thesis and
+                    automatically drafts positions using Alpaca's trade
+                    parameters. This version shows real-time progress as the AI
+                    works through each step.
+                  </p>
+                  {autoRefineThesis && (
+                    <p className="mt-2 text-blue-800">
+                      <strong>✨ Enhanced:</strong> Your thesis will be refined by the Portfolio Manager before portfolio generation.
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
           </ModalSection>
@@ -392,6 +445,13 @@ export function PortfolioWizardStreamDialog({
           </ModalSection>
         </ModalForm>
       )}
+
+      {/* Thesis Refinement Dialog */}
+      <ThesisRefinementDialog
+        open={showRefinementDialog}
+        onOpenChange={setShowRefinementDialog}
+        onRefinementComplete={handleRefinementComplete}
+      />
     </Modal>
   );
 }

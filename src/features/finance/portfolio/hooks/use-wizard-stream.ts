@@ -26,7 +26,7 @@ export interface UseWizardStreamReturn {
   portfolio: Portfolio | null;
   startStream: (
     thesis: string,
-    options?: { name?: string; description?: string }
+    options?: { name?: string; description?: string; autoRefineThesis?: boolean }
   ) => Promise<void>;
   stopStream: () => void;
   events: WizardStreamEvent[];
@@ -45,7 +45,7 @@ export function useWizardStream(): UseWizardStreamReturn {
   const startStream = useCallback(
     async (
       thesis: string,
-      options: { name?: string; description?: string } = {}
+      options: { name?: string; description?: string; autoRefineThesis?: boolean } = {}
     ) => {
       if (isStreaming) {
         log.warn("Wizard stream already in progress", {}, "useWizardStream");
@@ -78,6 +78,7 @@ export function useWizardStream(): UseWizardStreamReturn {
             thesis,
             name: options.name,
             description: options.description,
+            autoRefineThesis: options.autoRefineThesis,
           }),
           signal: abortController.signal,
         });

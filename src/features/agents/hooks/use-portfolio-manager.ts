@@ -79,7 +79,8 @@ export function usePortfolioManager(): UsePortfolioManagerReturn {
       
       log.success("usePortfolioManager: Refine thesis completed", {
         originalLength: input.thesis.length,
-        refinedLength: result.refined_thesis.length
+        titleLength: result.thesis_title.length,
+        descriptionLength: result.thesis_description.length
       }, "usePortfolioManager");
 
       return result;

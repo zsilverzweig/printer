@@ -20,7 +20,8 @@ export interface RefineThesisInput {
 }
 
 export interface RefineThesisOutput {
-  refined_thesis: string;
+  thesis_title: string;
+  thesis_description: string;
   rationale: string;
 }
 

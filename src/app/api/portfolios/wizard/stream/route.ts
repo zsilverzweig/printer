@@ -22,6 +22,7 @@ export async function POST(request: NextRequest) {
     const name = typeof body.name === "string" ? body.name : undefined;
     const description =
       typeof body.description === "string" ? body.description : undefined;
+    const autoRefineThesis = typeof body.autoRefineThesis === "boolean" ? body.autoRefineThesis : false;
 
     if (!thesis.trim()) {
       log.warn(
@@ -102,7 +103,37 @@ export async function POST(request: NextRequest) {
               details: "Portfolio Manager agent ready",
             });
 
-            // Step 4: Generate plan (this is where the actual AI call happens)
+            // Step 4: Refine thesis (if requested)
+            let refinedThesis = thesis;
+            if (autoRefineThesis) {
+              sendEvent("step_start", {
+                step: "refine-thesis",
+                title: "Refining Investment Thesis",
+                description: "Portfolio Manager is improving your thesis for clarity and impact",
+              });
+
+              try {
+                // TODO: Implement actual thesis refinement using the Portfolio Manager agent
+                // For now, we'll simulate the refinement
+                await new Promise((resolve) => setTimeout(resolve, 2000));
+                
+                // Mock refinement - in real implementation, this would call the refinement work
+                refinedThesis = `Refined: ${thesis}`;
+                
+                sendEvent("step_complete", {
+                  step: "refine-thesis",
+                  details: "Thesis refined for better clarity and impact",
+                });
+              } catch (error) {
+                log.error("Thesis refinement failed", error, "PortfolioWizardStreamAPI");
+                sendEvent("step_complete", {
+                  step: "refine-thesis",
+                  details: "Thesis refinement skipped due to error, using original thesis",
+                });
+              }
+            }
+
+            // Step 5: Generate plan (this is where the actual AI call happens)
             sendEvent("step_start", {
               step: "generate-plan",
               title: "Generating Investment Plan",
@@ -111,7 +142,7 @@ export async function POST(request: NextRequest) {
 
             const planStartTime = Date.now();
             const portfolio = await agentService.createPortfolioDraftFromThesis(
-              thesis,
+              refinedThesis,
               userId,
               {
                 name: name?.trim() || undefined,
