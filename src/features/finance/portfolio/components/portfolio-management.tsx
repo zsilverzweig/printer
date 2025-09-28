@@ -23,7 +23,7 @@ interface PortfolioManagementProps {
   userId: string;
 }
 
-export function PortfolioManagement({  }: PortfolioManagementProps) {
+export function PortfolioManagement({ userId }: PortfolioManagementProps) {
   const {
     portfolios,
     loading,

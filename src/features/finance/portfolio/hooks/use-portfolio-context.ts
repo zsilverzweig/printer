@@ -12,7 +12,7 @@ import {
   UsePortfolioContextReturn,
 } from "../types";
 
-import { usePortfolioContext as usePortfolioProvider } from "../providers/portfolio-provider";
+import { usePortfolioContext as usePortfolioProviderContext } from "../providers/portfolio-provider";
 
 export function usePortfolioContext(): UsePortfolioContextReturn {
   const {
@@ -22,7 +22,7 @@ export function usePortfolioContext(): UsePortfolioContextReturn {
     error,
     selectPortfolio,
     refreshPortfolios,
-  } = usePortfolioProvider();
+  } = usePortfolioProviderContext();
 
   const [creating, setCreating] = useState(false);
   const [updating, setUpdating] = useState(false);
