@@ -1,5 +1,7 @@
 "use client";
 
+import { Bell, CreditCard, Settings, Shield, User } from "lucide-react";
+
 import { AlpacaConnectionCard } from "@/features/finance/trading/components/alpaca-connection-card";
 import {
   Card,
@@ -15,7 +17,6 @@ import {
   TabsTrigger,
 } from "@/lib/components/ui/tabs";
 import { useAuthContext } from "@/lib/providers/auth-provider";
-import { Bell, CreditCard, Settings, Shield, User } from "lucide-react";
 
 export default function ProfilePage() {
   const { user, isAdmin } = useAuthContext();

@@ -5,7 +5,6 @@ import {
   query, 
   where, 
   onSnapshot, 
-  orderBy,
   QuerySnapshot,
   DocumentData 
 } from "firebase/firestore";

@@ -9,6 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/lib/components/ui/card";
+
 import { SignUpInfoForm } from "./signup-info-form";
 
 /**

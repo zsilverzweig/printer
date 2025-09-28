@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { getServerUser } from "@/lib/auth/server";
 import { companyResearchService } from "@/features/research/company/services/company-research-service";
 import { CreateCompanyResearchRequest } from "@/features/research/company/types";
+import { getServerUser } from "@/lib/auth/server";
 
 /**
  * Company Research API Endpoints

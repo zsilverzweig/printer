@@ -27,7 +27,6 @@
 import { Loader2 } from "lucide-react";
 import { usePathname } from "next/navigation";
 
-import { useUserRouting } from "@/lib/hooks/use-user-routing";
 import { useAuthContext } from "@/lib/providers/auth-provider";
 
 import { LandingPage } from "./landing-page";

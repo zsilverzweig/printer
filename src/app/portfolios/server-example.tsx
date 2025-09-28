@@ -1,7 +1,9 @@
 // Example of server-side authentication with Next.js 14 App Router
 import { requireAppAccess } from "@/lib/auth/server";
-import { AccessControl } from "@/lib/components/access-control";
+
 import { PortfoliosContent } from "./portfolios-content";
+
+import { AccessControl } from "@/lib/components/access-control";
 
 /**
  * Server Component - runs on the server before page renders

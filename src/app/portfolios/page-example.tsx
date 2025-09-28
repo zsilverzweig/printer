@@ -1,8 +1,9 @@
 // Example of how to use the new routing approach
 "use client";
 
-import { AccessControl } from "@/lib/components/access-control";
 import { useUserRouting } from "@/lib/hooks/use-user-routing";
+
+import { AccessControl } from "@/lib/components/access-control";
 
 export default function PortfoliosPage() {
   const { isAdmin, canAccessApp } = useUserRouting();

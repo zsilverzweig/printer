@@ -1,7 +1,5 @@
 "use client";
 
-import { useAuthContext } from "@/lib/providers/auth-provider";
-import { log } from "@/lib/utils/logger";
 import React, {
   createContext,
   useCallback,
@@ -9,6 +7,9 @@ import React, {
   useEffect,
   useState,
 } from "react";
+
+import { useAuthContext } from "@/lib/providers/auth-provider";
+import { log } from "@/lib/utils/logger";
 
 export type TradingEnvironment = "paper" | "live";
 

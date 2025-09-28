@@ -1,9 +1,11 @@
 "use client";
 
+import { AlertTriangle, DollarSign, TestTube } from "lucide-react";
+
 import { Badge } from "@/lib/components/ui/badge";
 import { Button } from "@/lib/components/ui/button";
 import { Card, CardContent } from "@/lib/components/ui/card";
-import { AlertTriangle, DollarSign, TestTube } from "lucide-react";
+
 import { useTradingContext } from "../contexts/trading-context";
 
 export function TradingEnvironmentBanner() {

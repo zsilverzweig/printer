@@ -1,22 +1,21 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState, useRef, ReactNode } from "react";
-
 import { 
   collection, 
   query, 
   where, 
-  onSnapshot, 
-  orderBy,
+  onSnapshot,
   QuerySnapshot,
   DocumentData 
 } from "firebase/firestore";
+import React, { createContext, useContext, useEffect, useState, useRef, ReactNode } from "react";
 
+
+import { deserializeCompanyResearch } from "@/features/ai/agents/services/firestore/converters";
 import { db, COLLECTIONS } from "@/lib/services/firebase";
 import { log } from "@/lib/utils/logger";
 
 import { CompanyResearch } from "../types";
-import { deserializeCompanyResearch } from "@/features/ai/agents/services/firestore/converters";
 
 export interface CompanyResearchContextType {
   // Data

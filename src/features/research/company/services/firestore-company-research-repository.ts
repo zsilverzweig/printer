@@ -10,14 +10,14 @@ import {
   where,
 } from "firebase/firestore";
 
-import { db, COLLECTIONS } from "@/lib/services/firebase";
-import { log } from "@/lib/utils/logger";
-
-import { CompanyResearch, CompanyResearchRepository } from "../types";
 import { 
   serializeCompanyResearch, 
   deserializeCompanyResearch 
 } from "@/features/ai/agents/services/firestore/converters";
+import { db, COLLECTIONS } from "@/lib/services/firebase";
+import { log } from "@/lib/utils/logger";
+
+import { CompanyResearch, CompanyResearchRepository } from "../types";
 
 export class FirestoreCompanyResearchRepository implements CompanyResearchRepository {
   async createResearch(research: CompanyResearch): Promise<CompanyResearch> {

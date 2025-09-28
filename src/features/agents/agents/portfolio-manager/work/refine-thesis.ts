@@ -1,5 +1,6 @@
 // Refine Investment Thesis work implementation
 import { log } from "@/lib/utils/logger";
+
 import { Work, WorkContext } from "../../../lib/types/work";
 import { 
   RefineThesisInput, 

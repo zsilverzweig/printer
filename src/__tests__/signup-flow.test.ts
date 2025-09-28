@@ -1,11 +1,11 @@
 // Comprehensive test for the signup flow
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { useRouter } from 'next/navigation';
+
+import { adminService } from '@/features/admin/services/admin-service';
+import { useWaitlist } from '@/features/waitlist/hooks/use-waitlist';
+import { waitlistService } from '@/features/waitlist/services/waitlist-service';
 import { useAuth } from '@/lib/hooks/use-auth';
 import { useUserRouting } from '@/lib/hooks/use-user-routing';
-import { useWaitlist } from '@/features/waitlist/hooks/use-waitlist';
-import { adminService } from '@/features/admin/services/admin-service';
-import { waitlistService } from '@/features/waitlist/services/waitlist-service';
 import { userService } from '@/lib/services/user-service';
 
 // Mock Next.js router

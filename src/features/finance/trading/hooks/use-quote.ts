@@ -4,6 +4,7 @@ import { useCallback, useRef, useState } from "react";
 
 import { useAuth } from "@/lib/hooks/use-auth";
 import { toast } from "@/lib/utils/toast";
+
 import { useTradingContext } from "../contexts/trading-context";
 
 export interface Quote {

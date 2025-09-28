@@ -1,5 +1,6 @@
-import { setServerUser } from "@/lib/auth/server";
 import { NextRequest, NextResponse } from "next/server";
+
+import { setServerUser } from "@/lib/auth/server";
 
 /**
  * API route to set server-side authentication cookies

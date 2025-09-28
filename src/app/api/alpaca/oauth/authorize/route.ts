@@ -1,6 +1,7 @@
+import { NextRequest, NextResponse } from "next/server";
+
 import { alpacaOAuthService } from "@/features/finance/lib/alpaca-oauth-service";
 import { log } from "@/lib/utils/logger";
-import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(request: NextRequest) {
   try {

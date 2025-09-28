@@ -68,7 +68,7 @@ export function PortfolioList({
                 <label className="block text-sm font-medium text-gray-600 mb-1">
                   Thesis
                 </label>
-                <p className="text-sm text-gray-900 line-clamp-3">
+                <p className="text-sm text-foreground line-clamp-3">
                   {portfolio.thesis}
                 </p>
               </div>

@@ -1,7 +1,9 @@
 // Portfolio Manager agent with work capabilities
 import { AI_MODELS } from "@/lib/services/ai-service";
 import { log } from "@/lib/utils/logger";
+
 import { BaseAgent } from "../../lib/types/base-agent";
+
 import { 
   GeneratePortfolioInput, 
   GeneratePortfolioOutput,

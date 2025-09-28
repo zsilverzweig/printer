@@ -22,6 +22,7 @@ import { Progress } from "@/lib/components/ui/progress";
 import { Textarea } from "@/lib/components/ui/textarea";
 
 import { useWizardStream } from "../hooks/use-wizard-stream";
+
 import { WizardDebugPanel, useWizardDebugLogs } from "./wizard-debug-panel";
 
 const SAMPLE_THESES = [

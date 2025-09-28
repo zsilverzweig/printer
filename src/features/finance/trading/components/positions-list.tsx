@@ -1,5 +1,7 @@
 "use client";
 
+import { X } from "lucide-react";
+
 import { Button } from "@/lib/components/ui/button";
 import {
   Card,
@@ -9,7 +11,6 @@ import {
   CardTitle,
 } from "@/lib/components/ui/card";
 import { AlpacaPosition } from "@/lib/types/alpaca";
-import { X } from "lucide-react";
 
 interface PositionsListProps {
   positions: AlpacaPosition[];
@@ -33,7 +34,7 @@ export function PositionsList({
     }).format(amount);
   };
 
-  const formatNumber = (value: number, decimals: number = 2) => {
+  const formatNumber = (value: number, decimals = 2) => {
     return new Intl.NumberFormat("en-US", {
       minimumFractionDigits: decimals,
       maximumFractionDigits: decimals,

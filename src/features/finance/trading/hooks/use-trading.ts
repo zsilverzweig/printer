@@ -10,6 +10,7 @@ import {
   AlpacaPosition,
 } from "@/lib/types";
 import { log } from "@/lib/utils/logger";
+
 import { useTradingContext } from "../contexts/trading-context";
 
 export interface UseTradingReturn {

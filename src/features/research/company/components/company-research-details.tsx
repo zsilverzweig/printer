@@ -1,7 +1,6 @@
 "use client";
 
 import { Badge } from "@/lib/components/ui/badge";
-import { Button } from "@/lib/components/ui/button";
 import {
   Card,
   CardContent,
@@ -9,9 +8,9 @@ import {
   CardHeader,
   CardTitle,
 } from "@/lib/components/ui/card";
-import { Separator } from "@/lib/components/ui/separator";
 
 import { CompanyResearch } from "../types";
+
 import { MarkdownResearchViewer } from "./markdown-research-viewer";
 
 interface CompanyResearchDetailsProps {

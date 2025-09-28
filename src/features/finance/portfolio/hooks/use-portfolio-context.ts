@@ -5,6 +5,7 @@ import { useCallback, useState } from "react";
 
 import { log } from "@/lib/utils/logger";
 
+import { usePortfolioContext as usePortfolioProviderContext } from "../providers/portfolio-provider";
 import {
   CreatePortfolioRequestType,
   PortfolioType,
@@ -12,7 +13,6 @@ import {
   UsePortfolioContextReturn,
 } from "../types";
 
-import { usePortfolioContext as usePortfolioProviderContext } from "../providers/portfolio-provider";
 
 export function usePortfolioContext(): UsePortfolioContextReturn {
   const {

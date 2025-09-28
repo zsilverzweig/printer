@@ -1,6 +1,6 @@
 // Generate Portfolio work implementation
-import { AI_MODELS } from "@/lib/services/ai-service";
 import { log } from "@/lib/utils/logger";
+
 import { Work, WorkContext } from "../../../lib/types/work";
 import { 
   GeneratePortfolioInput, 

@@ -2,9 +2,11 @@
 "use client";
 
 import { useState } from "react";
+
 import { Button } from "@/lib/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/lib/components/ui/card";
 import { Textarea } from "@/lib/components/ui/textarea";
+
 import { usePortfolioManager } from "../hooks/use-portfolio-manager";
 
 export function PortfolioManagerExample() {

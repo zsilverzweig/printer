@@ -1,5 +1,6 @@
-import { clearServerUser } from "@/lib/auth/server";
 import { NextRequest, NextResponse } from "next/server";
+
+import { clearServerUser } from "@/lib/auth/server";
 
 /**
  * API route to clear server-side authentication cookies

@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+
 import { PortfolioWizardStreamDialog } from "../portfolio-wizard-stream-dialog";
 
 // Mock the useWizardStream hook

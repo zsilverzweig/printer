@@ -4,6 +4,7 @@ import { AlertTriangle, X } from "lucide-react";
 
 import { Button } from "@/lib/components/ui/button";
 import { Modal } from "@/lib/components/ui/modal";
+
 import { useTradingContext } from "../contexts/trading-context";
 
 interface ClosePositionModalProps {

@@ -30,7 +30,7 @@ export function RecentOrdersList({
     }).format(amount);
   };
 
-  const formatNumber = (value: number, decimals: number = 2) => {
+  const formatNumber = (value: number, decimals = 2) => {
     return new Intl.NumberFormat("en-US", {
       minimumFractionDigits: decimals,
       maximumFractionDigits: decimals,

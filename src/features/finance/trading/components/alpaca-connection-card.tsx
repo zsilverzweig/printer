@@ -1,5 +1,8 @@
 "use client";
 
+import { AlertCircle, CheckCircle, ExternalLink, Loader2 } from "lucide-react";
+import { useEffect } from "react";
+
 import { Button } from "@/lib/components/ui/button";
 import {
   Card,
@@ -8,8 +11,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/lib/components/ui/card";
-import { AlertCircle, CheckCircle, ExternalLink, Loader2 } from "lucide-react";
-import { useEffect } from "react";
+
 import { useAlpacaOAuth } from "../hooks/use-alpaca-oauth";
 
 export function AlpacaConnectionCard() {
