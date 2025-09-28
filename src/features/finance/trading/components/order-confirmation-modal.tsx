@@ -1,9 +1,8 @@
 "use client";
 
-import { ArrowUpRight, Info, Loader2, TestTube, DollarSign } from "lucide-react";
+import { Info, TestTube, DollarSign } from "lucide-react";
 
-import { Button } from "@/lib/components/ui/button";
-import { Modal } from "@/lib/components/ui/modal";
+import { ConfirmationDialog } from "@/lib/components/ui/confirmation-dialog";
 import {
   AlpacaOrderSide,
   AlpacaPositionSide,
@@ -46,39 +45,16 @@ export function OrderConfirmationModal({
   };
 
   return (
-    <Modal
-      open={isOpen}
-      onOpenChange={onClose}
+    <ConfirmationDialog
+      isOpen={isOpen}
+      onClose={onClose}
+      onConfirm={onConfirm}
       title="Confirm Order"
+      confirmText={isPlacingOrder ? "Submitting..." : "Confirm Order"}
+      cancelText="Cancel"
+      isLoading={isPlacingOrder}
+      loadingText="Submitting..."
       size="md"
-      footer={
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={onClose} disabled={isPlacingOrder}>
-            Cancel
-          </Button>
-          <Button
-            onClick={onConfirm}
-            disabled={isPlacingOrder}
-            className={
-              orderData.positionSide === "short"
-                ? "bg-red-600 hover:bg-red-700"
-                : ""
-            }
-          >
-            {isPlacingOrder ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Submitting...
-              </>
-            ) : (
-              <>
-                <ArrowUpRight className="mr-2 h-4 w-4" />
-                Confirm Order
-              </>
-            )}
-          </Button>
-        </div>
-      }
     >
       <div className="space-y-4">
         {/* Environment Banner */}
@@ -196,6 +172,6 @@ export function OrderConfirmationModal({
           </div>
         )}
       </div>
-    </Modal>
+    </ConfirmationDialog>
   );
 }

@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+
 import { Badge } from "@/lib/components/ui/badge";
 import { Button } from "@/lib/components/ui/button";
 import {
@@ -9,9 +11,9 @@ import {
   CardHeader,
   CardTitle,
 } from "@/lib/components/ui/card";
-import { Input } from "@/lib/components/ui/input";
-import { Label } from "@/lib/components/ui/label";
+import { ConfirmationDialog } from "@/lib/components/ui/confirmation-dialog";
 import { ListItem } from "@/lib/components/ui/list-item";
+import { SearchBar } from "@/lib/components/ui/search-bar";
 
 import { CompanyResearch } from "../types";
 
@@ -34,6 +36,9 @@ export function CompanyResearchList({
   searchTerm = "",
   onSearchChange,
 }: CompanyResearchListProps) {
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [researchToDelete, setResearchToDelete] = useState<CompanyResearch | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   
   // Debug logging to see if list component is receiving updates
   console.log("CompanyResearchList render", {
@@ -103,19 +108,18 @@ export function CompanyResearchList({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Research Archive</CardTitle>
-        <CardDescription>
-          {research.length} research report{research.length !== 1 ? 's' : ''}
-        </CardDescription>
+        <div className="flex items-center justify-between">
+          <CardTitle>Research Archive</CardTitle>
+          <span className="text-sm text-muted-foreground">
+            {research.length} report{research.length !== 1 ? 's' : ''}
+          </span>
+        </div>
         {onSearchChange && (
           <div className="mt-4">
-            <Label htmlFor="search-history">Search Research Archive</Label>
-            <Input
-              id="search-history"
+            <SearchBar
               placeholder="Search by ticker, company name, or agent..."
               value={searchTerm}
               onChange={(e) => onSearchChange(e.target.value)}
-              className="mt-1"
             />
           </div>
         )}
