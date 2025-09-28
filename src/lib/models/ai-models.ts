@@ -12,6 +12,7 @@ export const AI_MODELS = {
     costPerOutputToken: 10.0 / 1000000,
     capabilities: ["text", "vision", "function_calling"],
     contextWindow: 128000,
+    temperature: 0.2,
   },
   
   // Balanced model - good quality, reasonable cost
@@ -23,6 +24,7 @@ export const AI_MODELS = {
     costPerOutputToken: 0.6 / 1000000,
     capabilities: ["text", "function_calling"],
     contextWindow: 128000,
+    temperature: 0.2,
   },
   
   // Fast model - quick responses, higher cost
@@ -34,6 +36,7 @@ export const AI_MODELS = {
     costPerOutputToken: 30.0 / 1000000,
     capabilities: ["text", "function_calling"],
     contextWindow: 128000,
+    temperature: 0.2,
   },
   
   // Cheap model - economical, basic quality
@@ -45,5 +48,6 @@ export const AI_MODELS = {
     costPerOutputToken: 1.5 / 1000000,
     capabilities: ["text", "function_calling"],
     contextWindow: 16385,
+    temperature: 0.2,
   },
 } as const;

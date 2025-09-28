@@ -9,10 +9,12 @@ import { AI_MODELS } from "@/lib/models/ai-models";
 // TYPES
 // ============================================================================
 
-export interface AgentJob {
+export interface AgentJob<TInput = any, TOutput = any> {
   name: string;
   description: string;
-  prompt: (input: any) => string;
+  prompt: (input: TInput) => string;
+  inputSchema?: (input: any) => TInput;
+  outputSchema?: (output: any) => TOutput;
 }
 
 export interface AIAgent {

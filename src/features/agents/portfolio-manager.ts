@@ -27,8 +27,28 @@ export const PortfolioManagerAgent: AIAgent = {
       name: "Refine Thesis",
       description: "Transform a raw investment thesis into a structured, compelling investment rationale",
       
+      // Input validation
+      inputSchema: (input: any): RefineThesisInput => {
+        if (!input.thesis || typeof input.thesis !== "string" || !input.thesis.trim()) {
+          throw new Error("Thesis is required and must be a non-empty string");
+        }
+        return { thesis: input.thesis };
+      },
+      
+      // Output validation
+      outputSchema: (output: any): RefineThesisOutput => {
+        if (!output.thesis_title || !output.thesis_description || !output.thesis) {
+          throw new Error("AI response is missing required fields");
+        }
+        return {
+          thesis_title: output.thesis_title,
+          thesis_description: output.thesis_description,
+          thesis: output.thesis
+        };
+      },
+      
       // Job Execution Prompt
-      prompt: (input: { thesis: string }) => `
+      prompt: (input: RefineThesisInput) => `
 When refining an investment thesis, I need to:
 1. Analyze the provided investment thesis and any refinement guidance
 2. Create a compelling thesis title that captures the core investment idea
