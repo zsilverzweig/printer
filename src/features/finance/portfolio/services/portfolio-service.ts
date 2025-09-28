@@ -1,11 +1,14 @@
 // Portfolio Service - Pure CRUD operations for portfolios
+import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+
+import { db, COLLECTIONS } from "@/lib/services/firebase";
 import { log } from "@/lib/utils/logger";
 
 import { CreatePortfolioRequest, Portfolio, UpdatePortfolioRequest } from "../types";
 
 export class PortfolioService {
   /**
-   * Create a new portfolio
+   * Create a new portfolio using AI agent
    */
   static async createPortfolio(request: CreatePortfolioRequest): Promise<Portfolio> {
     try {
@@ -14,12 +17,13 @@ export class PortfolioService {
         thesisLength: request.thesis?.length || 0 
       }, "PortfolioService");
 
-      const response = await fetch("/api/portfolios", {
+      // Call the AI agent to generate the portfolio
+      const response = await fetch("/api/agents/create-portfolio", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(request),
+        body: JSON.stringify({ thesis: request.thesis }),
       });
 
       if (!response.ok) {
@@ -27,12 +31,42 @@ export class PortfolioService {
         throw new Error(errorData.error || "Failed to create portfolio");
       }
 
-      const data = await response.json();
-      const portfolio = data.portfolio;
+      // The AI agent returns the portfolio data directly
+      const portfolioData = await response.json();
+      
+      // Convert AI response to our Portfolio format
+      const portfolioId = `portfolio_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const portfolio: Portfolio = {
+        id: portfolioId,
+        name: portfolioData.name || request.name,
+        description: portfolioData.description || request.description,
+        thesis: portfolioData.thesis,
+        positions: portfolioData.positions || [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        metadata: {
+          ...request.metadata,
+          generatedByAI: true,
+          aiModel: 'portfolio-manager',
+          generatedAt: new Date().toISOString()
+        }
+      };
 
-      log.success("Portfolio created successfully", {
+      // Save portfolio to Firestore
+      const portfolioDoc = {
+        ...portfolio,
+        userId: request.userId || 'unknown', // TODO: Get from auth context
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      };
+
+      await setDoc(doc(db, COLLECTIONS.PORTFOLIOS, portfolioId), portfolioDoc);
+      
+      log.success("Portfolio created and saved successfully", {
         portfolioId: portfolio.id,
-        name: portfolio.name
+        name: portfolio.name,
+        positionsCount: portfolio.positions.length,
+        savedToFirestore: true
       }, "PortfolioService");
 
       return portfolio;

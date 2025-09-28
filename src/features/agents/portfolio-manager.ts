@@ -3,7 +3,8 @@
 // ============================================================================
 
 import { AI_MODELS } from "@/lib/models/ai-models";
-import { AIAgent,  } from "@/lib/services/ai-service";
+import { AIAgent } from "@/lib/services/ai-service";
+import { PortfolioPosition } from "@/features/finance/portfolios/types";
 
 export const PortfolioManagerAgent: AIAgent = {
   id: "portfolio-manager",
@@ -84,8 +85,29 @@ Here's what the user provided: ${input.thesis}
       name: "Create Portfolio",
       description: "Generate a structured investment portfolio based on investment thesis",
       
+      // Input validation
+      inputSchema: (input: any): CreatePortfolioInput => {
+        if (!input.thesis || typeof input.thesis !== "string" || !input.thesis.trim()) {
+          throw new Error("Thesis is required and must be a non-empty string");
+        }
+        return { thesis: input.thesis };
+      },
+      
+      // Output validation
+      outputSchema: (output: any): CreatePortfolioOutput => {
+        if (!output.name || !output.description || !output.thesis || !Array.isArray(output.positions)) {
+          throw new Error("AI response is missing required fields");
+        }
+        return {
+          name: output.name,
+          description: output.description,
+          thesis: output.thesis,
+          positions: output.positions
+        };
+      },
+      
       // Job Execution Prompt
-      prompt: (input: { thesis: string }) => `
+      prompt: (input: CreatePortfolioInput) => `
 Create a diversified investment portfolio based on this investment thesis: ${input.thesis}
 
 Return a JSON object matching this TypeScript interface:
@@ -93,20 +115,18 @@ interface CreatePortfolioOutput {
   name: string;              // Portfolio name that captures the investment theme
   description: string;       // Brief description of the portfolio strategy
   thesis: string;           // The refined investment thesis
-  positions: PortfolioPosition[];
-}
-
-interface PortfolioPosition {
-  id: string;               // Unique position identifier
-  symbol: string;           // Stock symbol (e.g., "AAPL")
-  side: "buy" | "sell";     // Position direction
-  status: "draft" | "pending" | "executed" | "cancelled"; // Position status
-  quantity: number;         // Number of shares
-  rationale: string;        // Why this position fits the thesis
-  confidence: "low" | "medium" | "high"; // Confidence level
-  target_price?: number;    // Target price (optional)
-  stop_loss?: number;       // Stop loss price (optional)
-  time_horizon?: string;    // Investment time horizon (optional)
+  positions: Array<{
+    id: string;               // Unique position identifier
+    symbol: string;           // Stock symbol (e.g., "AAPL")
+    side: "buy" | "sell";     // Position direction
+    status: "draft" | "pending" | "executed" | "cancelled"; // Position status
+    quantity: number;         // Number of shares
+    rationale: string;        // Why this position fits the thesis
+    confidence: "low" | "medium" | "high"; // Confidence level
+    target_price?: number;    // Target price (optional)
+    stop_loss?: number;       // Stop loss price (optional)
+    time_horizon?: string;    // Investment time horizon (optional)
+  }>;
 }
 
 Generate positions that align with the investment thesis.
@@ -131,19 +151,6 @@ export interface RefineThesisOutput {
 
 export interface CreatePortfolioInput {
   thesis: string;
-}
-
-export interface PortfolioPosition {
-  id: string;
-  symbol: string;
-  side: "buy" | "sell";
-  status: "draft" | "pending" | "executed" | "cancelled";
-  quantity: number;
-  rationale: string;
-  confidence: "low" | "medium" | "high";
-  target_price?: number;
-  stop_loss?: number;
-  time_horizon?: string;
 }
 
 export interface CreatePortfolioOutput {

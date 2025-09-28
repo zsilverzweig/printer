@@ -104,15 +104,19 @@ export const convertDocument = <T>(
 // SPECIFIC CONVERTERS
 // ============================================================================
 
+import { PortfolioPosition } from "@/features/finance/portfolios/types";
+
 // Portfolio converter
 export interface PortfolioDocument extends TimestampedDocument {
   name: string;
   description: string;
   thesis: string;
-  positions: any[];
+  positions: PortfolioPosition[];
   isActive: boolean;
   assignedAgents: any[];
   metadata: Record<string, any>;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export const convertPortfolioDocument = (doc: FirebaseDocument): PortfolioDocument => {

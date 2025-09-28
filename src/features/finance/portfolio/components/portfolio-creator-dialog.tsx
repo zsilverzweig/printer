@@ -57,6 +57,7 @@ export function PortfolioCreatorDialog({
         description: description.trim() || "Generated portfolio",
         thesis: thesis.trim(),
         positions: [], // Will be populated by agents later
+        userId: userId, // Pass the user ID for saving to Firestore
         metadata: {
           wasRefined: false, // We'll track this based on whether the button was used
           originalThesis: thesis.trim()
@@ -157,7 +158,6 @@ export function PortfolioCreatorDialog({
           <ModalForm onSubmit={handleSubmit} id="portfolio-creator-form">
             <ModalSection title="Portfolio Details">
               <ModalField label="Thesis Title">
-                <Label htmlFor="portfolio-name">Thesis Title</Label>
                 <Input
                   id="portfolio-name"
                   value={portfolioName}
@@ -167,7 +167,6 @@ export function PortfolioCreatorDialog({
               </ModalField>
               
               <ModalField label="Thesis Description">
-                <Label htmlFor="description">Thesis Description</Label>
                 <Textarea
                   id="description"
                   value={description}
@@ -178,7 +177,6 @@ export function PortfolioCreatorDialog({
               </ModalField>
               
               <ModalField label="Investment Thesis">
-                <Label htmlFor="thesis">Investment Thesis</Label>
                 <Textarea
                   id="thesis"
                   value={thesis}
@@ -190,7 +188,6 @@ export function PortfolioCreatorDialog({
               </ModalField>
 
               <ModalField label="Refinement Guidance (Optional)">
-                <Label htmlFor="refinement-guidance">Refinement Guidance (Optional)</Label>
                 <Textarea
                   id="refinement-guidance"
                   value={refinementGuidance}

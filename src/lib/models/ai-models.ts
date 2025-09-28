@@ -7,7 +7,7 @@ export const AI_MODELS = {
   premium: {
     name: "gpt-4o",
     provider: "openai" as const,
-    maxTokens: 128000,
+    maxTokens: 2000,
     costPerInputToken: 2.5 / 1000000,
     costPerOutputToken: 10.0 / 1000000,
     capabilities: ["text", "vision", "function_calling"],
@@ -19,7 +19,7 @@ export const AI_MODELS = {
   balanced: {
     name: "gpt-4o-mini",
     provider: "openai" as const,
-    maxTokens: 128000,
+    maxTokens: 4096, // Safe limit for gpt-4o-mini completion tokens
     costPerInputToken: 0.15 / 1000000,
     costPerOutputToken: 0.6 / 1000000,
     capabilities: ["text", "function_calling"],
