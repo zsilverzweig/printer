@@ -1,6 +1,8 @@
 import { Timestamp } from "firebase/firestore";
 
 import { AIRequest, AIResponse } from "@/lib/types/ai";
+import { log } from "@/lib/utils/logger";
+
 
 import {
   Agent,
@@ -12,6 +14,8 @@ import {
   PortfolioPosition,
 } from "../../types";
 
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type FirestoreDocument = Record<string, any>;
 
 export const omitUndefined = <T extends Record<string, unknown>>(obj: T): T => {
@@ -69,13 +73,14 @@ export const serializeAgent = (agent: Agent) => {
   });
   
   // Debug logging for model object
-  console.log("Serializing agent model:", {
+  log.info("Serializing agent model:", {
     agentId: agent.id,
     model: agent.model,
     modelType: typeof agent.model,
     modelName: agent.model?.name,
     modelNameType: typeof agent.model?.name
-  });
+  }, "serializeAgent");
+  
   
   return serialized;
 };
@@ -103,7 +108,7 @@ export const deserializeAgent = (
   };
   
   // Debug logging for model object
-  console.log("Deserializing agent model:", {
+  log.info("Deserializing agent model:", {
     agentId: id,
     model: data.model,
     modelType: typeof data.model,

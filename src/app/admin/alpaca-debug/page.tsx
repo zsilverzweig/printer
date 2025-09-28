@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import { AlpacaOAuthTester } from "@/components/alpaca-oauth-tester";
+import { AlpacaOAuthTester } from "@/features/admin/components/alpaca-oauth-tester";
 import { Badge } from "@/lib/components/ui/badge";
 import { Button } from "@/lib/components/ui/button";
 import { Card } from "@/lib/components/ui/card";
@@ -21,7 +21,7 @@ interface TestResult {
   error?: string;
 }
 
-export default function SandboxPage() {
+export default function AlpacaDebugPage() {
   const [results, setResults] = useState<Record<string, TestResult>>({});
   const [loading, setLoading] = useState<Record<string, boolean>>({});
 
@@ -289,7 +289,7 @@ export default function SandboxPage() {
   return (
     <div className="container mx-auto py-8 space-y-8">
       <div>
-        <h1 className="text-3xl font-bold">Alpaca OAuth Debug Sandbox</h1>
+        <h1 className="text-3xl font-bold">Alpaca OAuth Debug</h1>
         <p className="text-muted-foreground mt-2">
           Test and debug your Alpaca OAuth connection setup
         </p>

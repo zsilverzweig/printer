@@ -6,6 +6,22 @@ An AI-powered investment research engine that produces actionable, company-level
 
 Printer is a virtual investment firm powered by AI agents that work together to analyze companies, build investment theses, and manage a portfolio based on the core thesis that "AI changes everything." The system uses multi-agent collaboration, persistent context, and continuous learning to make investment decisions that improve over time.
 
+## Getting Started
+1. Install dependencies:
+
+   ```bash
+   npm install
+   ```
+
+2. Start the development server:
+
+   ```bash
+   npm run dev
+   ```
+
+3. Open [http://localhost:3000](http://localhost:3000) in your browser
+
+
 ## Key Features
 
 - **Multi-Agent System**: Specialized AI agents for different aspects of investment analysis

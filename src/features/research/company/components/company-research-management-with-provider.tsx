@@ -4,7 +4,6 @@ import { useState, useCallback } from "react";
 
 import { Button } from "@/lib/components/ui/button";
 import { Card, CardContent } from "@/lib/components/ui/card";
-
 import { log } from "@/lib/utils/logger";
 
 import { useCompanyResearchContext } from "../providers/company-research-provider";

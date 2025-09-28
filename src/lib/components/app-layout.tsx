@@ -16,7 +16,7 @@
  * 
  * AUTH PAGE HANDLING:
  * - Auth pages bypass loading states to prevent login page from being blocked
- * - Includes: /login, /signup, /signup-info, /waitlist, /waitlist-signup
+ * - Includes: /login, /signup, /signup-info, /waitlist
  * 
  * LAYOUT TYPES:
  * - Unauthenticated + non-auth page: LandingPage component
@@ -64,7 +64,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   const currentPath = usePathname();
 
   // Check if we're on an auth page that should always be accessible
-  const authPaths = ["/login", "/signup", "/signup-info", "/waitlist", "/waitlist-signup"];
+  const authPaths = ["/login", "/signup", "/signup-info", "/waitlist"];
   const isAuthPage = authPaths.includes(currentPath);
 
   // For auth pages, always allow access - middleware handles routing

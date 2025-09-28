@@ -47,7 +47,6 @@ export function middleware(request: NextRequest) {
     "/signup",
     "/signup-info",
     "/waitlist",
-    "/waitlist-signup",
     "/docs",
     "/api",
     "/_next",

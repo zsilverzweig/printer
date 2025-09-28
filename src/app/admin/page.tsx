@@ -1,4 +1,4 @@
-import { Bot, Cpu, Settings, Users } from "lucide-react";
+import { Bot, Cpu, Settings, Users, Wrench } from "lucide-react";
 import Link from "next/link";
 
 import { requireAdmin } from "@/lib/auth/server";
@@ -105,6 +105,29 @@ export default async function AdminPage() {
               </Button>
             </CardContent>
           </Card>
+        </div>
+
+        {/* Utilities Section */}
+        <div className="space-y-4">
+          <h2 className="text-xl font-semibold">Utilities</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Card className="hover:shadow-md transition-shadow">
+              <CardHeader>
+                <div className="flex items-center space-x-2">
+                  <Wrench className="h-5 w-5 text-orange-600" />
+                  <CardTitle>Alpaca Debug</CardTitle>
+                </div>
+                <CardDescription>
+                  Debug and test Alpaca OAuth integration
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Link href="/admin/alpaca-debug">
+                  <Button className="w-full">Open Debug Tool</Button>
+                </Link>
+              </CardContent>
+            </Card>
+          </div>
         </div>
 
         {/* Quick Stats */}
