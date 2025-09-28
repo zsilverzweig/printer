@@ -2,6 +2,7 @@ import { useState, useCallback } from "react";
 
 import { ResearchService, CompanyResearchResult } from "../services/research-service";
 import { ResearchCompanyInput } from "@/features/agents/research-analyst";
+import { useResearchContext } from "../providers/research-provider";
 
 export interface UseResearchReturn {
   // Data
@@ -20,35 +21,38 @@ export interface UseResearchReturn {
 }
 
 export function useResearch(): UseResearchReturn {
-  const [result, setResult] = useState<CompanyResearchResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  // Get data from provider context
+  const { selectedResearch, addResearchResult, clearResearch, userId } = useResearchContext();
 
   const researchCompany = useCallback(async (input: ResearchCompanyInput) => {
     setLoading(true);
     setError(null);
-    setResult(null);
 
     try {
-      const researchResult = await ResearchService.researchCompany(input);
-      setResult(researchResult);
+      const researchResult = await ResearchService.researchCompany(input, userId);
+      
+      // Add to provider context
+      addResearchResult(researchResult);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to research company");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [addResearchResult, userId]);
 
   const clearResult = useCallback(() => {
-    setResult(null);
-  }, []);
+    clearResearch();
+  }, [clearResearch]);
 
   const clearError = useCallback(() => {
     setError(null);
   }, []);
 
   return {
-    result,
+    result: selectedResearch,
     loading,
     error,
     researchCompany,

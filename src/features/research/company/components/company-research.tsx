@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Search, Loader2, FileText, TrendingUp } from "lucide-react";
 
 import { Button } from "@/lib/components/ui/button";
@@ -11,12 +11,25 @@ import { Textarea } from "@/lib/components/ui/textarea";
 
 import { useResearch } from "../hooks/use-research";
 import { ResearchCompanyInput } from "@/features/agents/research-analyst";
+import { processMarkdownToHtml } from "../utils/markdown-client";
+import { ResearchList } from "./research-list";
+import { useResearchContext } from "../providers/research-provider";
 
 export function CompanyResearch() {
   const [ticker, setTicker] = useState("");
   const [researchFocus, setResearchFocus] = useState("");
+  const [processedReport, setProcessedReport] = useState<string>("");
   
   const { result, loading, error, researchCompany } = useResearch();
+
+  // Process markdown when result changes
+  useEffect(() => {
+    if (result?.report) {
+      processMarkdownToHtml(result.report).then(setProcessedReport);
+    } else {
+      setProcessedReport("");
+    }
+  }, [result?.report]);
 
   const handleResearch = async () => {
     if (!ticker.trim()) return;
@@ -38,6 +51,16 @@ export function CompanyResearch() {
           Get comprehensive investment analysis for any public company
         </p>
       </div>
+
+      {/* Main Content Layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Left Sidebar - Research List */}
+        <div className="lg:col-span-1">
+          <ResearchList />
+        </div>
+
+        {/* Right Content - Search Form and Results */}
+        <div className="lg:col-span-2 space-y-6">
 
       {/* Search Form */}
       <Card>
@@ -148,15 +171,16 @@ export function CompanyResearch() {
               <CardTitle>Detailed Research Report</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="prose prose-sm max-w-none">
-                <div className="whitespace-pre-wrap text-sm leading-relaxed">
-                  {result.report}
-                </div>
-              </div>
+              <div 
+                className="prose prose-sm max-w-none markdown-content"
+                dangerouslySetInnerHTML={{ __html: processedReport }}
+              />
             </CardContent>
           </Card>
         </div>
       )}
+        </div>
+      </div>
     </div>
   );
 }
