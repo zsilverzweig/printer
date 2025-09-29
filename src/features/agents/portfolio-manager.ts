@@ -2,15 +2,17 @@
 // PORTFOLIO MANAGER AGENT
 // ============================================================================
 
+import { PortfolioPosition } from "@/features/finance/portfolios/types";
 import { AI_MODELS } from "@/lib/models/ai-models";
 import { AIAgent } from "@/lib/services/ai-service";
-import { PortfolioPosition } from "@/features/finance/portfolios/types";
 
 export const PortfolioManagerAgent: AIAgent = {
   id: "portfolio-manager",
   name: "Portfolio Manager",
-  description: "Expert in transforming investment theses into structured portfolios",
-  systemPrompt: "I am the Portfolio Manager. I ultimately decide what we invest in. I understand why we invest in what we invest in, and make judgements balancing all the information I have across returns, risks, and other factors.",
+  description:
+    "Expert in transforming investment theses into structured portfolios",
+  systemPrompt:
+    "I am the Portfolio Manager. I ultimately decide what we invest in. I understand why we invest in what we invest in, and make judgements balancing all the information I have across returns, risks, and other factors.",
 
   // Agent Configuration
   model: AI_MODELS.balanced, // Use the balanced model for portfolio management tasks
@@ -18,38 +20,47 @@ export const PortfolioManagerAgent: AIAgent = {
   // ============================================================================
   // JOBS
   // ============================================================================
-  
+
   jobs: {
-    
     // ------------------------------------------------------------------------
     // REFINE THESIS JOB
     // ------------------------------------------------------------------------
     refineThesis: {
       name: "Refine Thesis",
-      description: "Transform a raw investment thesis into a structured, compelling investment rationale",
-      
+      description:
+        "Transform a raw investment thesis into a structured, compelling investment rationale",
+
       // Input validation
       inputSchema: (input: any): RefineThesisInput => {
-        if (!input.thesis || typeof input.thesis !== "string" || !input.thesis.trim()) {
+        if (
+          !input.thesis ||
+          typeof input.thesis !== "string" ||
+          !input.thesis.trim()
+        ) {
           throw new Error("Thesis is required and must be a non-empty string");
         }
         return { thesis: input.thesis };
       },
-      
+
       // Output validation
       outputSchema: (output: any): RefineThesisOutput => {
-        if (!output.thesis_title || !output.thesis_description || !output.thesis) {
+        if (
+          !output.thesis_title ||
+          !output.thesis_description ||
+          !output.thesis
+        ) {
           throw new Error("AI response is missing required fields");
         }
         return {
           thesis_title: output.thesis_title,
           thesis_description: output.thesis_description,
-          thesis: output.thesis
+          thesis: output.thesis,
         };
       },
-      
+
       // Job Execution Prompt
-      prompt: (input: RefineThesisInput) => `
+      prompt: (input: RefineThesisInput) =>
+        `
 When refining an investment thesis, I need to:
 1. Analyze the provided investment thesis and any refinement guidance
 2. Create a compelling thesis title that captures the core investment idea
@@ -83,31 +94,42 @@ Here's what the user provided: ${input.thesis}
     // ------------------------------------------------------------------------
     createPortfolio: {
       name: "Create Portfolio",
-      description: "Generate a structured investment portfolio based on investment thesis",
-      
+      description:
+        "Generate a structured investment portfolio based on investment thesis",
+
       // Input validation
       inputSchema: (input: any): CreatePortfolioInput => {
-        if (!input.thesis || typeof input.thesis !== "string" || !input.thesis.trim()) {
+        if (
+          !input.thesis ||
+          typeof input.thesis !== "string" ||
+          !input.thesis.trim()
+        ) {
           throw new Error("Thesis is required and must be a non-empty string");
         }
         return { thesis: input.thesis };
       },
-      
+
       // Output validation
       outputSchema: (output: any): CreatePortfolioOutput => {
-        if (!output.name || !output.description || !output.thesis || !Array.isArray(output.positions)) {
+        if (
+          !output.name ||
+          !output.description ||
+          !output.thesis ||
+          !Array.isArray(output.positions)
+        ) {
           throw new Error("AI response is missing required fields");
         }
         return {
           name: output.name,
           description: output.description,
           thesis: output.thesis,
-          positions: output.positions
+          positions: output.positions,
         };
       },
-      
+
       // Job Execution Prompt
-      prompt: (input: CreatePortfolioInput) => `
+      prompt: (input: CreatePortfolioInput) =>
+        `
 Create a diversified investment portfolio based on this investment thesis: ${input.thesis}
 
 Return a JSON object matching this TypeScript interface:
@@ -138,28 +160,39 @@ Generate positions that align with the investment thesis.
     // ------------------------------------------------------------------------
     optimizePortfolio: {
       name: "Optimize Portfolio",
-      description: "Assign optimal weights to create balanced investment portfolio",
-      statusMessage: "Portfolio Manager is assigning weights for investment portfolio",
-      
+      description:
+        "Assign optimal weights to create balanced investment portfolio",
+      statusMessage:
+        "Portfolio Manager is assigning weights for investment portfolio",
+
       // Input validation
       inputSchema: (input: any): OptimizePortfolioInput => {
-        if (!input.thesis || typeof input.thesis !== "string" || !input.thesis.trim()) {
+        if (
+          !input.thesis ||
+          typeof input.thesis !== "string" ||
+          !input.thesis.trim()
+        ) {
           throw new Error("Thesis is required and must be a non-empty string");
         }
         if (!input.companies || !Array.isArray(input.companies)) {
           throw new Error("Companies array is required");
         }
-        return { 
+        return {
           thesis: input.thesis,
           companies: input.companies,
           priceTargets: input.priceTargets,
-          catalysts: input.catalysts
+          catalysts: input.catalysts,
         };
       },
-      
+
       // Output validation
       outputSchema: (output: any): OptimizePortfolioOutput => {
-        if (!output.name || !output.description || !output.thesis || !Array.isArray(output.positions)) {
+        if (
+          !output.name ||
+          !output.description ||
+          !output.thesis ||
+          !Array.isArray(output.positions)
+        ) {
           throw new Error("AI response is missing required fields");
         }
         return {
@@ -168,19 +201,33 @@ Generate positions that align with the investment thesis.
           thesis: output.thesis,
           positions: output.positions,
           allocation: output.allocation,
-          riskProfile: output.riskProfile
+          riskProfile: output.riskProfile,
         };
       },
-      
+
       // Job Execution Prompt
-      prompt: (input: OptimizePortfolioInput) => `
-Create an optimized investment portfolio based on this investment thesis: ${input.thesis}
+      prompt: (input: OptimizePortfolioInput) =>
+        `
+Create an optimized investment portfolio based on this investment thesis: ${
+          input.thesis
+        }
 
 Companies to consider:
-${input.companies.map(c => `${c.symbol} - ${c.name}`).join('\n')}
+${input.companies.map((c) => `${c.symbol} - ${c.name}`).join("\n")}
 
-${input.priceTargets ? `Price Targets: ${JSON.stringify(input.priceTargets)}` : ''}
-${input.catalysts ? `Catalysts: ${JSON.stringify(input.catalysts)}` : ''}
+${
+  input.priceTargets
+    ? `Price Targets: ${JSON.stringify(input.priceTargets)}`
+    : ""
+}
+${
+  input.catalysts
+    ? `Key Catalysts for each company:
+${input.catalysts
+  .map((c) => `${c.symbol} (${c.name}): ${c.catalyst}`)
+  .join("\n")}`
+    : ""
+}
 
 Create a balanced portfolio with:
 1. Optimal position sizing based on risk/reward
@@ -256,7 +303,11 @@ export interface OptimizePortfolioInput {
     sector?: string;
   }>;
   priceTargets?: any;
-  catalysts?: any;
+  catalysts?: Array<{
+    symbol: string;
+    name: string;
+    catalyst: string;
+  }>;
 }
 
 export interface OptimizePortfolioOutput {
@@ -269,7 +320,7 @@ export interface OptimizePortfolioOutput {
     weight: number;
     shares: number;
     rationale: string;
-    confidence: 'low' | 'medium' | 'high';
+    confidence: "low" | "medium" | "high";
     targetPrice?: number;
     stopLoss?: number;
     timeHorizon: string;
@@ -281,12 +332,18 @@ export interface OptimizePortfolioOutput {
   };
   riskProfile: {
     expectedReturn: number;
-    riskLevel: 'low' | 'medium' | 'high';
+    riskLevel: "low" | "medium" | "high";
     maxDrawdown: number;
     sharpeRatio?: number;
   };
 }
 
 export type PortfolioManagerAgentType = typeof PortfolioManagerAgent;
-export type PortfolioManagerJobInput = RefineThesisInput | CreatePortfolioInput | OptimizePortfolioInput;
-export type PortfolioManagerJobOutput = RefineThesisOutput | CreatePortfolioOutput | OptimizePortfolioOutput;
+export type PortfolioManagerJobInput =
+  | RefineThesisInput
+  | CreatePortfolioInput
+  | OptimizePortfolioInput;
+export type PortfolioManagerJobOutput =
+  | RefineThesisOutput
+  | CreatePortfolioOutput
+  | OptimizePortfolioOutput;

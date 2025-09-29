@@ -22,6 +22,7 @@ import {
   IdentifyCompaniesOutput,
   ResearchAnalystAgent,
 } from "@/features/agents/research-analyst";
+import { Portfolio } from "@/features/finance/portfolios/types";
 import { executeAgentJob } from "@/lib/api/agent-executor";
 import { AgentContext, withAgentMiddleware } from "@/lib/api/agent-middleware";
 import { COLLECTIONS, db } from "@/lib/services/firebase";
@@ -31,7 +32,9 @@ export const POST = withAgentMiddleware(
   async (
     request: NextRequest,
     context: AgentContext
-  ): Promise<NextResponse<any>> => {
+  ): Promise<
+    NextResponse<{ portfolioId: string; success: boolean } | { error: string }>
+  > => {
     const body = await request.json();
     const { thesis } = body;
 
@@ -47,30 +50,30 @@ export const POST = withAgentMiddleware(
       const portfolioId = `portfolio_${Date.now()}_${Math.random()
         .toString(36)
         .substr(2, 9)}`;
-      const initialPortfolio = {
+
+      // Initialize portfolio object that will be enhanced with each step
+      const portfolio: Portfolio = {
         id: portfolioId,
-        userId: context.user.uid,
         name: `Portfolio - ${new Date().toLocaleDateString()}`,
         description: "Generated portfolio (Beta)",
         thesis,
         positions: [],
-        status: "building",
-        currentStep: "market_analysis",
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
+        marketContext: "",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        isActive: true,
+        status: "initializing",
         metadata: {
           generatedByAI: true,
           aiModel: "chained-agents-v2",
           generatedAt: new Date().toISOString(),
           betaVersion: true,
+          userId: context.user.uid,
         },
       };
 
       // Save initial portfolio
-      await setDoc(
-        doc(db, COLLECTIONS.PORTFOLIOS, portfolioId),
-        initialPortfolio
-      );
+      await setDoc(doc(db, COLLECTIONS.PORTFOLIOS, portfolioId), portfolio);
 
       // Step 1: Market Analysis
       const marketAnalysis = await executeAgentJob<
@@ -88,17 +91,18 @@ export const POST = withAgentMiddleware(
         { thesis }
       );
 
-      // Update portfolio with market analysis
+      // Enhance portfolio with market analysis
+      portfolio.marketContext = marketAnalysis.marketAnalysis ?? "";
+      portfolio.status =
+        ResearchAnalystAgent.jobs.identifyCompanies.statusMessage ??
+        portfolio.status;
+      portfolio.updatedAt = new Date().toISOString();
+
+      // Update portfolio in database
       await updateDoc(doc(db, COLLECTIONS.PORTFOLIOS, portfolioId), {
-        currentStep: "company_identification",
+        marketContext: portfolio.marketContext,
+        status: portfolio.status,
         updatedAt: serverTimestamp(),
-        steps: {
-          market_analysis: {
-            status: "completed",
-            data: marketAnalysis,
-            completedAt: serverTimestamp(),
-          },
-        },
       });
 
       // Step 2: Company Identification
@@ -118,15 +122,16 @@ export const POST = withAgentMiddleware(
         { thesis, marketAnalysis }
       );
 
-      // Update portfolio with company identification
+      // Enhance portfolio with company identification
+      portfolio.status =
+        FinancialAnalystAgent.jobs.validateStocks.statusMessage ??
+        portfolio.status;
+      portfolio.updatedAt = new Date().toISOString();
+
+      // Update portfolio in database
       await updateDoc(doc(db, COLLECTIONS.PORTFOLIOS, portfolioId), {
-        currentStep: "stock_validation",
+        status: portfolio.status,
         updatedAt: serverTimestamp(),
-        [`steps.company_identification`]: {
-          status: "completed",
-          data: companyList,
-          completedAt: serverTimestamp(),
-        },
       });
 
       // Step 3: Stock Validation
@@ -145,15 +150,16 @@ export const POST = withAgentMiddleware(
         { companies: companyList.companies }
       );
 
-      // Update portfolio with stock validation
+      // Enhance portfolio with stock validation
+      portfolio.status =
+        FinancialAnalystAgent.jobs.setPriceTargets.statusMessage ??
+        portfolio.status;
+      portfolio.updatedAt = new Date().toISOString();
+
+      // Update portfolio in database
       await updateDoc(doc(db, COLLECTIONS.PORTFOLIOS, portfolioId), {
-        currentStep: "price_targets",
+        status: portfolio.status,
         updatedAt: serverTimestamp(),
-        [`steps.stock_validation`]: {
-          status: "completed",
-          data: validatedStocks,
-          completedAt: serverTimestamp(),
-        },
       });
 
       // Step 4: Price Targets
@@ -176,15 +182,16 @@ export const POST = withAgentMiddleware(
         }
       );
 
-      // Update portfolio with price targets
+      // Enhance portfolio with price targets
+      portfolio.status =
+        FinancialAnalystAgent.jobs.identifyCatalysts.statusMessage ??
+        portfolio.status;
+      portfolio.updatedAt = new Date().toISOString();
+
+      // Update portfolio in database
       await updateDoc(doc(db, COLLECTIONS.PORTFOLIOS, portfolioId), {
-        currentStep: "catalyst_analysis",
+        status: portfolio.status,
         updatedAt: serverTimestamp(),
-        [`steps.price_targets`]: {
-          status: "completed",
-          data: priceTargets,
-          completedAt: serverTimestamp(),
-        },
       });
 
       // Step 5: Catalyst Analysis
@@ -204,15 +211,16 @@ export const POST = withAgentMiddleware(
         { companies: priceTargets.companies }
       );
 
-      // Update portfolio with catalyst analysis
+      // Enhance portfolio with catalyst analysis
+      portfolio.status =
+        PortfolioManagerAgent.jobs.optimizePortfolio.statusMessage ??
+        portfolio.status;
+      portfolio.updatedAt = new Date().toISOString();
+
+      // Update portfolio in database
       await updateDoc(doc(db, COLLECTIONS.PORTFOLIOS, portfolioId), {
-        currentStep: "portfolio_optimization",
+        status: portfolio.status,
         updatedAt: serverTimestamp(),
-        [`steps.catalyst_analysis`]: {
-          status: "completed",
-          data: catalysts,
-          completedAt: serverTimestamp(),
-        },
       });
 
       // Step 6: Portfolio Optimization
@@ -236,22 +244,39 @@ export const POST = withAgentMiddleware(
             name: c.name,
           })), // Map catalyst companies
           priceTargets,
-          catalysts,
+          catalysts: catalysts.catalysts, // Pass the full catalyst data
         }
       );
 
+      // Enhance portfolio with final positions
+      portfolio.name = finalPortfolio.name;
+      portfolio.description = finalPortfolio.description;
+      portfolio.positions = finalPortfolio.positions.map((pos, index) => ({
+        id: `pos_${portfolioId}_${index}`,
+        symbol: pos.symbol,
+        name: pos.name,
+        side: "buy" as const,
+        status: "draft" as const,
+        weight: pos.weight,
+        catalyst:
+          catalysts.catalysts.find((c) => c.symbol === pos.symbol)?.catalyst ||
+          "",
+        rationale: pos.rationale,
+        priceTarget: pos.targetPrice || 0,
+        reevaluateDate: new Date(
+          Date.now() + 90 * 24 * 60 * 60 * 1000
+        ).toISOString(), // 90 days from now
+      }));
+      portfolio.status = "completed";
+      portfolio.updatedAt = new Date().toISOString();
+
       // Final update with completed portfolio
       await updateDoc(doc(db, COLLECTIONS.PORTFOLIOS, portfolioId), {
-        status: "completed",
-        name: finalPortfolio.name,
-        description: finalPortfolio.description,
-        positions: finalPortfolio.positions,
+        name: portfolio.name,
+        description: portfolio.description,
+        positions: portfolio.positions,
+        status: portfolio.status,
         updatedAt: serverTimestamp(),
-        [`steps.portfolio_optimization`]: {
-          status: "completed",
-          data: finalPortfolio,
-          completedAt: serverTimestamp(),
-        },
       });
 
       return NextResponse.json({ portfolioId, success: true });

@@ -8,8 +8,10 @@ import { AIAgent } from "@/lib/services/ai-service";
 export const FinancialAnalystAgent: AIAgent = {
   id: "financial-analyst",
   name: "Financial Analyst",
-  description: "Expert in financial analysis, stock validation, and investment decision support",
-  systemPrompt: "I am the Financial Analyst. I specialize in validating stock symbols, setting price targets, and identifying investment catalysts. I focus on financial fundamentals, market data, and current events to provide actionable investment insights.",
+  description:
+    "Expert in financial analysis, stock validation, and investment decision support",
+  systemPrompt:
+    "I am the Financial Analyst. I specialize in validating stock symbols, setting price targets, and identifying investment catalysts. I focus on financial fundamentals, market data, and current events to provide actionable investment insights.",
 
   // Agent Configuration
   model: AI_MODELS.balanced, // Use the balanced model for financial analysis tasks
@@ -17,9 +19,8 @@ export const FinancialAnalystAgent: AIAgent = {
   // ============================================================================
   // JOBS
   // ============================================================================
-  
+
   jobs: {
-    
     // ------------------------------------------------------------------------
     // VALIDATE STOCKS JOB
     // ------------------------------------------------------------------------
@@ -27,7 +28,7 @@ export const FinancialAnalystAgent: AIAgent = {
       name: "Validate Stocks",
       description: "Verify stock symbols are real and tradeable",
       statusMessage: "Financial Analyst is validating stock symbols",
-      
+
       // Input validation
       inputSchema: (input: any): ValidateStocksInput => {
         if (!input.companies || !Array.isArray(input.companies)) {
@@ -35,24 +36,27 @@ export const FinancialAnalystAgent: AIAgent = {
         }
         return { companies: input.companies };
       },
-      
+
       // Output validation
       outputSchema: (output: any): ValidateStocksOutput => {
         if (!output.validCompanies || !Array.isArray(output.validCompanies)) {
-          throw new Error("AI response is missing required validCompanies array");
+          throw new Error(
+            "AI response is missing required validCompanies array"
+          );
         }
         return {
           validCompanies: output.validCompanies,
           invalidSymbols: output.invalidSymbols || [],
-          validationDetails: output.validationDetails || {}
+          validationDetails: output.validationDetails || {},
         };
       },
-      
+
       // Job Execution Prompt
-      prompt: (input: ValidateStocksInput) => `
+      prompt: (input: ValidateStocksInput) =>
+        `
 Validate these stock symbols and return only real, tradeable companies:
 
-${input.companies.map(c => `${c.symbol} - ${c.name}`).join('\n')}
+${input.companies.map((c) => `${c.symbol} - ${c.name}`).join("\n")}
 
 For each company, verify:
 1. Symbol exists and is currently tradeable
@@ -92,19 +96,20 @@ Focus on identifying only legitimate, tradeable stocks suitable for institutiona
     setPriceTargets: {
       name: "Set Price Targets",
       description: "Set price targets based on current events and analysis",
-      statusMessage: "Financial Analyst is setting price targets for each company based on current events",
-      
+      statusMessage:
+        "Financial Analyst is setting price targets for each company based on current events",
+
       // Input validation
       inputSchema: (input: any): SetPriceTargetsInput => {
         if (!input.companies || !Array.isArray(input.companies)) {
           throw new Error("Companies array is required");
         }
-        return { 
+        return {
           companies: input.companies,
-          marketContext: input.marketContext
+          marketContext: input.marketContext,
         };
       },
-      
+
       // Output validation
       outputSchema: (output: any): SetPriceTargetsOutput => {
         if (!output.companies || !Array.isArray(output.companies)) {
@@ -113,17 +118,22 @@ Focus on identifying only legitimate, tradeable stocks suitable for institutiona
         return {
           companies: output.companies,
           marketOutlook: output.marketOutlook,
-          riskFactors: output.riskFactors || []
+          riskFactors: output.riskFactors || [],
         };
       },
-      
+
       // Job Execution Prompt
-      prompt: (input: SetPriceTargetsInput) => `
+      prompt: (input: SetPriceTargetsInput) =>
+        `
 Set price targets for these companies based on current market conditions and events:
 
-${input.companies.map(c => `${c.symbol} - ${c.name}`).join('\n')}
+${input.companies.map((c) => `${c.symbol} - ${c.name}`).join("\n")}
 
-${input.marketContext ? `Market Context: ${JSON.stringify(input.marketContext)}` : ''}
+${
+  input.marketContext
+    ? `Market Context: ${JSON.stringify(input.marketContext)}`
+    : ""
+}
 
 For each company, provide:
 1. Current price analysis
@@ -159,8 +169,9 @@ Base targets on fundamental analysis, current events, and market conditions.
     identifyCatalysts: {
       name: "Identify Catalysts",
       description: "Identify near-term catalysts for investment companies",
-      statusMessage: "Financial Analyst is identifying near term catalysts for these companies",
-      
+      statusMessage:
+        "Financial Analyst is identifying near term catalysts for these companies",
+
       // Input validation
       inputSchema: (input: any): IdentifyCatalystsInput => {
         if (!input.companies || !Array.isArray(input.companies)) {
@@ -168,7 +179,7 @@ Base targets on fundamental analysis, current events, and market conditions.
         }
         return { companies: input.companies };
       },
-      
+
       // Output validation
       outputSchema: (output: any): IdentifyCatalystsOutput => {
         if (!output.catalysts || !Array.isArray(output.catalysts)) {
@@ -176,42 +187,31 @@ Base targets on fundamental analysis, current events, and market conditions.
         }
         return {
           catalysts: output.catalysts,
-          marketCatalysts: output.marketCatalysts || [],
-          timeline: output.timeline || {}
         };
       },
-      
+
       // Job Execution Prompt
-      prompt: (input: IdentifyCatalystsInput) => `
-Identify near-term catalysts for these companies:
+      prompt: (input: IdentifyCatalystsInput) =>
+        `
+Identify the most important near-term catalyst for each company:
 
-${input.companies.map(c => `${c.symbol} - ${c.name}`).join('\n')}
+${input.companies.map((c) => `${c.symbol} - ${c.name}`).join("\n")}
 
-For each company, identify:
-1. Company-specific catalysts (earnings, product launches, partnerships)
-2. Industry catalysts affecting the sector
-3. Market catalysts (economic events, regulatory changes)
-4. Timeline for each catalyst
-5. Potential impact on stock price
+For each company, identify ONE key catalyst that could trigger significant stock movement in the next 6-12 months. This should be:
+- A specific, actionable event (earnings, product launch, partnership, regulatory decision, etc.)
+- Something that will likely happen and move the stock
+- A concise string describing the catalyst
 
 Return a JSON object matching this TypeScript interface:
 interface IdentifyCatalystsOutput {
   catalysts: Array<{
     symbol: string;           // Stock symbol
-    companyCatalysts: Array<{
-      event: string;          // Catalyst event
-      timeline: string;       // Expected timeline
-      impact: 'low' | 'medium' | 'high'; // Expected impact
-      description: string;    // Detailed description
-    }>;
-    industryCatalysts: string[]; // Industry-wide catalysts
-    marketCatalysts: string[];  // Market-wide catalysts
+    name: string;            // Company name
+    catalyst: string;        // Single key catalyst string
   }>;
-  marketCatalysts: string[];  // General market catalysts
-  timeline: Record<string, string[]>; // Timeline of events by month
 }
 
-Focus on catalysts that could significantly impact stock prices in the next 6-12 months.
+Focus on the ONE most important catalyst per company that could significantly impact stock prices.
       `.trim(),
     },
   },
@@ -261,7 +261,7 @@ export interface SetPriceTargetsOutput {
     rationale: string;
     keyCatalysts: string[];
     riskFactors: string[];
-    confidence: 'low' | 'medium' | 'high';
+    confidence: "low" | "medium" | "high";
   }>;
   marketOutlook: string;
   riskFactors: string[];
@@ -278,19 +278,17 @@ export interface IdentifyCatalystsInput {
 export interface IdentifyCatalystsOutput {
   catalysts: Array<{
     symbol: string;
-    companyCatalysts: Array<{
-      event: string;
-      timeline: string;
-      impact: 'low' | 'medium' | 'high';
-      description: string;
-    }>;
-    industryCatalysts: string[];
-    marketCatalysts: string[];
+    name: string;
+    catalyst: string;
   }>;
-  marketCatalysts: string[];
-  timeline: Record<string, string[]>;
 }
 
 export type FinancialAnalystAgentType = typeof FinancialAnalystAgent;
-export type FinancialAnalystJobInput = ValidateStocksInput | SetPriceTargetsInput | IdentifyCatalystsInput;
-export type FinancialAnalystJobOutput = ValidateStocksOutput | SetPriceTargetsOutput | IdentifyCatalystsOutput;
+export type FinancialAnalystJobInput =
+  | ValidateStocksInput
+  | SetPriceTargetsInput
+  | IdentifyCatalystsInput;
+export type FinancialAnalystJobOutput =
+  | ValidateStocksOutput
+  | SetPriceTargetsOutput
+  | IdentifyCatalystsOutput;

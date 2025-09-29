@@ -1,19 +1,16 @@
 // Portfolio types for the Printer finance feature
 
 export interface PortfolioPosition {
-  positionSide: ReactNode;
-  targetPrice: undefined;
-  stopLoss: undefined;
   id: string;
   symbol: string;
+  name: string;
   side: "buy" | "sell";
   status: "draft" | "pending" | "executed" | "cancelled";
-  quantity: number;
+  weight: number;
+  catalyst: string;
   rationale: string;
-  confidence: "low" | "medium" | "high";
-  target_price?: number;
-  stop_loss?: number;
-  time_horizon?: string;
+  priceTarget: number;
+  reevaluateDate: string;
 }
 
 export type PortfolioPositionStatus = PortfolioPosition["status"];
@@ -24,10 +21,11 @@ export interface Portfolio {
   description: string;
   thesis: string;
   positions: PortfolioPosition[];
+  marketContext: string;
   createdAt: string;
   updatedAt: string;
+  status: string;
   isActive?: boolean;
-  assignedAgents?: any[];
   metadata: Record<string, any>;
 }
 
