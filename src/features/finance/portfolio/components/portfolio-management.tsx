@@ -10,6 +10,7 @@ import {
   CardTitle,
 } from "@/lib/components/ui/card";
 import { Input } from "@/lib/components/ui/input";
+import { ConfirmationDialog } from "@/lib/components/ui/confirmation-dialog";
 
 import { usePortfolio } from "../hooks/use-portfolio";
 import { Portfolio } from "../types";
@@ -35,6 +36,9 @@ export function PortfolioManagement({ userId }: PortfolioManagementProps) {
     null
   );
   const [searchTerm, setSearchTerm] = useState("");
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [portfolioToDelete, setPortfolioToDelete] = useState<Portfolio | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const filteredPortfolios = portfolios.filter(
     (portfolio) =>
@@ -67,13 +71,26 @@ export function PortfolioManagement({ userId }: PortfolioManagementProps) {
     }
   };
 
-  const handleDeletePortfolio = async (portfolioId: string) => {
-    if (confirm("Are you sure you want to delete this portfolio?")) {
-      try {
-        await deletePortfolio(portfolioId);
-      } catch {
-        // Error handling is done in the hook
-      }
+  const handleDeletePortfolio = (portfolioId: string) => {
+    const portfolio = portfolios.find(p => p.id === portfolioId);
+    if (portfolio) {
+      setPortfolioToDelete(portfolio);
+      setShowDeleteConfirm(true);
+    }
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!portfolioToDelete) return;
+    
+    setIsDeleting(true);
+    try {
+      await deletePortfolio(portfolioToDelete.id);
+      setShowDeleteConfirm(false);
+      setPortfolioToDelete(null);
+    } catch {
+      // Error handling is done in the hook
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -191,6 +208,24 @@ export function PortfolioManagement({ userId }: PortfolioManagementProps) {
         onClose={() => setSelectedPortfolio(null)}
         onUpdatePortfolio={handleUpdatePortfolio}
         onDeletePortfolio={handleDeletePortfolio}
+      />
+
+      {/* Delete Confirmation Dialog */}
+      <ConfirmationDialog
+        isOpen={showDeleteConfirm}
+        onClose={() => {
+          setShowDeleteConfirm(false);
+          setPortfolioToDelete(null);
+        }}
+        onConfirm={handleDeleteConfirm}
+        title="Delete Portfolio"
+        description={portfolioToDelete ? `Are you sure you want to delete "${portfolioToDelete.name}"? This will permanently remove the portfolio and all its data.` : ""}
+        variant="destructive"
+        isLoading={isDeleting}
+        loadingText="Deleting..."
+        confirmText="Delete Portfolio"
+        cancelText="Cancel"
+        size="sm"
       />
     </div>
   );

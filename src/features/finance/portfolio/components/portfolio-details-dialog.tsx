@@ -13,6 +13,7 @@ import {
 } from "@/lib/components/ui/card";
 import { Input } from "@/lib/components/ui/input";
 import { Modal } from "@/lib/components/ui/modal";
+import { ConfirmationDialog } from "@/lib/components/ui/confirmation-dialog";
 import { log } from "@/lib/utils/logger";
 
 import { Portfolio, PortfolioPosition, UpdatePortfolioRequest } from "../types";
@@ -35,6 +36,8 @@ export function PortfolioDetailsDialog({
 }: PortfolioDetailsDialogProps) {
   const [editing, setEditing] = useState(false);
   const [formData, setFormData] = useState<UpdatePortfolioRequest>({});
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   React.useEffect(() => {
     if (portfolio) {
@@ -57,16 +60,24 @@ export function PortfolioDetailsDialog({
     }
   };
 
-  const handleDelete = () => {
+  const handleDeleteClick = () => {
     if (!portfolio) return;
+    setShowDeleteConfirm(true);
+  };
 
-    if (
-      confirm(
-        "Are you sure you want to delete this portfolio? This action cannot be undone."
-      )
-    ) {
-      onDeletePortfolio(portfolio.id);
+  const handleDeleteConfirm = async () => {
+    if (!portfolio) return;
+    
+    setIsDeleting(true);
+    try {
+      await onDeletePortfolio(portfolio.id);
+      setShowDeleteConfirm(false);
       onClose();
+    } catch (error) {
+      log.error("Failed to delete portfolio", error, "PortfolioDetailsDialog");
+      // Error handling is done by the parent component
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -78,6 +89,7 @@ export function PortfolioDetailsDialog({
   };
 
   return (
+    <>
     <Modal
       open={Boolean(portfolio)}
       onOpenChange={(open) => {
@@ -101,7 +113,7 @@ export function PortfolioDetailsDialog({
           >
             Close
           </Button>
-          <Button variant="destructive" onClick={handleDelete}>
+          <Button variant="destructive" onClick={handleDeleteClick}>
             Delete Portfolio
           </Button>
         </>
@@ -316,5 +328,21 @@ export function PortfolioDetailsDialog({
 
       </div>
     </Modal>
+
+    {/* Delete Confirmation Dialog */}
+    <ConfirmationDialog
+      isOpen={showDeleteConfirm}
+      onClose={() => setShowDeleteConfirm(false)}
+      onConfirm={handleDeleteConfirm}
+      title="Delete Portfolio"
+      description={`Are you sure you want to delete "${portfolio.name}"? This will permanently remove the portfolio and all its data.`}
+      variant="destructive"
+      isLoading={isDeleting}
+      loadingText="Deleting..."
+      confirmText="Delete Portfolio"
+      cancelText="Cancel"
+      size="sm"
+    />
+  </>
   );
 }

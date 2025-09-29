@@ -1,5 +1,5 @@
 // Portfolio Service - Pure CRUD operations for portfolios
-import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { doc, setDoc, deleteDoc, updateDoc, serverTimestamp } from "firebase/firestore";
 
 import { db, COLLECTIONS } from "@/lib/services/firebase";
 import { log } from "@/lib/utils/logger";
@@ -81,20 +81,16 @@ export class PortfolioService {
    */
   static async updatePortfolio(portfolioId: string, updates: UpdatePortfolioRequest): Promise<void> {
     try {
-      log.info("Updating portfolio", { portfolioId }, "PortfolioService");
+      log.info("Updating portfolio", { portfolioId, updates }, "PortfolioService");
 
-      const response = await fetch(`/api/portfolios/${portfolioId}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(updates),
-      });
+      // Prepare the update data with timestamp
+      const updateData = {
+        ...updates,
+        updatedAt: serverTimestamp(),
+      };
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to update portfolio");
-      }
+      // Update the document in Firestore
+      await updateDoc(doc(db, COLLECTIONS.PORTFOLIOS, portfolioId), updateData);
 
       log.success("Portfolio updated successfully", { portfolioId }, "PortfolioService");
     } catch (error) {
@@ -110,14 +106,8 @@ export class PortfolioService {
     try {
       log.info("Deleting portfolio", { portfolioId }, "PortfolioService");
 
-      const response = await fetch(`/api/portfolios/${portfolioId}`, {
-        method: "DELETE",
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to delete portfolio");
-      }
+      // Delete the document from Firestore
+      await deleteDoc(doc(db, COLLECTIONS.PORTFOLIOS, portfolioId));
 
       log.success("Portfolio deleted successfully", { portfolioId }, "PortfolioService");
     } catch (error) {

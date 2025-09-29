@@ -1,15 +1,31 @@
 "use client";
 
-import { FileText, Calendar, TrendingUp, ArrowRight } from "lucide-react";
+import { useState, useMemo } from "react";
+import { FileText, Calendar, TrendingUp, ArrowRight, Search, X } from "lucide-react";
 
 import { Button } from "@/lib/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/lib/components/ui/card";
 import { Badge } from "@/lib/components/ui/badge";
+import { Input } from "@/lib/components/ui/input";
 
 import { useResearchContext } from "../providers/research-provider";
 
 export function ResearchList() {
   const { researchResults, selectedResearch, selectResearch, loading, error } = useResearchContext();
+  const [searchQuery, setSearchQuery] = useState("");
+
+  // Filter research results based on search query
+  const filteredResults = useMemo(() => {
+    if (!searchQuery.trim()) return researchResults;
+    
+    const query = searchQuery.toLowerCase();
+    return researchResults.filter(research => 
+      research.companyName.toLowerCase().includes(query) ||
+      research.ticker.toLowerCase().includes(query) ||
+      research.summary.toLowerCase().includes(query) ||
+      research.recommendation.toLowerCase().includes(query)
+    );
+  }, [researchResults, searchQuery]);
 
   if (loading) {
     return (
@@ -75,12 +91,48 @@ export function ResearchList() {
           Research History
         </CardTitle>
         <CardDescription>
-          {researchResults.length} research {researchResults.length === 1 ? 'report' : 'reports'} completed
+          {filteredResults.length} of {researchResults.length} research {researchResults.length === 1 ? 'report' : 'reports'}
+          {searchQuery && ` matching "${searchQuery}"`}
         </CardDescription>
+        
+        {/* Search Bar */}
+        <div className="relative mt-3">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search by company, ticker, or content..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-10 pr-10"
+          />
+          {searchQuery && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="absolute right-1 top-1/2 transform -translate-y-1/2 h-6 w-6 p-0"
+              onClick={() => setSearchQuery("")}
+            >
+              <X className="h-3 w-3" />
+            </Button>
+          )}
+        </div>
       </CardHeader>
       <CardContent>
-        <div className="space-y-3">
-          {researchResults.map((research) => (
+        {filteredResults.length === 0 && searchQuery ? (
+          <div className="text-center py-8">
+            <Search className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+            <p className="text-muted-foreground">No research found matching "{searchQuery}"</p>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setSearchQuery("")}
+              className="mt-2"
+            >
+              Clear search
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {filteredResults.map((research) => (
             <div
               key={research.id}
               className={`border rounded-lg p-4 transition-all duration-200 cursor-pointer hover:shadow-md hover:border-border/80 ${
@@ -139,8 +191,9 @@ export function ResearchList() {
                 </div>
               </div>
             </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </CardContent>
     </Card>
   );
