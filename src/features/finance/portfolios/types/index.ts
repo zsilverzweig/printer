@@ -22,6 +22,7 @@ export interface Portfolio {
   thesis: string;
   positions: PortfolioPosition[];
   marketContext: string;
+  userId: string;
   createdAt: string;
   updatedAt: string;
   status: string;

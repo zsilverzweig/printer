@@ -41,6 +41,7 @@ export const POST = withAgentMiddleware(
         thesis,
         positions: [],
         marketContext: "",
+        userId: context.user.uid,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         isActive: true,
@@ -50,7 +51,6 @@ export const POST = withAgentMiddleware(
           aiModel: "chained-agents-v2",
           generatedAt: new Date().toISOString(),
           betaVersion: true,
-          userId: context.user.uid,
         },
       };
 
@@ -62,7 +62,7 @@ export const POST = withAgentMiddleware(
         {
           name: "market_analysis",
           agent: ResearchAnalystAgent,
-          job: ResearchAnalystAgent.jobs.analyzeMarkets,
+          jobName: "analyzeMarkets" as const,
           input: { thesis },
           updatePortfolio: (result: any) => {
             portfolio.marketContext = result.marketAnalysis ?? "";
@@ -72,7 +72,7 @@ export const POST = withAgentMiddleware(
         {
           name: "company_identification",
           agent: ResearchAnalystAgent,
-          job: ResearchAnalystAgent.jobs.identifyCompanies,
+          jobName: "identifyCompanies" as const,
           input: (prevResult: any) => ({ thesis, marketAnalysis: prevResult }),
           updatePortfolio: () => {},
           nextStatus: FinancialAnalystAgent.jobs.validateStocks.statusMessage,
@@ -80,7 +80,7 @@ export const POST = withAgentMiddleware(
         {
           name: "stock_validation",
           agent: FinancialAnalystAgent,
-          job: FinancialAnalystAgent.jobs.validateStocks,
+          jobName: "validateStocks" as const,
           input: (prevResult: any) => ({ companies: prevResult.companies }),
           updatePortfolio: () => {},
           nextStatus: FinancialAnalystAgent.jobs.setPriceTargets.statusMessage,
@@ -88,7 +88,7 @@ export const POST = withAgentMiddleware(
         {
           name: "price_targets",
           agent: FinancialAnalystAgent,
-          job: FinancialAnalystAgent.jobs.setPriceTargets,
+          jobName: "setPriceTargets" as const,
           input: (prevResult: any, marketAnalysis: any) => ({
             companies: prevResult.validCompanies,
             marketContext: marketAnalysis,
@@ -100,7 +100,7 @@ export const POST = withAgentMiddleware(
         {
           name: "catalyst_analysis",
           agent: FinancialAnalystAgent,
-          job: FinancialAnalystAgent.jobs.identifyCatalysts,
+          jobName: "identifyCatalysts" as const,
           input: (prevResult: any) => ({ companies: prevResult.companies }),
           updatePortfolio: () => {},
           nextStatus:
@@ -109,7 +109,7 @@ export const POST = withAgentMiddleware(
         {
           name: "portfolio_optimization",
           agent: PortfolioManagerAgent,
-          job: PortfolioManagerAgent.jobs.optimizePortfolio,
+          jobName: "optimizePortfolio" as const,
           input: (prevResult: any, marketAnalysis: any) => ({
             thesis,
             companies: prevResult.catalysts.map((c: any) => ({
@@ -119,7 +119,7 @@ export const POST = withAgentMiddleware(
             priceTargets: prevResult,
             catalysts: prevResult.catalysts,
           }),
-          updatePortfolio: (result: any) => {
+          updatePortfolio: (result: any, catalysts: any) => {
             portfolio.name = result.name;
             portfolio.description = result.description;
             portfolio.positions = result.positions.map(
@@ -131,7 +131,7 @@ export const POST = withAgentMiddleware(
                 status: "draft" as const,
                 weight: pos.weight,
                 catalyst:
-                  prevResult.catalysts.find((c: any) => c.symbol === pos.symbol)
+                  catalysts.catalysts.find((c: any) => c.symbol === pos.symbol)
                     ?.catalyst || "",
                 rationale: pos.rationale,
                 priceTarget: pos.targetPrice || 0,
@@ -157,19 +157,24 @@ export const POST = withAgentMiddleware(
             : step.input;
 
         // Execute agent job
+        const job = step.agent.jobs[step.jobName];
         const result = await executeAgentJob(
           context,
           {
             agent: step.agent,
-            jobName: step.job.name,
-            inputValidator: step.job.inputSchema,
-            outputValidator: step.job.outputSchema,
+            jobName: step.jobName,
+            inputValidator: job.inputSchema,
+            outputValidator: job.outputSchema,
           },
           input
         );
 
         // Update portfolio
-        step.updatePortfolio(result);
+        if (step.name === "portfolio_optimization") {
+          step.updatePortfolio(result, previousResult);
+        } else {
+          step.updatePortfolio(result);
+        }
         portfolio.status = step.nextStatus ?? portfolio.status;
         portfolio.updatedAt = new Date().toISOString();
 
