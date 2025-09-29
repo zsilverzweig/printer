@@ -1,5 +1,5 @@
 // Simple agent execution utility for single-agent operations
-import { aiService, createAIRequest, AIAgent, AIOperation } from "@/lib/services/ai-service";
+import { aiService, createAIRequest, AIAgent } from "@/lib/services/ai-service";
 import { log } from "@/lib/utils/logger";
 
 import { AgentContext } from "./agent-middleware";
@@ -7,7 +7,6 @@ import { AgentContext } from "./agent-middleware";
 export interface AgentExecutionOptions<TInput, TOutput> {
   agent: AIAgent;
   jobName: keyof AIAgent['jobs'];
-  operation: AIOperation;
   inputValidator?: (input: any) => TInput;
   outputValidator?: (output: any) => TOutput;
 }
@@ -21,7 +20,7 @@ export async function executeAgentJob<TInput, TOutput>(
   options: AgentExecutionOptions<TInput, TOutput>,
   input: any
 ): Promise<TOutput> {
-  const { agent, jobName, operation, inputValidator, outputValidator } = options;
+  const { agent, jobName, inputValidator, outputValidator } = options;
   
   // Get the job configuration
   const job = agent.jobs[jobName];
@@ -57,7 +56,7 @@ export async function executeAgentJob<TInput, TOutput>(
   );
 
   // Execute with AI service
-  const response = await aiService.generateResponse(agent, aiRequest, operation);
+  const response = await aiService.generateResponse(agent, aiRequest);
   
   // Parse JSON response
   let rawResult: any;

@@ -132,6 +132,94 @@ interface CreatePortfolioOutput {
 Generate positions that align with the investment thesis.
       `.trim(),
     },
+
+    // ------------------------------------------------------------------------
+    // OPTIMIZE PORTFOLIO JOB
+    // ------------------------------------------------------------------------
+    optimizePortfolio: {
+      name: "Optimize Portfolio",
+      description: "Assign optimal weights to create balanced investment portfolio",
+      statusMessage: "Portfolio Manager is assigning weights for investment portfolio",
+      
+      // Input validation
+      inputSchema: (input: any): OptimizePortfolioInput => {
+        if (!input.thesis || typeof input.thesis !== "string" || !input.thesis.trim()) {
+          throw new Error("Thesis is required and must be a non-empty string");
+        }
+        if (!input.companies || !Array.isArray(input.companies)) {
+          throw new Error("Companies array is required");
+        }
+        return { 
+          thesis: input.thesis,
+          companies: input.companies,
+          priceTargets: input.priceTargets,
+          catalysts: input.catalysts
+        };
+      },
+      
+      // Output validation
+      outputSchema: (output: any): OptimizePortfolioOutput => {
+        if (!output.name || !output.description || !output.thesis || !Array.isArray(output.positions)) {
+          throw new Error("AI response is missing required fields");
+        }
+        return {
+          name: output.name,
+          description: output.description,
+          thesis: output.thesis,
+          positions: output.positions,
+          allocation: output.allocation,
+          riskProfile: output.riskProfile
+        };
+      },
+      
+      // Job Execution Prompt
+      prompt: (input: OptimizePortfolioInput) => `
+Create an optimized investment portfolio based on this investment thesis: ${input.thesis}
+
+Companies to consider:
+${input.companies.map(c => `${c.symbol} - ${c.name}`).join('\n')}
+
+${input.priceTargets ? `Price Targets: ${JSON.stringify(input.priceTargets)}` : ''}
+${input.catalysts ? `Catalysts: ${JSON.stringify(input.catalysts)}` : ''}
+
+Create a balanced portfolio with:
+1. Optimal position sizing based on risk/reward
+2. Diversification across sectors and market caps
+3. Weight allocation that reflects conviction levels
+4. Risk management considerations
+
+Return a JSON object matching this TypeScript interface:
+interface OptimizePortfolioOutput {
+  name: string;              // Portfolio name
+  description: string;       // Portfolio strategy description
+  thesis: string;           // Investment thesis
+  positions: Array<{
+    symbol: string;           // Stock symbol
+    name: string;            // Company name
+    weight: number;          // Portfolio weight (0-1)
+    shares: number;          // Number of shares
+    rationale: string;       // Why this position and weight
+    confidence: 'low' | 'medium' | 'high'; // Confidence level
+    targetPrice?: number;    // Target price
+    stopLoss?: number;       // Stop loss price
+    timeHorizon: string;     // Investment time horizon
+  }>;
+  allocation: {
+    totalWeight: number;     // Should equal 1.0
+    sectorAllocation: Record<string, number>; // Sector weights
+    marketCapAllocation: Record<string, number>; // Market cap weights
+  };
+  riskProfile: {
+    expectedReturn: number;  // Expected annual return
+    riskLevel: 'low' | 'medium' | 'high'; // Risk level
+    maxDrawdown: number;    // Expected max drawdown
+    sharpeRatio?: number;   // Risk-adjusted return
+  };
+}
+
+Focus on creating a well-balanced, risk-managed portfolio that maximizes the investment thesis potential.
+      `.trim(),
+    },
   },
 } as const;
 
@@ -160,6 +248,45 @@ export interface CreatePortfolioOutput {
   positions: PortfolioPosition[];
 }
 
+export interface OptimizePortfolioInput {
+  thesis: string;
+  companies: Array<{
+    symbol: string;
+    name: string;
+    sector?: string;
+  }>;
+  priceTargets?: any;
+  catalysts?: any;
+}
+
+export interface OptimizePortfolioOutput {
+  name: string;
+  description: string;
+  thesis: string;
+  positions: Array<{
+    symbol: string;
+    name: string;
+    weight: number;
+    shares: number;
+    rationale: string;
+    confidence: 'low' | 'medium' | 'high';
+    targetPrice?: number;
+    stopLoss?: number;
+    timeHorizon: string;
+  }>;
+  allocation: {
+    totalWeight: number;
+    sectorAllocation: Record<string, number>;
+    marketCapAllocation: Record<string, number>;
+  };
+  riskProfile: {
+    expectedReturn: number;
+    riskLevel: 'low' | 'medium' | 'high';
+    maxDrawdown: number;
+    sharpeRatio?: number;
+  };
+}
+
 export type PortfolioManagerAgentType = typeof PortfolioManagerAgent;
-export type PortfolioManagerJobInput = RefineThesisInput | CreatePortfolioInput;
-export type PortfolioManagerJobOutput = RefineThesisOutput | CreatePortfolioOutput;
+export type PortfolioManagerJobInput = RefineThesisInput | CreatePortfolioInput | OptimizePortfolioInput;
+export type PortfolioManagerJobOutput = RefineThesisOutput | CreatePortfolioOutput | OptimizePortfolioOutput;

@@ -21,6 +21,7 @@ export interface UsePortfolioReturn {
   
   // Actions
   createPortfolio: (request: CreatePortfolioRequest) => Promise<Portfolio>;
+  createPortfolioBeta: (request: CreatePortfolioRequest) => Promise<{ portfolioId: string }>;
   updatePortfolio: (portfolioId: string, updates: UpdatePortfolioRequest) => Promise<void>;
   deletePortfolio: (portfolioId: string) => Promise<void>;
   
@@ -46,6 +47,23 @@ export function usePortfolio(_userId: string): UsePortfolioReturn {
         setCreating(true);
         setActionError(null);
         return await PortfolioService.createPortfolio(request);
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : "Failed to create portfolio";
+        setActionError(errorMessage);
+        throw err;
+      } finally {
+        setCreating(false);
+      }
+    },
+    []
+  );
+
+  const createPortfolioBeta = useCallback(
+    async (request: CreatePortfolioRequest): Promise<{ portfolioId: string }> => {
+      try {
+        setCreating(true);
+        setActionError(null);
+        return await PortfolioService.createPortfolioBeta(request);
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : "Failed to create portfolio";
         setActionError(errorMessage);
@@ -114,6 +132,7 @@ export function usePortfolio(_userId: string): UsePortfolioReturn {
     
     // Actions
     createPortfolio,
+    createPortfolioBeta,
     updatePortfolio,
     deletePortfolio,
     

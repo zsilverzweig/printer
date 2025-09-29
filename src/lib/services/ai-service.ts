@@ -15,6 +15,7 @@ export interface AgentJob<TInput = any, TOutput = any> {
   prompt: (input: TInput) => string;
   inputSchema?: (input: any) => TInput;
   outputSchema?: (output: any) => TOutput;
+  statusMessage?: string; // User feedback message for this job
 }
 
 export interface AIAgent {
@@ -50,7 +51,6 @@ export interface AIResponse {
   processingTime: number;
   metadata: {
     agentId: string;
-    operation: string;
     temperature: number;
   };
 }
@@ -82,8 +82,7 @@ export class AIService {
    */
   async generateResponse(
     agent: AIAgent,
-    request: AIRequest,
-    operation: AIOperation
+    request: AIRequest
   ): Promise<AIResponse> {
     const startTime = Date.now();
 
@@ -111,12 +110,12 @@ export class AIService {
         estimatedOutputTokens
       );
 
-      log.info(`💰 Estimated cost: $${estimatedCost.toFixed(4)} for ${operation}`, undefined, "AIService");
+      log.info(`💰 Estimated cost: $${estimatedCost.toFixed(4)}`, undefined, "AIService");
 
       // Check if OpenAI API key is available
       if (!process.env.OPENAI_API_KEY) {
-        log.warn("OpenAI API key not configured, using mock response", { operation }, "AIService");
-        return this.createMockResponse(agent, request, operation, startTime);
+        log.warn("OpenAI API key not configured, using mock response", undefined, "AIService");
+        return this.createMockResponse(agent, request, startTime);
       }
 
       // Make OpenAI API request
@@ -171,14 +170,13 @@ export class AIService {
         processingTime: Date.now() - startTime,
         metadata: {
           agentId: agent.id,
-          operation,
           temperature: agent.model.temperature,
         },
       };
 
       // Record cost
       recordAICost(
-        operation,
+        'thesis_generation',
         agent.id,
         agent.model.name,
         tokensUsed,
@@ -212,7 +210,6 @@ export class AIService {
         processingTime: Date.now() - startTime,
         metadata: {
           agentId: agent.id,
-          operation,
           temperature: agent.model.temperature,
         },
       };
@@ -282,12 +279,10 @@ export class AIService {
   private createMockResponse(
     agent: AIAgent, 
     request: AIRequest, 
-    operation: AIOperation, 
     startTime: number
   ): AIResponse {
     const mockContent = JSON.stringify({
       message: "This is a mock response - OpenAI API key not configured",
-      operation,
       agentId: agent.id,
     });
 
@@ -301,11 +296,10 @@ export class AIService {
       timestamp: new Date(),
       isCached: false,
       processingTime: Date.now() - startTime,
-      metadata: {
-        agentId: agent.id,
-        operation,
-        temperature: agent.model.temperature,
-      },
+        metadata: {
+          agentId: agent.id,
+          temperature: agent.model.temperature,
+        },
     };
   }
 }

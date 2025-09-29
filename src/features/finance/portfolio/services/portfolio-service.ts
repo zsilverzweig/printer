@@ -77,6 +77,46 @@ export class PortfolioService {
   }
 
   /**
+   * Create a new portfolio using AI agent (Beta version with chained agents)
+   */
+  static async createPortfolioBeta(request: CreatePortfolioRequest): Promise<{ portfolioId: string }> {
+    try {
+      log.info("Creating portfolio (Beta)", { 
+        name: request.name,
+        thesisLength: request.thesis?.length || 0 
+      }, "PortfolioService");
+
+      // Call the AI agent to generate the portfolio using the new chained approach
+      const response = await fetch("/api/agents/create-portfolio-v2", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ thesis: request.thesis }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to create portfolio");
+      }
+
+      // The API handles all the portfolio creation and saving
+      const result = await response.json();
+      
+      log.success("Portfolio creation started (Beta)", {
+        portfolioId: result.portfolioId,
+        thesisLength: request.thesis?.length || 0
+      }, "PortfolioService");
+
+      return { portfolioId: result.portfolioId };
+    } catch (error) {
+      log.failure("Failed to create portfolio (Beta)", error, "PortfolioService");
+      throw error;
+    }
+  }
+
+
+  /**
    * Update an existing portfolio
    */
   static async updatePortfolio(portfolioId: string, updates: UpdatePortfolioRequest): Promise<void> {

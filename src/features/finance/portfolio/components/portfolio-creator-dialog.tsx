@@ -39,7 +39,7 @@ export function PortfolioCreatorDialog({
   const [refinementGuidance, setRefinementGuidance] = useState("");
   const [creationState, setCreationState] = useState<CreationState>("idle");
 
-  const { createPortfolio, creating, error } = usePortfolio(userId);
+  const { createPortfolio, createPortfolioBeta, creating, error } = usePortfolio(userId);
   
   // Get thesis operations from dedicated hook
   const { refineThesis, refiningThesis } = useThesis();
@@ -78,6 +78,38 @@ export function PortfolioCreatorDialog({
     } catch (err) {
       setCreationState("error");
     }
+  };
+
+  const handleBetaSubmit = () => {
+    if (!thesis.trim()) return;
+
+    // Fire and forget - start the beta creation in the background
+    createPortfolioBeta({
+      name: portfolioName.trim() || `Portfolio - ${new Date().toLocaleDateString()}`,
+      description: description.trim() || "Generated portfolio (Beta)",
+      thesis: thesis.trim(),
+      positions: [], // Will be populated by agents later
+      userId: userId, // Pass the user ID for saving to Firestore
+      metadata: {
+        wasRefined: false, // We'll track this based on whether the button was used
+        originalThesis: thesis.trim()
+      }
+    }).then(result => {
+      console.log("Beta portfolio creation started:", result.portfolioId);
+    }).catch(err => {
+      // Log error but don't show to user since it's background
+      console.error("Beta portfolio creation failed:", err);
+    });
+
+    // Close dialog immediately
+    onOpenChange(false);
+    
+    // Reset form
+    setPortfolioName("");
+    setThesis("");
+    setDescription("");
+    setRefinementGuidance("");
+    setCreationState("idle");
   };
 
   const handleClose = () => {
@@ -253,6 +285,13 @@ export function PortfolioCreatorDialog({
           disabled={!thesis.trim() || creating}
         >
           Create Portfolio
+        </Button>
+        <Button 
+          onClick={handleBetaSubmit}
+          disabled={!thesis.trim() || creating}
+          className="bg-gradient-to-r from-purple-500 via-pink-500 to-red-500 text-white border-0 hover:from-purple-600 hover:via-pink-600 hover:to-red-600 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Create in β
         </Button>
       </div>
     );
