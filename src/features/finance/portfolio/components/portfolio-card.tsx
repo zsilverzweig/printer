@@ -29,8 +29,8 @@ export function PortfolioCard({
         <div className="flex items-start justify-between">
           <div className="flex-1">
             <CardTitle className="text-lg">{portfolio.name}</CardTitle>
-            <CardDescription className="mt-1">
-              {portfolio.description}
+            <CardDescription className="mt-1 line-clamp-3">
+              {portfolio.thesis}{" "}
             </CardDescription>
           </div>
         </div>
@@ -52,19 +52,9 @@ export function PortfolioCard({
             </div>
           )}
 
-          {/* Thesis Preview */}
           <div>
             <label className="block text-sm font-medium text-gray-600 mb-1">
-              Thesis
-            </label>
-            <p className="text-sm text-foreground line-clamp-3">
-              {portfolio.thesis}
-            </p>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-600 mb-1">
-              Draft Positions
+              Positions
             </label>
             {portfolio.positions.length === 0 ? (
               <span className="text-sm text-gray-500">
