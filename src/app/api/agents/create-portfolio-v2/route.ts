@@ -1,27 +1,9 @@
 import { doc, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
 import { NextRequest, NextResponse } from "next/server";
 
-import {
-  FinancialAnalystAgent,
-  IdentifyCatalystsInput,
-  IdentifyCatalystsOutput,
-  SetPriceTargetsInput,
-  SetPriceTargetsOutput,
-  ValidateStocksInput,
-  ValidateStocksOutput,
-} from "@/features/agents/financial-analyst";
-import {
-  OptimizePortfolioInput,
-  OptimizePortfolioOutput,
-  PortfolioManagerAgent,
-} from "@/features/agents/portfolio-manager";
-import {
-  AnalyzeMarketsInput,
-  AnalyzeMarketsOutput,
-  IdentifyCompaniesInput,
-  IdentifyCompaniesOutput,
-  ResearchAnalystAgent,
-} from "@/features/agents/research-analyst";
+import { FinancialAnalystAgent } from "@/features/agents/financial-analyst";
+import { PortfolioManagerAgent } from "@/features/agents/portfolio-manager";
+import { ResearchAnalystAgent } from "@/features/agents/research-analyst";
 import { Portfolio } from "@/features/finance/portfolios/types";
 import { executeAgentJob } from "@/lib/api/agent-executor";
 import { AgentContext, withAgentMiddleware } from "@/lib/api/agent-middleware";
@@ -75,209 +57,140 @@ export const POST = withAgentMiddleware(
       // Save initial portfolio
       await setDoc(doc(db, COLLECTIONS.PORTFOLIOS, portfolioId), portfolio);
 
-      // Step 1: Market Analysis
-      const marketAnalysis = await executeAgentJob<
-        AnalyzeMarketsInput,
-        AnalyzeMarketsOutput
-      >(
-        context,
+      // Define the workflow steps
+      const workflowSteps = [
         {
+          name: "market_analysis",
           agent: ResearchAnalystAgent,
-          jobName: ResearchAnalystAgent.jobs.analyzeMarkets.name,
-          inputValidator: ResearchAnalystAgent.jobs.analyzeMarkets.inputSchema,
-          outputValidator:
-            ResearchAnalystAgent.jobs.analyzeMarkets.outputSchema,
+          job: ResearchAnalystAgent.jobs.analyzeMarkets,
+          input: { thesis },
+          updatePortfolio: (result: any) => {
+            portfolio.marketContext = result.marketAnalysis ?? "";
+          },
+          nextStatus: ResearchAnalystAgent.jobs.identifyCompanies.statusMessage,
         },
-        { thesis }
-      );
-
-      // Enhance portfolio with market analysis
-      portfolio.marketContext = marketAnalysis.marketAnalysis ?? "";
-      portfolio.status =
-        ResearchAnalystAgent.jobs.identifyCompanies.statusMessage ??
-        portfolio.status;
-      portfolio.updatedAt = new Date().toISOString();
-
-      // Update portfolio in database
-      await updateDoc(doc(db, COLLECTIONS.PORTFOLIOS, portfolioId), {
-        marketContext: portfolio.marketContext,
-        status: portfolio.status,
-        updatedAt: serverTimestamp(),
-      });
-
-      // Step 2: Company Identification
-      const companyList = await executeAgentJob<
-        IdentifyCompaniesInput,
-        IdentifyCompaniesOutput
-      >(
-        context,
         {
+          name: "company_identification",
           agent: ResearchAnalystAgent,
-          jobName: ResearchAnalystAgent.jobs.identifyCompanies.name,
-          inputValidator:
-            ResearchAnalystAgent.jobs.identifyCompanies.inputSchema,
-          outputValidator:
-            ResearchAnalystAgent.jobs.identifyCompanies.outputSchema,
+          job: ResearchAnalystAgent.jobs.identifyCompanies,
+          input: (prevResult: any) => ({ thesis, marketAnalysis: prevResult }),
+          updatePortfolio: () => {},
+          nextStatus: FinancialAnalystAgent.jobs.validateStocks.statusMessage,
         },
-        { thesis, marketAnalysis }
-      );
-
-      // Enhance portfolio with company identification
-      portfolio.status =
-        FinancialAnalystAgent.jobs.validateStocks.statusMessage ??
-        portfolio.status;
-      portfolio.updatedAt = new Date().toISOString();
-
-      // Update portfolio in database
-      await updateDoc(doc(db, COLLECTIONS.PORTFOLIOS, portfolioId), {
-        status: portfolio.status,
-        updatedAt: serverTimestamp(),
-      });
-
-      // Step 3: Stock Validation
-      const validatedStocks = await executeAgentJob<
-        ValidateStocksInput,
-        ValidateStocksOutput
-      >(
-        context,
         {
+          name: "stock_validation",
           agent: FinancialAnalystAgent,
-          jobName: FinancialAnalystAgent.jobs.validateStocks.name,
-          inputValidator: FinancialAnalystAgent.jobs.validateStocks.inputSchema,
-          outputValidator:
-            FinancialAnalystAgent.jobs.validateStocks.outputSchema,
+          job: FinancialAnalystAgent.jobs.validateStocks,
+          input: (prevResult: any) => ({ companies: prevResult.companies }),
+          updatePortfolio: () => {},
+          nextStatus: FinancialAnalystAgent.jobs.setPriceTargets.statusMessage,
         },
-        { companies: companyList.companies }
-      );
-
-      // Enhance portfolio with stock validation
-      portfolio.status =
-        FinancialAnalystAgent.jobs.setPriceTargets.statusMessage ??
-        portfolio.status;
-      portfolio.updatedAt = new Date().toISOString();
-
-      // Update portfolio in database
-      await updateDoc(doc(db, COLLECTIONS.PORTFOLIOS, portfolioId), {
-        status: portfolio.status,
-        updatedAt: serverTimestamp(),
-      });
-
-      // Step 4: Price Targets
-      const priceTargets = await executeAgentJob<
-        SetPriceTargetsInput,
-        SetPriceTargetsOutput
-      >(
-        context,
         {
+          name: "price_targets",
           agent: FinancialAnalystAgent,
-          jobName: FinancialAnalystAgent.jobs.setPriceTargets.name,
-          inputValidator:
-            FinancialAnalystAgent.jobs.setPriceTargets.inputSchema,
-          outputValidator:
-            FinancialAnalystAgent.jobs.setPriceTargets.outputSchema,
+          job: FinancialAnalystAgent.jobs.setPriceTargets,
+          input: (prevResult: any, marketAnalysis: any) => ({
+            companies: prevResult.validCompanies,
+            marketContext: marketAnalysis,
+          }),
+          updatePortfolio: () => {},
+          nextStatus:
+            FinancialAnalystAgent.jobs.identifyCatalysts.statusMessage,
         },
         {
-          companies: validatedStocks.validCompanies,
-          marketContext: marketAnalysis,
-        }
-      );
-
-      // Enhance portfolio with price targets
-      portfolio.status =
-        FinancialAnalystAgent.jobs.identifyCatalysts.statusMessage ??
-        portfolio.status;
-      portfolio.updatedAt = new Date().toISOString();
-
-      // Update portfolio in database
-      await updateDoc(doc(db, COLLECTIONS.PORTFOLIOS, portfolioId), {
-        status: portfolio.status,
-        updatedAt: serverTimestamp(),
-      });
-
-      // Step 5: Catalyst Analysis
-      const catalysts = await executeAgentJob<
-        IdentifyCatalystsInput,
-        IdentifyCatalystsOutput
-      >(
-        context,
-        {
+          name: "catalyst_analysis",
           agent: FinancialAnalystAgent,
-          jobName: FinancialAnalystAgent.jobs.identifyCatalysts.name,
-          inputValidator:
-            FinancialAnalystAgent.jobs.identifyCatalysts.inputSchema,
-          outputValidator:
-            FinancialAnalystAgent.jobs.identifyCatalysts.outputSchema,
+          job: FinancialAnalystAgent.jobs.identifyCatalysts,
+          input: (prevResult: any) => ({ companies: prevResult.companies }),
+          updatePortfolio: () => {},
+          nextStatus:
+            PortfolioManagerAgent.jobs.optimizePortfolio.statusMessage,
         },
-        { companies: priceTargets.companies }
-      );
-
-      // Enhance portfolio with catalyst analysis
-      portfolio.status =
-        PortfolioManagerAgent.jobs.optimizePortfolio.statusMessage ??
-        portfolio.status;
-      portfolio.updatedAt = new Date().toISOString();
-
-      // Update portfolio in database
-      await updateDoc(doc(db, COLLECTIONS.PORTFOLIOS, portfolioId), {
-        status: portfolio.status,
-        updatedAt: serverTimestamp(),
-      });
-
-      // Step 6: Portfolio Optimization
-      const finalPortfolio = await executeAgentJob<
-        OptimizePortfolioInput,
-        OptimizePortfolioOutput
-      >(
-        context,
         {
+          name: "portfolio_optimization",
           agent: PortfolioManagerAgent,
-          jobName: PortfolioManagerAgent.jobs.optimizePortfolio.name,
-          inputValidator:
-            PortfolioManagerAgent.jobs.optimizePortfolio.inputSchema,
-          outputValidator:
-            PortfolioManagerAgent.jobs.optimizePortfolio.outputSchema,
+          job: PortfolioManagerAgent.jobs.optimizePortfolio,
+          input: (prevResult: any, marketAnalysis: any) => ({
+            thesis,
+            companies: prevResult.catalysts.map((c: any) => ({
+              symbol: c.symbol,
+              name: c.name,
+            })),
+            priceTargets: prevResult,
+            catalysts: prevResult.catalysts,
+          }),
+          updatePortfolio: (result: any) => {
+            portfolio.name = result.name;
+            portfolio.description = result.description;
+            portfolio.positions = result.positions.map(
+              (pos: any, index: number) => ({
+                id: `pos_${portfolioId}_${index}`,
+                symbol: pos.symbol,
+                name: pos.name,
+                side: "buy" as const,
+                status: "draft" as const,
+                weight: pos.weight,
+                catalyst:
+                  prevResult.catalysts.find((c: any) => c.symbol === pos.symbol)
+                    ?.catalyst || "",
+                rationale: pos.rationale,
+                priceTarget: pos.targetPrice || 0,
+                reevaluateDate: new Date(
+                  Date.now() + 90 * 24 * 60 * 60 * 1000
+                ).toISOString(),
+              })
+            );
+          },
+          nextStatus: "completed",
         },
-        {
-          thesis,
-          companies: catalysts.catalysts.map((c) => ({
-            symbol: c.symbol,
-            name: c.name,
-          })), // Map catalyst companies
-          priceTargets,
-          catalysts: catalysts.catalysts, // Pass the full catalyst data
-        }
-      );
+      ];
 
-      // Enhance portfolio with final positions
-      portfolio.name = finalPortfolio.name;
-      portfolio.description = finalPortfolio.description;
-      portfolio.positions = finalPortfolio.positions.map((pos, index) => ({
-        id: `pos_${portfolioId}_${index}`,
-        symbol: pos.symbol,
-        name: pos.name,
-        side: "buy" as const,
-        status: "draft" as const,
-        weight: pos.weight,
-        catalyst:
-          catalysts.catalysts.find((c) => c.symbol === pos.symbol)?.catalyst ||
-          "",
-        rationale: pos.rationale,
-        priceTarget: pos.targetPrice || 0,
-        reevaluateDate: new Date(
-          Date.now() + 90 * 24 * 60 * 60 * 1000
-        ).toISOString(), // 90 days from now
-      }));
-      portfolio.status = "completed";
-      portfolio.updatedAt = new Date().toISOString();
+      // Execute workflow steps
+      let marketAnalysis: any = null;
+      let previousResult: any = null;
 
-      // Final update with completed portfolio
-      await updateDoc(doc(db, COLLECTIONS.PORTFOLIOS, portfolioId), {
-        name: portfolio.name,
-        description: portfolio.description,
-        positions: portfolio.positions,
-        status: portfolio.status,
-        updatedAt: serverTimestamp(),
-      });
+      for (const step of workflowSteps) {
+        // Prepare input
+        const input =
+          typeof step.input === "function"
+            ? step.input(previousResult, marketAnalysis)
+            : step.input;
+
+        // Execute agent job
+        const result = await executeAgentJob(
+          context,
+          {
+            agent: step.agent,
+            jobName: step.job.name,
+            inputValidator: step.job.inputSchema,
+            outputValidator: step.job.outputSchema,
+          },
+          input
+        );
+
+        // Update portfolio
+        step.updatePortfolio(result);
+        portfolio.status = step.nextStatus ?? portfolio.status;
+        portfolio.updatedAt = new Date().toISOString();
+
+        // Save to database
+        await updateDoc(doc(db, COLLECTIONS.PORTFOLIOS, portfolioId), {
+          ...(step.name === "market_analysis" && {
+            marketContext: portfolio.marketContext,
+          }),
+          ...(step.name === "portfolio_optimization" && {
+            name: portfolio.name,
+            description: portfolio.description,
+            positions: portfolio.positions,
+          }),
+          status: portfolio.status,
+          updatedAt: serverTimestamp(),
+        });
+
+        // Store results for next steps
+        if (step.name === "market_analysis") marketAnalysis = result;
+        previousResult = result;
+      }
 
       return NextResponse.json({ portfolioId, success: true });
     } catch (error) {
