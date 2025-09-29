@@ -46,12 +46,7 @@ export const POST = withAgentMiddleware(
         updatedAt: new Date().toISOString(),
         isActive: true,
         status: "initializing",
-        metadata: {
-          generatedByAI: true,
-          aiModel: "chained-agents-v2",
-          generatedAt: new Date().toISOString(),
-          betaVersion: true,
-        },
+        metadata: {},
       };
 
       // Save initial portfolio
