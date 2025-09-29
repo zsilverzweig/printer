@@ -6,7 +6,9 @@ import { Timestamp } from "firebase/firestore";
 // ============================================================================
 
 // Convert Firebase Timestamp to Date
-export const timestampToDate = (timestamp: Timestamp | Date | null | undefined): Date => {
+export const timestampToDate = (
+  timestamp: Timestamp | Date | null | undefined
+): Date => {
   if (!timestamp) return new Date();
   if (timestamp instanceof Date) return timestamp;
   if (timestamp.toDate) return timestamp.toDate();
@@ -14,7 +16,9 @@ export const timestampToDate = (timestamp: Timestamp | Date | null | undefined):
 };
 
 // Convert Date to Firebase Timestamp (for writing to Firestore)
-export const dateToTimestamp = (date: Date | null | undefined): Timestamp | null => {
+export const dateToTimestamp = (
+  date: Date | null | undefined
+): Timestamp | null => {
   if (!date) return null;
   return Timestamp.fromDate(date);
 };
@@ -78,7 +82,7 @@ export const convertTimestampedDocument = <T extends TimestampedDocument>(
   customFields: (data: any) => Partial<T> = () => ({})
 ): T => {
   const data = doc.data();
-  
+
   return {
     id: doc.id,
     createdAt: timestampToDate(data.createdAt),
@@ -93,7 +97,7 @@ export const convertDocument = <T>(
   customFields: (data: any) => Partial<T> = () => ({})
 ): T => {
   const data = doc.data();
-  
+
   return {
     id: doc.id,
     ...customFields(data),
@@ -112,20 +116,28 @@ export interface PortfolioDocument extends TimestampedDocument {
   description: string;
   thesis: string;
   positions: PortfolioPosition[];
+  marketContext?: string;
+  userId: string;
   isActive: boolean;
+  status: string;
   assignedAgents: any[];
   metadata: Record<string, any>;
   createdAt: Date;
   updatedAt: Date;
 }
 
-export const convertPortfolioDocument = (doc: FirebaseDocument): PortfolioDocument => {
+export const convertPortfolioDocument = (
+  doc: FirebaseDocument
+): PortfolioDocument => {
   return convertTimestampedDocument<PortfolioDocument>(doc, (data) => ({
     name: safeString(data.name),
     description: safeString(data.description),
     thesis: safeString(data.thesis),
     positions: safeArray(data.positions),
+    marketContext: safeString(data.marketContext),
+    userId: safeString(data.userId),
     isActive: safeBoolean(data.isActive, true),
+    status: safeString(data.status, "completed"),
     assignedAgents: safeArray(data.assignedAgents),
     metadata: safeObject(data.metadata),
   }));
@@ -165,15 +177,15 @@ export const convertUserDocument = (doc: FirebaseDocument): UserDocument => {
 // Convert object for Firestore storage
 export const serializeForFirestore = (obj: any): any => {
   if (obj === null || obj === undefined) return null;
-  
+
   if (Array.isArray(obj)) {
     return obj.map(serializeForFirestore);
   }
-  
+
   if (obj instanceof Date) {
     return dateToTimestamp(obj);
   }
-  
+
   if (typeof obj === "object") {
     const serialized: any = {};
     for (const [key, value] of Object.entries(obj)) {
@@ -181,23 +193,23 @@ export const serializeForFirestore = (obj: any): any => {
     }
     return serialized;
   }
-  
+
   return obj;
 };
 
 // Convert Firestore data back to JavaScript types
 export const deserializeFromFirestore = (obj: any): any => {
   if (obj === null || obj === undefined) return obj;
-  
+
   if (Array.isArray(obj)) {
     return obj.map(deserializeFromFirestore);
   }
-  
+
   if (obj && typeof obj === "object" && obj.toDate) {
     // Firebase Timestamp
     return obj.toDate();
   }
-  
+
   if (typeof obj === "object") {
     const deserialized: any = {};
     for (const [key, value] of Object.entries(obj)) {
@@ -205,6 +217,6 @@ export const deserializeFromFirestore = (obj: any): any => {
     }
     return deserialized;
   }
-  
+
   return obj;
 };

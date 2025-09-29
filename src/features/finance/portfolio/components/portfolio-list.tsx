@@ -30,8 +30,8 @@ export function PortfolioList({
           <div className="text-gray-500">
             <h3 className="text-lg font-medium mb-2">No portfolios found</h3>
             <p>
-              Click &quot;Create Portfolio&quot; to use our AI wizard and generate your first portfolio 
-              from your investment thesis.
+              Click &quot;Create Portfolio&quot; to use our AI wizard and
+              generate your first portfolio from your investment thesis.
             </p>
           </div>
         </CardContent>
@@ -54,15 +54,27 @@ export function PortfolioList({
                   {portfolio.description}
                 </CardDescription>
               </div>
-              <div className="flex items-center space-x-2">
-                <Badge variant={portfolio.isActive ? "default" : "secondary"}>
-                  {portfolio.isActive ? "Active" : "Inactive"}
-                </Badge>
-              </div>
             </div>
           </CardHeader>
           <CardContent className="pt-0">
             <div className="space-y-3">
+              {/* Status Section for In-Progress Portfolios */}
+              {portfolio.status && portfolio.status !== "completed" && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <div className="flex items-center space-x-2">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                    <div>
+                      <p className="text-sm font-medium text-blue-900">
+                        Creating Portfolio
+                      </p>
+                      <p className="text-xs text-blue-700">
+                        {portfolio.status}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Thesis Preview */}
               <div>
                 <label className="block text-sm font-medium text-gray-600 mb-1">
@@ -79,7 +91,9 @@ export function PortfolioList({
                 </label>
                 {portfolio.positions.length === 0 ? (
                   <span className="text-sm text-gray-500">
-                    No positions generated yet
+                    {portfolio.status && portfolio.status !== "completed"
+                      ? "Positions will appear as portfolio is created..."
+                      : "No positions generated yet"}
                   </span>
                 ) : (
                   <div className="flex flex-wrap items-center gap-2">
@@ -89,8 +103,7 @@ export function PortfolioList({
                         variant="secondary"
                         className="text-xs"
                       >
-                        {position.symbol} · {position.side.toUpperCase()} ·
-                        {" "}
+                        {position.symbol} · {position.side.toUpperCase()} ·{" "}
                         {position.status.replace("_", " ")}
                       </Badge>
                     ))}
@@ -101,30 +114,6 @@ export function PortfolioList({
                     )}
                   </div>
                 )}
-              </div>
-
-              {/* Assigned Agents */}
-              <div>
-                <label className="block text-sm font-medium text-gray-600 mb-1">
-                  Assigned Agents
-                </label>
-                <div className="flex flex-wrap gap-1">
-                  {portfolio.assignedAgents.length === 0 ? (
-                    <span className="text-sm text-gray-500">
-                      No agents assigned
-                    </span>
-                  ) : (
-                    portfolio.assignedAgents.map((assignedAgent) => (
-                      <Badge
-                        key={assignedAgent.agentId}
-                        variant="outline"
-                        className="text-xs"
-                      >
-                        {assignedAgent.agent.name}
-                      </Badge>
-                    ))
-                  )}
-                </div>
               </div>
 
               {/* Stats */}

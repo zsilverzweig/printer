@@ -8,8 +8,10 @@ import { AIAgent } from "@/lib/services/ai-service";
 export const ResearchAnalystAgent: AIAgent = {
   id: "research-analyst",
   name: "Research Analyst",
-  description: "Expert in comprehensive company research and investment analysis",
-  systemPrompt: "I am the Research Analyst. I conduct thorough analysis of companies to provide actionable investment insights. I focus on business fundamentals, financial health, competitive positioning, and growth prospects to deliver balanced, data-driven research reports.",
+  description:
+    "Expert in comprehensive company research and investment analysis",
+  systemPrompt:
+    "I am the Research Analyst. I conduct thorough analysis of companies to provide actionable investment insights. I focus on business fundamentals, financial health, competitive positioning, and growth prospects to deliver balanced, data-driven research reports.",
 
   // Agent Configuration
   model: AI_MODELS.balanced, // Use the balanced model for research tasks
@@ -17,31 +19,42 @@ export const ResearchAnalystAgent: AIAgent = {
   // ============================================================================
   // JOBS
   // ============================================================================
-  
+
   jobs: {
-    
     // ------------------------------------------------------------------------
     // RESEARCH COMPANY JOB
     // ------------------------------------------------------------------------
     researchCompany: {
       name: "Research Company",
       description: "Conduct comprehensive research on a specific company",
-      
+
       // Input validation
       inputSchema: (input: any): ResearchCompanyInput => {
-        if (!input.companyTicker || typeof input.companyTicker !== "string" || !input.companyTicker.trim()) {
-          throw new Error("Company ticker is required and must be a non-empty string");
+        if (
+          !input.companyTicker ||
+          typeof input.companyTicker !== "string" ||
+          !input.companyTicker.trim()
+        ) {
+          throw new Error(
+            "Company ticker is required and must be a non-empty string"
+          );
         }
-        return { 
+        return {
           companyTicker: input.companyTicker,
           researchFocus: input.researchFocus,
-          additionalContext: input.additionalContext
+          additionalContext: input.additionalContext,
         };
       },
-      
+
       // Output validation
       outputSchema: (output: any): ResearchCompanyOutput => {
-        if (!output.ticker || !output.companyName || !output.report || !output.summary || !output.recommendation) {
+        if (
+          !output.ticker ||
+          !output.companyName ||
+          !output.report ||
+          !output.summary ||
+          !output.recommendation
+        ) {
           throw new Error("AI response is missing required fields");
         }
         return {
@@ -49,18 +62,37 @@ export const ResearchAnalystAgent: AIAgent = {
           companyName: output.companyName,
           report: output.report,
           summary: output.summary,
-          recommendation: output.recommendation
+          recommendation: output.recommendation,
         };
       },
-      
+
       // Job Execution Prompt
-      prompt: (input: ResearchCompanyInput) => `
+      prompt: (input: ResearchCompanyInput) =>
+        `
 Conduct comprehensive research on ${input.companyTicker.toUpperCase()}.
 
-${input.researchFocus?.length ? `Focus Areas: ${input.researchFocus.join(', ')}` : ''}
-${input.additionalContext?.investmentThesis ? `Investment Thesis Context: ${input.additionalContext.investmentThesis}` : ''}
-${input.additionalContext?.specificQuestions?.length ? `Specific Questions: ${input.additionalContext.specificQuestions.join(', ')}` : ''}
-${input.additionalContext?.timeframe ? `Timeframe: ${input.additionalContext.timeframe}` : ''}
+${
+  input.researchFocus?.length
+    ? `Focus Areas: ${input.researchFocus.join(", ")}`
+    : ""
+}
+${
+  input.additionalContext?.investmentThesis
+    ? `Investment Thesis Context: ${input.additionalContext.investmentThesis}`
+    : ""
+}
+${
+  input.additionalContext?.specificQuestions?.length
+    ? `Specific Questions: ${input.additionalContext.specificQuestions.join(
+        ", "
+      )}`
+    : ""
+}
+${
+  input.additionalContext?.timeframe
+    ? `Timeframe: ${input.additionalContext.timeframe}`
+    : ""
+}
 
 Provide a detailed research report covering:
 1. Company Overview: Business model, operations, market position
@@ -87,32 +119,42 @@ Focus on actionable insights and balanced analysis.
     // ------------------------------------------------------------------------
     analyzeMarkets: {
       name: "Analyze Markets",
-      description: "Research relevant markets and sectors for investment thesis",
+      description:
+        "Research relevant markets and sectors for investment thesis",
       statusMessage: "Research Analyst is doing research on relevant markets",
-      
+
       // Input validation
       inputSchema: (input: any): AnalyzeMarketsInput => {
-        if (!input.thesis || typeof input.thesis !== "string" || !input.thesis.trim()) {
+        if (
+          !input.thesis ||
+          typeof input.thesis !== "string" ||
+          !input.thesis.trim()
+        ) {
           throw new Error("Thesis is required and must be a non-empty string");
         }
         return { thesis: input.thesis };
       },
-      
+
       // Output validation
       outputSchema: (output: any): AnalyzeMarketsOutput => {
-        if (!output.marketAnalysis || !output.keySectors || !output.marketTrends) {
+        if (
+          !output.marketAnalysis ||
+          !output.keySectors ||
+          !output.marketTrends
+        ) {
           throw new Error("AI response is missing required fields");
         }
         return {
           marketAnalysis: output.marketAnalysis,
           keySectors: output.keySectors,
           marketTrends: output.marketTrends,
-          opportunities: output.opportunities
+          opportunities: output.opportunities,
         };
       },
-      
+
       // Job Execution Prompt
-      prompt: (input: AnalyzeMarketsInput) => `
+      prompt: (input: AnalyzeMarketsInput) =>
+        `
 Analyze the relevant markets and sectors for this investment thesis: ${input.thesis}
 
 Provide comprehensive market analysis covering:
@@ -139,19 +181,24 @@ Focus on actionable market insights that will inform company selection.
     identifyCompanies: {
       name: "Identify Companies",
       description: "Find companies that meet the investment thesis criteria",
-      statusMessage: "Research Analyst is identifying companies that meet thesis criteria",
-      
+      statusMessage:
+        "Research Analyst is identifying companies that meet thesis criteria",
+
       // Input validation
       inputSchema: (input: any): IdentifyCompaniesInput => {
-        if (!input.thesis || typeof input.thesis !== "string" || !input.thesis.trim()) {
+        if (
+          !input.thesis ||
+          typeof input.thesis !== "string" ||
+          !input.thesis.trim()
+        ) {
           throw new Error("Thesis is required and must be a non-empty string");
         }
-        return { 
+        return {
           thesis: input.thesis,
-          marketAnalysis: input.marketAnalysis
+          marketAnalysis: input.marketAnalysis,
         };
       },
-      
+
       // Output validation
       outputSchema: (output: any): IdentifyCompaniesOutput => {
         if (!output.companies || !Array.isArray(output.companies)) {
@@ -160,21 +207,28 @@ Focus on actionable market insights that will inform company selection.
         return {
           companies: output.companies,
           selectionCriteria: output.selectionCriteria,
-          rationale: output.rationale
+          rationale: output.rationale,
         };
       },
-      
+
       // Job Execution Prompt
-      prompt: (input: IdentifyCompaniesInput) => `
+      prompt: (input: IdentifyCompaniesInput) =>
+        `
 Identify companies that meet this investment thesis: ${input.thesis}
 
-${input.marketAnalysis ? `Market Analysis Context: ${JSON.stringify(input.marketAnalysis)}` : ''}
+${
+  input.marketAnalysis
+    ? `Market Analysis Context: ${JSON.stringify(input.marketAnalysis)}`
+    : ""
+}
 
-Find 8-12 companies that best align with the investment thesis. For each company, provide:
+Find 20-30 companies that best align with the investment thesis. For each company, provide:
 - Company name and ticker symbol
 - Brief rationale for why it fits the thesis
 - Key strengths that align with the investment thesis
 - Market cap and sector information
+
+After looking at them all, prune the list to 10-15 companies that truly align with the thesis.
 
 Return a JSON object matching this TypeScript interface:
 interface IdentifyCompaniesOutput {
@@ -206,7 +260,7 @@ export interface ResearchCompanyInput {
   additionalContext?: {
     investmentThesis?: string;
     specificQuestions?: string[];
-    timeframe?: 'short_term' | 'medium_term' | 'long_term';
+    timeframe?: "short_term" | "medium_term" | "long_term";
   };
 }
 
