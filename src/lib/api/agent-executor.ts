@@ -13,6 +13,9 @@ export interface JobWithMetadata<TInput = any, TOutput = any> {
   outputSchema?: (output: any) => TOutput;
   _agent: AIAgent;
   _jobName: keyof AIAgent["jobs"];
+  // Type information for better inference
+  _inputType?: TInput;
+  _outputType?: TOutput;
 }
 
 /**
@@ -27,6 +30,9 @@ export function createJobWithMetadata<TInput = any, TOutput = any>(
     ...job,
     _agent: agent,
     _jobName: jobName,
+    // Store type information for inference
+    _inputType: undefined as TInput,
+    _outputType: undefined as TOutput,
   };
 }
 
@@ -46,12 +52,9 @@ export interface AgentExecutionOptions<TInput, TOutput> {
  * 2. executeAgentJob(jobWithMetadata, context, input) - ultra-simplified interface
  * 3. executeAgentJob(jobConfig, context, input) - with explicit config
  */
-export async function executeAgentJob<TInput, TOutput>(
-  contextOrJob:
-    | AgentContext
-    | JobWithMetadata<TInput, TOutput>
-    | JobConfig<TInput, TOutput>,
-  optionsOrContext: AgentExecutionOptions<TInput, TOutput> | AgentContext,
+export async function executeAgentJob<TInput = any, TOutput = any>(
+  contextOrJob: AgentContext | JobWithMetadata<any, any> | JobConfig<any, any>,
+  optionsOrContext: AgentExecutionOptions<any, any> | AgentContext,
   input?: any
 ): Promise<TOutput> {
   // Check if this is the ultra-simplified interface with job metadata (jobWithMetadata, context, input)
@@ -61,11 +64,11 @@ export async function executeAgentJob<TInput, TOutput>(
     "_agent" in contextOrJob &&
     "_jobName" in contextOrJob
   ) {
-    const jobWithMetadata = contextOrJob as JobWithMetadata<TInput, TOutput>;
+    const jobWithMetadata = contextOrJob as JobWithMetadata<any, any>;
     const context = optionsOrContext as AgentContext;
     const jobInput = input;
 
-    return executeAgentJobInternal<TInput, TOutput>(
+    return executeAgentJobInternal(
       context,
       jobWithMetadata._agent,
       jobWithMetadata._jobName,
@@ -82,11 +85,11 @@ export async function executeAgentJob<TInput, TOutput>(
     "prompt" in contextOrJob &&
     "agent" in contextOrJob
   ) {
-    const jobConfig = contextOrJob as JobConfig<TInput, TOutput>;
+    const jobConfig = contextOrJob as JobConfig<any, any>;
     const context = optionsOrContext as AgentContext;
     const jobInput = input;
 
-    return executeAgentJobInternal<TInput, TOutput>(
+    return executeAgentJobInternal(
       context,
       jobConfig.agent,
       jobConfig.jobName,
@@ -98,9 +101,9 @@ export async function executeAgentJob<TInput, TOutput>(
 
   // Original interface (context, options, input)
   const context = contextOrJob as AgentContext;
-  const options = optionsOrContext as AgentExecutionOptions<TInput, TOutput>;
+  const options = optionsOrContext as AgentExecutionOptions<any, any>;
 
-  return executeAgentJobInternal<TInput, TOutput>(
+  return executeAgentJobInternal(
     context,
     options.agent,
     options.jobName,

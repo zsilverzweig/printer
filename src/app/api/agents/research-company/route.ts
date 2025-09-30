@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 
 import {
   GetCurrentNewsOutput,
-  ResearchAnalystAgent,
   ResearchAnalystJobs,
   ResearchCompanyOutput,
   SynthesizeInformationOutput,
@@ -16,10 +15,13 @@ export const POST = withAgentMiddleware(
     const body = await request.json();
 
     // Execute the research analyst job
-    const result = await executeAgentJob(
+    const result: ResearchCompanyOutput = await executeAgentJob(
       ResearchAnalystJobs.researchCompany,
       context,
-      { ...body, user_id: context.user.uid }
+      {
+        ...body,
+        user_id: context.user.uid,
+      }
     );
 
     return NextResponse.json(result);
@@ -63,30 +65,43 @@ export const PUT = withAgentMiddleware(
 
     try {
       // Step 1: Research Company
-      const researchResult = await executeAgentJob(ResearchAnalystJobs.researchCompany, context, {
-        companyTicker,
-        companyName,
-        user_id: context.user.uid
-      });
+      const researchResult: ResearchCompanyOutput = await executeAgentJob(
+        ResearchAnalystJobs.researchCompany,
+        context,
+        {
+          companyTicker,
+          companyName,
+          user_id: context.user.uid,
+        }
+      );
 
       // Step 2: Get Current News
-      const newsResult = await executeAgentJob(ResearchAnalystJobs.getCurrentNews, context, {
-        companyTicker,
-        companyName,
-        existingResearch: researchResult.report,
-        newsTimeframe: "30_days",
-        user_id: context.user.uid,
-      });
+      const newsResult: GetCurrentNewsOutput = await executeAgentJob(
+        ResearchAnalystJobs.getCurrentNews,
+        context,
+        {
+          companyTicker,
+          companyName,
+          existingResearch: researchResult.report,
+          newsTimeframe: "30_days",
+          user_id: context.user.uid,
+        }
+      );
 
       // Step 3: Synthesize Information
-      const synthesisResult = await executeAgentJob(ResearchAnalystJobs.synthesizeInformation, context, {
-        companyTicker,
-        companyName,
-        researchData: researchResult.report,
-        newsData: newsResult.newsSummary,
-        investmentThesis,
-        user_id: context.user.uid,
-      });
+      const synthesisResult: SynthesizeInformationOutput =
+        await executeAgentJob(
+          ResearchAnalystJobs.synthesizeInformation,
+          context,
+          {
+            companyTicker,
+            companyName,
+            researchData: researchResult.report,
+            newsData: newsResult.newsSummary,
+            investmentThesis,
+            user_id: context.user.uid,
+          }
+        );
 
       return NextResponse.json({
         research: researchResult,
