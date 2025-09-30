@@ -52,69 +52,85 @@ export const POST = withAgentMiddleware(
       // Save initial portfolio
       await setDoc(doc(db, COLLECTIONS.PORTFOLIOS, portfolioId), portfolio);
 
-      // Define the workflow steps
+      // Define the workflow steps - simple and readable
       const workflowSteps = [
         {
-          name: "market_analysis",
           agent: ResearchAnalystAgent,
           jobName: "analyzeMarkets" as const,
-          input: { thesis },
-          updatePortfolio: (result: any) => {
+          input: () => ({ thesis }),
+          saveOutputTo: (result: any, portfolio: Portfolio) => {
             portfolio.marketContext = result.marketAnalysis ?? "";
           },
           nextStatus: ResearchAnalystAgent.jobs.identifyCompanies.statusMessage,
         },
         {
-          name: "company_identification",
           agent: ResearchAnalystAgent,
           jobName: "identifyCompanies" as const,
-          input: (prevResult: any) => ({ thesis, marketAnalysis: prevResult }),
-          updatePortfolio: () => {},
+          input: (portfolio: Portfolio) => ({
+            thesis: portfolio.thesis,
+            marketAnalysis: portfolio.marketContext,
+          }),
+          saveOutputTo: (result: any, portfolio: Portfolio) => {
+            // Save simplified positions with company name and tickers
+            portfolio.positions = result.companies.map(
+              (company: any, index: number) => ({
+                id: `pos_${portfolio.id}_${index}`,
+                symbol: company.symbol,
+                name: company.name,
+
+                rationale: company.rationale,
+              })
+            );
+          },
           nextStatus: FinancialAnalystAgent.jobs.validateStocks.statusMessage,
         },
         {
-          name: "stock_validation",
           agent: FinancialAnalystAgent,
           jobName: "validateStocks" as const,
-          input: (prevResult: any) => ({ companies: prevResult.companies }),
-          updatePortfolio: () => {},
+          input: (portfolio: Portfolio, previousResult: any) => ({
+            companies: previousResult.companies,
+          }),
+          saveOutputTo: () => {}, // No portfolio updates needed
           nextStatus: FinancialAnalystAgent.jobs.setPriceTargets.statusMessage,
         },
         {
-          name: "price_targets",
           agent: FinancialAnalystAgent,
           jobName: "setPriceTargets" as const,
-          input: (prevResult: any, marketAnalysis: any) => ({
-            companies: prevResult.validCompanies,
+          input: (
+            portfolio: Portfolio,
+            previousResult: any,
+            marketAnalysis: any
+          ) => ({
+            companies: previousResult.validCompanies,
             marketContext: marketAnalysis,
           }),
-          updatePortfolio: () => {},
+          saveOutputTo: () => {}, // No portfolio updates needed
           nextStatus:
             FinancialAnalystAgent.jobs.identifyCatalysts.statusMessage,
         },
         {
-          name: "catalyst_analysis",
           agent: FinancialAnalystAgent,
           jobName: "identifyCatalysts" as const,
-          input: (prevResult: any) => ({ companies: prevResult.companies }),
-          updatePortfolio: () => {},
+          input: (portfolio: Portfolio, previousResult: any) => ({
+            companies: previousResult.companies,
+          }),
+          saveOutputTo: () => {}, // No portfolio updates needed
           nextStatus:
             PortfolioManagerAgent.jobs.optimizePortfolio.statusMessage,
         },
         {
-          name: "portfolio_optimization",
           agent: PortfolioManagerAgent,
           jobName: "optimizePortfolio" as const,
-          input: (prevResult: any, marketAnalysis: any) => ({
-            thesis,
-            companies: prevResult.catalysts.map((c: any) => ({
+          input: (portfolio: Portfolio, previousResult: any) => ({
+            thesis: portfolio.thesis,
+            companies: previousResult.catalysts.map((c: any) => ({
               symbol: c.symbol,
               name: c.name,
             })),
-            priceTargets: prevResult,
-            catalysts: prevResult.catalysts,
+            priceTargets: previousResult,
+            catalysts: previousResult.catalysts,
           }),
-          updatePortfolio: (result: any, catalysts: any) => {
+          saveOutputTo: (result: any, portfolio: Portfolio) => {
             portfolio.name = result.name;
             portfolio.description = result.description;
             portfolio.positions = result.positions.map(
@@ -126,7 +142,7 @@ export const POST = withAgentMiddleware(
                 status: "draft" as const,
                 weight: pos.weight,
                 catalyst:
-                  catalysts.catalysts.find((c: any) => c.symbol === pos.symbol)
+                  result.catalysts?.find((c: any) => c.symbol === pos.symbol)
                     ?.catalyst || "",
                 rationale: pos.rationale,
                 priceTarget: pos.targetPrice || 0,
@@ -145,11 +161,8 @@ export const POST = withAgentMiddleware(
       let previousResult: any = null;
 
       for (const step of workflowSteps) {
-        // Prepare input
-        const input =
-          typeof step.input === "function"
-            ? step.input(previousResult, marketAnalysis)
-            : step.input;
+        // Prepare input - pass portfolio and previous results
+        const input = step.input(portfolio, previousResult, marketAnalysis);
 
         // Execute agent job
         const job = step.agent.jobs[step.jobName];
@@ -164,31 +177,19 @@ export const POST = withAgentMiddleware(
           input
         );
 
-        // Update portfolio
-        if (step.name === "portfolio_optimization") {
-          step.updatePortfolio(result, previousResult);
-        } else {
-          step.updatePortfolio(result);
-        }
+        // Save output to portfolio
+        step.saveOutputTo(result, portfolio);
         portfolio.status = step.nextStatus ?? portfolio.status;
         portfolio.updatedAt = new Date().toISOString();
 
-        // Save to database
+        // Save entire portfolio to database
         await updateDoc(doc(db, COLLECTIONS.PORTFOLIOS, portfolioId), {
-          ...(step.name === "market_analysis" && {
-            marketContext: portfolio.marketContext,
-          }),
-          ...(step.name === "portfolio_optimization" && {
-            name: portfolio.name,
-            description: portfolio.description,
-            positions: portfolio.positions,
-          }),
-          status: portfolio.status,
+          ...portfolio,
           updatedAt: serverTimestamp(),
         });
 
         // Store results for next steps
-        if (step.name === "market_analysis") marketAnalysis = result;
+        if (step.jobName === "analyzeMarkets") marketAnalysis = result;
         previousResult = result;
       }
 

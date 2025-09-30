@@ -2,6 +2,7 @@
 // RESEARCH ANALYST AGENT
 // ============================================================================
 
+import { createJobWithMetadata } from "@/lib/api/agent-executor";
 import { AI_MODELS } from "@/lib/models/ai-models";
 import { AIAgent } from "@/lib/services/ai-service";
 
@@ -69,7 +70,9 @@ export const ResearchAnalystAgent: AIAgent = {
       // Job Execution Prompt
       prompt: (input: ResearchCompanyInput) =>
         `
-Conduct comprehensive research on ${input.companyTicker.toUpperCase()}.
+Conduct comprehensive research on ${input.companyTicker.toUpperCase()}${
+          input.user_id ? ` for user ${input.user_id}` : ""
+        }.
 
 ${
   input.researchFocus?.length
@@ -247,7 +250,208 @@ interface IdentifyCompaniesOutput {
 Focus on companies that strongly align with the investment thesis.
       `.trim(),
     },
+
+    // ------------------------------------------------------------------------
+    // GET CURRENT NEWS JOB
+    // ------------------------------------------------------------------------
+    getCurrentNews: {
+      name: "Get Current News",
+      description: "Retrieve and analyze current news about a company",
+      statusMessage:
+        "Research Analyst is gathering current news and developments",
+
+      // Input validation
+      inputSchema: (input: any): GetCurrentNewsInput => {
+        if (
+          !input.companyTicker ||
+          typeof input.companyTicker !== "string" ||
+          !input.companyTicker.trim()
+        ) {
+          throw new Error(
+            "Company ticker is required and must be a non-empty string"
+          );
+        }
+        return {
+          companyTicker: input.companyTicker,
+          companyName: input.companyName,
+          existingResearch: input.existingResearch,
+          newsTimeframe: input.newsTimeframe || "30_days",
+        };
+      },
+
+      // Output validation
+      outputSchema: (output: any): GetCurrentNewsOutput => {
+        if (!output.news || !Array.isArray(output.news)) {
+          throw new Error("AI response is missing required news array");
+        }
+        return {
+          news: output.news,
+          newsSummary: output.newsSummary,
+          keyDevelopments: output.keyDevelopments,
+          sentimentAnalysis: output.sentimentAnalysis,
+        };
+      },
+
+      // Job Execution Prompt
+      prompt: (input: GetCurrentNewsInput) =>
+        `
+Analyze current news and developments for ${
+          input.companyName
+        } (${input.companyTicker.toUpperCase()}).
+
+${
+  input.existingResearch
+    ? `Existing Research Context: ${input.existingResearch}`
+    : ""
+}
+
+Search for recent news covering the last ${input.newsTimeframe}. Focus on:
+1. Latest company announcements and earnings
+2. Industry developments affecting the company
+3. Regulatory changes or legal matters
+4. Competitive landscape updates
+5. Market and economic factors impacting the business
+
+For each significant news item, provide:
+- Publication date and source
+- Headline and brief summary
+- Potential impact on the company's valuation and prospects
+- Relevance to investment thesis
+
+Return a JSON object matching this TypeScript interface:
+interface GetCurrentNewsOutput {
+  news: Array<{
+    date: string;              // Publication date
+    source: string;            // News source
+    headline: string;          // News headline
+    summary: string;           // Brief summary
+    impact: string;            // Potential impact on company
+    relevance: string;         // Relevance to investment thesis
+    url?: string;              // News article URL if available
+  }>;
+  newsSummary: string;         // Overall summary of recent news
+  keyDevelopments: string[];   // Key developments that matter for investors
+  sentimentAnalysis: string;   // Overall sentiment analysis (positive/negative/neutral)
+}
+
+Focus on actionable news that could impact investment decisions.
+      `.trim(),
+    },
+
+    // ------------------------------------------------------------------------
+    // SYNTHESIZE INFORMATION JOB
+    // ------------------------------------------------------------------------
+    synthesizeInformation: {
+      name: "Synthesize Information",
+      description:
+        "Synthesize company research and current news into comprehensive analysis",
+      statusMessage: "Research Analyst is synthesizing all information",
+
+      // Input validation
+      inputSchema: (input: any): SynthesizeInformationInput => {
+        if (
+          !input.companyTicker ||
+          typeof input.companyTicker !== "string" ||
+          !input.companyTicker.trim()
+        ) {
+          throw new Error(
+            "Company ticker is required and must be a non-empty string"
+          );
+        }
+        return {
+          companyTicker: input.companyTicker,
+          companyName: input.companyName,
+          researchData: input.researchData,
+          newsData: input.newsData,
+          investmentThesis: input.investmentThesis,
+        };
+      },
+
+      // Output validation
+      outputSchema: (output: any): SynthesizeInformationOutput => {
+        if (
+          !output.ticker ||
+          !output.companyName ||
+          !output.synthesis ||
+          !output.updatedRecommendation
+        ) {
+          throw new Error("AI response is missing required fields");
+        }
+        return {
+          ticker: output.ticker,
+          companyName: output.companyName,
+          synthesis: output.synthesis,
+          updatedRecommendation: output.updatedRecommendation,
+          keyInsights: output.keyInsights,
+          riskFactors: output.riskFactors,
+          investmentRationale: output.investmentRationale,
+        };
+      },
+
+      // Job Execution Prompt
+      prompt: (input: SynthesizeInformationInput) =>
+        `
+Synthesize all available information for ${
+          input.companyName
+        } (${input.companyTicker.toUpperCase()}).
+
+Research Data: ${input.researchData}
+
+News Data: ${input.newsData}
+
+Investment Thesis: ${input.investmentThesis}
+
+Create a comprehensive synthesis covering:
+1. Updated company overview incorporating recent news
+2. How recent developments affect the original research
+3. Updated financial outlook based on new information
+4. Revised investment recommendation considering all data
+5. Key insights that emerged from the synthesis
+6. Updated risk assessment
+7. Clear investment rationale
+
+Return a JSON object matching this TypeScript interface:
+interface SynthesizeInformationOutput {
+  ticker: string;              // Company ticker symbol
+  companyName: string;         // Full company name
+  synthesis: string;           // Comprehensive synthesis (3-4 pages)
+  updatedRecommendation: string; // Updated investment recommendation
+  keyInsights: string[];       // Key insights from synthesis
+  riskFactors: string[];       // Updated risk factors
+  investmentRationale: string; // Clear rationale for investment decision
+}
+
+Provide actionable insights that help make informed investment decisions.
+      `.trim(),
+    },
   },
+} as const;
+
+// ============================================================================
+// ENHANCED JOBS WITH METADATA (for simplified API usage)
+// ============================================================================
+
+export const ResearchAnalystJobs = {
+  researchCompany: createJobWithMetadata<
+    typeof ResearchCompanyInput,
+    ResearchCompanyOutput
+  >(ResearchAnalystAgent, "researchCompany"),
+  analyzeMarkets: createJobWithMetadata<
+    typeof AnalyzeMarketsInput,
+    AnalyzeMarketsOutput
+  >(ResearchAnalystAgent, "analyzeMarkets"),
+  identifyCompanies: createJobWithMetadata<
+    typeof IdentifyCompaniesInput,
+    IdentifyCompaniesOutput
+  >(ResearchAnalystAgent, "identifyCompanies"),
+  getCurrentNews: createJobWithMetadata<
+    typeof GetCurrentNewsInput,
+    GetCurrentNewsOutput
+  >(ResearchAnalystAgent, "getCurrentNews"),
+  synthesizeInformation: createJobWithMetadata<
+    typeof SynthesizeInformationInput,
+    SynthesizeInformationOutput
+  >(ResearchAnalystAgent, "synthesizeInformation"),
 } as const;
 
 // ============================================================================
@@ -257,6 +461,7 @@ Focus on companies that strongly align with the investment thesis.
 export interface ResearchCompanyInput {
   companyTicker: string;
   researchFocus?: string[];
+  user_id?: string;
   additionalContext?: {
     investmentThesis?: string;
     specificQuestions?: string[];
@@ -274,6 +479,7 @@ export interface ResearchCompanyOutput {
 
 export interface AnalyzeMarketsInput {
   thesis: string;
+  user_id?: string;
 }
 
 export interface AnalyzeMarketsOutput {
@@ -286,6 +492,7 @@ export interface AnalyzeMarketsOutput {
 export interface IdentifyCompaniesInput {
   thesis: string;
   marketAnalysis?: AnalyzeMarketsOutput;
+  user_id?: string;
 }
 
 export interface IdentifyCompaniesOutput {
@@ -301,6 +508,54 @@ export interface IdentifyCompaniesOutput {
   rationale: string;
 }
 
+export interface GetCurrentNewsInput {
+  companyTicker: string;
+  companyName: string;
+  existingResearch?: string;
+  newsTimeframe?: string;
+  user_id?: string;
+}
+
+export interface GetCurrentNewsOutput {
+  news: Array<{
+    date: string;
+    source: string;
+    headline: string;
+    summary: string;
+    impact: string;
+    relevance: string;
+    url?: string;
+  }>;
+  newsSummary: string;
+  keyDevelopments: string[];
+  sentimentAnalysis: string;
+}
+
+export interface SynthesizeInformationInput {
+  companyTicker: string;
+  companyName: string;
+  researchData: string;
+  newsData: string;
+  investmentThesis?: string;
+  user_id?: string;
+}
+
+export interface SynthesizeInformationOutput {
+  ticker: string;
+  companyName: string;
+  synthesis: string;
+  updatedRecommendation: string;
+  keyInsights: string[];
+  riskFactors: string[];
+  investmentRationale: string;
+}
+
 export type ResearchAnalystAgentType = typeof ResearchAnalystAgent;
-export type ResearchAnalystJobInput = ResearchCompanyInput;
-export type ResearchAnalystJobOutput = ResearchCompanyOutput;
+export type ResearchAnalystJobInput =
+  | ResearchCompanyInput
+  | GetCurrentNewsInput
+  | SynthesizeInformationInput;
+export type ResearchAnalystJobOutput =
+  | ResearchCompanyOutput
+  | GetCurrentNewsOutput
+  | SynthesizeInformationOutput;

@@ -25,5 +25,4 @@ export type AlpacaOrderType =
   | "limit"
   | "stop"
   | "stop_limit"
-  | "trailing_stop"
-  | "take_profit";
+  | "trailing_stop";

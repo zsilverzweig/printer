@@ -14,8 +14,7 @@ type AlpacaOrderType =
   | "limit"
   | "stop"
   | "stop_limit"
-  | "trailing_stop"
-  | "take_profit";
+  | "trailing_stop";
 
 const ORDER_TYPES: AlpacaOrderType[] = [
   "market",
@@ -23,7 +22,6 @@ const ORDER_TYPES: AlpacaOrderType[] = [
   "stop",
   "stop_limit",
   "trailing_stop",
-  "take_profit",
 ];
 
 const TIME_IN_FORCE_OPTIONS: AlpacaTimeInForce[] = [

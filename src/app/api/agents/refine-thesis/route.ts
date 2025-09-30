@@ -1,24 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { withAgentMiddleware, AgentContext } from "@/lib/api/agent-middleware";
+import { PortfolioManagerAgent } from "@/features/agents/portfolio-manager";
 import { executeAgentJob } from "@/lib/api/agent-executor";
-import { PortfolioManagerAgent, RefineThesisInput, RefineThesisOutput } from "@/features/agents/portfolio-manager";
+import { AgentContext, withAgentMiddleware } from "@/lib/api/agent-middleware";
 
 export const POST = withAgentMiddleware(
-  { logger: 'RefineThesisAPI' },
+  { logger: "RefineThesisAPI" },
   async (request: NextRequest, context: AgentContext) => {
     const body = await request.json();
-    
+
     // Execute the agent job
-    const result = await executeAgentJob<RefineThesisInput, RefineThesisOutput>(
-      context,
+    const result = await executeAgentJob(
       {
         agent: PortfolioManagerAgent,
-        jobName: 'refineThesis',
-        operation: 'thesis_generation',
-        inputValidator: PortfolioManagerAgent.jobs.refineThesis.inputSchema,
-        outputValidator: PortfolioManagerAgent.jobs.refineThesis.outputSchema
+        jobName: "refineThesis",
+        prompt: PortfolioManagerAgent.jobs.refineThesis.prompt,
+        inputSchema: PortfolioManagerAgent.jobs.refineThesis.inputSchema,
+        outputSchema: PortfolioManagerAgent.jobs.refineThesis.outputSchema,
       },
+      context,
       body
     );
 

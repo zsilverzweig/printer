@@ -7,14 +7,14 @@ export const AI_MODELS = {
   premium: {
     name: "gpt-4o",
     provider: "openai" as const,
-    maxTokens: 2000,
+    maxTokens: 4096,
     costPerInputToken: 2.5 / 1000000,
     costPerOutputToken: 10.0 / 1000000,
     capabilities: ["text", "vision", "function_calling"],
     contextWindow: 128000,
     temperature: 0.2,
   },
-  
+
   // Balanced model - good quality, reasonable cost
   balanced: {
     name: "gpt-4o-mini",
@@ -26,7 +26,7 @@ export const AI_MODELS = {
     contextWindow: 128000,
     temperature: 0.2,
   },
-  
+
   // Fast model - quick responses, higher cost
   fast: {
     name: "gpt-4-turbo",
@@ -38,7 +38,7 @@ export const AI_MODELS = {
     contextWindow: 128000,
     temperature: 0.2,
   },
-  
+
   // Cheap model - economical, basic quality
   cheap: {
     name: "gpt-3.5-turbo",
