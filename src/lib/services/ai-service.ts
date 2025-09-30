@@ -16,6 +16,7 @@ export interface AgentJob<TInput = any, TOutput = any> {
   prompt: (input: TInput) => string;
   inputType: TInput; // Type marker for input structure
   outputType: TOutput; // Type marker for output structure
+  validate?: (input: any) => void; // Optional lightweight validation (just throws if invalid)
   statusMessage?: string; // User feedback message for this job
 }
 

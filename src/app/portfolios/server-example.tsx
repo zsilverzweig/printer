@@ -3,8 +3,6 @@ import { requireAppAccess } from "@/lib/auth/server";
 
 import { PortfoliosContent } from "./portfolios-content";
 
-import { AccessControl } from "@/lib/components/access-control";
-
 /**
  * Server Component - runs on the server before page renders
  *
@@ -48,30 +46,28 @@ interface PortfoliosContentProps {
 
 export function PortfoliosContent({ user }: PortfoliosContentProps) {
   return (
-    <AccessControl requiredAccess="app">
-      <div className="space-y-6">
-        {/* Portfolio management UI */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <div className="p-4 border rounded-lg">
-            <h3 className="font-semibold">Portfolio 1</h3>
-            <p className="text-sm text-muted-foreground">$10,000</p>
-          </div>
-          <div className="p-4 border rounded-lg">
-            <h3 className="font-semibold">Portfolio 2</h3>
-            <p className="text-sm text-muted-foreground">$25,000</p>
-          </div>
+    <div className="space-y-6">
+      {/* Portfolio management UI */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="p-4 border rounded-lg">
+          <h3 className="font-semibold">Portfolio 1</h3>
+          <p className="text-sm text-muted-foreground">$10,000</p>
         </div>
-
-        {/* Admin features for admin users */}
-        {user.role === "admin" && (
-          <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-            <h3 className="font-semibold text-blue-800">Admin Features</h3>
-            <p className="text-sm text-blue-600">
-              Additional admin controls available
-            </p>
-          </div>
-        )}
+        <div className="p-4 border rounded-lg">
+          <h3 className="font-semibold">Portfolio 2</h3>
+          <p className="text-sm text-muted-foreground">$25,000</p>
+        </div>
       </div>
-    </AccessControl>
+
+      {/* Admin features for admin users */}
+      {user.role === "admin" && (
+        <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+          <h3 className="font-semibold text-blue-800">Admin Features</h3>
+          <p className="text-sm text-blue-600">
+            Additional admin controls available
+          </p>
+        </div>
+      )}
+    </div>
   );
 }

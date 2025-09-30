@@ -14,35 +14,13 @@ export async function executeAgentJob<TInput = any, TOutput = any>(
   context: AgentContext,
   input: TInput
 ): Promise<TOutput> {
-  return executeAgentJobInternal(
-    context,
-    agent,
-    jobName,
-    undefined, // No input validation
-    undefined, // No output validation
-    input
-  );
-}
-
-/**
- * Internal implementation that handles the actual execution
- */
-async function executeAgentJobInternal<TInput, TOutput>(
-  context: AgentContext,
-  agent: AIAgent,
-  jobName: keyof AIAgent["jobs"],
-  inputValidator?: (input: any) => TInput,
-  outputValidator?: (output: any) => TOutput,
-  input?: TInput
-): Promise<TOutput> {
   // Get the job configuration
   const job = agent.jobs[jobName];
   if (!job) {
     throw new Error(`Job '${String(jobName)}' not found`);
   }
 
-  // Use input as-is (no validation)
-  const validatedInput = input as TInput;
+  const jobInput = input;
 
   log.info(
     "Executing agent job",
@@ -58,7 +36,7 @@ async function executeAgentJobInternal<TInput, TOutput>(
   // Create AI request
   const aiRequest = createAIRequest(
     agent.id,
-    job.prompt(validatedInput),
+    job.prompt(jobInput),
     context.user.uid
   );
 
@@ -78,8 +56,7 @@ async function executeAgentJobInternal<TInput, TOutput>(
     throw new Error("AI response is not valid JSON");
   }
 
-  // Use output as-is (no validation)
-  const validatedOutput = rawResult as TOutput;
+  const output = rawResult as TOutput;
 
   log.success(
     "Agent job completed",
@@ -94,5 +71,5 @@ async function executeAgentJobInternal<TInput, TOutput>(
     context.logger
   );
 
-  return validatedOutput;
+  return output;
 }

@@ -165,15 +165,10 @@ export const POST = withAgentMiddleware(
         const input = step.input(portfolio, previousResult, marketAnalysis);
 
         // Execute agent job
-        const job = step.agent.jobs[step.jobName];
         const result = await executeAgentJob(
+          step.agent,
+          step.jobName,
           context,
-          {
-            agent: step.agent,
-            jobName: step.jobName,
-            inputValidator: undefined, // No validation
-            outputValidator: undefined, // No validation
-          },
           input
         );
 
