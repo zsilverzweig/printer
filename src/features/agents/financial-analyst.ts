@@ -29,27 +29,9 @@ export const FinancialAnalystAgent: AIAgent = {
       description: "Verify stock symbols are real and tradeable",
       statusMessage: "Financial Analyst is validating stock symbols",
 
-      // Input validation
-      inputSchema: (input: any): ValidateStocksInput => {
-        if (!input.companies || !Array.isArray(input.companies)) {
-          throw new Error("Companies array is required");
-        }
-        return { companies: input.companies };
-      },
-
-      // Output validation
-      outputSchema: (output: any): ValidateStocksOutput => {
-        if (!output.validCompanies || !Array.isArray(output.validCompanies)) {
-          throw new Error(
-            "AI response is missing required validCompanies array"
-          );
-        }
-        return {
-          validCompanies: output.validCompanies,
-          invalidSymbols: output.invalidSymbols || [],
-          validationDetails: output.validationDetails || {},
-        };
-      },
+      // Input/Output types
+      inputType: {} as ValidateStocksInput,
+      outputType: {} as ValidateStocksOutput,
 
       // Job Execution Prompt
       prompt: (input: ValidateStocksInput) =>
@@ -99,28 +81,9 @@ Focus on identifying only legitimate, tradeable stocks suitable for institutiona
       statusMessage:
         "Financial Analyst is setting price targets for each company based on current events",
 
-      // Input validation
-      inputSchema: (input: any): SetPriceTargetsInput => {
-        if (!input.companies || !Array.isArray(input.companies)) {
-          throw new Error("Companies array is required");
-        }
-        return {
-          companies: input.companies,
-          marketContext: input.marketContext,
-        };
-      },
-
-      // Output validation
-      outputSchema: (output: any): SetPriceTargetsOutput => {
-        if (!output.companies || !Array.isArray(output.companies)) {
-          throw new Error("AI response is missing required companies array");
-        }
-        return {
-          companies: output.companies,
-          marketOutlook: output.marketOutlook,
-          riskFactors: output.riskFactors || [],
-        };
-      },
+      // Input/Output types
+      inputType: {} as SetPriceTargetsInput,
+      outputType: {} as SetPriceTargetsOutput,
 
       // Job Execution Prompt
       prompt: (input: SetPriceTargetsInput) =>
@@ -172,23 +135,9 @@ Base targets on fundamental analysis, current events, and market conditions.
       statusMessage:
         "Financial Analyst is identifying near term catalysts for these companies",
 
-      // Input validation
-      inputSchema: (input: any): IdentifyCatalystsInput => {
-        if (!input.companies || !Array.isArray(input.companies)) {
-          throw new Error("Companies array is required");
-        }
-        return { companies: input.companies };
-      },
-
-      // Output validation
-      outputSchema: (output: any): IdentifyCatalystsOutput => {
-        if (!output.catalysts || !Array.isArray(output.catalysts)) {
-          throw new Error("AI response is missing required catalysts array");
-        }
-        return {
-          catalysts: output.catalysts,
-        };
-      },
+      // Input/Output types
+      inputType: {} as IdentifyCatalystsInput,
+      outputType: {} as IdentifyCatalystsOutput,
 
       // Job Execution Prompt
       prompt: (input: IdentifyCatalystsInput) =>

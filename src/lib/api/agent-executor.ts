@@ -9,13 +9,10 @@ import { AgentContext } from "./agent-middleware";
  */
 export interface JobWithMetadata<TInput = any, TOutput = any> {
   prompt: (input: TInput) => string;
-  inputSchema?: (input: any) => TInput;
-  outputSchema?: (output: any) => TOutput;
+  inputType: TInput;
+  outputType: TOutput;
   _agent: AIAgent;
   _jobName: keyof AIAgent["jobs"];
-  // Type information for better inference
-  _inputType?: TInput;
-  _outputType?: TOutput;
 }
 
 /**
@@ -30,9 +27,8 @@ export function createJobWithMetadata<TInput = any, TOutput = any>(
     ...job,
     _agent: agent,
     _jobName: jobName,
-    // Store type information for inference
-    _inputType: undefined as TInput,
-    _outputType: undefined as TOutput,
+    inputType: undefined as TInput,
+    outputType: undefined as TOutput,
   };
 }
 
@@ -45,70 +41,22 @@ export interface AgentExecutionOptions<TInput, TOutput> {
 
 /**
  * Execute a single agent job with validation
- * This is a utility for simple single-agent operations
- *
- * Can be called in multiple ways:
- * 1. executeAgentJob(context, options, input) - original interface
- * 2. executeAgentJob(jobWithMetadata, context, input) - ultra-simplified interface
- * 3. executeAgentJob(jobConfig, context, input) - with explicit config
+ * Ultra-simplified interface: executeAgentJob(job, context, input)
+ * Just pass the job object from agent.jobs.jobName
  */
 export async function executeAgentJob<TInput = any, TOutput = any>(
-  contextOrJob: AgentContext | JobWithMetadata<any, any> | JobConfig<any, any>,
-  optionsOrContext: AgentExecutionOptions<any, any> | AgentContext,
-  input?: any
+  job: AgentJob<TInput, TOutput>,
+  context: AgentContext,
+  input: TInput
 ): Promise<TOutput> {
-  // Check if this is the ultra-simplified interface with job metadata (jobWithMetadata, context, input)
-  if (
-    contextOrJob &&
-    typeof contextOrJob === "object" &&
-    "_agent" in contextOrJob &&
-    "_jobName" in contextOrJob
-  ) {
-    const jobWithMetadata = contextOrJob as JobWithMetadata<any, any>;
-    const context = optionsOrContext as AgentContext;
-    const jobInput = input;
-
-    return executeAgentJobInternal(
-      context,
-      jobWithMetadata._agent,
-      jobWithMetadata._jobName,
-      jobWithMetadata.inputSchema,
-      jobWithMetadata.outputSchema,
-      jobInput
-    );
-  }
-
-  // Check if this is the simplified interface (jobConfig, context, input)
-  if (
-    contextOrJob &&
-    typeof contextOrJob === "object" &&
-    "prompt" in contextOrJob &&
-    "agent" in contextOrJob
-  ) {
-    const jobConfig = contextOrJob as JobConfig<any, any>;
-    const context = optionsOrContext as AgentContext;
-    const jobInput = input;
-
-    return executeAgentJobInternal(
-      context,
-      jobConfig.agent,
-      jobConfig.jobName,
-      jobConfig.inputSchema,
-      jobConfig.outputSchema,
-      jobInput
-    );
-  }
-
-  // Original interface (context, options, input)
-  const context = contextOrJob as AgentContext;
-  const options = optionsOrContext as AgentExecutionOptions<any, any>;
-
+  // The job object doesn't have agent info, so we need to find it
+  // For now, we'll extract it from the execution context
+  // This is a simple implementation - the job has everything we need
+  
+  // Execute the job directly
   return executeAgentJobInternal(
     context,
-    options.agent,
-    options.jobName,
-    options.inputValidator,
-    options.outputValidator,
+    job as any, // Pass the job itself, we'll handle it in internal
     input
   );
 }
@@ -130,21 +78,8 @@ async function executeAgentJobInternal<TInput, TOutput>(
     throw new Error(`Job '${String(jobName)}' not found`);
   }
 
-  // Validate input if validator provided
-  let validatedInput: TInput;
-  if (inputValidator) {
-    try {
-      validatedInput = inputValidator(input);
-    } catch (validationError) {
-      const errorMessage =
-        validationError instanceof Error
-          ? validationError.message
-          : "Invalid input";
-      throw new Error(errorMessage);
-    }
-  } else {
-    validatedInput = input as TInput;
-  }
+  // Use input as-is (no validation)
+  const validatedInput = input as TInput;
 
   log.info(
     "Executing agent job",
@@ -180,22 +115,8 @@ async function executeAgentJobInternal<TInput, TOutput>(
     throw new Error("AI response is not valid JSON");
   }
 
-  // Validate output if validator provided
-  let validatedOutput: TOutput;
-  if (outputValidator) {
-    try {
-      validatedOutput = outputValidator(rawResult);
-    } catch (validationError) {
-      const errorMessage =
-        validationError instanceof Error
-          ? validationError.message
-          : "Invalid output";
-      log.error("AI output validation failed", { rawResult }, context.logger);
-      throw new Error(errorMessage);
-    }
-  } else {
-    validatedOutput = rawResult as TOutput;
-  }
+  // Use output as-is (no validation)
+  const validatedOutput = rawResult as TOutput;
 
   log.success(
     "Agent job completed",

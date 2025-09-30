@@ -15,7 +15,7 @@ export const POST = withAgentMiddleware(
     const body = await request.json();
 
     // Execute the research analyst job
-    const result: ResearchCompanyOutput = await executeAgentJob(
+    const result = await executeAgentJob(
       ResearchAnalystJobs.researchCompany,
       context,
       {
@@ -65,7 +65,7 @@ export const PUT = withAgentMiddleware(
 
     try {
       // Step 1: Research Company
-      const researchResult: ResearchCompanyOutput = await executeAgentJob(
+      const researchResult = await executeAgentJob(
         ResearchAnalystJobs.researchCompany,
         context,
         {
@@ -76,7 +76,7 @@ export const PUT = withAgentMiddleware(
       );
 
       // Step 2: Get Current News
-      const newsResult: GetCurrentNewsOutput = await executeAgentJob(
+      const newsResult = await executeAgentJob(
         ResearchAnalystJobs.getCurrentNews,
         context,
         {
@@ -89,19 +89,18 @@ export const PUT = withAgentMiddleware(
       );
 
       // Step 3: Synthesize Information
-      const synthesisResult: SynthesizeInformationOutput =
-        await executeAgentJob(
-          ResearchAnalystJobs.synthesizeInformation,
-          context,
-          {
-            companyTicker,
-            companyName,
-            researchData: researchResult.report,
-            newsData: newsResult.newsSummary,
-            investmentThesis,
-            user_id: context.user.uid,
-          }
-        );
+      const synthesisResult = await executeAgentJob(
+        ResearchAnalystJobs.synthesizeInformation,
+        context,
+        {
+          companyTicker,
+          companyName,
+          researchData: researchResult.report,
+          newsData: newsResult.newsSummary,
+          investmentThesis,
+          user_id: context.user.uid,
+        }
+      );
 
       return NextResponse.json({
         research: researchResult,

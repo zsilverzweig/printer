@@ -1,9 +1,10 @@
 // Core AI service for Printer - focused on execution, cost monitoring, and caching
 import OpenAI from "openai";
 
-import { log } from "@/lib/utils/logger";
-import { estimateCost, recordAICost } from "./cost-monitor";
 import { AI_MODELS } from "@/lib/models/ai-models";
+import { log } from "@/lib/utils/logger";
+
+import { estimateCost, recordAICost } from "./cost-monitor";
 
 // ============================================================================
 // TYPES
@@ -13,8 +14,8 @@ export interface AgentJob<TInput = any, TOutput = any> {
   name: string;
   description: string;
   prompt: (input: TInput) => string;
-  inputSchema?: (input: any) => TInput;
-  outputSchema?: (output: any) => TOutput;
+  inputType: TInput; // Type marker for input structure
+  outputType: TOutput; // Type marker for output structure
   statusMessage?: string; // User feedback message for this job
 }
 
@@ -23,7 +24,7 @@ export interface AIAgent {
   name: string;
   description: string;
   systemPrompt: string;
-  model: typeof AI_MODELS[keyof typeof AI_MODELS];
+  model: (typeof AI_MODELS)[keyof typeof AI_MODELS];
   jobs: Record<string, AgentJob>;
 }
 
@@ -55,9 +56,9 @@ export interface AIResponse {
   };
 }
 
-export type AIOperation = 
+export type AIOperation =
   | "thesis_generation"
-  | "portfolio_generation" 
+  | "portfolio_generation"
   | "company_research"
   | "trade_analysis"
   | "risk_assessment"
@@ -92,7 +93,11 @@ export class AIService {
       const cachedResponse = this.cache.get(cacheKey);
 
       if (cachedResponse && this.isCacheValid(cachedResponse)) {
-        log.info(`🎯 Cache hit for request ${request.id}`, undefined, "AIService");
+        log.info(
+          `🎯 Cache hit for request ${request.id}`,
+          undefined,
+          "AIService"
+        );
         return {
           ...cachedResponse,
           isCached: true,
@@ -103,27 +108,39 @@ export class AIService {
       // Estimate cost before making request
       const estimatedInputTokens = this.estimateTokens(request.prompt);
       const estimatedOutputTokens = Math.min(agent.model.maxTokens, 2000);
-      
+
       const estimatedCost = estimateCost(
         agent.model.name,
         estimatedInputTokens,
         estimatedOutputTokens
       );
 
-      log.info(`💰 Estimated cost: $${estimatedCost.toFixed(4)}`, undefined, "AIService");
+      log.info(
+        `💰 Estimated cost: $${estimatedCost.toFixed(4)}`,
+        undefined,
+        "AIService"
+      );
 
       // Check if OpenAI API key is available
       if (!process.env.OPENAI_API_KEY) {
-        log.warn("OpenAI API key not configured, using mock response", undefined, "AIService");
+        log.warn(
+          "OpenAI API key not configured, using mock response",
+          undefined,
+          "AIService"
+        );
         return this.createMockResponse(agent, request, startTime);
       }
 
       // Make OpenAI API request
-      log.info("Making OpenAI API request", {
-        model: agent.model.name,
-        maxTokens: agent.model.maxTokens || 2000,
-        temperature: (agent.model as any).temperature || 0.2,
-      }, "AIService");
+      log.info(
+        "Making OpenAI API request",
+        {
+          model: agent.model.name,
+          maxTokens: agent.model.maxTokens || 2000,
+          temperature: (agent.model as any).temperature || 0.2,
+        },
+        "AIService"
+      );
 
       const completion = await this.openai.chat.completions.create({
         model: agent.model.name,
@@ -176,7 +193,7 @@ export class AIService {
 
       // Record cost
       recordAICost(
-        'thesis_generation',
+        "thesis_generation",
         agent.id,
         agent.model.name,
         tokensUsed,
@@ -191,12 +208,18 @@ export class AIService {
       // Cache response
       this.cache.set(cacheKey, response);
 
-      log.success(`AI response generated: ${tokensUsed.totalTokens} tokens, $${actualCost.toFixed(4)}`, undefined, "AIService");
+      log.success(
+        `AI response generated: ${
+          tokensUsed.totalTokens
+        } tokens, $${actualCost.toFixed(4)}`,
+        undefined,
+        "AIService"
+      );
 
       return response;
     } catch (error) {
       log.error("AI service error", error, "AIService");
-      
+
       // Return error response
       return {
         id: this.generateId(),
@@ -229,7 +252,11 @@ export class AIService {
     } else {
       this.cache.clear();
     }
-    log.info(`🧹 Cache cleared for ${agentId || "all agents"}`, undefined, "AIService");
+    log.info(
+      `🧹 Cache cleared for ${agentId || "all agents"}`,
+      undefined,
+      "AIService"
+    );
   }
 
   // ============================================================================
@@ -252,7 +279,10 @@ export class AIService {
     return Math.ceil(text.length / 4);
   }
 
-  private calculateCost(modelName: string, tokensUsed: AIResponse['tokensUsed']): number {
+  private calculateCost(
+    modelName: string,
+    tokensUsed: AIResponse["tokensUsed"]
+  ): number {
     const model = AI_MODELS[modelName as keyof typeof AI_MODELS];
     if (!model) return 0;
 
@@ -277,8 +307,8 @@ export class AIService {
   }
 
   private createMockResponse(
-    agent: AIAgent, 
-    request: AIRequest, 
+    agent: AIAgent,
+    request: AIRequest,
     startTime: number
   ): AIResponse {
     const mockContent = JSON.stringify({
@@ -291,15 +321,19 @@ export class AIService {
       requestId: request.id,
       content: mockContent,
       model: agent.model.name,
-      tokensUsed: { promptTokens: 100, completionTokens: 200, totalTokens: 300 },
+      tokensUsed: {
+        promptTokens: 100,
+        completionTokens: 200,
+        totalTokens: 300,
+      },
       cost: 0,
       timestamp: new Date(),
       isCached: false,
       processingTime: Date.now() - startTime,
-        metadata: {
-          agentId: agent.id,
-          temperature: agent.model.temperature,
-        },
+      metadata: {
+        agentId: agent.id,
+        temperature: agent.model.temperature,
+      },
     };
   }
 }
@@ -315,7 +349,7 @@ export const aiService = new AIService();
 export function createAIRequest(
   agentId: string,
   prompt: string,
-  userId: string,
+  userId: string
 ): AIRequest {
   return {
     id: `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,

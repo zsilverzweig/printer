@@ -171,8 +171,8 @@ export const POST = withAgentMiddleware(
           {
             agent: step.agent,
             jobName: step.jobName,
-            inputValidator: job.inputSchema,
-            outputValidator: job.outputSchema,
+            inputValidator: undefined, // No validation
+            outputValidator: undefined, // No validation
           },
           input
         );

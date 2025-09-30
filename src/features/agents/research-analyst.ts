@@ -29,33 +29,9 @@ export const ResearchAnalystAgent: AIAgent = {
       name: "Research Company",
       description: "Conduct comprehensive research on a specific company",
 
-      // Input validation
-      inputSchema: (input: any): ResearchCompanyInput => {
-        if (!input?.companyTicker?.trim()) {
-          throw new Error("Company ticker is required");
-        }
-        return input as ResearchCompanyInput;
-      },
-
-      // Output validation
-      outputSchema: (output: any): ResearchCompanyOutput => {
-        if (
-          !output.ticker ||
-          !output.companyName ||
-          !output.report ||
-          !output.summary ||
-          !output.recommendation
-        ) {
-          throw new Error("AI response is missing required fields");
-        }
-        return {
-          ticker: output.ticker,
-          companyName: output.companyName,
-          report: output.report,
-          summary: output.summary,
-          recommendation: output.recommendation,
-        };
-      },
+      // Input/Output types handled by TypeScript
+      inputType: {} as ResearchCompanyInput,
+      outputType: {} as ResearchCompanyOutput,
 
       // Job Execution Prompt
       prompt: (input: ResearchCompanyInput) =>
@@ -116,30 +92,9 @@ Focus on actionable insights and balanced analysis.
         "Research relevant markets and sectors for investment thesis",
       statusMessage: "Research Analyst is doing research on relevant markets",
 
-      // Input validation
-      inputSchema: (input: any): AnalyzeMarketsInput => {
-        if (!input?.thesis?.trim()) {
-          throw new Error("Thesis is required");
-        }
-        return input as AnalyzeMarketsInput;
-      },
-
-      // Output validation
-      outputSchema: (output: any): AnalyzeMarketsOutput => {
-        if (
-          !output.marketAnalysis ||
-          !output.keySectors ||
-          !output.marketTrends
-        ) {
-          throw new Error("AI response is missing required fields");
-        }
-        return {
-          marketAnalysis: output.marketAnalysis,
-          keySectors: output.keySectors,
-          marketTrends: output.marketTrends,
-          opportunities: output.opportunities,
-        };
-      },
+      // Input/Output types handled by TypeScript
+      inputType: {} as AnalyzeMarketsInput,
+      outputType: {} as AnalyzeMarketsOutput,
 
       // Job Execution Prompt
       prompt: (input: AnalyzeMarketsInput) =>
@@ -173,25 +128,9 @@ Focus on actionable market insights that will inform company selection.
       statusMessage:
         "Research Analyst is identifying companies that meet thesis criteria",
 
-      // Input validation
-      inputSchema: (input: any): IdentifyCompaniesInput => {
-        if (!input?.thesis?.trim()) {
-          throw new Error("Thesis is required");
-        }
-        return input as IdentifyCompaniesInput;
-      },
-
-      // Output validation
-      outputSchema: (output: any): IdentifyCompaniesOutput => {
-        if (!output.companies || !Array.isArray(output.companies)) {
-          throw new Error("AI response is missing required companies array");
-        }
-        return {
-          companies: output.companies,
-          selectionCriteria: output.selectionCriteria,
-          rationale: output.rationale,
-        };
-      },
+      // Input/Output types handled by TypeScript
+      inputType: {} as IdentifyCompaniesInput,
+      outputType: {} as IdentifyCompaniesOutput,
 
       // Job Execution Prompt
       prompt: (input: IdentifyCompaniesInput) =>
@@ -239,29 +178,9 @@ Focus on companies that strongly align with the investment thesis.
       statusMessage:
         "Research Analyst is gathering current news and developments",
 
-      // Input validation
-      inputSchema: (input: any): GetCurrentNewsInput => {
-        if (!input?.companyTicker?.trim()) {
-          throw new Error("Company ticker is required");
-        }
-        return {
-          ...input,
-          newsTimeframe: input.newsTimeframe || "30_days",
-        } as GetCurrentNewsInput;
-      },
-
-      // Output validation
-      outputSchema: (output: any): GetCurrentNewsOutput => {
-        if (!output.news || !Array.isArray(output.news)) {
-          throw new Error("AI response is missing required news array");
-        }
-        return {
-          news: output.news,
-          newsSummary: output.newsSummary,
-          keyDevelopments: output.keyDevelopments,
-          sentimentAnalysis: output.sentimentAnalysis,
-        };
-      },
+      // Input/Output types handled by TypeScript
+      inputType: {} as GetCurrentNewsInput,
+      outputType: {} as GetCurrentNewsOutput,
 
       // Job Execution Prompt
       prompt: (input: GetCurrentNewsInput) =>
@@ -318,34 +237,9 @@ Focus on actionable news that could impact investment decisions.
         "Synthesize company research and current news into comprehensive analysis",
       statusMessage: "Research Analyst is synthesizing all information",
 
-      // Input validation
-      inputSchema: (input: any): SynthesizeInformationInput => {
-        if (!input?.companyTicker?.trim()) {
-          throw new Error("Company ticker is required");
-        }
-        return input as SynthesizeInformationInput;
-      },
-
-      // Output validation
-      outputSchema: (output: any): SynthesizeInformationOutput => {
-        if (
-          !output.ticker ||
-          !output.companyName ||
-          !output.synthesis ||
-          !output.updatedRecommendation
-        ) {
-          throw new Error("AI response is missing required fields");
-        }
-        return {
-          ticker: output.ticker,
-          companyName: output.companyName,
-          synthesis: output.synthesis,
-          updatedRecommendation: output.updatedRecommendation,
-          keyInsights: output.keyInsights,
-          riskFactors: output.riskFactors,
-          investmentRationale: output.investmentRationale,
-        };
-      },
+      // Input/Output types handled by TypeScript
+      inputType: {} as SynthesizeInformationInput,
+      outputType: {} as SynthesizeInformationOutput,
 
       // Job Execution Prompt
       prompt: (input: SynthesizeInformationInput) =>
@@ -392,23 +286,23 @@ Provide actionable insights that help make informed investment decisions.
 
 export const ResearchAnalystJobs = {
   researchCompany: createJobWithMetadata<
-    typeof ResearchCompanyInput,
+    ResearchCompanyInput,
     ResearchCompanyOutput
   >(ResearchAnalystAgent, "researchCompany"),
   analyzeMarkets: createJobWithMetadata<
-    typeof AnalyzeMarketsInput,
+    AnalyzeMarketsInput,
     AnalyzeMarketsOutput
   >(ResearchAnalystAgent, "analyzeMarkets"),
   identifyCompanies: createJobWithMetadata<
-    typeof IdentifyCompaniesInput,
+    IdentifyCompaniesInput,
     IdentifyCompaniesOutput
   >(ResearchAnalystAgent, "identifyCompanies"),
   getCurrentNews: createJobWithMetadata<
-    typeof GetCurrentNewsInput,
+    GetCurrentNewsInput,
     GetCurrentNewsOutput
   >(ResearchAnalystAgent, "getCurrentNews"),
   synthesizeInformation: createJobWithMetadata<
-    typeof SynthesizeInformationInput,
+    SynthesizeInformationInput,
     SynthesizeInformationOutput
   >(ResearchAnalystAgent, "synthesizeInformation"),
 } as const;

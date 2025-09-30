@@ -30,33 +30,9 @@ export const PortfolioManagerAgent: AIAgent = {
       description:
         "Transform a raw investment thesis into a structured, compelling investment rationale",
 
-      // Input validation
-      inputSchema: (input: any): RefineThesisInput => {
-        if (
-          !input.thesis ||
-          typeof input.thesis !== "string" ||
-          !input.thesis.trim()
-        ) {
-          throw new Error("Thesis is required and must be a non-empty string");
-        }
-        return { thesis: input.thesis };
-      },
-
-      // Output validation
-      outputSchema: (output: any): RefineThesisOutput => {
-        if (
-          !output.thesis_title ||
-          !output.thesis_description ||
-          !output.thesis
-        ) {
-          throw new Error("AI response is missing required fields");
-        }
-        return {
-          thesis_title: output.thesis_title,
-          thesis_description: output.thesis_description,
-          thesis: output.thesis,
-        };
-      },
+      // Input/Output types
+      inputType: {} as RefineThesisInput,
+      outputType: {} as RefineThesisOutput,
 
       // Job Execution Prompt
       prompt: (input: RefineThesisInput) =>
@@ -97,35 +73,9 @@ Here's what the user provided: ${input.thesis}
       description:
         "Generate a structured investment portfolio based on investment thesis",
 
-      // Input validation
-      inputSchema: (input: any): CreatePortfolioInput => {
-        if (
-          !input.thesis ||
-          typeof input.thesis !== "string" ||
-          !input.thesis.trim()
-        ) {
-          throw new Error("Thesis is required and must be a non-empty string");
-        }
-        return { thesis: input.thesis };
-      },
-
-      // Output validation
-      outputSchema: (output: any): CreatePortfolioOutput => {
-        if (
-          !output.name ||
-          !output.description ||
-          !output.thesis ||
-          !Array.isArray(output.positions)
-        ) {
-          throw new Error("AI response is missing required fields");
-        }
-        return {
-          name: output.name,
-          description: output.description,
-          thesis: output.thesis,
-          positions: output.positions,
-        };
-      },
+      // Input/Output types
+      inputType: {} as CreatePortfolioInput,
+      outputType: {} as CreatePortfolioOutput,
 
       // Job Execution Prompt
       prompt: (input: CreatePortfolioInput) =>
@@ -165,45 +115,9 @@ Generate positions that align with the investment thesis.
       statusMessage:
         "Portfolio Manager is assigning weights for investment portfolio",
 
-      // Input validation
-      inputSchema: (input: any): OptimizePortfolioInput => {
-        if (
-          !input.thesis ||
-          typeof input.thesis !== "string" ||
-          !input.thesis.trim()
-        ) {
-          throw new Error("Thesis is required and must be a non-empty string");
-        }
-        if (!input.companies || !Array.isArray(input.companies)) {
-          throw new Error("Companies array is required");
-        }
-        return {
-          thesis: input.thesis,
-          companies: input.companies,
-          priceTargets: input.priceTargets,
-          catalysts: input.catalysts,
-        };
-      },
-
-      // Output validation
-      outputSchema: (output: any): OptimizePortfolioOutput => {
-        if (
-          !output.name ||
-          !output.description ||
-          !output.thesis ||
-          !Array.isArray(output.positions)
-        ) {
-          throw new Error("AI response is missing required fields");
-        }
-        return {
-          name: output.name,
-          description: output.description,
-          thesis: output.thesis,
-          positions: output.positions,
-          allocation: output.allocation,
-          riskProfile: output.riskProfile,
-        };
-      },
+      // Input/Output types
+      inputType: {} as OptimizePortfolioInput,
+      outputType: {} as OptimizePortfolioOutput,
 
       // Job Execution Prompt
       prompt: (input: OptimizePortfolioInput) =>
