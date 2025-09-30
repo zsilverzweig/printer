@@ -2,7 +2,6 @@
 // RESEARCH ANALYST AGENT
 // ============================================================================
 
-import { createJobWithMetadata } from "@/lib/api/agent-executor";
 import { AI_MODELS } from "@/lib/models/ai-models";
 import { AIAgent } from "@/lib/services/ai-service";
 
@@ -278,33 +277,6 @@ Provide actionable insights that help make informed investment decisions.
       `.trim(),
     },
   },
-} as const;
-
-// ============================================================================
-// ENHANCED JOBS WITH METADATA (for simplified API usage)
-// ============================================================================
-
-export const ResearchAnalystJobs = {
-  researchCompany: createJobWithMetadata<
-    ResearchCompanyInput,
-    ResearchCompanyOutput
-  >(ResearchAnalystAgent, "researchCompany"),
-  analyzeMarkets: createJobWithMetadata<
-    AnalyzeMarketsInput,
-    AnalyzeMarketsOutput
-  >(ResearchAnalystAgent, "analyzeMarkets"),
-  identifyCompanies: createJobWithMetadata<
-    IdentifyCompaniesInput,
-    IdentifyCompaniesOutput
-  >(ResearchAnalystAgent, "identifyCompanies"),
-  getCurrentNews: createJobWithMetadata<
-    GetCurrentNewsInput,
-    GetCurrentNewsOutput
-  >(ResearchAnalystAgent, "getCurrentNews"),
-  synthesizeInformation: createJobWithMetadata<
-    SynthesizeInformationInput,
-    SynthesizeInformationOutput
-  >(ResearchAnalystAgent, "synthesizeInformation"),
 } as const;
 
 // ============================================================================

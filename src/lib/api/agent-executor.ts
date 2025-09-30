@@ -5,58 +5,21 @@ import { log } from "@/lib/utils/logger";
 import { AgentContext } from "./agent-middleware";
 
 /**
- * Enhanced job interface that includes metadata for simplified execution
- */
-export interface JobWithMetadata<TInput = any, TOutput = any> {
-  prompt: (input: TInput) => string;
-  inputType: TInput;
-  outputType: TOutput;
-  _agent: AIAgent;
-  _jobName: keyof AIAgent["jobs"];
-}
-
-/**
- * Create an enhanced job object with metadata for simplified execution
- */
-export function createJobWithMetadata<TInput = any, TOutput = any>(
-  agent: AIAgent,
-  jobName: keyof AIAgent["jobs"]
-): JobWithMetadata<TInput, TOutput> {
-  const job = agent.jobs[jobName];
-  return {
-    ...job,
-    _agent: agent,
-    _jobName: jobName,
-    inputType: undefined as TInput,
-    outputType: undefined as TOutput,
-  };
-}
-
-export interface AgentExecutionOptions<TInput, TOutput> {
-  agent: AIAgent;
-  jobName: keyof AIAgent["jobs"];
-  inputValidator?: (input: any) => TInput;
-  outputValidator?: (output: any) => TOutput;
-}
-
-/**
- * Execute a single agent job with validation
- * Ultra-simplified interface: executeAgentJob(job, context, input)
- * Just pass the job object from agent.jobs.jobName
+ * Execute a single agent job
+ * Ultra-simplified interface: executeAgentJob(agent, jobName, context, input)
  */
 export async function executeAgentJob<TInput = any, TOutput = any>(
-  job: AgentJob<TInput, TOutput>,
+  agent: AIAgent,
+  jobName: keyof AIAgent["jobs"],
   context: AgentContext,
   input: TInput
 ): Promise<TOutput> {
-  // The job object doesn't have agent info, so we need to find it
-  // For now, we'll extract it from the execution context
-  // This is a simple implementation - the job has everything we need
-  
-  // Execute the job directly
   return executeAgentJobInternal(
     context,
-    job as any, // Pass the job itself, we'll handle it in internal
+    agent,
+    jobName,
+    undefined, // No input validation
+    undefined, // No output validation
     input
   );
 }
@@ -70,7 +33,7 @@ async function executeAgentJobInternal<TInput, TOutput>(
   jobName: keyof AIAgent["jobs"],
   inputValidator?: (input: any) => TInput,
   outputValidator?: (output: any) => TOutput,
-  input?: any
+  input?: TInput
 ): Promise<TOutput> {
   // Get the job configuration
   const job = agent.jobs[jobName];

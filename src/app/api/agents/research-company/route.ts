@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import {
   GetCurrentNewsOutput,
-  ResearchAnalystJobs,
+  ResearchAnalystAgent,
   ResearchCompanyOutput,
   SynthesizeInformationOutput,
 } from "@/features/agents/research-analyst";
@@ -16,7 +16,8 @@ export const POST = withAgentMiddleware(
 
     // Execute the research analyst job
     const result = await executeAgentJob(
-      ResearchAnalystJobs.researchCompany,
+      ResearchAnalystAgent,
+      "researchCompany",
       context,
       {
         ...body,
@@ -66,7 +67,8 @@ export const PUT = withAgentMiddleware(
     try {
       // Step 1: Research Company
       const researchResult = await executeAgentJob(
-        ResearchAnalystJobs.researchCompany,
+        ResearchAnalystAgent,
+        "researchCompany",
         context,
         {
           companyTicker,
@@ -77,7 +79,8 @@ export const PUT = withAgentMiddleware(
 
       // Step 2: Get Current News
       const newsResult = await executeAgentJob(
-        ResearchAnalystJobs.getCurrentNews,
+        ResearchAnalystAgent,
+        "getCurrentNews",
         context,
         {
           companyTicker,
@@ -90,7 +93,8 @@ export const PUT = withAgentMiddleware(
 
       // Step 3: Synthesize Information
       const synthesisResult = await executeAgentJob(
-        ResearchAnalystJobs.synthesizeInformation,
+        ResearchAnalystAgent,
+        "synthesizeInformation",
         context,
         {
           companyTicker,
