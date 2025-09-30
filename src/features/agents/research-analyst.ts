@@ -31,20 +31,10 @@ export const ResearchAnalystAgent: AIAgent = {
 
       // Input validation
       inputSchema: (input: any): ResearchCompanyInput => {
-        if (
-          !input.companyTicker ||
-          typeof input.companyTicker !== "string" ||
-          !input.companyTicker.trim()
-        ) {
-          throw new Error(
-            "Company ticker is required and must be a non-empty string"
-          );
+        if (!input?.companyTicker?.trim()) {
+          throw new Error("Company ticker is required");
         }
-        return {
-          companyTicker: input.companyTicker,
-          researchFocus: input.researchFocus,
-          additionalContext: input.additionalContext,
-        };
+        return input as ResearchCompanyInput;
       },
 
       // Output validation
@@ -128,14 +118,10 @@ Focus on actionable insights and balanced analysis.
 
       // Input validation
       inputSchema: (input: any): AnalyzeMarketsInput => {
-        if (
-          !input.thesis ||
-          typeof input.thesis !== "string" ||
-          !input.thesis.trim()
-        ) {
-          throw new Error("Thesis is required and must be a non-empty string");
+        if (!input?.thesis?.trim()) {
+          throw new Error("Thesis is required");
         }
-        return { thesis: input.thesis };
+        return input as AnalyzeMarketsInput;
       },
 
       // Output validation
@@ -189,17 +175,10 @@ Focus on actionable market insights that will inform company selection.
 
       // Input validation
       inputSchema: (input: any): IdentifyCompaniesInput => {
-        if (
-          !input.thesis ||
-          typeof input.thesis !== "string" ||
-          !input.thesis.trim()
-        ) {
-          throw new Error("Thesis is required and must be a non-empty string");
+        if (!input?.thesis?.trim()) {
+          throw new Error("Thesis is required");
         }
-        return {
-          thesis: input.thesis,
-          marketAnalysis: input.marketAnalysis,
-        };
+        return input as IdentifyCompaniesInput;
       },
 
       // Output validation
@@ -262,21 +241,13 @@ Focus on companies that strongly align with the investment thesis.
 
       // Input validation
       inputSchema: (input: any): GetCurrentNewsInput => {
-        if (
-          !input.companyTicker ||
-          typeof input.companyTicker !== "string" ||
-          !input.companyTicker.trim()
-        ) {
-          throw new Error(
-            "Company ticker is required and must be a non-empty string"
-          );
+        if (!input?.companyTicker?.trim()) {
+          throw new Error("Company ticker is required");
         }
         return {
-          companyTicker: input.companyTicker,
-          companyName: input.companyName,
-          existingResearch: input.existingResearch,
+          ...input,
           newsTimeframe: input.newsTimeframe || "30_days",
-        };
+        } as GetCurrentNewsInput;
       },
 
       // Output validation
@@ -349,22 +320,10 @@ Focus on actionable news that could impact investment decisions.
 
       // Input validation
       inputSchema: (input: any): SynthesizeInformationInput => {
-        if (
-          !input.companyTicker ||
-          typeof input.companyTicker !== "string" ||
-          !input.companyTicker.trim()
-        ) {
-          throw new Error(
-            "Company ticker is required and must be a non-empty string"
-          );
+        if (!input?.companyTicker?.trim()) {
+          throw new Error("Company ticker is required");
         }
-        return {
-          companyTicker: input.companyTicker,
-          companyName: input.companyName,
-          researchData: input.researchData,
-          newsData: input.newsData,
-          investmentThesis: input.investmentThesis,
-        };
+        return input as SynthesizeInformationInput;
       },
 
       // Output validation
