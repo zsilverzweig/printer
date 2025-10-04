@@ -1,4 +1,4 @@
-import { Bot, Cpu, Settings, Users, Wrench } from "lucide-react";
+import { Bot, Cpu, FileSearch, Settings, Users, Wrench } from "lucide-react";
 import Link from "next/link";
 
 import { requireAdmin } from "@/lib/auth/server";
@@ -22,7 +22,7 @@ import {
  */
 export default async function AdminPage() {
   // This runs on the server and redirects if user is not admin
-  const user = await requireAdmin();
+  await requireAdmin();
 
   // If we reach here, user is authenticated and is admin
   return (
@@ -124,6 +124,23 @@ export default async function AdminPage() {
               <CardContent>
                 <Link href="/admin/alpaca-debug">
                   <Button className="w-full">Open Debug Tool</Button>
+                </Link>
+              </CardContent>
+            </Card>
+
+            <Card className="hover:shadow-md transition-shadow">
+              <CardHeader>
+                <div className="flex items-center space-x-2">
+                  <FileSearch className="h-5 w-5 text-sky-600" />
+                  <CardTitle>SEC Edgar Tester</CardTitle>
+                </div>
+                <CardDescription>
+                  Validate SEC Edgar API connectivity and filing downloads
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Link href="/admin/edgar-filings">
+                  <Button className="w-full">Open Tester</Button>
                 </Link>
               </CardContent>
             </Card>
