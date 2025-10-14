@@ -29,7 +29,8 @@ export default function LoginPage() {
   const handleGoogleSignIn = async () => {
     try {
       await signInWithGoogle()
-      // Redirect will happen automatically via useEffect
+      router.replace(route?.path ?? "/portfolios")
+      router.refresh()
     } catch (err) {
       log.error('Sign-in failed', err, 'LoginPage')
     }

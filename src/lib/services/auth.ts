@@ -256,6 +256,7 @@ export class AuthService {
         headers: {
           "Content-Type": "application/json",
         },
+        credentials: "include",
         body: JSON.stringify({
           user: userProfile,
           token: idToken,

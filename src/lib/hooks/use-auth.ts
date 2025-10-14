@@ -95,7 +95,7 @@ export function useAuth(initialUser?: ServerUser | null): UseAuthReturn {
     error,
     signInWithGoogle,
     signOut,
-    isAuthenticated: authService.isAuthenticated(),
+    isAuthenticated: Boolean(user),
     isAdmin: authService.isAdmin(),
     displayName: authService.getDisplayName(),
     photoURL: authService.getPhotoURL(),
