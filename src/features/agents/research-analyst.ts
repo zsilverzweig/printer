@@ -174,6 +174,7 @@ Focus on companies that strongly align with the investment thesis.
       description: "Retrieve and analyze current news about a company",
       statusMessage:
         "Research Analyst is gathering current news and developments",
+      model: AI_MODELS.premium,
 
       // Input/Output types handled by TypeScript
       inputType: {} as GetCurrentNewsInput,

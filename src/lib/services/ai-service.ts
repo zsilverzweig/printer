@@ -18,6 +18,7 @@ export interface AgentJob<TInput = any, TOutput = any> {
   outputType: TOutput; // Type marker for output structure
   validate?: (input: any) => void; // Optional lightweight validation (just throws if invalid)
   statusMessage?: string; // User feedback message for this job
+  model?: (typeof AI_MODELS)[keyof typeof AI_MODELS];
 }
 
 export interface AIAgent {

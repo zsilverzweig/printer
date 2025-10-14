@@ -1,4 +1,5 @@
 // Simple agent execution utility for single-agent operations
+import { AI_MODELS } from "@/lib/models/ai-models";
 import { AIAgent, aiService, createAIRequest } from "@/lib/services/ai-service";
 import { log } from "@/lib/utils/logger";
 
@@ -12,7 +13,12 @@ export async function executeAgentJob<TInput = any, TOutput = any>(
   agent: AIAgent,
   jobName: keyof AIAgent["jobs"],
   context: AgentContext,
-  input: TInput
+  input: TInput,
+  options?: {
+    modelOverride?:
+      | keyof typeof AI_MODELS
+      | (typeof AI_MODELS)[keyof typeof AI_MODELS];
+  }
 ): Promise<TOutput> {
   // Get the job configuration
   const job = agent.jobs[jobName];
@@ -33,6 +39,17 @@ export async function executeAgentJob<TInput = any, TOutput = any>(
     context.logger
   );
 
+  // Resolve effective model (override -> job -> agent)
+  const overrideModel =
+    typeof options?.modelOverride === "string"
+      ? AI_MODELS[options.modelOverride]
+      : options?.modelOverride;
+
+  const effectiveModel =
+    (overrideModel as any) || (job as any).model || agent.model;
+
+  const effectiveAgent: AIAgent = { ...agent, model: effectiveModel };
+
   // Create AI request
   const aiRequest = createAIRequest(
     agent.id,
@@ -41,7 +58,7 @@ export async function executeAgentJob<TInput = any, TOutput = any>(
   );
 
   // Execute with AI service
-  const response = await aiService.generateResponse(agent, aiRequest);
+  const response = await aiService.generateResponse(effectiveAgent, aiRequest);
 
   // Parse JSON response
   let rawResult: any;

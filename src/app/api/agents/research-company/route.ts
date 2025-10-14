@@ -16,13 +16,15 @@ export const POST = withAgentMiddleware(
   { logger: "ResearchCompanyAPI" },
   async (request: NextRequest, context: AgentContext) => {
     const body = await request.json();
+    const { modelOverride, jobModelOverrides } = body || {};
 
     // Execute the research analyst job
     const result = await executeAgentJob(
       ResearchAnalystAgent,
       "researchCompany",
       context,
-      body
+      body,
+      { modelOverride: jobModelOverrides?.researchCompany ?? modelOverride }
     );
 
     return NextResponse.json(result);
@@ -39,7 +41,13 @@ export const PUT = withAgentMiddleware(
     NextResponse<{ researchId: string; success: boolean } | { error: string }>
   > => {
     const body = await request.json();
-    const { companyTicker, companyName, investmentThesis } = body;
+    const {
+      companyTicker,
+      companyName,
+      investmentThesis,
+      modelOverride,
+      jobModelOverrides,
+    } = body;
 
     if (!companyTicker?.trim()) {
       return NextResponse.json(
@@ -78,7 +86,8 @@ export const PUT = withAgentMiddleware(
         ResearchAnalystAgent,
         "researchCompany",
         context,
-        { companyTicker, companyName }
+        { companyTicker, companyName },
+        { modelOverride: jobModelOverrides?.researchCompany ?? modelOverride }
       );
 
       // Save background to Firebase
@@ -104,7 +113,8 @@ export const PUT = withAgentMiddleware(
           companyName,
           existingResearch: researchResult.report,
           newsTimeframe: "30_days",
-        }
+        },
+        { modelOverride: jobModelOverrides?.getCurrentNews ?? modelOverride }
       );
 
       // Save recent news to Firebase
@@ -131,6 +141,10 @@ export const PUT = withAgentMiddleware(
             researchData: researchResult.report,
             newsData: newsResult.newsSummary,
             investmentThesis,
+          },
+          {
+            modelOverride:
+              jobModelOverrides?.synthesizeInformation ?? modelOverride,
           }
         );
 
