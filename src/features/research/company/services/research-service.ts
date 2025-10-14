@@ -1,8 +1,5 @@
-import { doc, setDoc, serverTimestamp } from "firebase/firestore";
-
-import { db, COLLECTIONS } from "@/lib/services/firebase";
+import { ResearchCompanyInput } from "@/features/agents/research-analyst";
 import { log } from "@/lib/utils/logger";
-import { ResearchCompanyInput, ResearchCompanyOutput } from "@/features/agents/research-analyst";
 
 export interface CompanyResearchResult {
   id: string;
@@ -12,91 +9,66 @@ export interface CompanyResearchResult {
   summary: string;
   recommendation: string;
   createdAt: Date;
+  updatedAt?: Date;
+  status?: string;
+  isComplete?: boolean;
   userId?: string;
 }
 
 export class ResearchService {
   /**
-   * Research a company using the Research Analyst agent
+   * Start comprehensive CRU research workflow via server API.
+   * The server writes the document; UI updates via Firestore subscription.
    */
-  static async researchCompany(input: ResearchCompanyInput, userId?: string): Promise<CompanyResearchResult> {
+  static async researchCompany(
+    input: ResearchCompanyInput,
+    _userId?: string
+  ): Promise<{ researchId: string }> {
     try {
-      log.info("Starting company research", { 
-        companyTicker: input.companyTicker,
-        userId: userId || 'unknown',
-        researchFocus: input.researchFocus,
-        additionalContext: input.additionalContext
-      }, "ResearchService");
+      log.info(
+        "Starting CRU company research",
+        {
+          companyTicker: input.companyTicker,
+          researchFocus: input.researchFocus,
+          additionalContext: input.additionalContext,
+        },
+        "ResearchService"
+      );
 
       const response = await fetch("/api/agents/research-company", {
-        method: "POST",
+        method: "PUT",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(input),
+        body: JSON.stringify({
+          companyTicker: input.companyTicker,
+          companyName: input.companyTicker,
+          investmentThesis: input.additionalContext?.investmentThesis,
+          // model overrides can be added from UI later if needed
+        }),
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to research company");
+        throw new Error(errorData.error || "Failed to start company research");
       }
 
-      const result: ResearchCompanyOutput = await response.json();
-      
-      // Create a research result with metadata
-      const researchId = `research_${input.companyTicker}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      const researchResult: CompanyResearchResult = {
-        id: researchId,
-        ticker: result.ticker,
-        companyName: result.companyName,
-        report: result.report,
-        summary: result.summary,
-        recommendation: result.recommendation,
-        createdAt: new Date(),
-        userId: userId,
-      };
+      const result: { researchId: string; success: boolean } =
+        await response.json();
 
-      // Save research to Firestore
-      const metadata: Record<string, any> = {
-        generatedByAI: true,
-        aiModel: 'research-analyst',
-        generatedAt: new Date().toISOString()
-      };
+      log.success(
+        "CRU company research started",
+        { researchId: result.researchId },
+        "ResearchService"
+      );
 
-      // Only add optional fields if they have values
-      if (input.researchFocus && input.researchFocus.length > 0) {
-        metadata.researchFocus = input.researchFocus;
-      }
-      
-      if (input.additionalContext && Object.keys(input.additionalContext).length > 0) {
-        metadata.additionalContext = input.additionalContext;
-      }
-
-      const researchDoc = {
-        ...researchResult,
-        userId: userId || 'unknown',
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-        metadata
-      };
-
-      log.debug("Saving research to Firestore", { 
-        researchId,
-        metadata: JSON.stringify(metadata, null, 2)
-      }, "ResearchService");
-
-      await setDoc(doc(db, COLLECTIONS.COMPANY_RESEARCH, researchId), researchDoc);
-
-      log.success("Company research completed and saved", { 
-        researchId: researchResult.id,
-        ticker: result.ticker,
-        companyName: result.companyName,
-        savedToFirestore: true
-      }, "ResearchService");
-
-      return researchResult;
+      return { researchId: result.researchId };
     } catch (error) {
-      log.error("Failed to research company", error, "ResearchService");
+      log.error(
+        "Failed to start CRU company research",
+        error,
+        "ResearchService"
+      );
       throw error;
     }
   }
