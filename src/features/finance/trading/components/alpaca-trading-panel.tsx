@@ -527,7 +527,9 @@ export function AlpacaTradingPanel() {
                     {openPositions.map((position) => (
                       <tr key={position.symbol} className="border-t">
                         <td className="py-2 font-medium">{position.symbol}</td>
-                        <td className="py-2 capitalize">{position.side}</td>
+                        <td className="py-2 capitalize">
+                          {position.side || "N/A"}
+                        </td>
                         <td className="py-2 text-right">
                           {formatNumber(position.qty, 4)}
                         </td>

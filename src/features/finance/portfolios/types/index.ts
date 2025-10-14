@@ -4,8 +4,8 @@ export interface PortfolioPosition {
   id: string;
   symbol: string;
   name: string;
-  side: "buy" | "sell";
-  status: "draft" | "pending" | "executed" | "cancelled";
+  side?: "buy" | "sell";
+  status?: "draft" | "pending" | "executed" | "cancelled";
   weight: number;
   catalyst: string;
   rationale: string;

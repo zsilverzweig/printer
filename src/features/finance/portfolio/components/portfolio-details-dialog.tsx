@@ -284,13 +284,15 @@ export function PortfolioDetailsDialog({
                             </td>
                             <td className="py-3 pr-4">{position.name}</td>
                             <td className="py-3 pr-4 capitalize">
-                              {position.side}
+                              {position.side || "N/A"}
                             </td>
                             <td className="py-3 pr-4">
-                              {(position.weight * 100).toFixed(1)}%
+                              {position.weight
+                                ? (position.weight * 100).toFixed(1) + "%"
+                                : "N/A"}
                             </td>
                             <td className="py-3 pr-4 capitalize">
-                              {position.status.replace("_", " ")}
+                              {position.status?.replace("_", " ") || "N/A"}
                             </td>
                             <td className="py-3 pr-4">
                               {position.priceTarget > 0

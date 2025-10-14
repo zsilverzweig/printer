@@ -70,8 +70,8 @@ export function PortfolioCard({
                     variant="secondary"
                     className="text-xs"
                   >
-                    {position.symbol} · {position.side.toUpperCase()} ·{" "}
-                    {position.status.replace("_", " ")}
+                    {position.symbol} · {position.side?.toUpperCase() || "N/A"}{" "}
+                    · {position.status?.replace("_", " ") || "N/A"}
                   </Badge>
                 ))}
                 {portfolio.positions.length > 3 && (
