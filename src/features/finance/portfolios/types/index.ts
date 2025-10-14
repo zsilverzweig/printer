@@ -21,10 +21,10 @@ export interface Portfolio {
   description: string;
   thesis: string;
   positions: PortfolioPosition[];
-  marketContext: string;
+  marketContext?: string;
   userId: string;
-  createdAt: string;
-  updatedAt: string;
+  createdAt: Date;
+  updatedAt: Date;
   status: string;
   isActive?: boolean;
   metadata: Record<string, any>;

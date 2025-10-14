@@ -88,7 +88,7 @@ export const convertTimestampedDocument = <T extends TimestampedDocument>(
     createdAt: timestampToDate(data.createdAt),
     updatedAt: timestampToDate(data.updatedAt),
     ...customFields(data),
-  } as T;
+  } as unknown as T;
 };
 
 // Generic converter for simple documents
@@ -112,6 +112,7 @@ import { PortfolioPosition } from "@/features/finance/portfolios/types";
 
 // Portfolio converter
 export interface PortfolioDocument extends TimestampedDocument {
+  id: string;
   name: string;
   description: string;
   thesis: string;

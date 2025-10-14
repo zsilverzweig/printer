@@ -125,9 +125,12 @@ export function RecentOrdersList({
               <div className="text-right">
                 <div className="text-sm font-medium">
                   {order.qty
-                    ? formatNumber(order.qty, 4)
+                    ? formatNumber(parseFloat(order.qty), 4)
                     : order.notional
-                    ? formatCurrency(order.notional, accountCurrency)
+                    ? formatCurrency(
+                        parseFloat(order.notional),
+                        accountCurrency
+                      )
                     : "-"}
                 </div>
                 <div className="text-xs text-muted-foreground">

@@ -24,6 +24,15 @@ export interface AuthUser {
   photoURL: string | null;
   emailVerified: boolean;
   isAnonymous: boolean;
+  alpacaConnection?: {
+    alpacaUserId: string;
+    accessToken: string;
+    tokenType: string;
+    scope: string;
+    connectedAt: Date;
+    status: "active" | "expired" | "revoked";
+    environment: "paper" | "live" | "both";
+  };
   metadata: {
     creationTime?: string;
     lastSignInTime?: string;

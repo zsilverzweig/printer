@@ -1,7 +1,7 @@
 // Re-export Alpaca types from the finance feature
 // This maintains backward compatibility while centralizing types
 
-export {
+export type {
   AlpacaAPIError,
   AlpacaAccount,
   AlpacaError,

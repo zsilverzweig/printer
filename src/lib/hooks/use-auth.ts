@@ -32,7 +32,7 @@ export function useAuth(initialUser?: ServerUser | null): UseAuthReturn {
         uid: initialUser.uid,
         email: initialUser.email,
         displayName: initialUser.displayName,
-        photoURL: initialUser.photoURL,
+        photoURL: initialUser.photoURL ?? null,
         emailVerified: true, // Assume verified if from server
         isAnonymous: false,
         metadata: {

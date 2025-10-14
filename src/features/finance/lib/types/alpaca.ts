@@ -77,6 +77,7 @@ export interface AlpacaOrder {
   hwm?: string;
   subtag?: string;
   source?: string;
+  position_side?: "long" | "short";
 }
 
 export type AlpacaOrderSide = "buy" | "sell";

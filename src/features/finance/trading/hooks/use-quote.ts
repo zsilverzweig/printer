@@ -78,27 +78,22 @@ export function useQuote() {
         // Show toast notification for specific error types
         if (errorMessage.includes("Market Data API subscription required")) {
           toast.error(
-            "Market Data Subscription Required",
             "Real-time pricing requires an Alpaca Market Data subscription. Please upgrade your account or use estimated pricing."
           );
         } else if (errorMessage.includes("Invalid stock symbol")) {
           toast.error(
-            "Invalid Symbol",
             "Please enter a valid stock symbol (e.g., AAPL, MSFT, GOOGL)."
           );
         } else if (errorMessage.includes("Rate limit exceeded")) {
           toast.error(
-            "Rate Limit Exceeded",
             "Too many requests. Please wait a moment before trying again."
           );
         } else if (errorMessage.includes("Market data service error")) {
           toast.error(
-            "Market Data Unavailable",
             "Unable to fetch current market data. Please try again later."
           );
         } else {
           toast.error(
-            "Price Unavailable",
             "Unable to fetch current price. Please check your connection and try again."
           );
         }

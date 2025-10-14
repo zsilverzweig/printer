@@ -42,8 +42,8 @@ export const POST = withAgentMiddleware(
         positions: [],
         marketContext: "",
         userId: context.user.uid,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+        createdAt: new Date(),
+        updatedAt: new Date(),
         isActive: true,
         status: "initializing",
         metadata: {},
@@ -175,7 +175,7 @@ export const POST = withAgentMiddleware(
         // Save output to portfolio
         step.saveOutputTo(result, portfolio);
         portfolio.status = step.nextStatus ?? portfolio.status;
-        portfolio.updatedAt = new Date().toISOString();
+        portfolio.updatedAt = new Date();
 
         // Save entire portfolio to database
         await updateDoc(doc(db, COLLECTIONS.PORTFOLIOS, portfolioId), {
