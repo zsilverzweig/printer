@@ -1,3 +1,4 @@
+import { doc, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
 import { NextRequest, NextResponse } from "next/server";
 
 import {
@@ -6,8 +7,10 @@ import {
   ResearchCompanyOutput,
   SynthesizeInformationOutput,
 } from "@/features/agents/research-analyst";
+import { CompanyResearch } from "@/features/research/company/types";
 import { executeAgentJob } from "@/lib/api/agent-executor";
 import { AgentContext, withAgentMiddleware } from "@/lib/api/agent-middleware";
+import { COLLECTIONS, db } from "@/lib/services/firebase";
 
 export const POST = withAgentMiddleware(
   { logger: "ResearchCompanyAPI" },
@@ -19,66 +22,80 @@ export const POST = withAgentMiddleware(
       ResearchAnalystAgent,
       "researchCompany",
       context,
-      {
-        ...body,
-        user_id: context.user.uid,
-      }
+      body
     );
 
     return NextResponse.json(result);
   }
 );
 
-// New comprehensive research workflow endpoint
+// Comprehensive research workflow endpoint that creates and updates research in Firebase
 export const PUT = withAgentMiddleware(
   { logger: "ComprehensiveResearchAPI" },
   async (
     request: NextRequest,
     context: AgentContext
   ): Promise<
-    NextResponse<
-      | {
-          research: ResearchCompanyOutput;
-          news: GetCurrentNewsOutput;
-          synthesis: SynthesizeInformationOutput;
-          workflow: {
-            completedSteps: number;
-            totalSteps: number;
-            status: string;
-          };
-        }
-      | { error: string }
-    >
+    NextResponse<{ researchId: string; success: boolean } | { error: string }>
   > => {
     const body = await request.json();
     const { companyTicker, companyName, investmentThesis } = body;
 
-    if (
-      !companyTicker ||
-      typeof companyTicker !== "string" ||
-      !companyTicker.trim()
-    ) {
+    if (!companyTicker?.trim()) {
       return NextResponse.json(
-        { error: "Company ticker is required and must be a non-empty string" },
+        { error: "Company ticker is required" },
         { status: 400 }
       );
     }
 
     try {
-      // Step 1: Research Company
-      const researchResult = await executeAgentJob(
+      // Create initial research document
+      const researchId = `research_${Date.now()}_${Math.random()
+        .toString(36)
+        .substr(2, 9)}`;
+
+      const research: CompanyResearch = {
+        id: researchId,
+        userId: context.user.uid,
+        companyTicker,
+        companyName: companyName || companyTicker,
+        background: null,
+        recentNews: null,
+        synthesis: null,
+        recommendation: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        status:
+          ResearchAnalystAgent.jobs.researchCompany.statusMessage ||
+          "Starting research...",
+        isComplete: false,
+      };
+
+      // Save initial research document
+      await setDoc(doc(db, COLLECTIONS.COMPANY_RESEARCH, researchId), research);
+      // Step 1: Research Company (Background)
+      const researchResult: ResearchCompanyOutput = await executeAgentJob(
         ResearchAnalystAgent,
         "researchCompany",
         context,
-        {
-          companyTicker,
-          companyName,
-          user_id: context.user.uid,
-        }
+        { companyTicker, companyName }
       );
 
+      // Save background to Firebase
+      await updateDoc(doc(db, COLLECTIONS.COMPANY_RESEARCH, researchId), {
+        background: {
+          report: researchResult.report,
+          summary: researchResult.summary,
+        },
+        recommendation: researchResult.recommendation,
+        status:
+          ResearchAnalystAgent.jobs.getCurrentNews.statusMessage ||
+          "Getting current news...",
+        updatedAt: serverTimestamp(),
+      });
+
       // Step 2: Get Current News
-      const newsResult = await executeAgentJob(
+      const newsResult: GetCurrentNewsOutput = await executeAgentJob(
         ResearchAnalystAgent,
         "getCurrentNews",
         context,
@@ -87,35 +104,50 @@ export const PUT = withAgentMiddleware(
           companyName,
           existingResearch: researchResult.report,
           newsTimeframe: "30_days",
-          user_id: context.user.uid,
         }
       );
+
+      // Save recent news to Firebase
+      await updateDoc(doc(db, COLLECTIONS.COMPANY_RESEARCH, researchId), {
+        recentNews: {
+          summary: newsResult.newsSummary,
+          keyDevelopments: newsResult.keyDevelopments,
+        },
+        status:
+          ResearchAnalystAgent.jobs.synthesizeInformation.statusMessage ||
+          "Synthesizing information...",
+        updatedAt: serverTimestamp(),
+      });
 
       // Step 3: Synthesize Information
-      const synthesisResult = await executeAgentJob(
-        ResearchAnalystAgent,
-        "synthesizeInformation",
-        context,
-        {
-          companyTicker,
-          companyName,
-          researchData: researchResult.report,
-          newsData: newsResult.newsSummary,
-          investmentThesis,
-          user_id: context.user.uid,
-        }
-      );
+      const synthesisResult: SynthesizeInformationOutput =
+        await executeAgentJob(
+          ResearchAnalystAgent,
+          "synthesizeInformation",
+          context,
+          {
+            companyTicker,
+            companyName,
+            researchData: researchResult.report,
+            newsData: newsResult.newsSummary,
+            investmentThesis,
+          }
+        );
 
-      return NextResponse.json({
-        research: researchResult,
-        news: newsResult,
-        synthesis: synthesisResult,
-        workflow: {
-          completedSteps: 3,
-          totalSteps: 3,
-          status: "completed",
+      // Save synthesis and mark complete
+      await updateDoc(doc(db, COLLECTIONS.COMPANY_RESEARCH, researchId), {
+        synthesis: {
+          synthesis: synthesisResult.synthesis,
+          keyInsights: synthesisResult.keyInsights,
+          riskFactors: synthesisResult.riskFactors,
         },
+        status: "completed",
+        isComplete: true,
+        completedAt: new Date().toISOString(),
+        updatedAt: serverTimestamp(),
       });
+
+      return NextResponse.json({ researchId, success: true });
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error occurred";

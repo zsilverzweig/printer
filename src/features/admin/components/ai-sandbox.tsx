@@ -82,7 +82,6 @@ export function AISandbox() {
         error: data.error,
         metadata: {
           duration: data.metadata?.duration,
-          positionCount: data.portfolio?.positions?.length || 0,
         },
       });
     } catch (error) {
@@ -115,7 +114,6 @@ export function AISandbox() {
         error: data.error,
         metadata: {
           duration: data.metadata?.duration,
-          positionCount: data.portfolio?.positions?.length || 0,
         },
       });
     } catch (error) {
@@ -187,9 +185,7 @@ export function AISandbox() {
           finalPortfolio: events.find((e) => e.event === "complete")?.data
             ?.portfolio,
         },
-        metadata: {
-          eventCount: events.length,
-        },
+        metadata: {},
       });
     } catch (error) {
       setResponse({
@@ -399,11 +395,6 @@ export function AISandbox() {
                     )}
                     {response.metadata.isMockResponse && (
                       <Badge variant="secondary">Mock Response</Badge>
-                    )}
-                    {response.metadata.positionCount !== undefined && (
-                      <Badge variant="outline">
-                        {response.metadata.positionCount} positions
-                      </Badge>
                     )}
                   </div>
                 )}

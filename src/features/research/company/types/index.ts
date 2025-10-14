@@ -12,38 +12,40 @@ export interface CompanyResearch {
   id: string;
   userId: string;
   companyTicker: string;
-  companyName?: string;
-  agentId: string;
-  agentName: string;
+  companyName: string;
   
-  // Research content
-  researchReport: string;
-  executiveSummary?: string;
-  keyMetrics?: CompanyMetrics;
-  recommendation?: string;
+  // Research sections - populated sequentially
+  background: {
+    report: string;   // Detailed research report
+    summary: string;  // Executive summary
+  } | null;
   
-  // Vector embeddings for semantic search
-  embeddings: {
-    report: number[];
-    summary?: number[];
-    metrics?: number[];
-  };
+  recentNews: {
+    summary: string;           // Summary of recent news
+    keyDevelopments: string[]; // Key developments that matter
+  } | null;
   
-  // Context and metadata
-  researchContext: {
-    userContext: UserContext;
-    agentContext: AgentContext;
-    marketContext?: MarketContext;
-  };
+  synthesis: {
+    synthesis: string;     // Comprehensive synthesis of all information
+    keyInsights: string[]; // Key insights from synthesis
+    riskFactors: string[]; // Updated risk factors
+  } | null;
+  
+  // Overall recommendation at research level
+  recommendation: string | null;
   
   // Timestamps
-  createdAt: Date;
-  updatedAt: Date;
-  completedAt?: Date;
+  createdAt: string;
+  updatedAt: string;
+  completedAt?: string;
   
-  // Status
-  status: 'pending' | 'in_progress' | 'completed' | 'failed';
+  // Status for real-time updates
+  status: string;   // Status message from current agent job
+  isComplete: boolean;
   errorMessage?: string;
+  
+  // Metadata
+  metadata?: Record<string, any>;
 }
 
 export interface CompanyMetrics {

@@ -35,9 +35,7 @@ export const ResearchAnalystAgent: AIAgent = {
       // Job Execution Prompt
       prompt: (input: ResearchCompanyInput) =>
         `
-Conduct comprehensive research on ${input.companyTicker.toUpperCase()}${
-          input.user_id ? ` for user ${input.user_id}` : ""
-        }.
+Conduct comprehensive research on ${input.companyTicker.toUpperCase()}.
 
 ${
   input.researchFocus?.length
@@ -253,27 +251,24 @@ News Data: ${input.newsData}
 
 Investment Thesis: ${input.investmentThesis}
 
-Create a comprehensive synthesis covering:
+Create a comprehensive factual synthesis covering:
 1. Updated company overview incorporating recent news
 2. How recent developments affect the original research
 3. Updated financial outlook based on new information
-4. Revised investment recommendation considering all data
-5. Key insights that emerged from the synthesis
-6. Updated risk assessment
-7. Clear investment rationale
+4. Key insights that emerged from the synthesis
+5. Updated risk assessment with identified risk factors
+6. Important facts and data points for decision-making
 
 Return a JSON object matching this TypeScript interface:
 interface SynthesizeInformationOutput {
-  ticker: string;              // Company ticker symbol
-  companyName: string;         // Full company name
-  synthesis: string;           // Comprehensive synthesis (3-4 pages)
-  updatedRecommendation: string; // Updated investment recommendation
-  keyInsights: string[];       // Key insights from synthesis
-  riskFactors: string[];       // Updated risk factors
-  investmentRationale: string; // Clear rationale for investment decision
+  ticker: string;        // Company ticker symbol
+  companyName: string;   // Full company name
+  synthesis: string;     // Comprehensive synthesis of all information (3-4 pages)
+  keyInsights: string[]; // Key insights from synthesis
+  riskFactors: string[]; // Risk factors identified
 }
 
-Provide actionable insights that help make informed investment decisions.
+Focus on factual analysis and insights. Avoid investment recommendations - just present the facts and analysis.
       `.trim(),
     },
   },
@@ -285,8 +280,8 @@ Provide actionable insights that help make informed investment decisions.
 
 export interface ResearchCompanyInput {
   companyTicker: string;
+  companyName?: string;
   researchFocus?: string[];
-  user_id?: string;
   additionalContext?: {
     investmentThesis?: string;
     specificQuestions?: string[];
@@ -304,7 +299,6 @@ export interface ResearchCompanyOutput {
 
 export interface AnalyzeMarketsInput {
   thesis: string;
-  user_id?: string;
 }
 
 export interface AnalyzeMarketsOutput {
@@ -317,7 +311,6 @@ export interface AnalyzeMarketsOutput {
 export interface IdentifyCompaniesInput {
   thesis: string;
   marketAnalysis?: AnalyzeMarketsOutput;
-  user_id?: string;
 }
 
 export interface IdentifyCompaniesOutput {
@@ -338,7 +331,6 @@ export interface GetCurrentNewsInput {
   companyName: string;
   existingResearch?: string;
   newsTimeframe?: string;
-  user_id?: string;
 }
 
 export interface GetCurrentNewsOutput {
@@ -362,17 +354,14 @@ export interface SynthesizeInformationInput {
   researchData: string;
   newsData: string;
   investmentThesis?: string;
-  user_id?: string;
 }
 
 export interface SynthesizeInformationOutput {
   ticker: string;
   companyName: string;
-  synthesis: string;
-  updatedRecommendation: string;
-  keyInsights: string[];
-  riskFactors: string[];
-  investmentRationale: string;
+  synthesis: string; // Comprehensive synthesis of all information
+  keyInsights: string[]; // Key insights from synthesis
+  riskFactors: string[]; // Risk factors identified
 }
 
 export type ResearchAnalystAgentType = typeof ResearchAnalystAgent;
