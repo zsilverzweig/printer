@@ -11,6 +11,7 @@ import { CompanyResearch } from "@/features/research/company/types";
 import { executeAgentJob } from "@/lib/api/agent-executor";
 import { AgentContext, withAgentMiddleware } from "@/lib/api/agent-middleware";
 import { COLLECTIONS, db } from "@/lib/services/firebase";
+import { companyResearchSecurity } from "@/lib/services/security-wrapper";
 
 export const POST = withAgentMiddleware(
   { logger: "ResearchCompanyAPI" },
@@ -33,7 +34,10 @@ export const POST = withAgentMiddleware(
 
 // Comprehensive research workflow endpoint that creates and updates research in Firebase
 export const PUT = withAgentMiddleware(
-  { logger: "ComprehensiveResearchAPI" },
+  {
+    logger: "ComprehensiveResearchAPI",
+    customSecurity: companyResearchSecurity,
+  },
   async (
     request: NextRequest,
     context: AgentContext

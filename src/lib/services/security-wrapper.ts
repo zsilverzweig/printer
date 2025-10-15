@@ -173,7 +173,7 @@ export const companyResearchSecurity = new SecurityWrapper({
   },
   requireAuth: false,
   maxRequestSize: 10 * 1024, // 10KB
-  allowedMethods: ["POST"],
+  allowedMethods: ["POST", "PUT"],
 });
 
 export const tradeAnalysisSecurity = new SecurityWrapper({

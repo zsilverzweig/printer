@@ -125,6 +125,9 @@ export function ResearchProvider({ userId, children }: ResearchProviderProps) {
               isComplete: Boolean(d?.isComplete),
               createdAt,
               updatedAt,
+              background: d?.background ?? null,
+              recentNews: d?.recentNews ?? null,
+              synthesis: d?.synthesis ?? null,
             };
             return result;
           })

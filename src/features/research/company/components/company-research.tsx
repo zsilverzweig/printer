@@ -197,6 +197,97 @@ export function CompanyResearch() {
                 </CardContent>
               </Card>
 
+              {/* Background (CRU) */}
+              {result.background && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Background</CardTitle>
+                    <CardDescription>
+                      Executive summary and detailed report from the research
+                      phase
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div>
+                      <h4 className="font-medium mb-2">Summary</h4>
+                      <p className="text-sm text-muted-foreground">
+                        {result.background.summary}
+                      </p>
+                    </div>
+                    <div>
+                      <h4 className="font-medium mb-2">Report</h4>
+                      <div
+                        className="prose prose-sm max-w-none markdown-content"
+                        dangerouslySetInnerHTML={{ __html: processedReport }}
+                      />
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Recent News (CRU) */}
+              {result.recentNews && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Recent News</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <p className="text-sm text-muted-foreground">
+                      {result.recentNews.summary}
+                    </p>
+                    {result.recentNews.keyDevelopments?.length ? (
+                      <div>
+                        <h4 className="font-medium mb-2">Key Developments</h4>
+                        <ul className="list-disc pl-5 text-sm">
+                          {result.recentNews.keyDevelopments.map(
+                            (item, idx) => (
+                              <li key={idx}>{item}</li>
+                            )
+                          )}
+                        </ul>
+                      </div>
+                    ) : null}
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Synthesis (CRU) */}
+              {result.synthesis && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Synthesis</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div>
+                      <h4 className="font-medium mb-2">Synthesis</h4>
+                      <p className="text-sm text-muted-foreground">
+                        {result.synthesis.synthesis}
+                      </p>
+                    </div>
+                    {!!result.synthesis.keyInsights?.length && (
+                      <div>
+                        <h4 className="font-medium mb-2">Key Insights</h4>
+                        <ul className="list-disc pl-5 text-sm">
+                          {result.synthesis.keyInsights.map((item, idx) => (
+                            <li key={idx}>{item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {!!result.synthesis.riskFactors?.length && (
+                      <div>
+                        <h4 className="font-medium mb-2">Risk Factors</h4>
+                        <ul className="list-disc pl-5 text-sm">
+                          {result.synthesis.riskFactors.map((item, idx) => (
+                            <li key={idx}>{item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+
               {/* Investment Recommendation */}
               <Card>
                 <CardHeader>

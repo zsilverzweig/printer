@@ -13,6 +13,20 @@ export interface CompanyResearchResult {
   status?: string;
   isComplete?: boolean;
   userId?: string;
+  // CRU sections
+  background?: {
+    report: string;
+    summary: string;
+  } | null;
+  recentNews?: {
+    summary: string;
+    keyDevelopments: string[];
+  } | null;
+  synthesis?: {
+    synthesis: string;
+    keyInsights: string[];
+    riskFactors: string[];
+  } | null;
 }
 
 export class ResearchService {
