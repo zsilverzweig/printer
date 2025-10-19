@@ -39,6 +39,12 @@ export function MainAppSidebar() {
           href: "/trading",
           icon: <TrendingUp className="h-4 w-4" />,
         },
+        {
+          id: "market-ticker",
+          title: "Market Ticker",
+          href: "/market-ticker",
+          icon: <TrendingUp className="h-4 w-4" />,
+        },
       ],
     },
     {
