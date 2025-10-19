@@ -35,6 +35,7 @@
     "clsx": "^2.1.1",
     "firebase": "^12.2.1",
     "gray-matter": "^4.0.3",
+    "lightweight-charts": "4.2.3",
     "lodash": "^4.17.21",
     "lucide-react": "^0.544.0",
     "next": "^14.0.0",

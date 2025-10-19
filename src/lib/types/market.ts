@@ -1,0 +1,42 @@
+// Shared market data types for Polygon-backed FastAPI
+
+export type Timespan =
+  | "minute"
+  | "hour"
+  | "day"
+  | "week"
+  | "month"
+  | "quarter"
+  | "year";
+
+// Polygon aggregate bar shape (jsonable_encoder of polygon Agg)
+export interface AggregateBar {
+  t: number; // epoch millis
+  o: number; // open
+  h: number; // high
+  l: number; // low
+  c: number; // close
+  v?: number; // volume (optional depending on source)
+}
+
+// Polygon last trade minimal fields (shape produced by polygon SDK encoder)
+export interface LastTrade {
+  price: number;
+  size?: number;
+  exchange?: number;
+  conditions?: number[];
+  timestamp?: number; // epoch nanos or millis (SDK dependent)
+  participant_timestamp?: number;
+  trf_timestamp?: number;
+  sip_timestamp?: number;
+  symbol?: string;
+}
+
+export interface GetAggsParams {
+  multiplier: number;
+  timespan: Timespan;
+  from: string; // ISO date (YYYY-MM-DD) or datetime supported by API
+  to: string; // ISO date (YYYY-MM-DD) or datetime supported by API
+  limit?: number;
+  paginate?: boolean;
+}
