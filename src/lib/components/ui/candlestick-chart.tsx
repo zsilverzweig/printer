@@ -10,12 +10,17 @@ import {
 import * as React from "react";
 
 import type { AggregateBar } from "@/lib/types/market";
+import { computeEMA, computeVWAP } from "@/lib/utils/indicators";
 import { cn } from "@/lib/utils/utils";
 
 interface CandlestickChartProps {
   data: AggregateBar[];
-  height?: number;
+  height?: number | string; // number in px or CSS string (e.g., '60vh')
   className?: string;
+  showEMA12?: boolean;
+  showEMA26?: boolean;
+  showVWAP?: boolean;
+  showVolume?: boolean;
 }
 
 function getCssVar(name: string, fallback: string): string {
@@ -125,12 +130,20 @@ function mapToCandles(bars: AggregateBar[]) {
 
 export function CandlestickChart({
   data,
-  height = 320,
+  height = "60vh",
   className,
+  showEMA12 = true,
+  showEMA26 = true,
+  showVWAP = true,
+  showVolume = true,
 }: CandlestickChartProps) {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const chartRef = React.useRef<IChartApi | null>(null);
   const seriesRef = React.useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const ema12Ref = React.useRef<ISeriesApi<"Line"> | null>(null);
+  const ema26Ref = React.useRef<ISeriesApi<"Line"> | null>(null);
+  const vwapRef = React.useRef<ISeriesApi<"Line"> | null>(null);
+  const volumeRef = React.useRef<ISeriesApi<"Histogram"> | null>(null);
 
   // Create chart
   React.useEffect(() => {
@@ -142,9 +155,12 @@ export function CandlestickChart({
     const up = resolveColor("--green-500", "#10b981");
     const down = resolveColor("--red-500", "#ef4444");
 
+    const initialHeight =
+      containerRef.current.clientHeight ||
+      (typeof height === "number" ? height : 320);
     const chart = createChart(containerRef.current, {
       autoSize: true,
-      height,
+      height: initialHeight,
       layout: {
         background: { color: "transparent" },
         textColor: fg,
@@ -170,16 +186,52 @@ export function CandlestickChart({
     chartRef.current = chart;
     seriesRef.current = series;
 
+    // overlay lines
+    ema12Ref.current = chart.addLineSeries({
+      color: resolveColor("--blue-400", "#60a5fa"),
+      lineWidth: 2,
+    });
+    ema26Ref.current = chart.addLineSeries({
+      color: resolveColor("--amber-400", "#f59e0b"),
+      lineWidth: 2,
+    });
+    vwapRef.current = chart.addLineSeries({
+      color: resolveColor("--violet-400", "#a78bfa"),
+      lineWidth: 2,
+    });
+
+    // Volume histogram (bottom pane via scaleMargins)
+    volumeRef.current = chart.addHistogramSeries({
+      priceScaleId: "volume",
+      priceFormat: { type: "volume" },
+      color: resolveColor("--muted-foreground", "#6b7280"),
+    });
+    chart.priceScale("volume").applyOptions({
+      scaleMargins: { top: 0.75, bottom: 0 },
+    });
+
     const ro = new ResizeObserver(() => {
+      const el = containerRef.current;
+      if (!el) return;
+      chart.applyOptions({ height: el.clientHeight });
       chart.timeScale().fitContent();
     });
     ro.observe(containerRef.current);
 
     return () => {
       ro.disconnect();
+      if (ema12Ref.current) chart.removeSeries(ema12Ref.current);
+      if (ema26Ref.current) chart.removeSeries(ema26Ref.current);
+      if (vwapRef.current) chart.removeSeries(vwapRef.current);
+      if (volumeRef.current) chart.removeSeries(volumeRef.current);
+      chart.removeSeries(series);
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
+      ema12Ref.current = null;
+      ema26Ref.current = null;
+      vwapRef.current = null;
+      volumeRef.current = null;
     };
   }, [height]);
 
@@ -190,7 +242,61 @@ export function CandlestickChart({
     seriesRef.current.setData(candles);
     // Adjust viewport to fit data
     chartRef.current?.timeScale().fitContent();
-  }, [data]);
 
-  return <div ref={containerRef} className={cn("w-full", className)} />;
+    // overlays
+    if (ema12Ref.current) {
+      const ema12 = computeEMA(data, 12);
+      showEMA12
+        ? ema12Ref.current.setData(ema12)
+        : ema12Ref.current.setData([]);
+    }
+    if (ema26Ref.current) {
+      const ema26 = computeEMA(data, 26);
+      showEMA26
+        ? ema26Ref.current.setData(ema26)
+        : ema26Ref.current.setData([]);
+    }
+    if (vwapRef.current) {
+      const vwap = computeVWAP(data);
+      showVWAP ? vwapRef.current.setData(vwap) : vwapRef.current.setData([]);
+    }
+
+    // volume
+    if (volumeRef.current) {
+      const upColor = resolveColor("--green-500", "#10b981");
+      const downColor = resolveColor("--red-500", "#ef4444");
+      const volPoints = (data || [])
+        .map((b: any) => {
+          const t = typeof b.t === "number" ? b.t : b.timestamp;
+          const o = typeof b.o === "number" ? b.o : b.open;
+          const c = typeof b.c === "number" ? b.c : b.close;
+          const v = typeof b.v === "number" ? b.v : b.volume;
+          if (
+            typeof t !== "number" ||
+            typeof o !== "number" ||
+            typeof c !== "number" ||
+            typeof v !== "number"
+          )
+            return undefined;
+          return {
+            time: Math.floor(t / 1000),
+            value: v,
+            color: c >= o ? upColor : downColor,
+          };
+        })
+        .filter(Boolean) as { time: number; value: number; color: string }[];
+      showVolume
+        ? volumeRef.current.setData(volPoints)
+        : volumeRef.current.setData([]);
+    }
+  }, [data, showEMA12, showEMA26, showVWAP, showVolume]);
+
+  const styleHeight = typeof height === "number" ? `${height}px` : height;
+  return (
+    <div
+      ref={containerRef}
+      className={cn("w-full", className)}
+      style={{ height: styleHeight }}
+    />
+  );
 }

@@ -3,6 +3,7 @@
 import { Loader2 } from "lucide-react";
 
 import { AISandbox } from "@/features/admin/components/ai-sandbox";
+import { SaveShortcutDemo } from "@/lib/components/save-shortcut-demo";
 import { useAuthContext } from "@/lib/providers/auth-provider";
 
 export default function AISandboxPage() {
@@ -61,6 +62,12 @@ export default function AISandboxPage() {
 
         {/* AI Sandbox Component */}
         <AISandbox />
+
+        {/* Keyboard shortcut demo */}
+        <div className="border rounded-lg p-4">
+          <h2 className="text-lg font-semibold mb-2">Keyboard Shortcuts</h2>
+          <SaveShortcutDemo />
+        </div>
       </div>
     </div>
   );

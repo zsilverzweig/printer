@@ -1,19 +1,19 @@
 /**
  * Root Layout (app/layout.tsx)
- * 
+ *
  * PURPOSE: Main application wrapper that provides global providers and layout structure.
- * 
+ *
  * ARCHITECTURE ROLE:
  * - Server-side user authentication (getServerUser)
  * - Global providers (AuthProvider, Toaster)
  * - App-level layout wrapper (AppLayout)
- * 
+ *
  * FLOW:
  * 1. Server-side: Get user from cookies
  * 2. Client-side: Provide user to AuthProvider
  * 3. AppLayout: Handle UI layout decisions
  * 4. Pages: Render with proper authentication context
- * 
+ *
  * SIMPLIFIED STRUCTURE:
  * - Direct children to AppLayout
  * - Middleware handles routing logic
@@ -26,6 +26,7 @@ import { Toaster } from "sonner";
 
 import { getServerUser } from "@/lib/auth/server";
 import { AppLayout } from "@/lib/components/app-layout";
+import { LayoutWidgets } from "@/lib/components/layout-widgets";
 import { AuthProvider } from "@/lib/providers/auth-provider";
 
 import "./globals.css";
@@ -51,9 +52,8 @@ export default async function RootLayout({
       <meta name="apple-mobile-web-app-title" content="printer" />
       <body className={inter.className}>
         <AuthProvider initialUser={user}>
-          <AppLayout>
-            {children}
-          </AppLayout>
+          <AppLayout>{children}</AppLayout>
+          <LayoutWidgets />
           <Toaster
             position="bottom-right"
             expand={true}

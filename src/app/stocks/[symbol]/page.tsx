@@ -1,5 +1,6 @@
 "use client";
 
+import { Button } from "@/lib/components/ui/button";
 import { CandlestickChart } from "@/lib/components/ui/candlestick-chart";
 import {
   Card,
@@ -7,6 +8,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/lib/components/ui/card";
+import { Input } from "@/lib/components/ui/input";
 import { Label } from "@/lib/components/ui/label";
 import {
   Select,
@@ -18,6 +20,7 @@ import {
 import { SimpleLineChart } from "@/lib/components/ui/simple-line-chart";
 import { marketService } from "@/lib/services/market-service";
 import type { AggregateBar, LastTrade, Timespan } from "@/lib/types/market";
+import { useRouter } from "next/navigation";
 import * as React from "react";
 
 function formatDateISO(date: Date): string {
@@ -37,6 +40,7 @@ function toChartPoints(aggs: AggregateBar[]) {
 
 export default function StockPage({ params }: { params: { symbol: string } }) {
   const symbol = (params.symbol || "AAPL").toUpperCase();
+  const router = useRouter();
 
   const [timespan, setTimespan] = React.useState<Timespan>("day");
   const [multiplier, setMultiplier] = React.useState<number>(1);
@@ -44,6 +48,14 @@ export default function StockPage({ params }: { params: { symbol: string } }) {
   const [lastTrade, setLastTrade] = React.useState<LastTrade | null>(null);
   const [loading, setLoading] = React.useState<boolean>(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [tickerInput, setTickerInput] = React.useState<string>(symbol);
+
+  const onSubmitTicker = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const next = tickerInput.trim().toUpperCase();
+    if (!next) return;
+    if (next !== symbol) router.push(`/stocks/${encodeURIComponent(next)}`);
+  };
 
   React.useEffect(() => {
     const load = async () => {
@@ -86,12 +98,27 @@ export default function StockPage({ params }: { params: { symbol: string } }) {
   );
 
   return (
-    <div className="container mx-auto max-w-5xl p-6">
+    <div className="container mx-auto p-6">
       <div className="mb-6 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <h1 className="text-2xl font-semibold tracking-tight">
           {symbol} chart
         </h1>
         <div className="flex flex-wrap items-end gap-4">
+          <div className="grid gap-1">
+            <Label className="text-xs text-muted-foreground">Ticker</Label>
+            <form className="flex items-center gap-2" onSubmit={onSubmitTicker}>
+              <Input
+                value={tickerInput}
+                onChange={(e) => setTickerInput(e.target.value.toUpperCase())}
+                className="w-[140px]"
+                placeholder="AAPL"
+                aria-label="Ticker"
+              />
+              <Button type="submit" size="sm">
+                Go
+              </Button>
+            </form>
+          </div>
           <div className="grid gap-1">
             <Label className="text-xs text-muted-foreground">Timespan</Label>
             <Select
@@ -140,13 +167,15 @@ export default function StockPage({ params }: { params: { symbol: string } }) {
             Price
           </CardTitle>
         </CardHeader>
-        <CardContent className="p-4 sm:p-6">
+        <CardContent className="p-0 sm:p-2">
           {loading ? (
-            <div className="flex h-[320px] items-center justify-center text-sm text-muted-foreground">
+            <div className="flex h-[90vh] items-center justify-center text-sm text-muted-foreground">
               Loading…
             </div>
           ) : aggs && aggs.length > 0 ? (
-            <CandlestickChart data={aggs} height={320} />
+            <div className="h-[90vh]">
+              <CandlestickChart data={aggs} height="100%" />
+            </div>
           ) : (
             <SimpleLineChart data={chartPoints} height={280} />
           )}
