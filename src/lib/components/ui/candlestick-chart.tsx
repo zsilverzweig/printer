@@ -29,6 +29,10 @@ interface CandlestickChartProps {
   showVolume?: boolean;
   showLegend?: boolean;
   showMACD?: boolean;
+  // MACD histogram customization
+  macdHistogramUpColor?: string; // base color before alpha (e.g., "#10b981")
+  macdHistogramDownColor?: string; // base color before alpha (e.g., "#ef4444")
+  macdHistogramAlpha?: number; // 0..1 transparency for histogram bars
 }
 
 type BarLike = AggregateBar & {
@@ -199,6 +203,9 @@ export function CandlestickChart({
   showVolume = true,
   showLegend = true,
   showMACD = true,
+  macdHistogramUpColor,
+  macdHistogramDownColor,
+  macdHistogramAlpha,
 }: CandlestickChartProps) {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const chartRef = React.useRef<IChartApi | null>(null);
@@ -371,10 +378,14 @@ export function CandlestickChart({
       macdLineRef.current.setData(macd as unknown as LineData<Time>[]);
       macdSignalRef.current.setData(signal as unknown as LineData<Time>[]);
 
-      const upBase = resolveColor("--green-500", "#10b981");
-      const downBase = resolveColor("--red-500", "#ef4444");
-      const upColor = withAlpha(upBase, 0.5);
-      const downColor = withAlpha(downBase, 0.5);
+      const upBase =
+        macdHistogramUpColor || resolveColor("--green-500", "#10b981");
+      const downBase =
+        macdHistogramDownColor || resolveColor("--red-500", "#ef4444");
+      const alpha =
+        typeof macdHistogramAlpha === "number" ? macdHistogramAlpha : 0.5;
+      const upColor = withAlpha(upBase, alpha);
+      const downColor = withAlpha(downBase, alpha);
       const histPoints = histogram.map((p) => ({
         time: p.time,
         value: p.value,
@@ -412,7 +423,17 @@ export function CandlestickChart({
         .filter(Boolean) as { time: number; value: number; color: string }[];
       volumeRef.current.setData(volPoints as unknown as HistogramData<Time>[]);
     }
-  }, [data, showEMA12, showEMA26, showVWAP, showVolume, showMACD]);
+  }, [
+    data,
+    showEMA12,
+    showEMA26,
+    showVWAP,
+    showVolume,
+    showMACD,
+    macdHistogramUpColor,
+    macdHistogramDownColor,
+    macdHistogramAlpha,
+  ]);
 
   const styleHeight = typeof height === "number" ? `${height}px` : height;
   const ema12Color = resolveColor("--blue-400", "#60a5fa");

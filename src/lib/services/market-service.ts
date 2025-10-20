@@ -7,8 +7,7 @@ import type {
 } from "@/lib/types/market";
 
 // Default to Next.js server-side proxy to avoid CORS in the browser
-const DEFAULT_BASE_URL =
-  process.env.NEXT_PUBLIC_MARKET_API_BASE_URL || "/api/market";
+const DEFAULT_BASE_URL = process.env.NEXT_PUBLIC_MARKET_API_BASE_URL || "";
 
 export class MarketService {
   private api: ApiService;
