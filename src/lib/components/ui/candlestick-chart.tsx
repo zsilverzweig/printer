@@ -1,5 +1,11 @@
 "use client";
 
+import type {
+  CandlestickData,
+  HistogramData,
+  LineData,
+  Time,
+} from "lightweight-charts";
 import {
   createChart,
   CrosshairMode,
@@ -10,7 +16,7 @@ import {
 import * as React from "react";
 
 import type { AggregateBar } from "@/lib/types/market";
-import { computeEMA, computeVWAP } from "@/lib/utils/indicators";
+import { computeEMA, computeMACD, computeVWAP } from "@/lib/utils/indicators";
 import { cn } from "@/lib/utils/utils";
 
 interface CandlestickChartProps {
@@ -21,7 +27,18 @@ interface CandlestickChartProps {
   showEMA26?: boolean;
   showVWAP?: boolean;
   showVolume?: boolean;
+  showLegend?: boolean;
+  showMACD?: boolean;
 }
+
+type BarLike = AggregateBar & {
+  timestamp?: number;
+  open?: number;
+  high?: number;
+  low?: number;
+  close?: number;
+  volume?: number;
+};
 
 function getCssVar(name: string, fallback: string): string {
   if (typeof window === "undefined") return fallback;
@@ -91,12 +108,56 @@ function resolveColor(name: string, fallback: string): string {
   return `rgba(${r}, ${g}, ${b}, ${a})`;
 }
 
+function withAlpha(color: string, alpha: number): string {
+  // Normalize common color formats to rgba with the provided alpha
+  if (color.startsWith("rgba(")) {
+    const parts = color
+      .slice(5, -1)
+      .split(",")
+      .map((p) => p.trim());
+    const r = parts[0];
+    const g = parts[1];
+    const b = parts[2];
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  }
+  if (color.startsWith("rgb(")) {
+    const parts = color
+      .slice(4, -1)
+      .split(",")
+      .map((p) => p.trim());
+    const r = parts[0];
+    const g = parts[1];
+    const b = parts[2];
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  }
+  if (color.startsWith("#")) {
+    let hex = color.slice(1);
+    if (hex.length === 3) {
+      hex = hex
+        .split("")
+        .map((c) => c + c)
+        .join("");
+    }
+    if (hex.length === 8) {
+      // ignore provided alpha, use given alpha
+      hex = hex.slice(0, 6);
+    }
+    if (hex.length === 6) {
+      const r = parseInt(hex.slice(0, 2), 16);
+      const g = parseInt(hex.slice(2, 4), 16);
+      const b = parseInt(hex.slice(4, 6), 16);
+      return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    }
+  }
+  return color;
+}
+
 function mapToCandles(bars: AggregateBar[]) {
   // Support both shapes:
   // 1) { t, o, h, l, c }
   // 2) { timestamp, open, high, low, close }
   return bars
-    .map((b: any) => {
+    .map((b: BarLike) => {
       const t = typeof b.t === "number" ? b.t : b.timestamp;
       const o = typeof b.o === "number" ? b.o : b.open;
       const h = typeof b.h === "number" ? b.h : b.high;
@@ -136,6 +197,8 @@ export function CandlestickChart({
   showEMA26 = true,
   showVWAP = true,
   showVolume = true,
+  showLegend = true,
+  showMACD = true,
 }: CandlestickChartProps) {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const chartRef = React.useRef<IChartApi | null>(null);
@@ -144,6 +207,9 @@ export function CandlestickChart({
   const ema26Ref = React.useRef<ISeriesApi<"Line"> | null>(null);
   const vwapRef = React.useRef<ISeriesApi<"Line"> | null>(null);
   const volumeRef = React.useRef<ISeriesApi<"Histogram"> | null>(null);
+  const macdLineRef = React.useRef<ISeriesApi<"Line"> | null>(null);
+  const macdSignalRef = React.useRef<ISeriesApi<"Line"> | null>(null);
+  const macdHistRef = React.useRef<ISeriesApi<"Histogram"> | null>(null);
 
   // Create chart
   React.useEffect(() => {
@@ -200,15 +266,46 @@ export function CandlestickChart({
       lineWidth: 2,
     });
 
-    // Volume histogram (bottom pane via scaleMargins)
-    volumeRef.current = chart.addHistogramSeries({
-      priceScaleId: "volume",
-      priceFormat: { type: "volume" },
-      color: resolveColor("--muted-foreground", "#6b7280"),
+    // Adjust main price scale to reserve space for indicator panes
+    const priceBottomMargin =
+      showMACD && showVolume ? 0.5 : showMACD || showVolume ? 0.25 : 0;
+    chart.priceScale("right").applyOptions({
+      scaleMargins: { top: 0, bottom: priceBottomMargin },
     });
-    chart.priceScale("volume").applyOptions({
-      scaleMargins: { top: 0.75, bottom: 0 },
-    });
+
+    // Indicator panes: allow both MACD and Volume simultaneously using separate price scales
+    if (showMACD) {
+      const macdColor = withAlpha(resolveColor("--cyan-400", "#22d3ee"), 0.4);
+      const signalColor = withAlpha(resolveColor("--rose-400", "#fb7185"), 0.4);
+      macdLineRef.current = chart.addLineSeries({
+        priceScaleId: "macd",
+        color: macdColor,
+        lineWidth: 2,
+      });
+      macdSignalRef.current = chart.addLineSeries({
+        priceScaleId: "macd",
+        color: signalColor,
+        lineWidth: 2,
+      });
+      macdHistRef.current = chart.addHistogramSeries({
+        priceScaleId: "macd",
+      });
+      const macdMargins = showVolume
+        ? { top: 0.5, bottom: 0.25 }
+        : { top: 0.75, bottom: 0 };
+      chart.priceScale("macd").applyOptions({ scaleMargins: macdMargins });
+    }
+    if (showVolume) {
+      volumeRef.current = chart.addHistogramSeries({
+        priceScaleId: "volume",
+        priceFormat: { type: "volume" },
+        color: resolveColor("--muted-foreground", "#6b7280"),
+      });
+      chart.priceScale("volume").applyOptions({
+        // Reserve bottom quarter for Volume
+        scaleMargins: { top: 0.75, bottom: 0 },
+      });
+    }
 
     const ro = new ResizeObserver(() => {
       const el = containerRef.current;
@@ -223,6 +320,9 @@ export function CandlestickChart({
       if (ema12Ref.current) chart.removeSeries(ema12Ref.current);
       if (ema26Ref.current) chart.removeSeries(ema26Ref.current);
       if (vwapRef.current) chart.removeSeries(vwapRef.current);
+      if (macdLineRef.current) chart.removeSeries(macdLineRef.current);
+      if (macdSignalRef.current) chart.removeSeries(macdSignalRef.current);
+      if (macdHistRef.current) chart.removeSeries(macdHistRef.current);
       if (volumeRef.current) chart.removeSeries(volumeRef.current);
       chart.removeSeries(series);
       chart.remove();
@@ -232,41 +332,66 @@ export function CandlestickChart({
       ema26Ref.current = null;
       vwapRef.current = null;
       volumeRef.current = null;
+      macdLineRef.current = null;
+      macdSignalRef.current = null;
+      macdHistRef.current = null;
     };
-  }, [height]);
+  }, [height, showMACD, showVolume]);
 
   // Update data
   React.useEffect(() => {
     if (!seriesRef.current) return;
     const candles = mapToCandles(data);
-    seriesRef.current.setData(candles);
+    seriesRef.current.setData(candles as unknown as CandlestickData<Time>[]);
     // Adjust viewport to fit data
     chartRef.current?.timeScale().fitContent();
 
     // overlays
     if (ema12Ref.current) {
       const ema12 = computeEMA(data, 12);
-      showEMA12
-        ? ema12Ref.current.setData(ema12)
-        : ema12Ref.current.setData([]);
+      ema12Ref.current.setData(ema12 as unknown as LineData<Time>[]);
     }
     if (ema26Ref.current) {
       const ema26 = computeEMA(data, 26);
-      showEMA26
-        ? ema26Ref.current.setData(ema26)
-        : ema26Ref.current.setData([]);
+      ema26Ref.current.setData(ema26 as unknown as LineData<Time>[]);
     }
     if (vwapRef.current) {
       const vwap = computeVWAP(data);
-      showVWAP ? vwapRef.current.setData(vwap) : vwapRef.current.setData([]);
+      vwapRef.current.setData(vwap as unknown as LineData<Time>[]);
     }
 
-    // volume
-    if (volumeRef.current) {
-      const upColor = resolveColor("--green-500", "#10b981");
-      const downColor = resolveColor("--red-500", "#ef4444");
+    // indicator pane data
+    if (
+      showMACD &&
+      macdLineRef.current &&
+      macdSignalRef.current &&
+      macdHistRef.current
+    ) {
+      const { macd, signal, histogram } = computeMACD(data, 12, 26, 9);
+      macdLineRef.current.setData(macd as unknown as LineData<Time>[]);
+      macdSignalRef.current.setData(signal as unknown as LineData<Time>[]);
+
+      const upBase = resolveColor("--green-500", "#10b981");
+      const downBase = resolveColor("--red-500", "#ef4444");
+      const upColor = withAlpha(upBase, 0.5);
+      const downColor = withAlpha(downBase, 0.5);
+      const histPoints = histogram.map((p) => ({
+        time: p.time,
+        value: p.value,
+        color: p.value >= 0 ? upColor : downColor,
+      }));
+      macdHistRef.current.setData(
+        histPoints as unknown as HistogramData<Time>[]
+      );
+    }
+    if (showVolume && volumeRef.current) {
+      const upBase = resolveColor("--green-500", "#10b981");
+      const downBase = resolveColor("--red-500", "#ef4444");
+      const upColor = withAlpha(upBase, 0.5);
+      const downColor = withAlpha(downBase, 0.5);
+
       const volPoints = (data || [])
-        .map((b: any) => {
+        .map((b: BarLike) => {
           const t = typeof b.t === "number" ? b.t : b.timestamp;
           const o = typeof b.o === "number" ? b.o : b.open;
           const c = typeof b.c === "number" ? b.c : b.close;
@@ -285,18 +410,83 @@ export function CandlestickChart({
           };
         })
         .filter(Boolean) as { time: number; value: number; color: string }[];
-      showVolume
-        ? volumeRef.current.setData(volPoints)
-        : volumeRef.current.setData([]);
+      volumeRef.current.setData(volPoints as unknown as HistogramData<Time>[]);
     }
-  }, [data, showEMA12, showEMA26, showVWAP, showVolume]);
+  }, [data, showEMA12, showEMA26, showVWAP, showVolume, showMACD]);
 
   const styleHeight = typeof height === "number" ? `${height}px` : height;
+  const ema12Color = resolveColor("--blue-400", "#60a5fa");
+  const ema26Color = resolveColor("--amber-400", "#f59e0b");
+  const vwapColor = resolveColor("--violet-400", "#a78bfa");
+  const volumeColor = resolveColor("--muted-foreground", "#6b7280");
+  const macdColor = resolveColor("--cyan-400", "#22d3ee");
+  const signalColor = resolveColor("--rose-400", "#fb7185");
   return (
     <div
-      ref={containerRef}
-      className={cn("w-full", className)}
+      className={cn("relative w-full", className)}
       style={{ height: styleHeight }}
-    />
+    >
+      {showLegend && (
+        <div className="pointer-events-none absolute left-2 top-2 z-10 rounded-md border border-border bg-background/80 px-2 py-1 text-[11px] text-muted-foreground shadow-sm backdrop-blur">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            {showEMA12 && (
+              <span className="inline-flex items-center">
+                <span
+                  className="mr-1 inline-block h-2 w-2 rounded-sm"
+                  style={{ backgroundColor: ema12Color }}
+                />
+                EMA 12
+              </span>
+            )}
+            {showEMA26 && (
+              <span className="inline-flex items-center">
+                <span
+                  className="mr-1 inline-block h-2 w-2 rounded-sm"
+                  style={{ backgroundColor: ema26Color }}
+                />
+                EMA 26
+              </span>
+            )}
+            {showVWAP && (
+              <span className="inline-flex items-center">
+                <span
+                  className="mr-1 inline-block h-2 w-2 rounded-sm"
+                  style={{ backgroundColor: vwapColor }}
+                />
+                VWAP
+              </span>
+            )}
+            {showVolume && (
+              <span className="inline-flex items-center">
+                <span
+                  className="mr-1 inline-block h-2 w-2 rounded-sm"
+                  style={{ backgroundColor: volumeColor }}
+                />
+                Volume
+              </span>
+            )}
+            {showMACD && (
+              <span className="inline-flex items-center">
+                <span
+                  className="mr-1 inline-block h-2 w-2 rounded-sm"
+                  style={{ backgroundColor: macdColor }}
+                />
+                MACD 12,26,9
+              </span>
+            )}
+            {showMACD && (
+              <span className="inline-flex items-center">
+                <span
+                  className="mr-1 inline-block h-2 w-2 rounded-sm"
+                  style={{ backgroundColor: signalColor }}
+                />
+                Signal 9
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+      <div ref={containerRef} className="h-full w-full" />
+    </div>
   );
 }

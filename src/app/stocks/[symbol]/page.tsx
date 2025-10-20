@@ -1,5 +1,6 @@
 "use client";
 
+import { useMarketStream } from "@/features/finance/trading/hooks/use-market-stream";
 import { Button } from "@/lib/components/ui/button";
 import { CandlestickChart } from "@/lib/components/ui/candlestick-chart";
 import {
@@ -49,6 +50,8 @@ export default function StockPage({ params }: { params: { symbol: string } }) {
   const [loading, setLoading] = React.useState<boolean>(false);
   const [error, setError] = React.useState<string | null>(null);
   const [tickerInput, setTickerInput] = React.useState<string>(symbol);
+  const [wsLastEvent, setWsLastEvent] = React.useState<unknown | null>(null);
+  const [wsError, setWsError] = React.useState<string | null>(null);
 
   const onSubmitTicker = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -91,6 +94,64 @@ export default function StockPage({ params }: { params: { symbol: string } }) {
     };
     void load();
   }, [symbol, timespan, multiplier]);
+
+  // Realtime: subscribe to aggregate minute events for this symbol
+  const onWsMessage = React.useCallback(
+    (msg: unknown) => {
+      try {
+        // Polygon-style payloads are often arrays of events
+        if (Array.isArray(msg)) {
+          const match = msg.find((m: any) => {
+            const s = (m && (m.sym || m.symbol || m.S)) as string | undefined;
+            return typeof s === "string" && s.toUpperCase() === symbol;
+          });
+          if (match) setWsLastEvent(match);
+        } else if (msg && typeof msg === "object") {
+          const s = (msg as any).sym || (msg as any).symbol || (msg as any).S;
+          if (typeof s === "string") {
+            if (s.toUpperCase() === symbol) setWsLastEvent(msg);
+          } else {
+            // If message has no symbol, still surface it
+            setWsLastEvent(msg);
+          }
+        } else if (typeof msg === "string") {
+          // Attempt to parse stringified JSON arrays/objects
+          try {
+            const parsed = JSON.parse(msg);
+            if (Array.isArray(parsed)) {
+              const match = parsed.find((m: any) => {
+                const s = (m && (m.sym || m.symbol || m.S)) as
+                  | string
+                  | undefined;
+                return typeof s === "string" && s.toUpperCase() === symbol;
+              });
+              if (match) setWsLastEvent(match);
+            } else {
+              setWsLastEvent(parsed);
+            }
+          } catch {
+            setWsLastEvent(msg);
+          }
+        }
+      } catch (e) {
+        setWsError(e instanceof Error ? e.message : "WS message error");
+      }
+    },
+    [symbol]
+  );
+
+  const {
+    isConnected,
+    isConnecting,
+    error: wsHookError,
+  } = useMarketStream({
+    endpoint: "/api/ws",
+    subs: `AM.${symbol}`,
+    onMessage: onWsMessage,
+  });
+  React.useEffect(() => {
+    setWsError(wsHookError || null);
+  }, [wsHookError]);
 
   const chartPoints = React.useMemo(
     () => (aggs ? toChartPoints(aggs) : []),
@@ -179,6 +240,35 @@ export default function StockPage({ params }: { params: { symbol: string } }) {
           ) : (
             <SimpleLineChart data={chartPoints} height={280} />
           )}
+        </CardContent>
+      </Card>
+
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle className="text-lg">Realtime (WS)</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="text-sm grid gap-2">
+            <div>
+              <span className="text-muted-foreground">Status: </span>
+              <span>
+                {isConnecting
+                  ? "Connecting"
+                  : isConnected
+                  ? "Connected"
+                  : "Disconnected"}
+              </span>
+            </div>
+            {wsError && <div className="text-destructive">{wsError}</div>}
+            <div className="grid gap-1">
+              <div className="text-muted-foreground">Last event</div>
+              <pre className="max-h-64 overflow-auto rounded border bg-muted p-2 text-xs">
+                {wsLastEvent
+                  ? JSON.stringify(wsLastEvent as any, null, 2)
+                  : "—"}
+              </pre>
+            </div>
+          </div>
         </CardContent>
       </Card>
 

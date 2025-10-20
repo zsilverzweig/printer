@@ -87,3 +87,140 @@ export function computeVWAP(bars: AggregateBar[]): LinePoint[] {
   }
   return out;
 }
+
+export function computeMACD(
+  bars: AggregateBar[],
+  fastPeriod = 12,
+  slowPeriod = 26,
+  signalPeriod = 9
+): { macd: LinePoint[]; signal: LinePoint[]; histogram: LinePoint[] } {
+  if (
+    !Array.isArray(bars) ||
+    fastPeriod <= 0 ||
+    slowPeriod <= 0 ||
+    signalPeriod <= 0
+  )
+    return { macd: [], signal: [], histogram: [] };
+
+  // Ensure fast < slow; swap if needed to keep logic consistent
+  let fast = fastPeriod;
+  let slow = slowPeriod;
+  if (fast > slow) {
+    const tmp = fast;
+    fast = slow;
+    slow = tmp;
+  }
+
+  const sorted = [...bars]
+    .map((b) => ({ t: getTimestamp(b), c: getClose(b) }))
+    .filter((b) => typeof b.t === "number" && typeof b.c === "number")
+    .sort((a, b) => (a.t as number) - (b.t as number)) as {
+    t: number;
+    c: number;
+  }[];
+
+  if (sorted.length === 0) return { macd: [], signal: [], histogram: [] };
+
+  const fastK = 2 / (fast + 1);
+  const slowK = 2 / (slow + 1);
+
+  const emaFast: Array<number | undefined> = new Array(sorted.length).fill(
+    undefined
+  );
+  const emaSlow: Array<number | undefined> = new Array(sorted.length).fill(
+    undefined
+  );
+
+  let fastEma: number | undefined = undefined;
+  let slowEma: number | undefined = undefined;
+
+  for (let i = 0; i < sorted.length; i++) {
+    const close = sorted[i].c;
+    if (fastEma === undefined) {
+      if (i + 1 >= fast) {
+        let sum = 0;
+        for (let j = i + 1 - fast; j <= i; j++) sum += sorted[j].c;
+        fastEma = sum / fast;
+        emaFast[i] = fastEma;
+      }
+    } else {
+      fastEma = close * fastK + fastEma * (1 - fastK);
+      emaFast[i] = fastEma;
+    }
+
+    if (slowEma === undefined) {
+      if (i + 1 >= slow) {
+        let sum = 0;
+        for (let j = i + 1 - slow; j <= i; j++) sum += sorted[j].c;
+        slowEma = sum / slow;
+        emaSlow[i] = slowEma;
+      }
+    } else {
+      slowEma = close * slowK + slowEma * (1 - slowK);
+      emaSlow[i] = slowEma;
+    }
+  }
+
+  // Compute MACD line = EMA(fast) - EMA(slow)
+  const macdRaw: Array<number | undefined> = new Array(sorted.length).fill(
+    undefined
+  );
+  for (let i = 0; i < sorted.length; i++) {
+    const f = emaFast[i];
+    const s = emaSlow[i];
+    if (typeof f === "number" && typeof s === "number") {
+      macdRaw[i] = f - s;
+    }
+  }
+
+  // Signal = EMA(signalPeriod) of MACD line (using only defined macd values)
+  const signalRaw: Array<number | undefined> = new Array(sorted.length).fill(
+    undefined
+  );
+  const signalK = 2 / (signalPeriod + 1);
+
+  let seedCount = 0;
+  let signalEma: number | undefined = undefined;
+  let macdSeedSum = 0;
+  for (let i = 0; i < sorted.length; i++) {
+    const m = macdRaw[i];
+    if (typeof m !== "number") continue;
+    if (signalEma === undefined) {
+      macdSeedSum += m;
+      seedCount += 1;
+      if (seedCount >= signalPeriod) {
+        signalEma = macdSeedSum / signalPeriod;
+        signalRaw[i] = signalEma;
+      }
+    } else {
+      signalEma = m * signalK + signalEma * (1 - signalK);
+      signalRaw[i] = signalEma;
+    }
+  }
+
+  // Histogram = MACD - Signal
+  const histogramRaw: Array<number | undefined> = new Array(sorted.length).fill(
+    undefined
+  );
+  for (let i = 0; i < sorted.length; i++) {
+    const m = macdRaw[i];
+    const s = signalRaw[i];
+    if (typeof m === "number" && typeof s === "number") {
+      histogramRaw[i] = m - s;
+    }
+  }
+
+  const macd: LinePoint[] = [];
+  const signal: LinePoint[] = [];
+  const histogram: LinePoint[] = [];
+  for (let i = 0; i < sorted.length; i++) {
+    if (typeof macdRaw[i] === "number")
+      macd.push({ time: sorted[i].t, value: macdRaw[i] as number });
+    if (typeof signalRaw[i] === "number")
+      signal.push({ time: sorted[i].t, value: signalRaw[i] as number });
+    if (typeof histogramRaw[i] === "number")
+      histogram.push({ time: sorted[i].t, value: histogramRaw[i] as number });
+  }
+
+  return { macd, signal, histogram };
+}
