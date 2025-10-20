@@ -2,13 +2,41 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-export type WebSocketMessage = string | ArrayBufferLike | Blob | ArrayBufferView;
+import { log } from "@/lib/utils/logger";
+
+// Shared client-side caches to avoid duplicate WS connections across components/HMR
+// These live on globalThis to better survive module reloads in dev
+type WsGlobals = {
+  __PR_WS_CACHE__?: Map<string, WebSocket>;
+  __PR_WS_REFCOUNTS__?: Map<string, number>;
+  __PR_WS_IDLE_TIMERS__?: Map<string, number>;
+};
+const __WS_GLOBAL__ = globalThis as unknown as WsGlobals;
+if (!__WS_GLOBAL__.__PR_WS_CACHE__)
+  __WS_GLOBAL__.__PR_WS_CACHE__ = new Map<string, WebSocket>();
+if (!__WS_GLOBAL__.__PR_WS_REFCOUNTS__)
+  __WS_GLOBAL__.__PR_WS_REFCOUNTS__ = new Map<string, number>();
+if (!__WS_GLOBAL__.__PR_WS_IDLE_TIMERS__)
+  __WS_GLOBAL__.__PR_WS_IDLE_TIMERS__ = new Map<string, number>();
+const SOCKET_CACHE: Map<string, WebSocket> =
+  __WS_GLOBAL__.__PR_WS_CACHE__ || new Map();
+const SOCKET_REFCOUNTS: Map<string, number> =
+  __WS_GLOBAL__.__PR_WS_REFCOUNTS__ || new Map();
+const SOCKET_IDLE_TIMERS: Map<string, number> =
+  __WS_GLOBAL__.__PR_WS_IDLE_TIMERS__ || new Map();
+
+export type WebSocketMessage =
+  | string
+  | ArrayBufferLike
+  | Blob
+  | ArrayBufferView;
 
 export interface UseWebSocketOptions {
   protocols?: string | string[];
   autoReconnect?: boolean;
   reconnectIntervalMs?: number;
   maxReconnectAttempts?: number;
+  debug?: boolean;
 }
 
 export interface UseWebSocketReturn<TIncoming = unknown> {
@@ -29,6 +57,7 @@ export function useWebSocket<TIncoming = unknown>(
     autoReconnect = true,
     reconnectIntervalMs = 2000,
     maxReconnectAttempts = 10,
+    debug = false,
   }: UseWebSocketOptions = {}
 ): UseWebSocketReturn<TIncoming> {
   const [isConnected, setIsConnected] = useState(false);
@@ -39,13 +68,21 @@ export function useWebSocket<TIncoming = unknown>(
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const manuallyClosedRef = useRef(false);
+  const cleanupTimeoutRef = useRef<number | null>(null);
+  const eventHandlersRef = useRef<{
+    open?: (ev: Event) => void;
+    message?: (event: MessageEvent) => void;
+    error?: (event: Event) => void;
+    close?: (event: CloseEvent) => void;
+  }>({});
 
   const resolvedUrl = useMemo(() => {
     // Allow relative paths like "/api/ws" to resolve based on current origin
     try {
       const hasProtocol = /^wss?:\/\//i.test(url);
       if (hasProtocol) return url;
-      const origin = typeof window !== "undefined" ? window.location.origin : "";
+      const origin =
+        typeof window !== "undefined" ? window.location.origin : "";
       const wsProtocol = origin.startsWith("https") ? "wss" : "ws";
       const httpOrigin = origin.replace(/^https?/, wsProtocol);
       return `${httpOrigin}${url.startsWith("/") ? url : `/${url}`}`;
@@ -54,21 +91,117 @@ export function useWebSocket<TIncoming = unknown>(
     }
   }, [url]);
 
-  const cleanup = useCallback(() => {
-    const s = socketRef.current;
-    if (s) {
-      try {
-        s.onopen = null;
-        s.onmessage = null;
-        s.onerror = null;
-        s.onclose = null;
-        s.close();
-      } catch {}
-    }
-    socketRef.current = null;
-    setIsConnected(false);
-    setIsConnecting(false);
-  }, []);
+  const getSocketKey = useCallback(
+    (u: string, p?: string | string[]): string => {
+      const proto = Array.isArray(p) ? p.join(",") : p || "";
+      return `${u}::${proto}`;
+    },
+    []
+  );
+
+  const getOrCreateSharedSocket = useCallback(
+    (u: string, p?: string | string[]): WebSocket => {
+      const key = getSocketKey(u, p);
+      const existing = SOCKET_CACHE.get(key);
+      if (existing && existing.readyState !== WebSocket.CLOSED) {
+        return existing;
+      }
+      const created = new WebSocket(u, p);
+      SOCKET_CACHE.set(key, created);
+      return created;
+    },
+    [getSocketKey]
+  );
+
+  const cleanup = useCallback(
+    (forceImmediate = false) => {
+      // Clear any pending scheduled cleanup
+      if (cleanupTimeoutRef.current) {
+        clearTimeout(cleanupTimeoutRef.current);
+        cleanupTimeoutRef.current = null;
+      }
+
+      const performClose = () => {
+        const s = socketRef.current;
+        const key = getSocketKey(resolvedUrl, protocols);
+
+        // Detach this instance's listeners
+        if (s && eventHandlersRef.current) {
+          try {
+            if (eventHandlersRef.current.open)
+              s.removeEventListener("open", eventHandlersRef.current.open);
+            if (eventHandlersRef.current.message)
+              s.removeEventListener(
+                "message",
+                eventHandlersRef.current.message
+              );
+            if (eventHandlersRef.current.error)
+              s.removeEventListener("error", eventHandlersRef.current.error);
+            if (eventHandlersRef.current.close)
+              s.removeEventListener("close", eventHandlersRef.current.close);
+          } catch {}
+        }
+        eventHandlersRef.current = {};
+
+        // Decrement refcount and possibly close shared socket
+        const currentCount = (SOCKET_REFCOUNTS.get(key) || 1) - 1;
+        if (currentCount <= 0) {
+          SOCKET_REFCOUNTS.delete(key);
+          const existingTimer = SOCKET_IDLE_TIMERS.get(key);
+          if (existingTimer) {
+            clearTimeout(existingTimer);
+            SOCKET_IDLE_TIMERS.delete(key);
+          }
+          const delay =
+            !forceImmediate && process.env.NODE_ENV === "development"
+              ? 1000
+              : 0;
+          const timerId = window.setTimeout(() => {
+            SOCKET_IDLE_TIMERS.delete(key);
+            const shared = SOCKET_CACHE.get(key);
+            if (shared) {
+              try {
+                if (debug) {
+                  log.debug("[WS] closing shared socket (idle)", {
+                    url: resolvedUrl,
+                  });
+                }
+                shared.close();
+              } catch {}
+              SOCKET_CACHE.delete(key);
+            }
+          }, delay);
+          SOCKET_IDLE_TIMERS.set(key, timerId);
+        } else {
+          SOCKET_REFCOUNTS.set(key, currentCount);
+        }
+
+        socketRef.current = null;
+        setIsConnected(false);
+        setIsConnecting(false);
+      };
+
+      // In development, React 18 StrictMode double-invokes effects (mount → unmount → mount).
+      // To avoid killing a just-created socket during the artificial unmount, debounce the cleanup.
+      if (!forceImmediate && process.env.NODE_ENV === "development") {
+        cleanupTimeoutRef.current = window.setTimeout(() => {
+          if (debug) {
+            log.debug("[WS] debounced cleanup executing", { url: resolvedUrl });
+          }
+          performClose();
+        }, 300);
+        if (debug) {
+          log.debug("[WS] cleanup scheduled (dev debounce)", {
+            url: resolvedUrl,
+          });
+        }
+        return;
+      }
+
+      performClose();
+    },
+    [debug, resolvedUrl, getSocketKey, protocols]
+  );
 
   const connect = useCallback(() => {
     if (socketRef.current || isConnecting) return;
@@ -77,30 +210,84 @@ export function useWebSocket<TIncoming = unknown>(
     setError(null);
 
     try {
-      const socket = new WebSocket(resolvedUrl, protocols);
+      if (debug) {
+        log.debug("[WS] connect", {
+          url: resolvedUrl,
+          protocols,
+          nodeEnv: process.env.NODE_ENV,
+          logLevel: process.env.NEXT_PUBLIC_LOG_LEVEL,
+        });
+      }
+      // Cancel any pending debounced cleanup from a prior StrictMode unmount
+      if (cleanupTimeoutRef.current) {
+        clearTimeout(cleanupTimeoutRef.current);
+        cleanupTimeoutRef.current = null;
+        if (debug) {
+          log.debug("[WS] canceled pending cleanup before connect", {
+            url: resolvedUrl,
+          });
+        }
+      }
+      const key = getSocketKey(resolvedUrl, protocols);
+      const socket = getOrCreateSharedSocket(resolvedUrl, protocols);
+      SOCKET_REFCOUNTS.set(key, (SOCKET_REFCOUNTS.get(key) || 0) + 1);
       socketRef.current = socket;
 
-      socket.onopen = () => {
+      // Emit immediate readyState after creation
+      if (debug) {
+        log.debug("[WS] readyState (on create)", {
+          readyState: socket.readyState,
+        });
+      }
+
+      const handleOpen = () => {
         reconnectAttemptsRef.current = 0;
         setIsConnecting(false);
         setIsConnected(true);
-      };
-
-      socket.onmessage = (event: MessageEvent) => {
-        try {
-          const data = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
-          setLastMessage(data as TIncoming);
-        } catch {
-          // if not JSON, pass through
-          setLastMessage((event.data as unknown) as TIncoming);
+        if (debug) {
+          log.info("[WS] open", {
+            url: resolvedUrl,
+            protocol: socket.protocol,
+            extensions: (socket as unknown as { extensions?: unknown })
+              .extensions,
+          });
         }
       };
 
-      socket.onerror = () => {
-        setError("WebSocket error");
+      const handleMessage = (event: MessageEvent) => {
+        try {
+          const data =
+            typeof event.data === "string"
+              ? JSON.parse(event.data)
+              : event.data;
+          setLastMessage(data as TIncoming);
+        } catch {
+          // if not JSON, pass through
+          setLastMessage(event.data as unknown as TIncoming);
+        }
       };
 
-      socket.onclose = () => {
+      const handleError = (event: Event) => {
+        setError("WebSocket error");
+        if (debug) {
+          log.warn("[WS] error", {
+            url: resolvedUrl,
+            eventType: event.type,
+            readyState: socket.readyState,
+          });
+        }
+      };
+
+      const handleClose = (event: CloseEvent) => {
+        if (debug) {
+          log.info("[WS] close", {
+            url: resolvedUrl,
+            code: event.code,
+            reason: event.reason,
+            wasClean: event.wasClean,
+            readyState: socket.readyState,
+          });
+        }
         setIsConnected(false);
         setIsConnecting(false);
         socketRef.current = null;
@@ -109,40 +296,90 @@ export function useWebSocket<TIncoming = unknown>(
           const attempts = reconnectAttemptsRef.current + 1;
           if (attempts <= maxReconnectAttempts) {
             reconnectAttemptsRef.current = attempts;
+            if (debug) {
+              log.debug("[WS] reconnect scheduled", {
+                attempts,
+                delayMs: reconnectIntervalMs,
+              });
+            }
             setTimeout(() => {
               connect();
             }, reconnectIntervalMs);
           } else {
             setError("Max reconnect attempts reached");
+            if (debug) {
+              log.warn("[WS] max reconnect attempts reached", {
+                attempts,
+                maxReconnectAttempts,
+              });
+            }
           }
         }
       };
+
+      // Attach listeners for this instance (non-destructive)
+      socket.addEventListener("open", handleOpen);
+      socket.addEventListener("message", handleMessage);
+      socket.addEventListener("error", handleError);
+      socket.addEventListener("close", handleClose);
+      eventHandlersRef.current = {
+        open: handleOpen,
+        message: handleMessage,
+        error: handleError,
+        close: handleClose,
+      };
     } catch (err) {
       setIsConnecting(false);
-      setError(err instanceof Error ? err.message : "Failed to create WebSocket");
+      setError(
+        err instanceof Error ? err.message : "Failed to create WebSocket"
+      );
+      if (debug) {
+        log.error("[WS] create failure", {
+          message: err instanceof Error ? err.message : String(err),
+          url: resolvedUrl,
+        });
+      }
     }
-  }, [resolvedUrl, protocols, autoReconnect, reconnectIntervalMs, maxReconnectAttempts, isConnecting]);
+  }, [
+    resolvedUrl,
+    protocols,
+    autoReconnect,
+    reconnectIntervalMs,
+    maxReconnectAttempts,
+    isConnecting,
+    debug,
+    getSocketKey,
+    getOrCreateSharedSocket,
+  ]);
 
   const disconnect = useCallback(() => {
     manuallyClosedRef.current = true;
-    cleanup();
+    cleanup(true);
   }, [cleanup]);
 
   const sendRaw = useCallback((data: WebSocketMessage) => {
     const s = socketRef.current;
     if (s && s.readyState === WebSocket.OPEN) {
-      s.send(data as any);
+      s.send(
+        data as unknown as string | ArrayBufferLike | Blob | ArrayBufferView
+      );
     }
   }, []);
 
-  const sendJson = useCallback((data: unknown) => {
-    sendRaw(JSON.stringify(data));
-  }, [sendRaw]);
+  const sendJson = useCallback(
+    (data: unknown) => {
+      sendRaw(JSON.stringify(data));
+    },
+    [sendRaw]
+  );
 
   useEffect(() => {
     connect();
     return () => {
-      cleanup();
+      if (debug) {
+        log.debug("[WS] cleanup", { url: resolvedUrl });
+      }
+      cleanup(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resolvedUrl]);
@@ -158,5 +395,3 @@ export function useWebSocket<TIncoming = unknown>(
     disconnect,
   };
 }
-
-

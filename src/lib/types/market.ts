@@ -40,3 +40,15 @@ export interface GetAggsParams {
   limit?: number;
   paginate?: boolean;
 }
+
+// Polygon News article (normalized)
+export interface NewsArticle {
+  id: string;
+  title: string;
+  description: string;
+  url: string;
+  source: string;
+  imageUrl?: string;
+  publishedUtc: string; // ISO datetime
+  tickers: string[];
+}
