@@ -102,9 +102,17 @@ export function useWebSocket<TIncoming = unknown>(
     (u: string, p?: string | string[]): WebSocket => {
       const key = getSocketKey(u, p);
       const existing = SOCKET_CACHE.get(key);
-      if (existing && existing.readyState !== WebSocket.CLOSED) {
-        return existing;
+
+      // Only reuse if socket is CONNECTING or OPEN (not CLOSING or CLOSED)
+      if (existing) {
+        const state = existing.readyState;
+        if (state === WebSocket.CONNECTING || state === WebSocket.OPEN) {
+          return existing;
+        }
+        // Socket is CLOSING or CLOSED, remove from cache and create new one
+        SOCKET_CACHE.delete(key);
       }
+
       const created = new WebSocket(u, p);
       SOCKET_CACHE.set(key, created);
       return created;
@@ -237,6 +245,10 @@ export function useWebSocket<TIncoming = unknown>(
             url: resolvedUrl,
           });
         }
+        // Remove from cache so it's not reused
+        SOCKET_CACHE.delete(key);
+        SOCKET_REFCOUNTS.delete(key);
+        socketRef.current = null;
         setError("WebSocket immediately closed - check URL and server");
         setIsConnecting(false);
         return;
@@ -251,6 +263,13 @@ export function useWebSocket<TIncoming = unknown>(
               readyState: socket.readyState,
             });
           }
+          // Close and remove stuck socket from cache
+          try {
+            socket.close();
+          } catch {}
+          SOCKET_CACHE.delete(key);
+          SOCKET_REFCOUNTS.delete(key);
+          socketRef.current = null;
           setError("Connection timeout - server not responding");
           setIsConnecting(false);
         }
@@ -305,6 +324,8 @@ export function useWebSocket<TIncoming = unknown>(
 
       const handleClose = (event: CloseEvent) => {
         clearTimeout(connectionTimeout);
+        const key = getSocketKey(resolvedUrl, protocols);
+
         if (debug) {
           log.info("[WS] close", {
             url: resolvedUrl,
@@ -314,6 +335,10 @@ export function useWebSocket<TIncoming = unknown>(
             readyState: socket.readyState,
           });
         }
+
+        // Remove closed socket from cache immediately so reconnection creates fresh socket
+        SOCKET_CACHE.delete(key);
+
         setIsConnected(false);
         setIsConnecting(false);
         socketRef.current = null;

@@ -15,74 +15,123 @@ import {
   TableHeader,
   TableRow,
 } from "@/lib/components/ui/table";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/lib/components/ui/tooltip";
 import { useWebSocket } from "@/lib/hooks/use-websocket";
 import { useEffect, useState } from "react";
 import { NocRealtimeChart } from "./noc-realtime-chart";
 
 /**
- * Signal status for each indicator
- */
-type SignalStatus = "green" | "yellow" | "red";
-
-/**
- * Stock data with all indicators
+ * Stock data with all indicators (raw values, colors calculated on client)
  */
 interface StockIndicators {
   ticker: string;
   price: number;
-  priceSignal: SignalStatus;
   changePercent: number;
-  changeSignal: SignalStatus;
   relativeVolume: number;
-  rvSignal: SignalStatus;
   newsSentiment: string;
-  newsSignal: SignalStatus;
   float: string;
-  floatSignal: SignalStatus;
   bullFlag: boolean;
-  flagSignal: SignalStatus;
 }
 
 /**
- * Get signal color
+ * Calculate price signal color based on value
+ * Green: 6-8, Yellow: 4-14 (excluding 6-8), Red: 2-20 (excluding 4-14)
  */
-const getSignalColor = (signal: SignalStatus): string => {
-  switch (signal) {
-    case "green":
-      return "bg-green-500";
-    case "yellow":
-      return "bg-yellow-500";
-    case "red":
-      return "bg-red-500";
-    default:
-      return "bg-gray-500";
-  }
+const getPriceSignalColor = (price: number): string => {
+  if (price >= 6 && price <= 8) return "bg-green-500";
+  if (price >= 4 && price <= 14) return "bg-yellow-500";
+  if (price >= 2 && price <= 20) return "bg-red-500";
+  return "bg-gray-500";
 };
 
 /**
- * Signal indicator component
+ * Calculate relative volume signal color
+ * Red: 0-2x, Yellow: 2-5x, Green: 5x+
  */
-const SignalIndicator = ({ signal }: { signal: SignalStatus }) => (
-  <div className={`w-3 h-3 rounded-sm ${getSignalColor(signal)}`} />
+const getRelativeVolumeSignalColor = (rv: number): string => {
+  if (rv >= 5) return "bg-green-500";
+  if (rv >= 2) return "bg-yellow-500";
+  return "bg-red-500";
+};
+
+/**
+ * Signal indicator component with tooltip
+ */
+const SignalIndicator = ({
+  color,
+  label,
+  value,
+}: {
+  color: string;
+  label: string;
+  value: string;
+}) => (
+  <Tooltip>
+    <TooltipTrigger asChild>
+      <div className={`w-3 h-3 rounded-sm ${color} cursor-pointer`} />
+    </TooltipTrigger>
+    <TooltipContent>
+      <div className="text-xs">
+        <div className="font-semibold">{label}</div>
+        <div>{value}</div>
+      </div>
+    </TooltipContent>
+  </Tooltip>
 );
 
 /**
  * Combined signals display for a stock
  */
 const SignalBar = ({ stock }: { stock: StockIndicators }) => {
-  const signals: SignalStatus[] = [
-    stock.priceSignal,
-    stock.changeSignal,
-    stock.rvSignal,
-    stock.newsSignal,
-    stock.floatSignal,
-    stock.flagSignal,
+  const signals = [
+    {
+      color: getPriceSignalColor(stock.price),
+      label: "Price",
+      value: `$${stock.price.toFixed(2)}`,
+    },
+    {
+      color: "bg-gray-500", // Placeholder
+      label: "Change",
+      value: `${
+        stock.changePercent >= 0 ? "+" : ""
+      }${stock.changePercent.toFixed(2)}%`,
+    },
+    {
+      color: getRelativeVolumeSignalColor(stock.relativeVolume),
+      label: "Relative Volume",
+      value: `${stock.relativeVolume.toFixed(2)}x`,
+    },
+    {
+      color: "bg-gray-500", // Placeholder
+      label: "News",
+      value: stock.newsSentiment,
+    },
+    {
+      color: "bg-gray-500", // Placeholder
+      label: "Float",
+      value: stock.float,
+    },
+    {
+      color: "bg-gray-500", // Placeholder
+      label: "Bull Flag",
+      value: stock.bullFlag ? "Yes" : "No",
+    },
   ];
 
   return (
     <div className="flex gap-1">
       {signals.map((signal, idx) => (
-        <SignalIndicator key={idx} signal={signal} />
+        <SignalIndicator
+          key={idx}
+          color={signal.color}
+          label={signal.label}
+          value={signal.value}
+        />
       ))}
     </div>
   );
@@ -94,160 +143,68 @@ const SignalBar = ({ stock }: { stock: StockIndicators }) => {
 const DUMMY_STOCKS: StockIndicators[] = [
   {
     ticker: "AAPL",
-    price: 178.25,
-    priceSignal: "green",
+    price: 7.25,
     changePercent: 2.34,
-    changeSignal: "green",
-    relativeVolume: 1.45,
-    rvSignal: "green",
+    relativeVolume: 6.45,
     newsSentiment: "Positive",
-    newsSignal: "green",
     float: "15.3B",
-    floatSignal: "yellow",
     bullFlag: true,
-    flagSignal: "green",
   },
   {
     ticker: "TSLA",
-    price: 242.84,
-    priceSignal: "green",
+    price: 12.84,
     changePercent: -1.23,
-    changeSignal: "red",
     relativeVolume: 2.15,
-    rvSignal: "green",
     newsSentiment: "Mixed",
-    newsSignal: "yellow",
     float: "3.2B",
-    floatSignal: "green",
     bullFlag: false,
-    flagSignal: "red",
   },
   {
     ticker: "NVDA",
-    price: 875.32,
-    priceSignal: "green",
+    price: 5.32,
     changePercent: 3.87,
-    changeSignal: "green",
     relativeVolume: 1.92,
-    rvSignal: "green",
     newsSentiment: "Positive",
-    newsSignal: "green",
     float: "2.5B",
-    floatSignal: "green",
     bullFlag: true,
-    flagSignal: "green",
   },
   {
     ticker: "META",
-    price: 485.12,
-    priceSignal: "yellow",
+    price: 9.12,
     changePercent: 0.45,
-    changeSignal: "yellow",
-    relativeVolume: 0.87,
-    rvSignal: "yellow",
+    relativeVolume: 3.87,
     newsSentiment: "Neutral",
-    newsSignal: "yellow",
     float: "2.6B",
-    floatSignal: "green",
     bullFlag: false,
-    flagSignal: "yellow",
   },
   {
     ticker: "AMZN",
-    price: 145.67,
-    priceSignal: "red",
+    price: 15.67,
     changePercent: -2.15,
-    changeSignal: "red",
     relativeVolume: 0.65,
-    rvSignal: "red",
     newsSentiment: "Negative",
-    newsSignal: "red",
     float: "10.4B",
-    floatSignal: "yellow",
     bullFlag: false,
-    flagSignal: "red",
   },
   {
     ticker: "MSFT",
-    price: 412.33,
-    priceSignal: "green",
+    price: 6.33,
     changePercent: 1.56,
-    changeSignal: "green",
-    relativeVolume: 1.23,
-    rvSignal: "green",
+    relativeVolume: 5.23,
     newsSentiment: "Positive",
-    newsSignal: "green",
     float: "7.4B",
-    floatSignal: "yellow",
     bullFlag: true,
-    flagSignal: "green",
   },
   {
     ticker: "GOOGL",
-    price: 162.45,
-    priceSignal: "green",
+    price: 3.45,
     changePercent: 0.89,
-    changeSignal: "yellow",
     relativeVolume: 1.05,
-    rvSignal: "green",
     newsSentiment: "Positive",
-    newsSignal: "green",
     float: "12.5B",
-    floatSignal: "yellow",
     bullFlag: false,
-    flagSignal: "yellow",
   },
 ];
-
-/**
- * Signal legend component
- */
-const SignalLegend = () => (
-  <div className="flex flex-wrap gap-6 text-sm text-muted-foreground mb-4">
-    <div className="flex items-center gap-2">
-      <span className="font-medium">Signal Order:</span>
-      <div className="flex items-center gap-1">
-        <div className="w-3 h-3 rounded-sm border border-gray-300" />
-        <span className="text-xs">Price</span>
-      </div>
-      <div className="flex items-center gap-1">
-        <div className="w-3 h-3 rounded-sm border border-gray-300" />
-        <span className="text-xs">Change</span>
-      </div>
-      <div className="flex items-center gap-1">
-        <div className="w-3 h-3 rounded-sm border border-gray-300" />
-        <span className="text-xs">RV</span>
-      </div>
-      <div className="flex items-center gap-1">
-        <div className="w-3 h-3 rounded-sm border border-gray-300" />
-        <span className="text-xs">News</span>
-      </div>
-      <div className="flex items-center gap-1">
-        <div className="w-3 h-3 rounded-sm border border-gray-300" />
-        <span className="text-xs">Float</span>
-      </div>
-      <div className="flex items-center gap-1">
-        <div className="w-3 h-3 rounded-sm border border-gray-300" />
-        <span className="text-xs">Flag</span>
-      </div>
-    </div>
-    <div className="flex items-center gap-3">
-      <span className="font-medium">Status:</span>
-      <div className="flex items-center gap-1">
-        <div className="w-3 h-3 rounded-sm bg-green-500" />
-        <span>Good</span>
-      </div>
-      <div className="flex items-center gap-1">
-        <div className="w-3 h-3 rounded-sm bg-yellow-500" />
-        <span>Neutral</span>
-      </div>
-      <div className="flex items-center gap-1">
-        <div className="w-3 h-3 rounded-sm bg-red-500" />
-        <span>Bad</span>
-      </div>
-    </div>
-  </div>
-);
 
 /**
  * NOC Table Component
@@ -283,98 +240,99 @@ export function NocTable() {
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 h-full">
-      {/* Stock List */}
-      <div className={selectedStock ? "lg:col-span-5" : "lg:col-span-12"}>
-        <Card className="h-full">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              Network Operations Center
-              <span
-                className={`h-2 w-2 rounded-full ${
-                  isConnected ? "bg-green-500" : "bg-red-500"
-                }`}
-                title={isConnected ? "Connected" : "Disconnected"}
-              />
-            </CardTitle>
-            <CardDescription>
-              Real-time stock monitoring with multi-factor signal analysis.
-              Click a stock to view chart.
-              {error && (
-                <span className="block text-red-500 text-xs mt-1">
-                  Error: {error}
-                </span>
-              )}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <SignalLegend />
-            <div className="max-h-[calc(100vh-280px)] overflow-auto">
-              <Table>
-                <TableHeader className="sticky top-0 bg-background z-10">
-                  <TableRow>
-                    <TableHead>Ticker</TableHead>
-                    <TableHead>Signals</TableHead>
-                    <TableHead className="text-right">Price</TableHead>
-                    <TableHead className="text-right">% Change</TableHead>
-                    <TableHead className="text-right">RV</TableHead>
-                    <TableHead>News</TableHead>
-                    <TableHead>Float</TableHead>
-                    <TableHead>Bull Flag</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {stocks.map((stock) => (
-                    <TableRow
-                      key={stock.ticker}
-                      className={`cursor-pointer hover:bg-muted/50 ${
-                        selectedStock === stock.ticker ? "bg-muted" : ""
-                      }`}
-                      onClick={() => handleStockClick(stock.ticker)}
-                    >
-                      <TableCell className="font-medium">
-                        {stock.ticker}
-                      </TableCell>
-                      <TableCell>
-                        <SignalBar stock={stock} />
-                      </TableCell>
-                      <TableCell className="text-right">
-                        ${stock.price.toFixed(2)}
-                      </TableCell>
-                      <TableCell
-                        className={`text-right ${
-                          stock.changePercent >= 0
-                            ? "text-green-600"
-                            : "text-red-600"
-                        }`}
-                      >
-                        {stock.changePercent >= 0 ? "+" : ""}
-                        {stock.changePercent.toFixed(2)}%
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {stock.relativeVolume.toFixed(2)}x
-                      </TableCell>
-                      <TableCell>{stock.newsSentiment}</TableCell>
-                      <TableCell>{stock.float}</TableCell>
-                      <TableCell>{stock.bullFlag ? "Yes" : "No"}</TableCell>
+    <TooltipProvider>
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 h-full">
+        {/* Stock List */}
+        <div className={selectedStock ? "lg:col-span-5" : "lg:col-span-12"}>
+          <Card className="h-full">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                Network Operations Center
+                <span
+                  className={`h-2 w-2 rounded-full ${
+                    isConnected ? "bg-green-500" : "bg-red-500"
+                  }`}
+                  title={isConnected ? "Connected" : "Disconnected"}
+                />
+              </CardTitle>
+              <CardDescription>
+                Real-time stock monitoring with multi-factor signal analysis.
+                Click a stock to view chart. Hover over signals for details.
+                {error && (
+                  <span className="block text-red-500 text-xs mt-1">
+                    Error: {error}
+                  </span>
+                )}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="max-h-[calc(100vh-280px)] overflow-auto">
+                <Table>
+                  <TableHeader className="sticky top-0 bg-background z-10">
+                    <TableRow>
+                      <TableHead>Ticker</TableHead>
+                      <TableHead>Signals</TableHead>
+                      <TableHead className="text-right">Price</TableHead>
+                      <TableHead className="text-right">% Change</TableHead>
+                      <TableHead className="text-right">RV</TableHead>
+                      <TableHead>News</TableHead>
+                      <TableHead>Float</TableHead>
+                      <TableHead>Bull Flag</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Chart Panel */}
-      {selectedStock && (
-        <div className="lg:col-span-7 h-[calc(100vh-120px)]">
-          <NocRealtimeChart
-            symbol={selectedStock}
-            onClose={() => setSelectedStock(null)}
-          />
+                  </TableHeader>
+                  <TableBody>
+                    {stocks.map((stock) => (
+                      <TableRow
+                        key={stock.ticker}
+                        className={`cursor-pointer hover:bg-muted/50 ${
+                          selectedStock === stock.ticker ? "bg-muted" : ""
+                        }`}
+                        onClick={() => handleStockClick(stock.ticker)}
+                      >
+                        <TableCell className="font-medium">
+                          {stock.ticker}
+                        </TableCell>
+                        <TableCell>
+                          <SignalBar stock={stock} />
+                        </TableCell>
+                        <TableCell className="text-right">
+                          ${stock.price.toFixed(2)}
+                        </TableCell>
+                        <TableCell
+                          className={`text-right ${
+                            stock.changePercent >= 0
+                              ? "text-green-600"
+                              : "text-red-600"
+                          }`}
+                        >
+                          {stock.changePercent >= 0 ? "+" : ""}
+                          {stock.changePercent.toFixed(2)}%
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {stock.relativeVolume.toFixed(2)}x
+                        </TableCell>
+                        <TableCell>{stock.newsSentiment}</TableCell>
+                        <TableCell>{stock.float}</TableCell>
+                        <TableCell>{stock.bullFlag ? "Yes" : "No"}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
         </div>
-      )}
-    </div>
+
+        {/* Chart Panel */}
+        {selectedStock && (
+          <div className="lg:col-span-7 h-[calc(100vh-120px)]">
+            <NocRealtimeChart
+              symbol={selectedStock}
+              onClose={() => setSelectedStock(null)}
+            />
+          </div>
+        )}
+      </div>
+    </TooltipProvider>
   );
 }
