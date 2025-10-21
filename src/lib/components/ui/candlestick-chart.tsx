@@ -248,8 +248,17 @@ export function CandlestickChart({
         rightOffset: 8,
         barSpacing: 8,
         timeVisible: true,
-        secondsVisible: false,
+        secondsVisible: true,
         shiftVisibleRangeOnNewBar: true, // Smoothly shift view when new bars arrive
+        // Timestamps are in Unix epoch (seconds), library uses browser's local timezone
+        tickMarkFormatter: (time: number) => {
+          const date = new Date(time * 1000);
+          return date.toLocaleTimeString("en-US", {
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false,
+          });
+        },
       },
       crosshair: { mode: CrosshairMode.Normal },
       // Enable smooth animations

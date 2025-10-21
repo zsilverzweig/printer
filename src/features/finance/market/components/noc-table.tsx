@@ -60,6 +60,17 @@ const getRelativeVolumeSignalColor = (rv: number): string => {
 };
 
 /**
+ * Calculate change percent signal color
+ * Green: 10%+, Yellow: 5-10%, Red: <5% (should be filtered out)
+ */
+const getChangePercentSignalColor = (changePercent: number): string => {
+  const absChange = Math.abs(changePercent);
+  if (absChange >= 10) return "bg-green-500";
+  if (absChange >= 5) return "bg-yellow-500";
+  return "bg-red-500";
+};
+
+/**
  * Signal indicator component with tooltip
  */
 const SignalIndicator = ({
@@ -95,7 +106,7 @@ const SignalBar = ({ stock }: { stock: StockIndicators }) => {
       value: `$${stock.price.toFixed(2)}`,
     },
     {
-      color: "bg-gray-500", // Placeholder
+      color: getChangePercentSignalColor(stock.changePercent),
       label: "Change",
       value: `${
         stock.changePercent >= 0 ? "+" : ""
@@ -139,12 +150,13 @@ const SignalBar = ({ stock }: { stock: StockIndicators }) => {
 
 /**
  * Dummy data for testing
+ * Only includes stocks with 5%+ change (filter requirement)
  */
 const DUMMY_STOCKS: StockIndicators[] = [
   {
     ticker: "AAPL",
     price: 7.25,
-    changePercent: 2.34,
+    changePercent: 12.34,
     relativeVolume: 6.45,
     newsSentiment: "Positive",
     float: "15.3B",
@@ -153,7 +165,7 @@ const DUMMY_STOCKS: StockIndicators[] = [
   {
     ticker: "TSLA",
     price: 12.84,
-    changePercent: -1.23,
+    changePercent: -8.23,
     relativeVolume: 2.15,
     newsSentiment: "Mixed",
     float: "3.2B",
@@ -162,7 +174,7 @@ const DUMMY_STOCKS: StockIndicators[] = [
   {
     ticker: "NVDA",
     price: 5.32,
-    changePercent: 3.87,
+    changePercent: 15.87,
     relativeVolume: 1.92,
     newsSentiment: "Positive",
     float: "2.5B",
@@ -171,7 +183,7 @@ const DUMMY_STOCKS: StockIndicators[] = [
   {
     ticker: "META",
     price: 9.12,
-    changePercent: 0.45,
+    changePercent: 6.45,
     relativeVolume: 3.87,
     newsSentiment: "Neutral",
     float: "2.6B",
@@ -180,7 +192,7 @@ const DUMMY_STOCKS: StockIndicators[] = [
   {
     ticker: "AMZN",
     price: 15.67,
-    changePercent: -2.15,
+    changePercent: -11.15,
     relativeVolume: 0.65,
     newsSentiment: "Negative",
     float: "10.4B",
@@ -189,7 +201,7 @@ const DUMMY_STOCKS: StockIndicators[] = [
   {
     ticker: "MSFT",
     price: 6.33,
-    changePercent: 1.56,
+    changePercent: 9.56,
     relativeVolume: 5.23,
     newsSentiment: "Positive",
     float: "7.4B",
@@ -198,7 +210,7 @@ const DUMMY_STOCKS: StockIndicators[] = [
   {
     ticker: "GOOGL",
     price: 3.45,
-    changePercent: 0.89,
+    changePercent: 5.89,
     relativeVolume: 1.05,
     newsSentiment: "Positive",
     float: "12.5B",
@@ -209,6 +221,7 @@ const DUMMY_STOCKS: StockIndicators[] = [
 /**
  * NOC Table Component
  * Displays stocks with all their indicators in a table format
+ * Server filters: 5%+ change, 10k+ volume, up to 50 stocks
  */
 export function NocTable() {
   const [stocks, setStocks] = useState<StockIndicators[]>(DUMMY_STOCKS);
@@ -229,6 +242,7 @@ export function NocTable() {
   );
 
   // Update stocks when new WebSocket data arrives
+  // Server already filters for 5%+ change and 10k+ volume
   useEffect(() => {
     if (lastMessage && Array.isArray(lastMessage)) {
       setStocks(lastMessage);
