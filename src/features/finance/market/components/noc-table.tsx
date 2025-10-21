@@ -221,7 +221,7 @@ const DUMMY_STOCKS: StockIndicators[] = [
 /**
  * NOC Table Component
  * Displays stocks with all their indicators in a table format
- * Server filters: 5%+ change, 10k+ volume, up to 50 stocks
+ * Server filters: 5%+ change, 50k+ volume, up to 50 stocks
  */
 export function NocTable() {
   const [stocks, setStocks] = useState<StockIndicators[]>(DUMMY_STOCKS);
@@ -242,7 +242,7 @@ export function NocTable() {
   );
 
   // Update stocks when new WebSocket data arrives
-  // Server already filters for 5%+ change and 10k+ volume
+  // Server already filters for 5%+ change and 50k+ volume
   useEffect(() => {
     if (lastMessage && Array.isArray(lastMessage)) {
       setStocks(lastMessage);
