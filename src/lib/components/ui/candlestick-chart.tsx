@@ -243,8 +243,27 @@ export function CandlestickChart({
         horzLines: { color: grid },
       },
       rightPriceScale: { borderColor: border },
-      timeScale: { borderColor: border, rightOffset: 8, barSpacing: 8 },
+      timeScale: {
+        borderColor: border,
+        rightOffset: 8,
+        barSpacing: 8,
+        timeVisible: true,
+        secondsVisible: false,
+        shiftVisibleRangeOnNewBar: true, // Smoothly shift view when new bars arrive
+      },
       crosshair: { mode: CrosshairMode.Normal },
+      // Enable smooth animations
+      handleScroll: {
+        mouseWheel: true,
+        pressedMouseMove: true,
+        horzTouchDrag: true,
+        vertTouchDrag: true,
+      },
+      handleScale: {
+        axisPressedMouseMove: true,
+        mouseWheel: true,
+        pinch: true,
+      },
     });
 
     const series = chart.addCandlestickSeries({

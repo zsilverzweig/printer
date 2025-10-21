@@ -15,7 +15,8 @@ export default function HomePage() {
   // Show NOC table for authenticated users
   if (isAuthenticated) {
     return (
-      <div className="container mx-auto p-6 h-screen">
+      <div className="w-full h-screen p-6">
+        <h1 className="text-3xl font-bold mb-6">Trading Operations Center</h1>
         <NocTable />
       </div>
     );
