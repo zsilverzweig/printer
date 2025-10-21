@@ -68,7 +68,6 @@ export function useWebSocket<TIncoming = unknown>(
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const manuallyClosedRef = useRef(false);
-  const cleanupTimeoutRef = useRef<number | null>(null);
   const eventHandlersRef = useRef<{
     open?: (ev: Event) => void;
     message?: (event: MessageEvent) => void;
@@ -115,12 +114,6 @@ export function useWebSocket<TIncoming = unknown>(
 
   const cleanup = useCallback(
     (forceImmediate = false) => {
-      // Clear any pending scheduled cleanup
-      if (cleanupTimeoutRef.current) {
-        clearTimeout(cleanupTimeoutRef.current);
-        cleanupTimeoutRef.current = null;
-      }
-
       const performClose = () => {
         const s = socketRef.current;
         const key = getSocketKey(resolvedUrl, protocols);
@@ -181,23 +174,8 @@ export function useWebSocket<TIncoming = unknown>(
         setIsConnecting(false);
       };
 
-      // In development, React 18 StrictMode double-invokes effects (mount → unmount → mount).
-      // To avoid killing a just-created socket during the artificial unmount, debounce the cleanup.
-      if (!forceImmediate && process.env.NODE_ENV === "development") {
-        cleanupTimeoutRef.current = window.setTimeout(() => {
-          if (debug) {
-            log.debug("[WS] debounced cleanup executing", { url: resolvedUrl });
-          }
-          performClose();
-        }, 300);
-        if (debug) {
-          log.debug("[WS] cleanup scheduled (dev debounce)", {
-            url: resolvedUrl,
-          });
-        }
-        return;
-      }
-
+      // Perform cleanup immediately - the shared socket idle-close timer
+      // (with 1s delay in dev) handles StrictMode remounts at the key level
       performClose();
     },
     [debug, resolvedUrl, getSocketKey, protocols]
@@ -218,17 +196,18 @@ export function useWebSocket<TIncoming = unknown>(
           logLevel: process.env.NEXT_PUBLIC_LOG_LEVEL,
         });
       }
-      // Cancel any pending debounced cleanup from a prior StrictMode unmount
-      if (cleanupTimeoutRef.current) {
-        clearTimeout(cleanupTimeoutRef.current);
-        cleanupTimeoutRef.current = null;
+      const key = getSocketKey(resolvedUrl, protocols);
+
+      // Cancel any pending idle close for this shared socket (e.g., from StrictMode unmount)
+      const existingTimer = SOCKET_IDLE_TIMERS.get(key);
+      if (existingTimer) {
+        clearTimeout(existingTimer);
+        SOCKET_IDLE_TIMERS.delete(key);
         if (debug) {
-          log.debug("[WS] canceled pending cleanup before connect", {
-            url: resolvedUrl,
-          });
+          log.debug("[WS] canceled idle close", { url: resolvedUrl });
         }
       }
-      const key = getSocketKey(resolvedUrl, protocols);
+
       const socket = getOrCreateSharedSocket(resolvedUrl, protocols);
       SOCKET_REFCOUNTS.set(key, (SOCKET_REFCOUNTS.get(key) || 0) + 1);
       socketRef.current = socket;

@@ -261,15 +261,16 @@ export function CandlestickChart({
 
     // overlay lines
     ema12Ref.current = chart.addLineSeries({
-      color: resolveColor("--blue-400", "#60a5fa"),
+      color: withAlpha(resolveColor("--blue-400", "#60a5fa"), 0.75),
       lineWidth: 2,
     });
     ema26Ref.current = chart.addLineSeries({
-      color: resolveColor("--amber-400", "#f59e0b"),
+      color: withAlpha(resolveColor("--blue-600", "#2563eb"), 0.75),
       lineWidth: 2,
     });
     vwapRef.current = chart.addLineSeries({
-      color: resolveColor("--violet-400", "#a78bfa"),
+      color: resolveColor("--amber-400", "#f59e0b"),
+
       lineWidth: 2,
     });
 
@@ -436,9 +437,9 @@ export function CandlestickChart({
   ]);
 
   const styleHeight = typeof height === "number" ? `${height}px` : height;
-  const ema12Color = resolveColor("--blue-400", "#60a5fa");
-  const ema26Color = resolveColor("--amber-400", "#f59e0b");
-  const vwapColor = resolveColor("--violet-400", "#a78bfa");
+  const ema12Color = withAlpha(resolveColor("--blue-400", "#60a5fa"), 0.75);
+  const ema26Color = withAlpha(resolveColor("--blue-600", "#2563eb"), 0.75);
+  const vwapColor = resolveColor("--amber-400", "#f59e0b");
   const volumeColor = resolveColor("--muted-foreground", "#6b7280");
   const macdColor = resolveColor("--cyan-400", "#22d3ee");
   const signalColor = resolveColor("--rose-400", "#fb7185");

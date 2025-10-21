@@ -133,7 +133,21 @@ export function MainAppSidebar() {
   return (
     <AppSidebar
       title="Printer"
-      sections={allSections}
+      sections={[
+        ...allSections,
+        {
+          title: "",
+          items: [
+            {
+              id: "pura-vida",
+              title: "Pura Vida",
+              href: "/#pura-vida",
+              className:
+                "text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-950/30",
+            },
+          ],
+        },
+      ]}
       footer={<UserProfile />}
     />
   );

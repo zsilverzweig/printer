@@ -63,5 +63,7 @@ export interface ScreenedStockPreview {
   volume: number;
   transactions: number;
   window_start: number; // unix milliseconds since epoch
-  rv?: number; // relative volume (provided by backend)
+  rv?: number; // legacy relative volume (provided by backend)
+  rv30?: number; // relative volume over 30-minute window
+  rv60?: number; // relative volume over 60-minute window
 }

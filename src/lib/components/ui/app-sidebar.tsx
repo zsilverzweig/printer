@@ -27,6 +27,7 @@ export interface SidebarItem {
   icon?: ReactNode;
   isActive?: boolean;
   disabled?: boolean;
+  className?: string;
 }
 
 export interface SidebarSection {
@@ -70,9 +71,7 @@ export function AppSidebar({
               return false;
             }
 
-            const isChildRoute = otherItem.href.startsWith(
-              `${item.href}/`
-            );
+            const isChildRoute = otherItem.href.startsWith(`${item.href}/`);
 
             return isChildRoute && pathname.startsWith(otherItem.href);
           })
@@ -116,7 +115,9 @@ export function AppSidebar({
                       <SidebarMenuItem key={item.id}>
                         <SidebarMenuButton
                           disabled
-                          className="cursor-not-allowed opacity-50"
+                          className={`cursor-not-allowed opacity-50 ${
+                            item.className || ""
+                          }`}
                         >
                           {content}
                         </SidebarMenuButton>
@@ -129,6 +130,7 @@ export function AppSidebar({
                       <SidebarMenuButton
                         asChild
                         isActive={isRouteActive(item)}
+                        className={item.className}
                       >
                         <Link href={item.href}>{content}</Link>
                       </SidebarMenuButton>
