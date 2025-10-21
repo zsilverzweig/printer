@@ -17,6 +17,7 @@ import {
 } from "@/lib/components/ui/table";
 import { useWebSocket } from "@/lib/hooks/use-websocket";
 import { useEffect, useState } from "react";
+import { NocRealtimeChart } from "./noc-realtime-chart";
 
 /**
  * Signal status for each indicator
@@ -254,6 +255,7 @@ const SignalLegend = () => (
  */
 export function NocTable() {
   const [stocks, setStocks] = useState<StockIndicators[]>(DUMMY_STOCKS);
+  const [selectedStock, setSelectedStock] = useState<string | null>(null);
 
   // WebSocket URL for NOC real-time data
   // Adjust the URL based on your server configuration
@@ -276,75 +278,103 @@ export function NocTable() {
     }
   }, [lastMessage]);
 
+  const handleStockClick = (ticker: string) => {
+    setSelectedStock(ticker);
+  };
+
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          Network Operations Center
-          <span
-            className={`h-2 w-2 rounded-full ${
-              isConnected ? "bg-green-500" : "bg-red-500"
-            }`}
-            title={isConnected ? "Connected" : "Disconnected"}
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 h-full">
+      {/* Stock List */}
+      <div className={selectedStock ? "lg:col-span-5" : "lg:col-span-12"}>
+        <Card className="h-full">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              Network Operations Center
+              <span
+                className={`h-2 w-2 rounded-full ${
+                  isConnected ? "bg-green-500" : "bg-red-500"
+                }`}
+                title={isConnected ? "Connected" : "Disconnected"}
+              />
+            </CardTitle>
+            <CardDescription>
+              Real-time stock monitoring with multi-factor signal analysis.
+              Click a stock to view chart.
+              {error && (
+                <span className="block text-red-500 text-xs mt-1">
+                  Error: {error}
+                </span>
+              )}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <SignalLegend />
+            <div className="max-h-[calc(100vh-280px)] overflow-auto">
+              <Table>
+                <TableHeader className="sticky top-0 bg-background z-10">
+                  <TableRow>
+                    <TableHead>Ticker</TableHead>
+                    <TableHead>Signals</TableHead>
+                    <TableHead className="text-right">Price</TableHead>
+                    <TableHead className="text-right">% Change</TableHead>
+                    <TableHead className="text-right">RV</TableHead>
+                    <TableHead>News</TableHead>
+                    <TableHead>Float</TableHead>
+                    <TableHead>Bull Flag</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {stocks.map((stock) => (
+                    <TableRow
+                      key={stock.ticker}
+                      className={`cursor-pointer hover:bg-muted/50 ${
+                        selectedStock === stock.ticker ? "bg-muted" : ""
+                      }`}
+                      onClick={() => handleStockClick(stock.ticker)}
+                    >
+                      <TableCell className="font-medium">
+                        {stock.ticker}
+                      </TableCell>
+                      <TableCell>
+                        <SignalBar stock={stock} />
+                      </TableCell>
+                      <TableCell className="text-right">
+                        ${stock.price.toFixed(2)}
+                      </TableCell>
+                      <TableCell
+                        className={`text-right ${
+                          stock.changePercent >= 0
+                            ? "text-green-600"
+                            : "text-red-600"
+                        }`}
+                      >
+                        {stock.changePercent >= 0 ? "+" : ""}
+                        {stock.changePercent.toFixed(2)}%
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {stock.relativeVolume.toFixed(2)}x
+                      </TableCell>
+                      <TableCell>{stock.newsSentiment}</TableCell>
+                      <TableCell>{stock.float}</TableCell>
+                      <TableCell>{stock.bullFlag ? "Yes" : "No"}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Chart Panel */}
+      {selectedStock && (
+        <div className="lg:col-span-7 h-[calc(100vh-120px)]">
+          <NocRealtimeChart
+            symbol={selectedStock}
+            onClose={() => setSelectedStock(null)}
           />
-        </CardTitle>
-        <CardDescription>
-          Real-time stock monitoring with multi-factor signal analysis. All
-          green signals = ready to trade.
-          {error && (
-            <span className="block text-red-500 text-xs mt-1">
-              Error: {error}
-            </span>
-          )}
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <SignalLegend />
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Ticker</TableHead>
-              <TableHead>Signals</TableHead>
-              <TableHead className="text-right">Price</TableHead>
-              <TableHead className="text-right">% Change</TableHead>
-              <TableHead className="text-right">RV</TableHead>
-              <TableHead>News</TableHead>
-              <TableHead>Float</TableHead>
-              <TableHead>Bull Flag</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {stocks.map((stock) => (
-              <TableRow
-                key={stock.ticker}
-                className="cursor-pointer hover:bg-muted/50"
-              >
-                <TableCell className="font-medium">{stock.ticker}</TableCell>
-                <TableCell>
-                  <SignalBar stock={stock} />
-                </TableCell>
-                <TableCell className="text-right">
-                  ${stock.price.toFixed(2)}
-                </TableCell>
-                <TableCell
-                  className={`text-right ${
-                    stock.changePercent >= 0 ? "text-green-600" : "text-red-600"
-                  }`}
-                >
-                  {stock.changePercent >= 0 ? "+" : ""}
-                  {stock.changePercent.toFixed(2)}%
-                </TableCell>
-                <TableCell className="text-right">
-                  {stock.relativeVolume.toFixed(2)}x
-                </TableCell>
-                <TableCell>{stock.newsSentiment}</TableCell>
-                <TableCell>{stock.float}</TableCell>
-                <TableCell>{stock.bullFlag ? "Yes" : "No"}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </CardContent>
-    </Card>
+        </div>
+      )}
+    </div>
   );
 }
