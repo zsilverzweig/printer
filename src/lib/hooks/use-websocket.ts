@@ -194,6 +194,8 @@ export function useWebSocket<TIncoming = unknown>(
           protocols,
           nodeEnv: process.env.NODE_ENV,
           logLevel: process.env.NEXT_PUBLIC_LOG_LEVEL,
+          hasProtocol: /^wss?:\/\//i.test(resolvedUrl),
+          origin: typeof window !== "undefined" ? window.location.origin : "",
         });
       }
       const key = getSocketKey(resolvedUrl, protocols);
@@ -222,14 +224,29 @@ export function useWebSocket<TIncoming = unknown>(
             CLOSING: WebSocket.CLOSING,
             CLOSED: WebSocket.CLOSED,
           },
+          url: socket.url,
+          protocol: socket.protocol,
+          binaryType: socket.binaryType,
         });
+      }
+
+      // Check if socket immediately failed
+      if (socket.readyState === WebSocket.CLOSED) {
+        if (debug) {
+          log.error("[WS] socket immediately closed", {
+            url: resolvedUrl,
+          });
+        }
+        setError("WebSocket immediately closed - check URL and server");
+        setIsConnecting(false);
+        return;
       }
 
       // Add a timeout to detect hung connections
       const connectionTimeout = window.setTimeout(() => {
         if (socket.readyState === WebSocket.CONNECTING) {
           if (debug) {
-            log.warn("[WS] connection timeout - still CONNECTING after 10s", {
+            log.warn("[WS] connection timeout - still CONNECTING after 30s", {
               url: resolvedUrl,
               readyState: socket.readyState,
             });
@@ -237,7 +254,7 @@ export function useWebSocket<TIncoming = unknown>(
           setError("Connection timeout - server not responding");
           setIsConnecting(false);
         }
-      }, 10000);
+      }, 30000);
 
       const handleOpen = () => {
         clearTimeout(connectionTimeout);

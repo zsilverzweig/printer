@@ -60,6 +60,7 @@ export interface ScreenedStockPreview {
   high: number;
   low: number;
   close: number;
+  price: number; // current/latest price
   volume: number;
   transactions: number;
   window_start: number; // unix milliseconds since epoch

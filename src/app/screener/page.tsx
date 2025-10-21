@@ -57,6 +57,7 @@ export default function ScreenerPage() {
         high: toNum(r["h"] ?? r["high"] ?? r["c"]),
         low: toNum(r["l"] ?? r["low"] ?? r["c"]),
         close: toNum(r["c"] ?? r["close"]),
+        price: toNum(r["p"] ?? r["price"]),
         volume: toNum(r["v"] ?? r["volume"]),
         transactions: toNum(r["n"] ?? r["transactions"]),
         window_start: toNum(r["t"] ?? r["window_start"]),
@@ -194,6 +195,7 @@ export default function ScreenerPage() {
           <thead>
             <tr className="text-muted-foreground">
               <th className="py-2 text-left">Ticker</th>
+              <th className="py-2 text-right">Price</th>
               <th className="py-2 text-right">Open</th>
               <th className="py-2 text-right">High</th>
               <th className="py-2 text-right">Low</th>
@@ -239,6 +241,9 @@ export default function ScreenerPage() {
                       {row.ticker}
                     </Link>
                   </td>
+                  <td className="py-2 text-right">
+                    {formatNumber(row.price)}
+                  </td>
                   <td className="py-2 text-right">{formatNumber(row.open)}</td>
                   <td className="py-2 text-right">{formatNumber(row.high)}</td>
                   <td className="py-2 text-right">{formatNumber(row.low)}</td>
@@ -268,7 +273,7 @@ export default function ScreenerPage() {
               <tr>
                 <td
                   className="py-6 text-center text-muted-foreground"
-                  colSpan={11}
+                  colSpan={12}
                 >
                   No results
                 </td>

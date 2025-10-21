@@ -1,9 +1,9 @@
 "use client";
 
-import { log } from "@/lib/utils/logger";
 import { useEffect, useMemo } from "react";
 
 import { useWebSocket } from "@/lib/hooks/use-websocket";
+import { log } from "@/lib/utils/logger";
 
 export interface UseMarketStreamOptions {
   endpoint?: string; // default uses NEXT_PUBLIC_MARKET_WS_URL
@@ -25,15 +25,31 @@ export function useMarketStream({
   // Build URL with optional query param for server implementations that accept subs in query
   const url = useMemo(() => {
     try {
+      if (!endpoint) {
+        log.error("[MarketStream] No endpoint configured", {
+          NEXT_PUBLIC_MARKET_WS_URL: process.env.NEXT_PUBLIC_MARKET_WS_URL,
+        });
+        return "";
+      }
       const hasQuery = endpoint.includes("?");
       const separator = hasQuery ? "&" : "?";
-      return `${endpoint}${
+      const finalUrl = `${endpoint}${
         subs ? `${separator}subs=${encodeURIComponent(subs)}` : ""
       }`;
-    } catch {
-      return endpoint;
+      if (debug) {
+        log.debug("[MarketStream] Building WebSocket URL", {
+          endpoint,
+          subs,
+          finalUrl,
+          envVarSet: !!process.env.NEXT_PUBLIC_MARKET_WS_URL,
+        });
+      }
+      return finalUrl;
+    } catch (err) {
+      log.error("[MarketStream] Error building URL", { err, endpoint });
+      return endpoint || "";
     }
-  }, [endpoint, subs]);
+  }, [endpoint, subs, debug]);
 
   const { isConnected, isConnecting, lastMessage, error, sendJson } =
     useWebSocket<unknown>(url, { debug });
