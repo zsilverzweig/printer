@@ -216,10 +216,31 @@ export function useWebSocket<TIncoming = unknown>(
       if (debug) {
         log.debug("[WS] readyState (on create)", {
           readyState: socket.readyState,
+          readyStates: {
+            CONNECTING: WebSocket.CONNECTING,
+            OPEN: WebSocket.OPEN,
+            CLOSING: WebSocket.CLOSING,
+            CLOSED: WebSocket.CLOSED,
+          },
         });
       }
 
+      // Add a timeout to detect hung connections
+      const connectionTimeout = window.setTimeout(() => {
+        if (socket.readyState === WebSocket.CONNECTING) {
+          if (debug) {
+            log.warn("[WS] connection timeout - still CONNECTING after 10s", {
+              url: resolvedUrl,
+              readyState: socket.readyState,
+            });
+          }
+          setError("Connection timeout - server not responding");
+          setIsConnecting(false);
+        }
+      }, 10000);
+
       const handleOpen = () => {
+        clearTimeout(connectionTimeout);
         reconnectAttemptsRef.current = 0;
         setIsConnecting(false);
         setIsConnected(true);
@@ -247,17 +268,26 @@ export function useWebSocket<TIncoming = unknown>(
       };
 
       const handleError = (event: Event) => {
-        setError("WebSocket error");
+        clearTimeout(connectionTimeout);
+        const errorDetail = event as unknown as {
+          message?: string;
+          error?: unknown;
+        };
+        const errorMsg = errorDetail.message || "WebSocket error";
+        setError(errorMsg);
         if (debug) {
           log.warn("[WS] error", {
             url: resolvedUrl,
             eventType: event.type,
             readyState: socket.readyState,
+            message: errorDetail.message,
+            error: errorDetail.error,
           });
         }
       };
 
       const handleClose = (event: CloseEvent) => {
+        clearTimeout(connectionTimeout);
         if (debug) {
           log.info("[WS] close", {
             url: resolvedUrl,

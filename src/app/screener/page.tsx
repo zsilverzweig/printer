@@ -9,6 +9,14 @@ import { Card } from "@/lib/components/ui/card";
 import type { ScreenedStockPreview } from "@/lib/types/market";
 import { log } from "@/lib/utils/logger";
 
+// Global cache for screener data (persists across navigation)
+type ScreenerGlobals = {
+  __PR_SCREENER_CACHE__?: ScreenedStockPreview[] | null;
+};
+const __SCREENER_GLOBAL__ = globalThis as unknown as ScreenerGlobals;
+if (!__SCREENER_GLOBAL__.__PR_SCREENER_CACHE__)
+  __SCREENER_GLOBAL__.__PR_SCREENER_CACHE__ = null;
+
 function formatNumber(n: number | undefined) {
   if (typeof n !== "number") return "-";
   return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
@@ -20,7 +28,10 @@ function formatMultiple(n: number | undefined) {
 }
 
 export default function ScreenerPage() {
-  const [data, setData] = React.useState<ScreenedStockPreview[] | null>(null);
+  // Initialize from global cache
+  const [data, setData] = React.useState<ScreenedStockPreview[] | null>(
+    () => __SCREENER_GLOBAL__.__PR_SCREENER_CACHE__ ?? null
+  );
   const [error, setError] = React.useState<string | null>(null);
   const router = useRouter();
   const avgVolume = React.useMemo(() => {
@@ -79,6 +90,8 @@ export default function ScreenerPage() {
               sample: items[0],
             });
           } catch {}
+          // Update both local state and global cache
+          __SCREENER_GLOBAL__.__PR_SCREENER_CACHE__ = items;
           setData(items);
           return;
         }
@@ -96,6 +109,8 @@ export default function ScreenerPage() {
                 sample: items[0],
               });
             } catch {}
+            // Update both local state and global cache
+            __SCREENER_GLOBAL__.__PR_SCREENER_CACHE__ = items;
             setData(items);
             return;
           }
@@ -116,6 +131,8 @@ export default function ScreenerPage() {
               );
               if (idx >= 0) list[idx] = one;
               else list.push(one);
+              // Update global cache
+              __SCREENER_GLOBAL__.__PR_SCREENER_CACHE__ = list;
               return list;
             });
             return;
