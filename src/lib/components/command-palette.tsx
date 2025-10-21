@@ -39,6 +39,9 @@ export function CommandPalette() {
               <CommandItem onSelect={() => navigate("/trading")}>
                 Trading
               </CommandItem>
+              <CommandItem onSelect={() => navigate("/screener")}>
+                Screener
+              </CommandItem>
               <CommandItem onSelect={() => navigate("/portfolios")}>
                 Portfolios
               </CommandItem>

@@ -8,6 +8,7 @@ import {
   FileText,
   Settings,
   Shield,
+  Target,
   TrendingUp,
   Users,
 } from "lucide-react";
@@ -38,6 +39,12 @@ export function MainAppSidebar() {
           title: "Trading",
           href: "/trading",
           icon: <TrendingUp className="h-4 w-4" />,
+        },
+        {
+          id: "screener",
+          title: "Screener",
+          href: "/screener",
+          icon: <Target className="h-4 w-4" />,
         },
         {
           id: "stock-chart",

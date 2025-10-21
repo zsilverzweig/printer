@@ -52,3 +52,16 @@ export interface NewsArticle {
   publishedUtc: string; // ISO datetime
   tickers: string[];
 }
+
+// Screener item returned by FastAPI (Polygon aggregate-like fields)
+export interface ScreenedStockPreview {
+  ticker: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  transactions: number;
+  window_start: number; // unix milliseconds since epoch
+  rv?: number; // relative volume (provided by backend)
+}
