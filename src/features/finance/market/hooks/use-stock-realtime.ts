@@ -1,6 +1,6 @@
 import * as React from "react";
 
-import { useMarketStream } from "@/features/finance/trading/hooks/use-market-stream";
+import { useMarketStream } from "@/features/finance/market/hooks/use-market-stream";
 
 export function useStockRealtime(symbol: string) {
   const [lastEvent, setLastEvent] = React.useState<unknown | null>(null);
@@ -52,7 +52,7 @@ export function useStockRealtime(symbol: string) {
     isConnecting,
     error: hookError,
   } = useMarketStream({
-    endpoint: "/api/ws",
+    endpoint: process.env.NEXT_PUBLIC_MARKET_WS_URL as string,
     subs: `AM.${symbol}`,
     onMessage,
   });

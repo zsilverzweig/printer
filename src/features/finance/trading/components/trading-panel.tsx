@@ -16,7 +16,6 @@ import {
   TradingProvider,
   useTradingContext,
 } from "../contexts/trading-context";
-import { useMarketStream } from "../hooks/use-market-stream";
 import { useTrading } from "../hooks/use-trading";
 
 import { AccountSummary } from "./account-summary";
@@ -77,19 +76,6 @@ function TradingPanelContent() {
   } | null>(null);
 
   const searchParams = useSearchParams();
-
-  // Initialize minimal market stream subscription (no UI output)
-  useMarketStream({
-    // Hits our Next.js proxy at /api/ws which forwards to upstream
-    endpoint: "/api/ws",
-    // Default to aggregate minute bars for all stocks; adjust later as needed
-    subs: "AM.*",
-    onMessage: (msg) => {
-      // For now, just log. Later, we can wire this into prices/quotes state.
-      // eslint-disable-next-line no-console
-      console.debug("Market stream message", msg);
-    },
-  });
 
   // Check for success message from OAuth callback
   useEffect(() => {

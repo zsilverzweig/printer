@@ -1,6 +1,6 @@
 import * as React from "react";
 
-import { marketService } from "@/lib/services/market-service";
+import { fastApiService } from "@/lib/services/fast-api-service";
 import type { AggregateBar, LastTrade, Timespan } from "@/lib/types/market";
 
 function formatDateISO(date: Date): string {
@@ -45,7 +45,7 @@ export function useStockData({
         from.setDate(to.getDate() - 90);
 
         const [bars, trade] = await Promise.all([
-          marketService.getAggregates(symbol, {
+          fastApiService.getAggregates(symbol, {
             multiplier,
             timespan,
             from: formatDateISO(from),
@@ -53,7 +53,7 @@ export function useStockData({
             limit: 5000,
             paginate: true,
           }),
-          marketService.getLastTrade(symbol),
+          fastApiService.getLastTrade(symbol),
         ]);
 
         setAggs(bars);

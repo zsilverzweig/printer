@@ -1,7 +1,9 @@
 import * as React from "react";
 
-import { marketService } from "@/lib/services/market-service";
+import { fastApiService } from "@/lib/services/fast-api-service";
 import type { NewsArticle } from "@/lib/types/market";
+
+import { normalizeNewsArticles } from "../utils/news-utils";
 
 export function useStockNews(symbol: string, limit = 20) {
   const [news, setNews] = React.useState<NewsArticle[] | null>(null);
@@ -14,8 +16,9 @@ export function useStockNews(symbol: string, limit = 20) {
       setLoading(true);
       setError(null);
       try {
-        const articles = await marketService.getNews(symbol, limit);
-        if (!isCancelled) setNews(articles);
+        const rawArticles = await fastApiService.getNews(symbol, limit);
+        const normalizedArticles = normalizeNewsArticles(rawArticles);
+        if (!isCancelled) setNews(normalizedArticles);
       } catch (e) {
         if (!isCancelled)
           setError(e instanceof Error ? e.message : "Failed to load news");

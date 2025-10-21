@@ -5,13 +5,13 @@ import { useEffect, useMemo } from "react";
 import { useWebSocket } from "@/lib/hooks/use-websocket";
 
 export interface UseMarketStreamOptions {
-  endpoint?: string; // default "/api/ws"
+  endpoint?: string; // default uses NEXT_PUBLIC_MARKET_WS_URL
   subs: string; // e.g., "AM.*" or comma-separated list
   onMessage?: (msg: unknown) => void;
 }
 
 export function useMarketStream({
-  endpoint = "/api/ws",
+  endpoint = process.env.NEXT_PUBLIC_MARKET_WS_URL as string,
   subs,
   onMessage,
 }: UseMarketStreamOptions) {
