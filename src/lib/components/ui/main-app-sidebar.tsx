@@ -6,6 +6,7 @@ import {
   Briefcase,
   Building2,
   FileText,
+  Home,
   Settings,
   Shield,
   Target,
@@ -25,6 +26,17 @@ export function MainAppSidebar() {
 
   // Base navigation items for all authenticated users
   const baseSections: SidebarSection[] = [
+    {
+      title: "Dashboard",
+      items: [
+        {
+          id: "home",
+          title: "NOC",
+          href: "/",
+          icon: <Home className="h-4 w-4" />,
+        },
+      ],
+    },
     {
       title: "Investment",
       items: [

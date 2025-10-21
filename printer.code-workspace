@@ -1,0 +1,23 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../printer-server"
+		}
+	],
+	"settings": {
+		"typescript.preferences.includePackageJsonAutoImports": "on",
+		"files.associations": {
+			"*.css": "tailwindcss"
+		},
+		"emmet.includeLanguages": {
+			"javascript": "javascriptreact",
+			"typescript": "typescriptreact"
+		},
+		"problems.visibility": true,
+		"problems.showCurrentInStatus": true,
+		"problems.decorations.enabled": true
+	}
+}
