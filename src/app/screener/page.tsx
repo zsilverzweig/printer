@@ -27,12 +27,29 @@ function formatMultiple(n: number | undefined) {
   return `${n.toFixed(2)}x`;
 }
 
+function formatPercent(n: number | null | undefined) {
+  if (typeof n !== "number" || !isFinite(n)) return "-";
+  const sign = n >= 0 ? "+" : "";
+  return `${sign}${n.toFixed(2)}%`;
+}
+
+type TimeframeFilter = "1m" | "5m" | "1h" | "close";
+
+const TIMEFRAME_LABELS: Record<TimeframeFilter, string> = {
+  "1m": "Last 1m",
+  "5m": "Last 5m",
+  "1h": "Last Hour",
+  close: "Since Close",
+};
+
 export default function ScreenerPage() {
   // Initialize from global cache
   const [data, setData] = React.useState<ScreenedStockPreview[] | null>(
     () => __SCREENER_GLOBAL__.__PR_SCREENER_CACHE__ ?? null
   );
   const [error, setError] = React.useState<string | null>(null);
+  const [selectedTimeframe, setSelectedTimeframe] =
+    React.useState<TimeframeFilter>("close");
   const router = useRouter();
   const avgVolume = React.useMemo(() => {
     if (!data || data.length === 0) return 0;
@@ -51,6 +68,12 @@ export default function ScreenerPage() {
       const toStr = (v: unknown, fallback = ""): string =>
         typeof v === "string" ? v : String(v ?? fallback);
 
+      const toNumOrNull = (v: unknown): number | null => {
+        if (v === null || v === undefined) return null;
+        const n = typeof v === "number" ? v : Number(v);
+        return isNaN(n) ? null : n;
+      };
+
       return {
         ticker: toStr(r["T"] ?? r["ticker"] ?? ""),
         open: toNum(r["o"] ?? r["open"]),
@@ -64,6 +87,10 @@ export default function ScreenerPage() {
         rv: toNum(r["rv"]),
         rv30: toNum(r["rv30"]),
         rv60: toNum(r["rv60"]),
+        change_1m: toNumOrNull(r["change_1m"]),
+        change_5m: toNumOrNull(r["change_5m"]),
+        change_1h: toNumOrNull(r["change_1h"]),
+        change_close: toNum(r["change_close"]),
       };
     },
     []
@@ -171,6 +198,57 @@ export default function ScreenerPage() {
     } catch {}
   }, [isConnected, isConnecting, wsError]);
 
+  // Filter and sort data based on selected timeframe
+  const filteredData = React.useMemo(() => {
+    if (!data) return null;
+
+    const getChangeValue = (row: ScreenedStockPreview): number | null => {
+      switch (selectedTimeframe) {
+        case "1m":
+          return row.change_1m ?? null;
+        case "5m":
+          return row.change_5m ?? null;
+        case "1h":
+          return row.change_1h ?? null;
+        case "close":
+          return row.change_close ?? null;
+        default:
+          return null;
+      }
+    };
+
+    // Filter: only show stocks with valid change data
+    const filtered = data.filter((row) => {
+      const change = getChangeValue(row);
+      return change !== null && typeof change === "number";
+    });
+
+    // Sort by change % descending (highest gainers first)
+    return filtered.sort((a, b) => {
+      const changeA = getChangeValue(a) ?? 0;
+      const changeB = getChangeValue(b) ?? 0;
+      return changeB - changeA;
+    });
+  }, [data, selectedTimeframe]);
+
+  const getChangeForRow = React.useCallback(
+    (row: ScreenedStockPreview): number | null => {
+      switch (selectedTimeframe) {
+        case "1m":
+          return row.change_1m ?? null;
+        case "5m":
+          return row.change_5m ?? null;
+        case "1h":
+          return row.change_1h ?? null;
+        case "close":
+          return row.change_close ?? null;
+        default:
+          return null;
+      }
+    },
+    [selectedTimeframe]
+  );
+
   return (
     <div className="container mx-auto p-6 space-y-6">
       <h1 className="text-3xl font-bold">Screener</h1>
@@ -180,6 +258,25 @@ export default function ScreenerPage() {
           {error}
         </div>
       )}
+
+      {/* Timeframe filter buttons */}
+      <div className="flex flex-wrap gap-2">
+        {(Object.keys(TIMEFRAME_LABELS) as TimeframeFilter[]).map(
+          (timeframe) => (
+            <button
+              key={timeframe}
+              onClick={() => setSelectedTimeframe(timeframe)}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                selectedTimeframe === timeframe
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
+              }`}
+            >
+              {TIMEFRAME_LABELS[timeframe]}
+            </button>
+          )
+        )}
+      </div>
 
       <Card className="p-4 overflow-x-auto space-y-4">
         <div className="flex items-center justify-between text-sm text-muted-foreground">
@@ -195,6 +292,7 @@ export default function ScreenerPage() {
           <thead>
             <tr className="text-muted-foreground">
               <th className="py-2 text-left">Ticker</th>
+              <th className="py-2 text-right font-semibold">% Change</th>
               <th className="py-2 text-right">Price</th>
               <th className="py-2 text-right">Open</th>
               <th className="py-2 text-right">High</th>
@@ -209,15 +307,10 @@ export default function ScreenerPage() {
             </tr>
           </thead>
           <tbody>
-            {data?.map((row) => {
-              const isUp =
-                typeof row.close === "number" &&
-                typeof row.open === "number" &&
-                row.close > row.open;
-              const isDown =
-                typeof row.close === "number" &&
-                typeof row.open === "number" &&
-                row.close < row.open;
+            {filteredData?.map((row) => {
+              const change = getChangeForRow(row);
+              const isUp = change !== null && change > 0;
+              const isDown = change !== null && change < 0;
               const rowClass = isUp
                 ? "bg-emerald-50 dark:bg-emerald-950/30"
                 : isDown
@@ -241,9 +334,18 @@ export default function ScreenerPage() {
                       {row.ticker}
                     </Link>
                   </td>
-                  <td className="py-2 text-right">
-                    {formatNumber(row.price)}
+                  <td
+                    className={`py-2 text-right font-semibold ${
+                      isUp
+                        ? "text-emerald-600 dark:text-emerald-400"
+                        : isDown
+                        ? "text-rose-600 dark:text-rose-400"
+                        : ""
+                    }`}
+                  >
+                    {formatPercent(change)}
                   </td>
+                  <td className="py-2 text-right">{formatNumber(row.price)}</td>
                   <td className="py-2 text-right">{formatNumber(row.open)}</td>
                   <td className="py-2 text-right">{formatNumber(row.high)}</td>
                   <td className="py-2 text-right">{formatNumber(row.low)}</td>
@@ -269,13 +371,15 @@ export default function ScreenerPage() {
                 </tr>
               );
             })}
-            {(!data || data.length === 0) && (
+            {(!filteredData || filteredData.length === 0) && (
               <tr>
                 <td
                   className="py-6 text-center text-muted-foreground"
-                  colSpan={12}
+                  colSpan={13}
                 >
-                  No results
+                  {data && data.length > 0
+                    ? "No stocks match the selected timeframe filter"
+                    : "No results"}
                 </td>
               </tr>
             )}

@@ -31,7 +31,7 @@ export function MainAppSidebar() {
       items: [
         {
           id: "home",
-          title: "NOC",
+          title: "TCC",
           href: "/",
           icon: <Home className="h-4 w-4" />,
         },

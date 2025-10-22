@@ -218,14 +218,25 @@ const DUMMY_STOCKS: StockIndicators[] = [
   },
 ];
 
+type TimeframeFilter = "1m" | "5m" | "1h" | "close";
+
+const TIMEFRAME_LABELS: Record<TimeframeFilter, string> = {
+  "1m": "Last 1m",
+  "5m": "Last 5m",
+  "1h": "Last Hour",
+  close: "Since Close",
+};
+
 /**
- * NOC Table Component
+ * TCC Table Component
  * Displays stocks with all their indicators in a table format
  * Server filters: 5%+ change, 50k+ volume, up to 50 stocks
  */
 export function NocTable() {
   const [stocks, setStocks] = useState<StockIndicators[]>(DUMMY_STOCKS);
   const [selectedStock, setSelectedStock] = useState<string | null>(null);
+  const [selectedTimeframe, setSelectedTimeframe] =
+    useState<TimeframeFilter>("close");
 
   // WebSocket URL for NOC real-time data
   // Adjust the URL based on your server configuration
@@ -253,6 +264,38 @@ export function NocTable() {
     setSelectedStock(ticker);
   };
 
+  const handleTimeframeChange = async (timeframe: TimeframeFilter) => {
+    setSelectedTimeframe(timeframe);
+
+    // Send REST API call to update server filter settings
+    try {
+      const baseUrl =
+        process.env.NEXT_PUBLIC_WS_URL?.replace("ws://", "http://").replace(
+          "wss://",
+          "https://"
+        ) || "http://localhost:8000";
+
+      const response = await fetch(`${baseUrl}/noc/config`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          timeframe: timeframe,
+        }),
+      });
+
+      if (!response.ok) {
+        console.error("Failed to update NOC config:", await response.text());
+      } else {
+        const config = await response.json();
+        console.log("NOC config updated:", config);
+      }
+    } catch (error) {
+      console.error("Error updating NOC config:", error);
+    }
+  };
+
   return (
     <TooltipProvider>
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 h-full">
@@ -260,24 +303,47 @@ export function NocTable() {
         <div className={selectedStock ? "lg:col-span-5" : "lg:col-span-12"}>
           <Card className="h-full">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                Network Operations Center
-                <span
-                  className={`h-2 w-2 rounded-full ${
-                    isConnected ? "bg-green-500" : "bg-red-500"
-                  }`}
-                  title={isConnected ? "Connected" : "Disconnected"}
-                />
-              </CardTitle>
-              <CardDescription>
-                Real-time stock monitoring with multi-factor signal analysis.
-                Click a stock to view chart. Hover over signals for details.
-                {error && (
-                  <span className="block text-red-500 text-xs mt-1">
-                    Error: {error}
-                  </span>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    Market Screener
+                    <span
+                      className={`h-2 w-2 rounded-full ${
+                        isConnected ? "bg-green-500" : "bg-red-500"
+                      }`}
+                      title={isConnected ? "Connected" : "Disconnected"}
+                    />
+                  </CardTitle>
+                  <CardDescription>
+                    Real-time stock monitoring with multi-factor signal
+                    analysis. Click a stock to view chart. Hover over signals
+                    for details.
+                    {error && (
+                      <span className="block text-red-500 text-xs mt-1">
+                        Error: {error}
+                      </span>
+                    )}
+                  </CardDescription>
+                </div>
+              </div>
+              {/* Timeframe filter buttons */}
+              <div className="flex flex-wrap gap-2 mt-4">
+                {(Object.keys(TIMEFRAME_LABELS) as TimeframeFilter[]).map(
+                  (timeframe) => (
+                    <button
+                      key={timeframe}
+                      onClick={() => handleTimeframeChange(timeframe)}
+                      className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                        selectedTimeframe === timeframe
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
+                      }`}
+                    >
+                      {TIMEFRAME_LABELS[timeframe]}
+                    </button>
+                  )
                 )}
-              </CardDescription>
+              </div>
             </CardHeader>
             <CardContent>
               <div className="max-h-[calc(100vh-280px)] overflow-auto">

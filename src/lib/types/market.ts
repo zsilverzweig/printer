@@ -69,4 +69,8 @@ export interface ScreenedStockPreview {
   rv?: number; // legacy relative volume (provided by backend)
   rv30?: number; // relative volume over 30-minute window
   rv60?: number; // relative volume over 60-minute window
+  change_1m?: number | null; // % change over last 1 minute
+  change_5m?: number | null; // % change over last 5 minutes
+  change_1h?: number | null; // % change over last 1 hour
+  change_close?: number; // % change since yesterday's close
 }
