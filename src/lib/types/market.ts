@@ -17,6 +17,8 @@ export interface AggregateBar {
   l: number; // low
   c: number; // close
   v?: number; // volume (optional depending on source)
+  vw?: number; // volume-weighted average price (optional)
+  n?: number; // number of transactions (optional)
 }
 
 // Polygon last trade minimal fields (shape produced by polygon SDK encoder)

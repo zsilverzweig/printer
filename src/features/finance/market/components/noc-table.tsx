@@ -343,6 +343,7 @@ export function NocTable() {
             <NocRealtimeChart
               symbol={selectedStock}
               onClose={() => setSelectedStock(null)}
+              onSymbolChange={(newSymbol) => setSelectedStock(newSymbol)}
             />
           </div>
         )}

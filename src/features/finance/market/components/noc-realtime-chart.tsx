@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useMarketStream } from "@/features/finance/market/hooks/use-market-stream";
 import { Button } from "@/lib/components/ui/button";
@@ -11,24 +11,90 @@ import {
   CardHeader,
   CardTitle,
 } from "@/lib/components/ui/card";
+import { Input } from "@/lib/components/ui/input";
+import { useShortcut } from "@/lib/hooks/use-shortcut";
 import type { AggregateBar } from "@/lib/types/market";
 
 interface NocRealtimeChartProps {
   symbol: string;
   onClose?: () => void;
+  onSymbolChange?: (symbol: string) => void;
 }
 
 type Timeframe = "1min" | "5min";
+type ViewMode = "default" | "focus"; // default = 24h, focus = 2h
+
+/**
+ * Aggregates 1-minute bars into 5-minute bars
+ */
+function aggregate5MinBars(minuteBars: AggregateBar[]): AggregateBar[] {
+  if (minuteBars.length === 0) return [];
+
+  const fiveMinBars: AggregateBar[] = [];
+  const barsByFiveMin = new Map<number, AggregateBar[]>();
+
+  // Group bars by 5-minute intervals
+  minuteBars.forEach((bar) => {
+    const fiveMinTimestamp =
+      Math.floor(bar.t / (5 * 60 * 1000)) * (5 * 60 * 1000);
+    if (!barsByFiveMin.has(fiveMinTimestamp)) {
+      barsByFiveMin.set(fiveMinTimestamp, []);
+    }
+    const group = barsByFiveMin.get(fiveMinTimestamp);
+    if (group) group.push(bar);
+  });
+
+  // Aggregate each 5-minute group
+  barsByFiveMin.forEach((bars, timestamp) => {
+    if (bars.length === 0) return;
+
+    const open = bars[0].o;
+    const close = bars[bars.length - 1].c;
+    const high = Math.max(...bars.map((b) => b.h));
+    const low = Math.min(...bars.map((b) => b.l));
+    const volume = bars.reduce((sum, b) => sum + (b.v || 0), 0);
+    const transactions = bars.reduce((sum, b) => sum + (b.n || 0), 0);
+
+    // Calculate weighted average VWAP
+    const totalVolumeForVwap = bars.reduce((sum, b) => sum + (b.v || 0), 0);
+    const vwap =
+      totalVolumeForVwap > 0
+        ? bars.reduce((sum, b) => sum + (b.vw || 0) * (b.v || 0), 0) /
+          totalVolumeForVwap
+        : bars[bars.length - 1].vw;
+
+    fiveMinBars.push({
+      t: timestamp,
+      o: open,
+      h: high,
+      l: low,
+      c: close,
+      v: volume,
+      vw: vwap,
+      n: transactions,
+    });
+  });
+
+  return fiveMinBars.sort((a, b) => a.t - b.t);
+}
 
 /**
  * Real-time candlestick chart for NOC
  * Subscribes to Polygon aggregate bars (real-time, not delayed)
  */
-export function NocRealtimeChart({ symbol, onClose }: NocRealtimeChartProps) {
+export function NocRealtimeChart({
+  symbol,
+  onClose,
+  onSymbolChange,
+}: NocRealtimeChartProps) {
   const [timeframe, setTimeframe] = useState<Timeframe>("1min");
+  const [viewMode, setViewMode] = useState<ViewMode>("default");
   const [bars, setBars] = useState<AggregateBar[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [tickerInput, setTickerInput] = useState(symbol);
+  const [isEditingTicker, setIsEditingTicker] = useState(false);
+  const tickerInputRef = useRef<HTMLInputElement>(null);
 
   // Subscribe to real-time aggregates through FastAPI server
   // Polygon WebSocket subscription types:
@@ -114,9 +180,9 @@ export function NocRealtimeChart({ symbol, onClose }: NocRealtimeChartProps) {
                   h: Math.max(existing.h, bar.h), // Highest high
                   l: Math.min(existing.l, bar.l), // Lowest low
                   c: bar.c, // Latest close
-                  v: existing.v + bar.v, // Cumulative volume
+                  v: (existing.v || 0) + (bar.v || 0), // Cumulative volume
                   vw: bar.vw, // Latest VWAP
-                  n: existing.n + bar.n, // Cumulative transactions
+                  n: (existing.n || 0) + (bar.n || 0), // Cumulative transactions
                 };
               } else {
                 // First bar for this minute
@@ -132,8 +198,8 @@ export function NocRealtimeChart({ symbol, onClose }: NocRealtimeChartProps) {
             // Sort by timestamp
             allBars.sort((a, b) => a.t - b.t);
 
-            // Keep last 200 bars for performance
-            const maxBars = 200;
+            // Keep last 2000 bars for performance (enough for 4+ days of minute data)
+            const maxBars = 2000;
             if (allBars.length > maxBars) {
               return allBars.slice(-maxBars);
             }
@@ -172,10 +238,12 @@ export function NocRealtimeChart({ symbol, onClose }: NocRealtimeChartProps) {
       setBars([]); // Clear existing bars
 
       try {
-        // Fetch last 50 minutes of 1-minute bars for indicator calculation
-        // MACD needs ~35 bars, EMAs need ~26 bars
-        const to = new Date();
-        const from = new Date(to.getTime() - 50 * 60 * 1000); // 50 minutes ago
+        // Fetch minute bars for the last 4 days
+        // This provides sufficient historical context for technical indicators
+        // and captures pre-market, regular hours, and after-hours trading
+        const now = new Date();
+        const fourDaysAgo = new Date(now.getTime() - 4 * 24 * 60 * 60 * 1000);
+        const from = fourDaysAgo;
 
         const baseUrl =
           process.env.NEXT_PUBLIC_WS_URL?.replace("ws://", "http://").replace(
@@ -186,16 +254,20 @@ export function NocRealtimeChart({ symbol, onClose }: NocRealtimeChartProps) {
         const params = new URLSearchParams({
           multiplier: "1",
           timespan: "minute",
-          from: from.toISOString().split("T")[0], // YYYY-MM-DD
-          to: to.toISOString().split("T")[0],
-          limit: "50",
-          paginate: "false",
+          from: from.getTime().toString(), // Unix timestamp in milliseconds
+          to: now.getTime().toString(), // Unix timestamp in milliseconds
+          limit: "10000", // 4 days of minute bars (including pre/after-hours)
+          paginate: "true", // Enable pagination to get all bars
         });
 
         const url = `${baseUrl}/aggs/${encodeURIComponent(
           symbol
         )}?${params.toString()}`;
-        console.log(`[NOC Chart] Fetching historical data: ${url}`);
+        console.log(
+          `[NOC Chart] Fetching 4 days of minute bars: ${url}`,
+          `\n  From: ${from.toLocaleString()} (4 days ago)`,
+          `\n  To: ${now.toLocaleString()} (now)`
+        );
 
         const response = await fetch(url);
         if (!response.ok) {
@@ -204,22 +276,58 @@ export function NocRealtimeChart({ symbol, onClose }: NocRealtimeChartProps) {
 
         const data = await response.json();
         console.log(
-          `[NOC Chart] Received ${data.length} historical bars for ${symbol}`
+          `[NOC Chart] Received ${data.length} historical bars for ${symbol}`,
+          data.length > 0
+            ? `\n  First bar: ${new Date(data[0].t).toLocaleString()}`
+            : "",
+          data.length > 0
+            ? `\n  Last bar: ${new Date(
+                data[data.length - 1].t
+              ).toLocaleString()}`
+            : ""
         );
 
         // Convert to our format if needed
-        const historicalBars: AggregateBar[] = data.map((bar: any) => ({
-          t: bar.t || bar.timestamp,
-          o: bar.o || bar.open,
-          h: bar.h || bar.high,
-          l: bar.l || bar.low,
-          c: bar.c || bar.close,
-          v: bar.v || bar.volume,
-          vw: bar.vw || bar.vwap,
-          n: bar.n || bar.transactions,
-        }));
+        const historicalBars: AggregateBar[] = data
+          .map((bar: Record<string, unknown>) => ({
+            t: (bar.t as number) || (bar.timestamp as number),
+            o: (bar.o as number) || (bar.open as number),
+            h: (bar.h as number) || (bar.high as number),
+            l: (bar.l as number) || (bar.low as number),
+            c: (bar.c as number) || (bar.close as number),
+            v: (bar.v as number) || (bar.volume as number),
+            vw: (bar.vw as number) || (bar.vwap as number),
+            n: (bar.n as number) || (bar.transactions as number),
+          }))
+          .filter(
+            (bar: AggregateBar) =>
+              bar.t &&
+              bar.o != null &&
+              bar.h != null &&
+              bar.l != null &&
+              bar.c != null
+          )
+          .sort((a: AggregateBar, b: AggregateBar) => a.t - b.t); // Sort by timestamp ascending
 
-        setBars(historicalBars);
+        // Deduplicate bars by minute timestamp
+        const dedupedBars: AggregateBar[] = [];
+        const seen = new Set<number>();
+
+        for (const bar of historicalBars) {
+          const minuteTimestamp = Math.floor(bar.t / 60000) * 60000;
+          if (!seen.has(minuteTimestamp)) {
+            seen.add(minuteTimestamp);
+            dedupedBars.push({ ...bar, t: minuteTimestamp });
+          }
+        }
+
+        console.log(
+          `[NOC Chart] Loaded ${dedupedBars.length} unique minute bars (${
+            historicalBars.length - dedupedBars.length
+          } duplicates removed)`
+        );
+
+        setBars(dedupedBars);
       } catch (error) {
         console.error(`[NOC Chart] Failed to fetch historical data:`, error);
         // Continue with real-time data even if historical fetch fails
@@ -235,17 +343,106 @@ export function NocRealtimeChart({ symbol, onClose }: NocRealtimeChartProps) {
   const filteredBars = useMemo(() => {
     if (bars.length === 0) return [];
 
-    // For now, show all bars received
-    // In production, you might want to aggregate 1-min bars into 5-min bars
-    // when timeframe === "5min"
+    if (timeframe === "5min") {
+      return aggregate5MinBars(bars);
+    }
+
     return bars;
-  }, [bars]);
+  }, [bars, timeframe]);
+
+  // Sync ticker input with symbol prop
+  useEffect(() => {
+    setTickerInput(symbol);
+  }, [symbol]);
+
+  // Focus ticker input when entering edit mode
+  useEffect(() => {
+    if (isEditingTicker && tickerInputRef.current) {
+      tickerInputRef.current.focus();
+      tickerInputRef.current.select();
+    }
+  }, [isEditingTicker]);
+
+  // Handle ticker submission
+  const handleTickerSubmit = () => {
+    const newSymbol = tickerInput.trim().toUpperCase();
+    if (newSymbol && newSymbol !== symbol && onSymbolChange) {
+      onSymbolChange(newSymbol);
+    }
+    setIsEditingTicker(false);
+  };
+
+  // Keyboard shortcuts
+  useShortcut(
+    "1",
+    () => {
+      setTimeframe("1min");
+      console.log("[NOC Chart] Switched to 1-minute timeframe");
+    },
+    [setTimeframe]
+  );
+
+  useShortcut(
+    "5",
+    () => {
+      setTimeframe("5min");
+      console.log("[NOC Chart] Switched to 5-minute timeframe");
+    },
+    [setTimeframe]
+  );
+
+  useShortcut(
+    "f",
+    () => {
+      setViewMode((prev) => {
+        const newMode = prev === "default" ? "focus" : "default";
+        console.log(`[NOC Chart] Switched to ${newMode} view`);
+        return newMode;
+      });
+    },
+    [setViewMode]
+  );
+
+  useShortcut(
+    "t",
+    () => {
+      setIsEditingTicker(true);
+      console.log("[NOC Chart] Edit ticker mode");
+    },
+    [setIsEditingTicker]
+  );
 
   return (
     <Card className="h-full flex flex-col">
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
         <div className="flex items-center gap-3">
-          <CardTitle className="text-lg font-semibold">{symbol}</CardTitle>
+          {isEditingTicker ? (
+            <Input
+              ref={tickerInputRef}
+              type="text"
+              value={tickerInput}
+              onChange={(e) => setTickerInput(e.target.value.toUpperCase())}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  handleTickerSubmit();
+                } else if (e.key === "Escape") {
+                  setTickerInput(symbol);
+                  setIsEditingTicker(false);
+                }
+              }}
+              onBlur={handleTickerSubmit}
+              className="h-8 w-24 text-lg font-semibold"
+              placeholder="Ticker"
+            />
+          ) : (
+            <CardTitle
+              className="text-lg font-semibold cursor-pointer hover:text-primary transition-colors"
+              onClick={() => setIsEditingTicker(true)}
+              title="Click to change ticker (press T)"
+            >
+              {symbol}
+            </CardTitle>
+          )}
           <div className="flex items-center gap-1.5">
             <div
               className={`h-2 w-2 rounded-full ${
@@ -264,6 +461,7 @@ export function NocRealtimeChart({ symbol, onClose }: NocRealtimeChartProps) {
               variant={timeframe === "1min" ? "default" : "outline"}
               size="sm"
               onClick={() => setTimeframe("1min")}
+              title="1-minute bars (press 1)"
             >
               1m
             </Button>
@@ -271,10 +469,21 @@ export function NocRealtimeChart({ symbol, onClose }: NocRealtimeChartProps) {
               variant={timeframe === "5min" ? "default" : "outline"}
               size="sm"
               onClick={() => setTimeframe("5min")}
+              title="5-minute bars (press 5)"
             >
               5m
             </Button>
           </div>
+          <Button
+            variant={viewMode === "focus" ? "default" : "outline"}
+            size="sm"
+            onClick={() => {
+              setViewMode((prev) => (prev === "default" ? "focus" : "default"));
+            }}
+            title="Focus on last 2 hours (press F)"
+          >
+            Focus
+          </Button>
           {onClose && (
             <Button variant="ghost" size="sm" onClick={onClose}>
               ✕
@@ -292,6 +501,7 @@ export function NocRealtimeChart({ symbol, onClose }: NocRealtimeChartProps) {
             <CandlestickChart
               data={filteredBars}
               height="calc(100% - 24px)"
+              viewMode={viewMode}
               showEMA12={true}
               showEMA26={true}
               showVWAP={true}

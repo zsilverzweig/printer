@@ -23,6 +23,7 @@ interface CandlestickChartProps {
   data: AggregateBar[];
   height?: number | string; // number in px or CSS string (e.g., '60vh')
   className?: string;
+  viewMode?: "default" | "focus"; // default = 24h, focus = 2h
   showEMA12?: boolean;
   showEMA26?: boolean;
   showVWAP?: boolean;
@@ -197,6 +198,7 @@ export function CandlestickChart({
   data,
   height = "60vh",
   className,
+  viewMode = "default",
   showEMA12 = true,
   showEMA26 = true,
   showVWAP = true,
@@ -253,11 +255,11 @@ export function CandlestickChart({
         // Timestamps are in Unix epoch (seconds), library uses browser's local timezone
         tickMarkFormatter: (time: number) => {
           const date = new Date(time * 1000);
-          return date.toLocaleTimeString("en-US", {
-            hour: "2-digit",
-            minute: "2-digit",
-            hour12: false,
-          });
+          const month = (date.getMonth() + 1).toString().padStart(2, "0");
+          const day = date.getDate().toString().padStart(2, "0");
+          const hours = date.getHours().toString().padStart(2, "0");
+          const minutes = date.getMinutes().toString().padStart(2, "0");
+          return `${month}/${day} ${hours}:${minutes}`;
         },
       },
       crosshair: { mode: CrosshairMode.Normal },
@@ -379,8 +381,6 @@ export function CandlestickChart({
     if (!seriesRef.current) return;
     const candles = mapToCandles(data);
     seriesRef.current.setData(candles as unknown as CandlestickData<Time>[]);
-    // Adjust viewport to fit data
-    chartRef.current?.timeScale().fitContent();
 
     // overlays
     if (ema12Ref.current) {
@@ -463,6 +463,25 @@ export function CandlestickChart({
     macdHistogramDownColor,
     macdHistogramAlpha,
   ]);
+
+  // Separate effect for view range - only updates when viewMode or data length changes significantly
+  React.useEffect(() => {
+    if (!chartRef.current || data.length === 0) return;
+
+    const candles = mapToCandles(data);
+    if (candles.length === 0) return;
+
+    // Use the last bar's timestamp instead of Date.now() for consistency
+    const lastBarTime = candles[candles.length - 1].time as number;
+    const hoursToShow = viewMode === "focus" ? 2 : 24;
+    const startTime = lastBarTime - hoursToShow * 60 * 60;
+
+    // Set visible range based on view mode
+    chartRef.current.timeScale().setVisibleRange({
+      from: startTime as Time,
+      to: (lastBarTime + 300) as Time, // Add 5 minutes padding for visibility
+    });
+  }, [viewMode, data.length]);
 
   const styleHeight = typeof height === "number" ? `${height}px` : height;
   const ema12Color = withAlpha(resolveColor("--blue-400", "#60a5fa"), 0.75);
