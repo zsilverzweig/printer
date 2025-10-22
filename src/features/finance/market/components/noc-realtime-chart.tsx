@@ -15,6 +15,8 @@ import { Input } from "@/lib/components/ui/input";
 import { useShortcut } from "@/lib/hooks/use-shortcut";
 import type { AggregateBar } from "@/lib/types/market";
 
+import { FinancialInfoPanel } from "./financial-info-panel";
+
 interface NocRealtimeChartProps {
   symbol: string;
   onClose?: () => void;
@@ -413,140 +415,148 @@ export function NocRealtimeChart({
   );
 
   return (
-    <Card className="h-full flex flex-col">
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-        <div className="flex items-center gap-3">
-          {isEditingTicker ? (
-            <Input
-              ref={tickerInputRef}
-              type="text"
-              value={tickerInput}
-              onChange={(e) => setTickerInput(e.target.value.toUpperCase())}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  handleTickerSubmit();
-                } else if (e.key === "Escape") {
-                  setTickerInput(symbol);
-                  setIsEditingTicker(false);
-                }
-              }}
-              onBlur={handleTickerSubmit}
-              className="h-8 w-24 text-lg font-semibold"
-              placeholder="Ticker"
-            />
-          ) : (
-            <CardTitle
-              className="text-lg font-semibold cursor-pointer hover:text-primary transition-colors"
-              onClick={() => setIsEditingTicker(true)}
-              title="Click to change ticker (press T)"
-            >
-              {symbol}
-            </CardTitle>
-          )}
-          <div className="flex items-center gap-1.5">
-            <div
-              className={`h-2 w-2 rounded-full ${
-                isConnected ? "bg-green-500" : "bg-red-500"
-              }`}
-              title={isConnected ? "Live" : "Disconnected"}
-            />
-            <span className="text-xs text-muted-foreground">
-              {isConnected ? "Live" : "Disconnected"}
-            </span>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="flex gap-1">
-            <Button
-              variant={timeframe === "1min" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setTimeframe("1min")}
-              title="1-minute bars (press 1)"
-            >
-              1m
-            </Button>
-            <Button
-              variant={timeframe === "5min" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setTimeframe("5min")}
-              title="5-minute bars (press 5)"
-            >
-              5m
-            </Button>
-          </div>
-          <Button
-            variant={viewMode === "focus" ? "default" : "outline"}
-            size="sm"
-            onClick={() => {
-              setViewMode((prev) => (prev === "default" ? "focus" : "default"));
-            }}
-            title="Focus on last 2 hours (press F)"
-          >
-            Focus
-          </Button>
-          {onClose && (
-            <Button variant="ghost" size="sm" onClick={onClose}>
-              ✕
-            </Button>
-          )}
-        </div>
-      </CardHeader>
-      <CardContent className="flex-1 min-h-0 p-4">
-        {isLoadingHistory ? (
-          <div className="flex h-full items-center justify-center text-muted-foreground">
-            Loading historical data...
-          </div>
-        ) : filteredBars.length > 0 ? (
-          <>
-            <CandlestickChart
-              data={filteredBars}
-              height="calc(100% - 24px)"
-              viewMode={viewMode}
-              showEMA12={true}
-              showEMA26={true}
-              showVWAP={true}
-              showVolume={true}
-              showMACD={true}
-              showLegend={true}
-            />
-            <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
-              <span>
-                {filteredBars.length} bars
-                {filteredBars.length > 0 && (
-                  <>
-                    {" • "}
-                    {new Date(filteredBars[0].t).toLocaleTimeString("en-US", {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                    {" - "}
-                    {new Date(
-                      filteredBars[filteredBars.length - 1].t
-                    ).toLocaleTimeString("en-US", {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </>
-                )}
-              </span>
-              <span className="flex items-center gap-1">
-                <span
-                  className={`h-1.5 w-1.5 rounded-full ${
-                    isConnected ? "bg-green-500" : "bg-red-500"
-                  }`}
-                />
+    <div className="flex flex-col gap-4 h-full">
+      {/* Chart Section */}
+      <Card className="flex flex-col flex-1 min-h-[400px]">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+          <div className="flex items-center gap-3">
+            {isEditingTicker ? (
+              <Input
+                ref={tickerInputRef}
+                type="text"
+                value={tickerInput}
+                onChange={(e) => setTickerInput(e.target.value.toUpperCase())}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    handleTickerSubmit();
+                  } else if (e.key === "Escape") {
+                    setTickerInput(symbol);
+                    setIsEditingTicker(false);
+                  }
+                }}
+                onBlur={handleTickerSubmit}
+                className="h-8 w-24 text-lg font-semibold"
+                placeholder="Ticker"
+              />
+            ) : (
+              <CardTitle
+                className="text-lg font-semibold cursor-pointer hover:text-primary transition-colors"
+                onClick={() => setIsEditingTicker(true)}
+                title="Click to change ticker (press T)"
+              >
+                {symbol}
+              </CardTitle>
+            )}
+            <div className="flex items-center gap-1.5">
+              <div
+                className={`h-2 w-2 rounded-full ${
+                  isConnected ? "bg-green-500" : "bg-red-500"
+                }`}
+                title={isConnected ? "Live" : "Disconnected"}
+              />
+              <span className="text-xs text-muted-foreground">
                 {isConnected ? "Live" : "Disconnected"}
               </span>
             </div>
-          </>
-        ) : (
-          <div className="flex h-full items-center justify-center text-muted-foreground">
-            {isConnected
-              ? "Waiting for data..."
-              : "Connecting to real-time feed..."}
           </div>
-        )}
-      </CardContent>
-    </Card>
+          <div className="flex items-center gap-2">
+            <div className="flex gap-1">
+              <Button
+                variant={timeframe === "1min" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setTimeframe("1min")}
+                title="1-minute bars (press 1)"
+              >
+                1m
+              </Button>
+              <Button
+                variant={timeframe === "5min" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setTimeframe("5min")}
+                title="5-minute bars (press 5)"
+              >
+                5m
+              </Button>
+            </div>
+            <Button
+              variant={viewMode === "focus" ? "default" : "outline"}
+              size="sm"
+              onClick={() => {
+                setViewMode((prev) =>
+                  prev === "default" ? "focus" : "default"
+                );
+              }}
+              title="Focus on last 2 hours (press F)"
+            >
+              Focus
+            </Button>
+            {onClose && (
+              <Button variant="ghost" size="sm" onClick={onClose}>
+                ✕
+              </Button>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent className="flex-1 min-h-0 p-4">
+          {isLoadingHistory ? (
+            <div className="flex h-full items-center justify-center text-muted-foreground">
+              Loading historical data...
+            </div>
+          ) : filteredBars.length > 0 ? (
+            <>
+              <CandlestickChart
+                data={filteredBars}
+                height="calc(100% - 24px)"
+                viewMode={viewMode}
+                showEMA12={true}
+                showEMA26={true}
+                showVWAP={true}
+                showVolume={true}
+                showMACD={true}
+                showLegend={true}
+              />
+              <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
+                <span>
+                  {filteredBars.length} bars
+                  {filteredBars.length > 0 && (
+                    <>
+                      {" • "}
+                      {new Date(filteredBars[0].t).toLocaleTimeString("en-US", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                      {" - "}
+                      {new Date(
+                        filteredBars[filteredBars.length - 1].t
+                      ).toLocaleTimeString("en-US", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </>
+                  )}
+                </span>
+                <span className="flex items-center gap-1">
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full ${
+                      isConnected ? "bg-green-500" : "bg-red-500"
+                    }`}
+                  />
+                  {isConnected ? "Live" : "Disconnected"}
+                </span>
+              </div>
+            </>
+          ) : (
+            <div className="flex h-full items-center justify-center text-muted-foreground">
+              {isConnected
+                ? "Waiting for data..."
+                : "Connecting to real-time feed..."}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Financial Info Panel */}
+      <FinancialInfoPanel ticker={symbol} />
+    </div>
   );
 }

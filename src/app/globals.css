@@ -5,65 +5,65 @@
 @layer base {
   :root {
     /* Primary color scheme: Green, Gold, White, Off-Black */
-    --background: 0 0% 8%;           /* Off-black background */
-    --foreground: 0 0% 100%;         /* White text */
-    --card: 0 0% 12%;                /* Slightly lighter off-black for cards */
-    --card-foreground: 0 0% 100%;    /* White text on cards */
-    --popover: 0 0% 12%;             /* Popover background */
+    --background: 0 0% 8%; /* Off-black background */
+    --foreground: 0 0% 100%; /* White text */
+    --card: 0 0% 12%; /* Slightly lighter off-black for cards */
+    --card-foreground: 0 0% 100%; /* White text on cards */
+    --popover: 0 0% 12%; /* Popover background */
     --popover-foreground: 0 0% 100%; /* White text in popovers */
-    --primary: 142 76% 36%;          /* Dark green */
+    --primary: 142 76% 36%; /* Dark green */
     --primary-foreground: 0 0% 100%; /* White text on primary */
-    --secondary: 142 76% 60%;        /* Light green */
+    --secondary: 142 76% 60%; /* Light green */
     --secondary-foreground: 0 0% 100%; /* White text on light green */
-    --muted: 0 0% 15%;               /* Muted off-black */
-    --muted-foreground: 0 0% 70%;    /* Muted white/gray text */
-    --accent: 0 0% 15%;              /* Accent background */
-    --accent-foreground: 0 0% 100%;  /* White text on accent */
-    --destructive: 0 84.2% 60.2%;    /* Keep red for destructive actions */
+    --muted: 0 0% 15%; /* Muted off-black */
+    --muted-foreground: 0 0% 70%; /* Muted white/gray text */
+    --accent: 0 0% 15%; /* Accent background */
+    --accent-foreground: 0 0% 100%; /* White text on accent */
+    --destructive: 0 84.2% 60.2%; /* Keep red for destructive actions */
     --destructive-foreground: 0 0% 100%; /* White text on destructive */
-    --border: 0 0% 20%;              /* Dark borders */
-    --input: 0 0% 15%;               /* Input background */
-    --ring: 142 76% 36%;             /* Green focus ring */
+    --border: 0 0% 20%; /* Dark borders */
+    --input: 0 0% 15%; /* Input background */
+    --ring: 142 76% 36%; /* Green focus ring */
     --radius: 0.5rem;
-    --sidebar-background: 0 0% 6%;   /* Darker sidebar */
+    --sidebar-background: 0 0% 6%; /* Darker sidebar */
     --sidebar-foreground: 0 0% 100%; /* White sidebar text */
-    --sidebar-primary: 142 76% 36%;  /* Green sidebar primary */
+    --sidebar-primary: 142 76% 36%; /* Green sidebar primary */
     --sidebar-primary-foreground: 0 0% 100%; /* White text on sidebar primary */
-    --sidebar-accent: 0 0% 12%;      /* Sidebar accent */
+    --sidebar-accent: 0 0% 12%; /* Sidebar accent */
     --sidebar-accent-foreground: 0 0% 100%; /* White text on sidebar accent */
-    --sidebar-border: 0 0% 20%;      /* Sidebar borders */
-    --sidebar-ring: 142 76% 36%;     /* Green sidebar ring */
+    --sidebar-border: 0 0% 20%; /* Sidebar borders */
+    --sidebar-ring: 142 76% 36%; /* Green sidebar ring */
   }
 
   .dark {
     /* Enhanced dark theme with slightly different tones for variety */
-    --background: 0 0% 6%;           /* Even darker background */
-    --foreground: 0 0% 95%;          /* Slightly softer white */
-    --card: 0 0% 10%;                /* Darker cards */
-    --card-foreground: 0 0% 95%;     /* Softer white text */
-    --popover: 0 0% 10%;             /* Darker popovers */
-    --popover-foreground: 0 0% 95%;  /* Softer white text */
-    --primary: 142 76% 40%;          /* Slightly brighter dark green */
+    --background: 0 0% 6%; /* Even darker background */
+    --foreground: 0 0% 95%; /* Slightly softer white */
+    --card: 0 0% 10%; /* Darker cards */
+    --card-foreground: 0 0% 95%; /* Softer white text */
+    --popover: 0 0% 10%; /* Darker popovers */
+    --popover-foreground: 0 0% 95%; /* Softer white text */
+    --primary: 142 76% 40%; /* Slightly brighter dark green */
     --primary-foreground: 0 0% 100%; /* Pure white on primary */
-    --secondary: 142 76% 65%;        /* Slightly brighter light green */
+    --secondary: 142 76% 65%; /* Slightly brighter light green */
     --secondary-foreground: 0 0% 100%; /* White text on light green */
-    --muted: 0 0% 12%;               /* Darker muted */
-    --muted-foreground: 0 0% 65%;    /* Softer muted text */
-    --accent: 0 0% 12%;              /* Darker accent */
-    --accent-foreground: 0 0% 95%;   /* Softer white on accent */
-    --destructive: 0 62.8% 30.6%;    /* Keep red for destructive */
+    --muted: 0 0% 12%; /* Darker muted */
+    --muted-foreground: 0 0% 65%; /* Softer muted text */
+    --accent: 0 0% 12%; /* Darker accent */
+    --accent-foreground: 0 0% 95%; /* Softer white on accent */
+    --destructive: 0 62.8% 30.6%; /* Keep red for destructive */
     --destructive-foreground: 0 0% 100%; /* White text on destructive */
-    --border: 0 0% 18%;              /* Darker borders */
-    --input: 0 0% 12%;               /* Darker input background */
-    --ring: 142 76% 40%;             /* Brighter green focus ring */
-    --sidebar-background: 0 0% 4%;   /* Darkest sidebar */
-    --sidebar-foreground: 0 0% 95%;  /* Softer white sidebar text */
-    --sidebar-primary: 142 76% 40%;  /* Brighter green sidebar primary */
+    --border: 0 0% 18%; /* Darker borders */
+    --input: 0 0% 12%; /* Darker input background */
+    --ring: 142 76% 40%; /* Brighter green focus ring */
+    --sidebar-background: 0 0% 4%; /* Darkest sidebar */
+    --sidebar-foreground: 0 0% 95%; /* Softer white sidebar text */
+    --sidebar-primary: 142 76% 40%; /* Brighter green sidebar primary */
     --sidebar-primary-foreground: 0 0% 100%; /* Pure white on sidebar primary */
-    --sidebar-accent: 0 0% 8%;       /* Darker sidebar accent */
+    --sidebar-accent: 0 0% 8%; /* Darker sidebar accent */
     --sidebar-accent-foreground: 0 0% 95%; /* Softer white on sidebar accent */
-    --sidebar-border: 0 0% 18%;      /* Darker sidebar borders */
-    --sidebar-ring: 142 76% 40%;     /* Brighter green sidebar ring */
+    --sidebar-border: 0 0% 18%; /* Darker sidebar borders */
+    --sidebar-ring: 142 76% 40%; /* Brighter green sidebar ring */
   }
 }
 
@@ -80,203 +80,207 @@
   .markdown-content h1 {
     @apply text-4xl font-bold mb-8 mt-8 text-foreground border-b-2 border-primary pb-3;
   }
-  
+
   .markdown-content h2 {
     @apply text-3xl font-bold mb-6 mt-8 text-secondary;
   }
-  
+
   .markdown-content h3 {
     @apply text-2xl font-semibold mb-4 mt-6 text-foreground;
   }
-  
+
   .markdown-content h4 {
     @apply text-xl font-semibold mb-3 mt-5 text-secondary;
   }
-  
+
   .markdown-content p {
     @apply text-foreground mb-4 leading-7;
   }
-  
+
   .markdown-content strong {
     @apply text-foreground font-semibold;
   }
-  
+
   .markdown-content a {
     @apply text-primary no-underline hover:underline;
   }
-  
-  .markdown-content ul, .markdown-content ol {
+
+  .markdown-content ul,
+  .markdown-content ol {
     @apply mb-6 pl-6;
   }
-  
+
   .markdown-content ul {
     @apply list-disc;
   }
-  
+
   .markdown-content ol {
     @apply list-decimal;
   }
-  
+
   .markdown-content ol li::marker {
     @apply text-secondary; /* Light green numbers */
   }
-  
+
   .markdown-content li {
     @apply text-foreground mb-2 leading-relaxed;
   }
-  
-  .markdown-content ul ul, .markdown-content ol ol, .markdown-content ul ol, .markdown-content ol ul {
+
+  .markdown-content ul ul,
+  .markdown-content ol ol,
+  .markdown-content ul ol,
+  .markdown-content ol ul {
     @apply mt-2 mb-2;
   }
-  
+
   .markdown-content ul ul {
     @apply list-none;
   }
-  
+
   .markdown-content ul ul ul {
     @apply list-none;
   }
-  
+
   .markdown-content li > p {
     @apply mb-2;
   }
-  
+
   .markdown-content li > p:last-child {
     @apply mb-0;
   }
-  
+
   .markdown-content blockquote {
     @apply border-l-4 border-primary bg-muted p-4 rounded-r-md;
   }
-  
+
   .markdown-content code {
     @apply text-foreground bg-muted px-1 py-0.5 rounded text-sm;
   }
-  
+
   .markdown-content pre {
     @apply bg-muted p-4 rounded-md overflow-x-auto;
   }
-  
+
   .markdown-content table {
     @apply text-foreground;
   }
-  
+
   .markdown-content th {
     @apply bg-muted font-semibold p-2 border border-border;
   }
-  
+
   .markdown-content td {
     @apply p-2 border border-border;
   }
-  
+
   .markdown-content hr {
     @apply border-border;
   }
-  
+
   /* Enhanced bullet point styling with new color scheme */
   .markdown-content ul li::marker {
     @apply text-secondary; /* Light green bullets */
   }
-  
+
   /* Custom bullet styles for nested lists */
   .markdown-content ul ul li::before {
     content: "◦";
     @apply text-secondary mr-2; /* Light green nested bullets */
   }
-  
+
   .markdown-content ul ul ul li::before {
     content: "▪";
     @apply text-secondary mr-2; /* Light green for deeply nested */
   }
-  
+
   /* Better spacing for list items with multiple paragraphs */
   .markdown-content li p + p {
     @apply mt-2;
   }
-  
+
   /* Improved nested list indentation */
   .markdown-content ul ul {
     @apply pl-4;
   }
-  
+
   .markdown-content ul ul ul {
     @apply pl-4;
   }
-  
+
   .markdown-content ol ol {
     @apply pl-4;
   }
-  
+
   .markdown-content ol ol ol {
     @apply pl-4;
   }
-  
+
   /* Task list styling (for GitHub-style checkboxes) */
   .markdown-content li input[type="checkbox"] {
     @apply mr-2 accent-primary;
   }
-  
+
   /* Better styling for lists with code blocks */
   .markdown-content li pre {
     @apply mt-2 mb-2;
   }
-  
+
   .markdown-content li code {
     @apply text-sm;
   }
-  
+
   /* Enhanced readability for new color scheme */
-  
+
   .markdown-content strong {
     @apply font-semibold; /* No color, just bold */
   }
-  
+
   .markdown-content a {
     @apply text-primary hover:text-secondary transition-colors duration-200;
   }
-  
+
   .markdown-content blockquote {
     @apply border-l-4 border-secondary bg-muted/50 p-4 rounded-r-md;
   }
-  
+
   .markdown-content code {
     @apply text-foreground bg-muted px-2 py-1 rounded text-sm font-mono;
   }
-  
+
   .markdown-content pre {
     @apply bg-muted/80 p-4 rounded-md overflow-x-auto border border-border;
   }
-  
+
   .markdown-content table {
     @apply border-collapse border border-border;
   }
-  
+
   .markdown-content th {
     @apply bg-muted font-semibold p-3 border border-border text-foreground;
   }
-  
+
   .markdown-content td {
     @apply p-3 border border-border text-foreground;
   }
-  
+
   /* Additional visual hierarchy improvements */
   .markdown-content h1:first-child {
     @apply mt-0; /* Remove top margin from first h1 */
   }
-  
+
   .markdown-content h2 + h3 {
     @apply mt-4; /* Reduce margin when h3 follows h2 */
   }
-  
+
   .markdown-content h3 + h4 {
     @apply mt-3; /* Reduce margin when h4 follows h3 */
   }
-  
+
   /* Better spacing for sections */
   .markdown-content h2 {
     @apply pt-2; /* Add some top padding for visual separation */
   }
-  
+
   .markdown-content h3 {
     @apply pt-1; /* Add some top padding for visual separation */
   }
@@ -287,16 +291,28 @@
   .subtle-hover {
     @apply transition-colors hover:bg-muted/30;
   }
-  
+
   .subtle-selected {
     @apply bg-primary/5 border-l-2 border-l-primary/40;
   }
-  
+
   .subtle-interactive {
     @apply cursor-pointer transition-colors hover:bg-muted/30;
   }
-  
+
   .subtle-interactive-selected {
     @apply cursor-pointer transition-colors hover:bg-muted/30 bg-primary/5 border-l-2 border-l-primary/40;
   }
+}
+
+/* Candlestick chart time axis styling */
+.candlestick-chart-container tr:last-child td {
+  opacity: 0.8;
+  transition: opacity 0.2s ease;
+}
+
+/* Ensure first tick (with date) stays at full opacity */
+.candlestick-chart-container tr:last-child td:first-child {
+  opacity: 1;
+  font-weight: 500;
 }

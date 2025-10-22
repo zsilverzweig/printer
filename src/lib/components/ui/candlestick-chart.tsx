@@ -250,16 +250,35 @@ export function CandlestickChart({
         rightOffset: 8,
         barSpacing: 8,
         timeVisible: true,
-        secondsVisible: true,
+        secondsVisible: false,
         shiftVisibleRangeOnNewBar: true, // Smoothly shift view when new bars arrive
         // Timestamps are in Unix epoch (seconds), library uses browser's local timezone
-        tickMarkFormatter: (time: number) => {
+        tickMarkFormatter: (
+          time: number,
+          tickMarkType: any,
+          locale: string
+        ) => {
           const date = new Date(time * 1000);
-          const month = (date.getMonth() + 1).toString().padStart(2, "0");
-          const day = date.getDate().toString().padStart(2, "0");
-          const hours = date.getHours().toString().padStart(2, "0");
+          const hours = date.getHours();
           const minutes = date.getMinutes().toString().padStart(2, "0");
-          return `${month}/${day} ${hours}:${minutes}`;
+
+          // Format hour in 12-hour format with AM/PM
+          const hour12 = hours % 12 || 12;
+          const ampm = hours >= 12 ? "PM" : "AM";
+
+          // Check if this is a major tick (day boundary or first of day)
+          // tickMarkType: 0 = TimePoint, 1 = DayOfMonth, 2 = Month
+          const isMajorTick = tickMarkType === 1 || tickMarkType === 2;
+
+          if (isMajorTick) {
+            // Show date + time for major ticks (day boundaries)
+            const month = (date.getMonth() + 1).toString().padStart(2, "0");
+            const day = date.getDate().toString().padStart(2, "0");
+            return `${month}/${day} ${hour12}:${minutes} ${ampm}`;
+          } else {
+            // Show only time for minor ticks
+            return `${hour12}:${minutes} ${ampm}`;
+          }
         },
       },
       crosshair: { mode: CrosshairMode.Normal },
@@ -492,7 +511,7 @@ export function CandlestickChart({
   const signalColor = resolveColor("--rose-400", "#fb7185");
   return (
     <div
-      className={cn("relative w-full", className)}
+      className={cn("relative w-full candlestick-chart-container", className)}
       style={{ height: styleHeight }}
     >
       {showLegend && (
