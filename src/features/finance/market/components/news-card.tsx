@@ -26,6 +26,15 @@ interface NewsAnalysisData {
   key_events: KeyEvent[];
   news_summary: string;
   trade_recommendation: string;
+  raw_news: Array<{
+    title: string;
+    description?: string;
+    url?: string;
+    article_url?: string;
+    published_utc?: string;
+    publisher?: { name?: string };
+    author?: string;
+  }>;
 }
 
 interface NewsCardProps {
@@ -45,6 +54,9 @@ export function NewsCard({ ticker, onNewsLoad }: NewsCardProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const [dateRange, setDateRange] = useState<"24h" | "48h" | "7d" | "30d">(
+    "7d"
+  );
 
   const formatDate = (dateString: string) => {
     try {
@@ -61,7 +73,7 @@ export function NewsCard({ ticker, onNewsLoad }: NewsCardProps) {
 
   const loadNews = async (forceRefresh = false) => {
     // Check cache first
-    const cached = newsCache.get(ticker);
+    const cached = newsCache.get(`${ticker}-${dateRange}`);
     const now = Date.now();
 
     if (!forceRefresh && cached && now - cached.timestamp < CACHE_DURATION) {
@@ -81,13 +93,20 @@ export function NewsCard({ ticker, onNewsLoad }: NewsCardProps) {
           "https://"
         ) || "http://localhost:8000";
 
+      // Map date ranges to days
+      const daysMap = { "24h": 1, "48h": 2, "7d": 7, "30d": 30 };
+      const days = daysMap[dateRange];
+
       // Add timeout to prevent blocking
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
 
-      const response = await fetch(`${baseUrl}/news/analyze/${ticker}`, {
-        signal: controller.signal,
-      });
+      const response = await fetch(
+        `${baseUrl}/news/analyze/${ticker}?days=${days}`,
+        {
+          signal: controller.signal,
+        }
+      );
 
       clearTimeout(timeoutId);
 
@@ -99,8 +118,8 @@ export function NewsCard({ ticker, onNewsLoad }: NewsCardProps) {
 
       const data = await response.json();
 
-      // Cache the data
-      newsCache.set(ticker, { data, timestamp: now });
+      // Cache the data with dateRange in key
+      newsCache.set(`${ticker}-${dateRange}`, { data, timestamp: now });
 
       setNewsData(data);
       onNewsLoad?.(data);
@@ -121,10 +140,10 @@ export function NewsCard({ ticker, onNewsLoad }: NewsCardProps) {
     }
   };
 
-  // Auto-load news when ticker changes, but don't block the UI
+  // Auto-load news when ticker or dateRange changes
   useEffect(() => {
     if (ticker) {
-      // Reset state for new ticker
+      // Reset state for new ticker or date range
       setNewsData(null);
       setError(null);
       setIsInitialLoad(true);
@@ -132,7 +151,8 @@ export function NewsCard({ ticker, onNewsLoad }: NewsCardProps) {
       // Load news asynchronously without blocking
       loadNews();
     }
-  }, [ticker]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ticker, dateRange]);
 
   if (isLoading) {
     return (
@@ -215,29 +235,47 @@ export function NewsCard({ ticker, onNewsLoad }: NewsCardProps) {
   return (
     <Card className="h-full">
       <CardHeader className="pb-3">
-        <CardTitle className="flex items-center justify-between text-lg">
-          <div className="flex items-center gap-2">
-            <TrendingUp className="h-4 w-4" />
-            News Analysis
+        <div className="space-y-2">
+          <CardTitle className="flex items-center justify-between text-lg">
+            <div className="flex items-center gap-2">
+              <TrendingUp className="h-4 w-4" />
+              News Analysis
+            </div>
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" className="text-xs">
+                {formatDate(newsData.analyzed_at)}
+              </Badge>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => loadNews(true)}
+                disabled={isLoading}
+                className="h-6 w-6 p-0"
+                title="Refresh news"
+              >
+                <RefreshCw
+                  className={`h-3 w-3 ${isLoading ? "animate-spin" : ""}`}
+                />
+              </Button>
+            </div>
+          </CardTitle>
+
+          {/* Date Range Selector */}
+          <div className="flex gap-1">
+            {(["24h", "48h", "7d", "30d"] as const).map((range) => (
+              <Button
+                key={range}
+                variant={dateRange === range ? "default" : "outline"}
+                size="sm"
+                onClick={() => setDateRange(range)}
+                disabled={isLoading}
+                className="h-7 px-2 text-xs"
+              >
+                {range}
+              </Button>
+            ))}
           </div>
-          <div className="flex items-center gap-2">
-            <Badge variant="outline" className="text-xs">
-              {formatDate(newsData.analyzed_at)}
-            </Badge>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => loadNews(true)}
-              disabled={isLoading}
-              className="h-6 w-6 p-0"
-              title="Refresh news"
-            >
-              <RefreshCw
-                className={`h-3 w-3 ${isLoading ? "animate-spin" : ""}`}
-              />
-            </Button>
-          </div>
-        </CardTitle>
+        </div>
       </CardHeader>
 
       <CardContent className="space-y-4">
@@ -315,6 +353,57 @@ export function NewsCard({ ticker, onNewsLoad }: NewsCardProps) {
             <h4 className="text-sm font-medium">Key Events</h4>
             <div className="text-xs text-muted-foreground p-3 bg-muted rounded-lg text-center">
               No significant events identified in recent news
+            </div>
+          </div>
+        )}
+
+        {/* Raw News List */}
+        {newsData.raw_news && newsData.raw_news.length > 0 && (
+          <div className="space-y-2">
+            <h4 className="text-sm font-medium">
+              Recent Articles ({newsData.raw_news.length})
+            </h4>
+            <div className="space-y-2 max-h-60 overflow-y-auto">
+              {newsData.raw_news.map((article, idx) => (
+                <div
+                  key={idx}
+                  className="border rounded-lg p-2 text-xs hover:bg-muted/30 transition-colors"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1">
+                      <h5 className="font-medium text-xs mb-1 line-clamp-2">
+                        {article.title}
+                      </h5>
+                      {article.description && (
+                        <p className="text-muted-foreground text-xs line-clamp-2 mb-1">
+                          {article.description}
+                        </p>
+                      )}
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <span>{article.publisher?.name || "Unknown"}</span>
+                        <span>•</span>
+                        <span>{formatDate(article.published_utc || "")}</span>
+                      </div>
+                    </div>
+                    {(article.url || article.article_url) && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() =>
+                          window.open(
+                            article.url || article.article_url,
+                            "_blank"
+                          )
+                        }
+                        className="h-6 w-6 p-0 shrink-0"
+                        title="Read article"
+                      >
+                        <ExternalLink className="h-3 w-3" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         )}
