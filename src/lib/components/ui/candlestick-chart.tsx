@@ -17,8 +17,8 @@ import * as React from "react";
 
 import type { AggregateBar } from "@/lib/types/market";
 import { computeEMA, computeMACD, computeVWAP } from "@/lib/utils/indicators";
+import { isTradingDay } from "@/lib/utils/trading-days";
 import { cn } from "@/lib/utils/utils";
-import { isTradingDay, getTradingDayBoundaries } from "@/lib/utils/trading-days";
 
 interface CandlestickChartProps {
   data: AggregateBar[];
@@ -237,10 +237,11 @@ export function CandlestickChart({
     const border = resolveColor("--border", "#374151");
     const up = resolveColor("--green-500", "#10b981");
     const down = resolveColor("--red-500", "#ef4444");
-    
+
     // Trading day highlighting colors
     const tradingDayBg = tradingDayColor || resolveColor("--muted", "#1f2937");
-    const nonTradingDayBg = nonTradingDayColor || resolveColor("--muted-foreground", "#374151");
+    const nonTradingDayBg =
+      nonTradingDayColor || resolveColor("--muted-foreground", "#374151");
 
     const initialHeight =
       containerRef.current.clientHeight ||
@@ -326,20 +327,20 @@ export function CandlestickChart({
       if (candles.length > 0) {
         const firstTime = candles[0].time as number;
         const lastTime = candles[candles.length - 1].time as number;
-        
+
         // Create highlighting for each day in the data range
         const currentDate = new Date(firstTime * 1000);
         const endDate = new Date(lastTime * 1000);
-        
+
         while (currentDate <= endDate) {
           const dayStart = new Date(currentDate);
           dayStart.setHours(0, 0, 0, 0);
-          
+
           const dayEnd = new Date(currentDate);
           dayEnd.setHours(23, 59, 59, 999);
-          
+
           const isTrading = isTradingDay(currentDate);
-          
+
           // Add vertical line highlighting for trading days
           if (isTrading) {
             const tradingDaySeries = chart.addLineSeries({
@@ -348,17 +349,20 @@ export function CandlestickChart({
               priceLineVisible: false,
               lastValueVisible: false,
             });
-            
+
             // Create vertical lines to mark trading day boundaries
-            tradingDaySeries.setData([{
-              time: Math.floor(dayStart.getTime() / 1000),
-              value: 0,
-            }, {
-              time: Math.floor(dayEnd.getTime() / 1000),
-              value: 0,
-            }]);
+            tradingDaySeries.setData([
+              {
+                time: Math.floor(dayStart.getTime() / 1000),
+                value: 0,
+              },
+              {
+                time: Math.floor(dayEnd.getTime() / 1000),
+                value: 0,
+              },
+            ]);
           }
-          
+
           currentDate.setDate(currentDate.getDate() + 1);
         }
       }
@@ -566,12 +570,14 @@ export function CandlestickChart({
   const macdColor = resolveColor("--cyan-400", "#22d3ee");
   const signalColor = resolveColor("--rose-400", "#fb7185");
   return (
-    <div
-      className={cn("relative w-full candlestick-chart-container", className)}
-      style={{ height: styleHeight }}
-    >
+    <div className={cn("w-full candlestick-chart-container", className)}>
+      <div
+        ref={containerRef}
+        className="w-full"
+        style={{ height: styleHeight }}
+      />
       {showLegend && (
-        <div className="pointer-events-none absolute left-2 top-2 z-10 rounded-md border border-border bg-background/80 px-2 py-1 text-[11px] text-muted-foreground shadow-sm backdrop-blur">
+        <div className="mt-2 px-1 text-[11px] text-muted-foreground">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             {showEMA12 && (
               <span className="inline-flex items-center">
@@ -600,15 +606,6 @@ export function CandlestickChart({
                 VWAP
               </span>
             )}
-            {showVolume && (
-              <span className="inline-flex items-center">
-                <span
-                  className="mr-1 inline-block h-2 w-2 rounded-sm"
-                  style={{ backgroundColor: volumeColor }}
-                />
-                Volume
-              </span>
-            )}
             {showMACD && (
               <span className="inline-flex items-center">
                 <span
@@ -624,7 +621,7 @@ export function CandlestickChart({
                   className="mr-1 inline-block h-2 w-2 rounded-sm"
                   style={{ backgroundColor: signalColor }}
                 />
-                Signal 9
+                Signal
               </span>
             )}
             {showTradingDays && (
@@ -639,7 +636,6 @@ export function CandlestickChart({
           </div>
         </div>
       )}
-      <div ref={containerRef} className="h-full w-full" />
     </div>
   );
 }

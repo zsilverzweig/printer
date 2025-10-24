@@ -11,6 +11,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/lib/components/ui/card";
+import { formatET, formatETTime, useTimeSince } from "@/lib/utils/date-time";
 
 interface KeyEvent {
   event_id: string;
@@ -125,7 +126,6 @@ export function NewsCard({ ticker, onNewsLoad }: NewsCardProps) {
       setNewsData(data);
       onNewsLoad?.(data);
     } catch (error) {
-      console.error("Error fetching news analysis:", error);
       if (error instanceof Error && error.name === "AbortError") {
         setError(
           "Request timed out. News analysis is taking longer than expected."
@@ -197,7 +197,7 @@ export function NewsCard({ ticker, onNewsLoad }: NewsCardProps) {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={loadNews}
+                onClick={() => loadNews()}
                 className="w-full"
                 disabled={isLoading}
               >
@@ -306,8 +306,8 @@ export function NewsCard({ ticker, onNewsLoad }: NewsCardProps) {
             <h4 className="text-sm font-medium">
               Key Events ({newsData.key_events.length})
             </h4>
-            <div className="space-y-2 max-h-40 overflow-y-auto">
-              {newsData.key_events.slice(0, 3).map((event) => (
+            <div className="space-y-2">
+              {newsData.key_events.map((event) => (
                 <div
                   key={event.event_id}
                   className="border rounded-lg p-3 text-xs hover:bg-muted/50 transition-colors"
@@ -333,20 +333,12 @@ export function NewsCard({ ticker, onNewsLoad }: NewsCardProps) {
                     {event.summary}
                   </p>
 
-                  <div className="flex items-center gap-3 text-muted-foreground">
-                    <div className="flex items-center gap-1">
-                      <Clock className="h-3 w-3" />
-                      <span>{formatDate(event.published_at)}</span>
-                    </div>
-                  </div>
+                  <EventTiming
+                    publishedUtc={event.published_at}
+                    eventUtc={event.event_at}
+                  />
                 </div>
               ))}
-
-              {newsData.key_events.length > 3 && (
-                <div className="text-xs text-muted-foreground text-center py-1">
-                  +{newsData.key_events.length - 3} more events
-                </div>
-              )}
             </div>
           </div>
         ) : (
@@ -410,5 +402,33 @@ export function NewsCard({ ticker, onNewsLoad }: NewsCardProps) {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function EventTiming({
+  publishedUtc,
+  eventUtc,
+}: {
+  publishedUtc: string;
+  eventUtc: string;
+}) {
+  // Prefer event time; fall back to published time
+  const displayUtc = eventUtc || publishedUtc;
+  const since = useTimeSince(displayUtc);
+  return (
+    <div className="flex items-center gap-3 text-muted-foreground">
+      <div className="flex items-center gap-1">
+        <Clock className="h-3 w-3" />
+        <span>ET {formatETTime(displayUtc)}</span>
+        <span>•</span>
+        <span>{formatET(displayUtc)}</span>
+        {since && (
+          <>
+            <span>•</span>
+            <span>{since}</span>
+          </>
+        )}
+      </div>
+    </div>
   );
 }

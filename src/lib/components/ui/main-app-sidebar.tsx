@@ -7,6 +7,7 @@ import {
   Building2,
   FileText,
   Home,
+  Newspaper,
   Settings,
   Shield,
   Target,
@@ -74,6 +75,12 @@ export function MainAppSidebar() {
           title: "Company Research",
           href: "/company-research",
           icon: <Building2 className="h-4 w-4" />,
+        },
+        {
+          id: "news-test",
+          title: "News Test",
+          href: "/news-test",
+          icon: <Newspaper className="h-4 w-4" />,
         },
         {
           id: "analysis",
