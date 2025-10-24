@@ -253,6 +253,19 @@ export function CandlestickChart({
         background: { color: "transparent" },
         textColor: fg,
       },
+      localization: {
+        // Format time in local timezone for crosshair tooltip
+        timeFormatter: (time: number) => {
+          const date = new Date(time * 1000);
+          const month = date.getMonth() + 1;
+          const day = date.getDate();
+          const hours = date.getHours();
+          const minutes = date.getMinutes().toString().padStart(2, "0");
+          const hour12 = hours % 12 || 12;
+          const ampm = hours >= 12 ? "PM" : "AM";
+          return `${month}/${day} ${hour12}:${minutes} ${ampm}`;
+        },
+      },
       grid: {
         vertLines: { color: grid },
         horzLines: { color: grid },
@@ -260,6 +273,7 @@ export function CandlestickChart({
       rightPriceScale: { borderColor: border },
       timeScale: {
         borderColor: border,
+        textColor: "#fef08a", // Light yellow color for time axis
         rightOffset: 8,
         barSpacing: 8,
         timeVisible: true,
@@ -294,7 +308,15 @@ export function CandlestickChart({
           }
         },
       },
-      crosshair: { mode: CrosshairMode.Normal },
+      crosshair: {
+        mode: CrosshairMode.Normal,
+        vertLine: {
+          labelBackgroundColor: "#374151",
+        },
+        horzLine: {
+          labelBackgroundColor: "#374151",
+        },
+      },
       // Enable smooth animations
       handleScroll: {
         mouseWheel: true,
@@ -418,9 +440,11 @@ export function CandlestickChart({
         priceFormat: { type: "volume" },
         color: resolveColor("--muted-foreground", "#6b7280"),
       });
+      const volumeMargins = showMACD
+        ? { top: 0.75, bottom: 0.01 }
+        : { top: 0.75, bottom: 0.01 };
       chart.priceScale("volume").applyOptions({
-        // Reserve bottom quarter for Volume
-        scaleMargins: { top: 0.75, bottom: 0 },
+        scaleMargins: volumeMargins,
       });
     }
 

@@ -126,9 +126,9 @@ export function FinancialInfoPanel({ ticker }: FinancialInfoPanelProps) {
   const cashFlow = latestFinancial?.financials?.cash_flow_statement;
 
   return (
-    <Card className="w-full">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
+    <Card className="w-full flex-shrink-0">
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-base">
           {ticker}
           {details?.name && (
             <span className="text-sm font-normal text-muted-foreground">
@@ -137,13 +137,13 @@ export function FinancialInfoPanel({ ticker }: FinancialInfoPanelProps) {
           )}
         </CardTitle>
         {details?.description && (
-          <CardDescription className="line-clamp-2">
+          <CardDescription className="line-clamp-1 text-xs">
             {details.description}
           </CardDescription>
         )}
       </CardHeader>
 
-      <CardContent>
+      <CardContent className="pt-0">
         <Tabs defaultValue="overview" className="w-full">
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="overview">Overview</TabsTrigger>

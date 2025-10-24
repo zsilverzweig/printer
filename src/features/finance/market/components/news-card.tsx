@@ -157,15 +157,15 @@ export function NewsCard({ ticker, onNewsLoad }: NewsCardProps) {
 
   if (isLoading) {
     return (
-      <Card className="h-full">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-lg">
+      <Card className="h-full flex flex-col">
+        <CardHeader className="flex-shrink-0">
+          <CardTitle className="flex items-center gap-2 text-base">
             <TrendingUp className="h-4 w-4" />
             News Analysis
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="flex flex-col items-center justify-center h-32 space-y-2">
+        <CardContent className="flex-1 flex items-center justify-center">
+          <div className="flex flex-col items-center justify-center space-y-2">
             <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
             <div className="text-sm text-muted-foreground text-center">
               {isInitialLoad
@@ -183,14 +183,14 @@ export function NewsCard({ ticker, onNewsLoad }: NewsCardProps) {
 
   if (error) {
     return (
-      <Card className="h-full">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-lg">
+      <Card className="h-full flex flex-col">
+        <CardHeader className="flex-shrink-0">
+          <CardTitle className="flex items-center gap-2 text-base">
             <TrendingUp className="h-4 w-4" />
             News Analysis
           </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex-1 flex items-center justify-center">
           <div className="space-y-3">
             <div className="text-sm text-destructive text-center">{error}</div>
             <div className="flex flex-col space-y-2">
@@ -215,18 +215,16 @@ export function NewsCard({ ticker, onNewsLoad }: NewsCardProps) {
 
   if (!newsData) {
     return (
-      <Card className="h-full">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-lg">
+      <Card className="h-full flex flex-col">
+        <CardHeader className="flex-shrink-0">
+          <CardTitle className="flex items-center gap-2 text-base">
             <TrendingUp className="h-4 w-4" />
             News Analysis
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-center h-32">
-            <div className="text-sm text-muted-foreground">
-              No news data available
-            </div>
+        <CardContent className="flex-1 flex items-center justify-center">
+          <div className="text-sm text-muted-foreground">
+            No news data available
           </div>
         </CardContent>
       </Card>
@@ -234,10 +232,10 @@ export function NewsCard({ ticker, onNewsLoad }: NewsCardProps) {
   }
 
   return (
-    <Card className="h-full">
-      <CardHeader className="pb-3">
+    <Card className="h-full flex flex-col">
+      <CardHeader className="pb-3 flex-shrink-0">
         <div className="space-y-2">
-          <CardTitle className="flex items-center justify-between text-lg">
+          <CardTitle className="flex items-center justify-between text-base">
             <div className="flex items-center gap-2">
               <TrendingUp className="h-4 w-4" />
               News Analysis
@@ -279,7 +277,7 @@ export function NewsCard({ ticker, onNewsLoad }: NewsCardProps) {
         </div>
       </CardHeader>
 
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-4 flex-1 min-h-0 overflow-y-auto">
         {/* News Summary */}
         <div className="space-y-2">
           <h4 className="text-sm font-medium">Summary</h4>
@@ -291,7 +289,7 @@ export function NewsCard({ ticker, onNewsLoad }: NewsCardProps) {
         {/* Trade Recommendation */}
         <div className="space-y-2">
           <h4 className="text-sm font-medium">Analysis</h4>
-          <div className="bg-muted p-3 rounded-lg">
+          <div className="bg-muted p-3 rounded-lg max-h-60 overflow-y-auto">
             <p className="text-xs whitespace-pre-wrap leading-relaxed">
               {typeof newsData.trade_recommendation === "string"
                 ? newsData.trade_recommendation

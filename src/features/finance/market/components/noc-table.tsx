@@ -421,7 +421,7 @@ export function NocTable() {
           <div className="lg:col-span-7 h-[calc(100vh-120px)]">
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 h-full">
               {/* Chart - Takes up 2/3 of the space */}
-              <div className="lg:col-span-2">
+              <div className="lg:col-span-2 h-full">
                 <NocRealtimeChart
                   symbol={selectedStock}
                   onClose={() => setSelectedStock(null)}
@@ -430,7 +430,7 @@ export function NocTable() {
               </div>
 
               {/* News Card - Takes up 1/3 of the space */}
-              <div className="lg:col-span-1">
+              <div className="lg:col-span-1 h-full">
                 <NewsCard ticker={selectedStock} />
               </div>
             </div>

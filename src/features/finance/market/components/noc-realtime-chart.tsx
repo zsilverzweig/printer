@@ -415,9 +415,9 @@ export function NocRealtimeChart({
   );
 
   return (
-    <div className="flex flex-col gap-4 h-full">
+    <div className="flex flex-col gap-2 h-full">
       {/* Chart Section */}
-      <Card className="flex flex-col flex-1 min-h-[400px]">
+      <Card className="flex flex-col flex-1 min-h-0">
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
           <div className="flex items-center gap-3">
             {isEditingTicker ? (
