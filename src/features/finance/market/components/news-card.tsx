@@ -1,5 +1,8 @@
 "use client";
 
+import { Clock, ExternalLink, RefreshCw, TrendingUp } from "lucide-react";
+import { useEffect, useState } from "react";
+
 import { Badge } from "@/lib/components/ui/badge";
 import { Button } from "@/lib/components/ui/button";
 import {
@@ -8,8 +11,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/lib/components/ui/card";
-import { Clock, ExternalLink, RefreshCw, TrendingUp } from "lucide-react";
-import { useEffect, useState } from "react";
 
 interface KeyEvent {
   event_id: string;

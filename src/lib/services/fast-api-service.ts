@@ -12,8 +12,12 @@ const DEFAULT_BASE_URL = process.env.NEXT_PUBLIC_MARKET_API_BASE_URL || "";
 
 export class FastApiService {
   private api: ApiService;
+  private baseUrl: string;
+  private useProxy: boolean;
 
   constructor(baseUrl: string = DEFAULT_BASE_URL) {
+    this.baseUrl = baseUrl;
+    this.useProxy = !baseUrl; // if no direct base URL, use Next.js proxy routes
     this.api = new ApiService(baseUrl);
   }
 
@@ -47,7 +51,10 @@ export class FastApiService {
       ticker: ticker.toUpperCase(),
       limit: String(limit),
     });
-    const url = `/news?${query.toString()}`;
+    const endpoint = this.useProxy
+      ? `/api/market/news?${query.toString()}`
+      : `/news?${query.toString()}`;
+    const url = endpoint;
 
     log.info(
       "[FastApiService] Making news request",

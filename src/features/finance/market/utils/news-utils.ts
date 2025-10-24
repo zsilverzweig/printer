@@ -38,6 +38,7 @@ export function normalizeNewsArticles(rawItems: unknown[]): NewsArticle[] {
         asString(obj["publishedUtc"]) ||
         asString(obj["published_utc"]) ||
         asString(obj["published_at"]) ||
+        asString(obj["published"]) ||
         "";
       const tickers =
         asStringArray(obj["tickers"]) || asStringArray(obj["symbols"]);
