@@ -47,23 +47,83 @@ export class FastApiService {
       ticker: ticker.toUpperCase(),
       limit: String(limit),
     });
-    const res = await this.api.get<unknown>(`/news?${query.toString()}`);
+    const url = `/news?${query.toString()}`;
 
-    let items: unknown[] = [];
-    if (Array.isArray(res)) {
-      items = res as unknown[];
-    } else if (FastApiService.isObject(res)) {
-      const obj = res as Record<string, unknown>;
-      const maybeArticles = obj["articles"];
-      const maybeResults = obj["results"];
-      if (Array.isArray(maybeArticles)) {
-        items = maybeArticles as unknown[];
-      } else if (Array.isArray(maybeResults)) {
-        items = maybeResults as unknown[];
+    log.info(
+      "[FastApiService] Making news request",
+      { ticker, limit, url },
+      "FastApiService"
+    );
+
+    try {
+      const res = await this.api.get<unknown>(url);
+      log.info(
+        "[FastApiService] News API response received",
+        {
+          responseType: typeof res,
+          isArray: Array.isArray(res),
+          keys: FastApiService.isObject(res)
+            ? Object.keys(res as Record<string, unknown>)
+            : null,
+        },
+        "FastApiService"
+      );
+
+      let items: unknown[] = [];
+      if (Array.isArray(res)) {
+        items = res as unknown[];
+        log.info(
+          "[FastApiService] Response is array",
+          { itemCount: items.length },
+          "FastApiService"
+        );
+      } else if (FastApiService.isObject(res)) {
+        const obj = res as Record<string, unknown>;
+        const maybeArticles = obj["articles"];
+        const maybeResults = obj["results"];
+        if (Array.isArray(maybeArticles)) {
+          items = maybeArticles as unknown[];
+          log.info(
+            "[FastApiService] Found articles array",
+            { itemCount: items.length },
+            "FastApiService"
+          );
+        } else if (Array.isArray(maybeResults)) {
+          items = maybeResults as unknown[];
+          log.info(
+            "[FastApiService] Found results array",
+            { itemCount: items.length },
+            "FastApiService"
+          );
+        } else {
+          log.warn(
+            "[FastApiService] No articles or results array found in response",
+            { obj },
+            "FastApiService"
+          );
+        }
+      } else {
+        log.warn(
+          "[FastApiService] Response is not array or object",
+          { res },
+          "FastApiService"
+        );
       }
-    }
 
-    return items;
+      log.info(
+        "[FastApiService] Returning news items",
+        { itemCount: items.length },
+        "FastApiService"
+      );
+      return items;
+    } catch (error) {
+      log.error(
+        "[FastApiService] News API request failed",
+        error instanceof Error ? error.message : String(error),
+        "FastApiService"
+      );
+      throw error;
+    }
   }
 
   async getScreener(date?: string): Promise<ScreenedStockPreview[]> {

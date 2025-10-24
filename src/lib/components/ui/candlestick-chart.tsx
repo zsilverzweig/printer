@@ -18,6 +18,7 @@ import * as React from "react";
 import type { AggregateBar } from "@/lib/types/market";
 import { computeEMA, computeMACD, computeVWAP } from "@/lib/utils/indicators";
 import { cn } from "@/lib/utils/utils";
+import { isTradingDay, getTradingDayBoundaries } from "@/lib/utils/trading-days";
 
 interface CandlestickChartProps {
   data: AggregateBar[];
@@ -34,6 +35,10 @@ interface CandlestickChartProps {
   macdHistogramUpColor?: string; // base color before alpha (e.g., "#10b981")
   macdHistogramDownColor?: string; // base color before alpha (e.g., "#ef4444")
   macdHistogramAlpha?: number; // 0..1 transparency for histogram bars
+  // Trading day highlighting
+  showTradingDays?: boolean; // highlight trading days vs weekends/holidays
+  tradingDayColor?: string; // background color for trading days (e.g., "#1f2937")
+  nonTradingDayColor?: string; // background color for non-trading days (e.g., "#374151")
 }
 
 type BarLike = AggregateBar & {
@@ -208,6 +213,9 @@ export function CandlestickChart({
   macdHistogramUpColor,
   macdHistogramDownColor,
   macdHistogramAlpha,
+  showTradingDays = false,
+  tradingDayColor,
+  nonTradingDayColor,
 }: CandlestickChartProps) {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const chartRef = React.useRef<IChartApi | null>(null);
@@ -229,6 +237,10 @@ export function CandlestickChart({
     const border = resolveColor("--border", "#374151");
     const up = resolveColor("--green-500", "#10b981");
     const down = resolveColor("--red-500", "#ef4444");
+    
+    // Trading day highlighting colors
+    const tradingDayBg = tradingDayColor || resolveColor("--muted", "#1f2937");
+    const nonTradingDayBg = nonTradingDayColor || resolveColor("--muted-foreground", "#374151");
 
     const initialHeight =
       containerRef.current.clientHeight ||
@@ -307,6 +319,50 @@ export function CandlestickChart({
 
     chartRef.current = chart;
     seriesRef.current = series;
+
+    // Add trading day highlighting if enabled
+    if (showTradingDays && data.length > 0) {
+      const candles = mapToCandles(data);
+      if (candles.length > 0) {
+        const firstTime = candles[0].time as number;
+        const lastTime = candles[candles.length - 1].time as number;
+        
+        // Create highlighting for each day in the data range
+        const currentDate = new Date(firstTime * 1000);
+        const endDate = new Date(lastTime * 1000);
+        
+        while (currentDate <= endDate) {
+          const dayStart = new Date(currentDate);
+          dayStart.setHours(0, 0, 0, 0);
+          
+          const dayEnd = new Date(currentDate);
+          dayEnd.setHours(23, 59, 59, 999);
+          
+          const isTrading = isTradingDay(currentDate);
+          
+          // Add vertical line highlighting for trading days
+          if (isTrading) {
+            const tradingDaySeries = chart.addLineSeries({
+              color: tradingDayBg,
+              lineWidth: 1,
+              priceLineVisible: false,
+              lastValueVisible: false,
+            });
+            
+            // Create vertical lines to mark trading day boundaries
+            tradingDaySeries.setData([{
+              time: Math.floor(dayStart.getTime() / 1000),
+              value: 0,
+            }, {
+              time: Math.floor(dayEnd.getTime() / 1000),
+              value: 0,
+            }]);
+          }
+          
+          currentDate.setDate(currentDate.getDate() + 1);
+        }
+      }
+    }
 
     // overlay lines
     ema12Ref.current = chart.addLineSeries({
@@ -569,6 +625,15 @@ export function CandlestickChart({
                   style={{ backgroundColor: signalColor }}
                 />
                 Signal 9
+              </span>
+            )}
+            {showTradingDays && (
+              <span className="inline-flex items-center">
+                <span
+                  className="mr-1 inline-block h-2 w-2 rounded-sm"
+                  style={{ backgroundColor: tradingDayBg }}
+                />
+                Trading Days
               </span>
             )}
           </div>

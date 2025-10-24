@@ -68,10 +68,25 @@ export function computeVWAP(bars: AggregateBar[]): LinePoint[] {
     v?: number;
   }[];
 
-  let cumulativePV = 0;
-  let cumulativeVolume = 0;
   const out: LinePoint[] = [];
+  let currentDay = -1;
+  let dailyPV = 0;
+  let dailyVolume = 0;
+
   for (const bar of sorted) {
+    // Get the day for this bar (timestamp / 86400 to get days since epoch)
+    // Note: This uses calendar days. For trading session awareness, you could enhance
+    // this to detect market open/close times for more precise session boundaries
+    const barDay = Math.floor(bar.t / 86400);
+
+    // Reset daily VWAP calculation when we encounter a new day
+    // Standard VWAP resets at the start of each trading session
+    if (barDay !== currentDay) {
+      currentDay = barDay;
+      dailyPV = 0;
+      dailyVolume = 0;
+    }
+
     let price = bar.vwap;
     if (typeof price !== "number") {
       // typical price (H+L+C)/3
@@ -80,9 +95,13 @@ export function computeVWAP(bars: AggregateBar[]): LinePoint[] {
       price = (h + l + bar.c) / 3;
     }
     const volume = typeof bar.v === "number" ? bar.v : 0;
-    cumulativePV += price * volume;
-    cumulativeVolume += volume;
-    const vwap = cumulativeVolume > 0 ? cumulativePV / cumulativeVolume : price;
+
+    // Add to daily totals
+    dailyPV += price * volume;
+    dailyVolume += volume;
+
+    // Calculate VWAP for this bar
+    const vwap = dailyVolume > 0 ? dailyPV / dailyVolume : price;
     out.push({ time: bar.t, value: vwap });
   }
   return out;

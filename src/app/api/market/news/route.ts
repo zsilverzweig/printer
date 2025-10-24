@@ -13,8 +13,9 @@ export async function GET(request: NextRequest) {
     const query = request.nextUrl.search || "";
     const targetUrl = `${base}/news${query}`;
 
-    log.info("[NewsProxy] forwarding", { targetUrl }, "MarketAPI");
+    log.info("[NewsProxy] forwarding", { targetUrl, query }, "MarketAPI");
 
+    const startTime = Date.now();
     const upstream = await fetch(targetUrl, {
       method: "GET",
       headers: new Headers({
@@ -28,10 +29,17 @@ export async function GET(request: NextRequest) {
     const body = await upstream.text();
     const contentType =
       upstream.headers.get("content-type") || "application/json";
+    const duration = Date.now() - startTime;
 
     log.info(
       "[NewsProxy] upstream response",
-      { status: upstream.status, contentType },
+      {
+        status: upstream.status,
+        contentType,
+        duration: `${duration}ms`,
+        bodyLength: body.length,
+        bodyPreview: body.substring(0, 200) + (body.length > 200 ? "..." : ""),
+      },
       "MarketAPI"
     );
 

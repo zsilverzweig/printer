@@ -23,6 +23,7 @@ import {
 } from "@/lib/components/ui/tooltip";
 import { useWebSocket } from "@/lib/hooks/use-websocket";
 import { useEffect, useState } from "react";
+import { NewsCard } from "./news-card";
 import { NocRealtimeChart } from "./noc-realtime-chart";
 
 /**
@@ -77,10 +78,12 @@ const SignalIndicator = ({
   color,
   label,
   value,
+  description,
 }: {
   color: string;
   label: string;
   value: string;
+  description?: string;
 }) => (
   <Tooltip>
     <TooltipTrigger asChild>
@@ -90,6 +93,11 @@ const SignalIndicator = ({
       <div className="text-xs">
         <div className="font-semibold">{label}</div>
         <div>{value}</div>
+        {description && (
+          <div className="mt-1 text-gray-600 dark:text-gray-400 max-w-xs">
+            {description}
+          </div>
+        )}
       </div>
     </TooltipContent>
   </Tooltip>
@@ -111,11 +119,15 @@ const SignalBar = ({ stock }: { stock: StockIndicators }) => {
       value: `${
         stock.changePercent >= 0 ? "+" : ""
       }${stock.changePercent.toFixed(2)}%`,
+      description:
+        "Percentage change from previous close: (current_price - yesterday_close) / yesterday_close × 100",
     },
     {
       color: getRelativeVolumeSignalColor(stock.relativeVolume),
       label: "Relative Volume",
       value: `${stock.relativeVolume.toFixed(2)}x`,
+      description:
+        "Today's volume compared to average volume: current_volume / average_volume. Values >1.0 indicate above-average trading activity.",
     },
     {
       color: "bg-gray-500", // Placeholder
@@ -142,6 +154,7 @@ const SignalBar = ({ stock }: { stock: StockIndicators }) => {
           color={signal.color}
           label={signal.label}
           value={signal.value}
+          description={signal.description}
         />
       ))}
     </div>
@@ -403,14 +416,24 @@ export function NocTable() {
           </Card>
         </div>
 
-        {/* Chart Panel */}
+        {/* Chart and News Panel */}
         {selectedStock && (
           <div className="lg:col-span-7 h-[calc(100vh-120px)]">
-            <NocRealtimeChart
-              symbol={selectedStock}
-              onClose={() => setSelectedStock(null)}
-              onSymbolChange={(newSymbol) => setSelectedStock(newSymbol)}
-            />
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 h-full">
+              {/* Chart - Takes up 2/3 of the space */}
+              <div className="lg:col-span-2">
+                <NocRealtimeChart
+                  symbol={selectedStock}
+                  onClose={() => setSelectedStock(null)}
+                  onSymbolChange={(newSymbol) => setSelectedStock(newSymbol)}
+                />
+              </div>
+
+              {/* News Card - Takes up 1/3 of the space */}
+              <div className="lg:col-span-1">
+                <NewsCard ticker={selectedStock} />
+              </div>
+            </div>
           </div>
         )}
       </div>

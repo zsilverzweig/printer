@@ -37,6 +37,8 @@ export interface UseWebSocketOptions {
   reconnectIntervalMs?: number;
   maxReconnectAttempts?: number;
   debug?: boolean;
+  heartbeatIntervalMs?: number; // interval to send ping messages
+  heartbeatTimeoutMs?: number; // timeout to detect stale connection
 }
 
 export interface UseWebSocketReturn<TIncoming = unknown> {
@@ -58,6 +60,8 @@ export function useWebSocket<TIncoming = unknown>(
     reconnectIntervalMs = 2000,
     maxReconnectAttempts = 10,
     debug = false,
+    heartbeatIntervalMs = 30000, // ping every 30 seconds
+    heartbeatTimeoutMs = 10000, // expect pong within 10 seconds
   }: UseWebSocketOptions = {}
 ): UseWebSocketReturn<TIncoming> {
   const [isConnected, setIsConnected] = useState(false);
@@ -68,6 +72,9 @@ export function useWebSocket<TIncoming = unknown>(
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const manuallyClosedRef = useRef(false);
+  const heartbeatIntervalRef = useRef<number | null>(null);
+  const heartbeatTimeoutRef = useRef<number | null>(null);
+  const lastMessageTimeRef = useRef<number>(Date.now());
   const eventHandlersRef = useRef<{
     open?: (ev: Event) => void;
     message?: (event: MessageEvent) => void;
@@ -120,11 +127,88 @@ export function useWebSocket<TIncoming = unknown>(
     [getSocketKey]
   );
 
+  const clearHeartbeatTimers = useCallback(() => {
+    if (heartbeatIntervalRef.current !== null) {
+      clearInterval(heartbeatIntervalRef.current);
+      heartbeatIntervalRef.current = null;
+    }
+    if (heartbeatTimeoutRef.current !== null) {
+      clearTimeout(heartbeatTimeoutRef.current);
+      heartbeatTimeoutRef.current = null;
+    }
+  }, []);
+
+  const startHeartbeat = useCallback(() => {
+    clearHeartbeatTimers();
+
+    const sendPing = () => {
+      const s = socketRef.current;
+      if (!s || s.readyState !== WebSocket.OPEN) {
+        clearHeartbeatTimers();
+        return;
+      }
+
+      // Check if connection is stale (no messages received recently)
+      const timeSinceLastMessage = Date.now() - lastMessageTimeRef.current;
+
+      if (debug) {
+        log.debug("[WS] heartbeat ping", {
+          url: resolvedUrl,
+          timeSinceLastMessage,
+        });
+      }
+
+      try {
+        // Send ping message
+        s.send(JSON.stringify({ type: "ping", timestamp: Date.now() }));
+
+        // Set timeout to detect if server doesn't respond
+        heartbeatTimeoutRef.current = window.setTimeout(() => {
+          if (debug) {
+            log.warn("[WS] heartbeat timeout - connection appears stale", {
+              url: resolvedUrl,
+              timeSinceLastMessage: Date.now() - lastMessageTimeRef.current,
+            });
+          }
+
+          // Connection is stale, trigger reconnect
+          if (!manuallyClosedRef.current) {
+            setError("Connection timeout - reconnecting...");
+            s.close();
+          }
+        }, heartbeatTimeoutMs);
+      } catch (err) {
+        if (debug) {
+          log.error("[WS] heartbeat ping failed", {
+            url: resolvedUrl,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+        clearHeartbeatTimers();
+      }
+    };
+
+    // Start sending pings at regular intervals
+    heartbeatIntervalRef.current = window.setInterval(
+      sendPing,
+      heartbeatIntervalMs
+    );
+  }, [
+    clearHeartbeatTimers,
+    debug,
+    resolvedUrl,
+    heartbeatIntervalMs,
+    heartbeatTimeoutMs,
+  ]);
+
   const cleanup = useCallback(
     (forceImmediate = false) => {
       const performClose = () => {
         const s = socketRef.current;
         const key = getSocketKey(resolvedUrl, protocols);
+
+        // Clear heartbeat timers
+        clearHeartbeatTimers();
 
         // Detach this instance's listeners
         if (s && eventHandlersRef.current) {
@@ -186,7 +270,7 @@ export function useWebSocket<TIncoming = unknown>(
       // (with 1s delay in dev) handles StrictMode remounts at the key level
       performClose();
     },
-    [debug, resolvedUrl, getSocketKey, protocols]
+    [debug, resolvedUrl, getSocketKey, protocols, clearHeartbeatTimers]
   );
 
   const connect = useCallback(() => {
@@ -278,8 +362,13 @@ export function useWebSocket<TIncoming = unknown>(
       const handleOpen = () => {
         clearTimeout(connectionTimeout);
         reconnectAttemptsRef.current = 0;
+        lastMessageTimeRef.current = Date.now();
         setIsConnecting(false);
         setIsConnected(true);
+
+        // Start heartbeat mechanism
+        startHeartbeat();
+
         if (debug) {
           log.info("[WS] open", {
             url: resolvedUrl,
@@ -291,11 +380,36 @@ export function useWebSocket<TIncoming = unknown>(
       };
 
       const handleMessage = (event: MessageEvent) => {
+        // Update last message time for heartbeat tracking
+        lastMessageTimeRef.current = Date.now();
+
+        // Clear heartbeat timeout since we got a message
+        if (heartbeatTimeoutRef.current !== null) {
+          clearTimeout(heartbeatTimeoutRef.current);
+          heartbeatTimeoutRef.current = null;
+        }
+
         try {
           const data =
             typeof event.data === "string"
               ? JSON.parse(event.data)
               : event.data;
+
+          // Don't propagate ping/pong messages to the app
+          if (
+            data &&
+            typeof data === "object" &&
+            (data.type === "ping" || data.type === "pong")
+          ) {
+            if (debug) {
+              log.debug("[WS] received heartbeat", {
+                type: data.type,
+                url: resolvedUrl,
+              });
+            }
+            return;
+          }
+
           setLastMessage(data as TIncoming);
         } catch {
           // if not JSON, pass through
@@ -324,6 +438,7 @@ export function useWebSocket<TIncoming = unknown>(
 
       const handleClose = (event: CloseEvent) => {
         clearTimeout(connectionTimeout);
+        clearHeartbeatTimers();
         const key = getSocketKey(resolvedUrl, protocols);
 
         if (debug) {
@@ -401,6 +516,8 @@ export function useWebSocket<TIncoming = unknown>(
     debug,
     getSocketKey,
     getOrCreateSharedSocket,
+    startHeartbeat,
+    clearHeartbeatTimers,
   ]);
 
   const disconnect = useCallback(() => {
