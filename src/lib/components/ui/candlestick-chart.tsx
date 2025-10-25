@@ -166,7 +166,7 @@ function mapToCandles(bars: AggregateBar[]) {
   // Support both shapes:
   // 1) { t, o, h, l, c }
   // 2) { timestamp, open, high, low, close }
-  return bars
+  const validBars = bars
     .map((b: BarLike) => {
       const t = typeof b.t === "number" ? b.t : b.timestamp;
       const o = typeof b.o === "number" ? b.o : b.open;
@@ -197,6 +197,42 @@ function mapToCandles(bars: AggregateBar[]) {
       low: b.l as number,
       close: b.c as number,
     }));
+
+  if (validBars.length === 0) return [];
+
+  // Fill in whitespace data points for missing time intervals
+  // This ensures consistent timeline spacing with visible gaps
+  const result: Array<{
+    time: number;
+    open?: number;
+    high?: number;
+    low?: number;
+    close?: number;
+  }> = [];
+
+  const firstTime = validBars[0].time;
+  const lastTime = validBars[validBars.length - 1].time;
+  
+  // Determine interval (assuming 1-minute bars = 60 seconds)
+  // Could be adjusted based on data density
+  const interval = 60;
+  
+  // Create a map for quick lookup
+  const barMap = new Map(validBars.map((b) => [b.time, b]));
+
+  // Fill in all time points from first to last
+  for (let time = firstTime; time <= lastTime; time += interval) {
+    const bar = barMap.get(time);
+    if (bar) {
+      // Real data exists
+      result.push(bar);
+    } else {
+      // Add whitespace point for missing data
+      result.push({ time });
+    }
+  }
+
+  return result;
 }
 
 export function CandlestickChart({
@@ -275,10 +311,15 @@ export function CandlestickChart({
         borderColor: border,
         textColor: "#fef08a", // Light yellow color for time axis
         rightOffset: 8,
-        barSpacing: 8,
+        barSpacing: 6,
+        minBarSpacing: 0.5,
+        fixLeftEdge: false,
+        fixRightEdge: false,
         timeVisible: true,
         secondsVisible: false,
         shiftVisibleRangeOnNewBar: true, // Smoothly shift view when new bars arrive
+        lockVisibleTimeRangeOnResize: true, // Maintain zoom level on resize
+        allowShiftVisibleRangeOnWhitespaceReplacement: true, // Allow proper gap handling
         // Timestamps are in Unix epoch (seconds), library uses browser's local timezone
         tickMarkFormatter: (
           time: number,
@@ -338,6 +379,8 @@ export function CandlestickChart({
       borderDownColor: down,
       wickUpColor: up,
       wickDownColor: down,
+      // Don't connect bars across gaps - show actual trading gaps
+      priceLineVisible: false,
     } as SeriesOptionsMap["Candlestick"]);
 
     chartRef.current = chart;
@@ -452,7 +495,7 @@ export function CandlestickChart({
       const el = containerRef.current;
       if (!el) return;
       chart.applyOptions({ height: el.clientHeight });
-      chart.timeScale().fitContent();
+      // Don't call fitContent() here - let the visible range effect handle it
     });
     ro.observe(containerRef.current);
 
@@ -483,7 +526,8 @@ export function CandlestickChart({
   React.useEffect(() => {
     if (!seriesRef.current) return;
     const candles = mapToCandles(data);
-    seriesRef.current.setData(candles as unknown as CandlestickData<Time>[]);
+    // Cast to any first to handle whitespace data points (with only time property)
+    seriesRef.current.setData(candles as any);
 
     // overlays
     if (ema12Ref.current) {
@@ -576,14 +620,40 @@ export function CandlestickChart({
 
     // Use the last bar's timestamp instead of Date.now() for consistency
     const lastBarTime = candles[candles.length - 1].time as number;
-    const hoursToShow = viewMode === "focus" ? 2 : 24;
-    const startTime = lastBarTime - hoursToShow * 60 * 60;
-
-    // Set visible range based on view mode
-    chartRef.current.timeScale().setVisibleRange({
-      from: startTime as Time,
-      to: (lastBarTime + 300) as Time, // Add 5 minutes padding for visibility
-    });
+    const firstBarTime = candles[0].time as number;
+    
+    if (viewMode === "focus") {
+      // Focus mode: Show last 2 hours with proper time spacing
+      const hoursToShow = 2;
+      const startTime = lastBarTime - hoursToShow * 60 * 60;
+      
+      chartRef.current.timeScale().setVisibleRange({
+        from: startTime as Time,
+        to: (lastBarTime + 300) as Time, // Add 5 minutes padding
+      });
+    } else {
+      // Default mode: Show time-based range, not just fitting bars
+      // Calculate actual time span from first to last bar
+      const timeSpan = lastBarTime - firstBarTime;
+      
+      // If data spans less than 24 hours, show 24 hours centered on the data
+      // This ensures consistent time scale regardless of data density
+      if (timeSpan < 24 * 60 * 60) {
+        const hoursToShow = 24;
+        const startTime = lastBarTime - hoursToShow * 60 * 60;
+        chartRef.current.timeScale().setVisibleRange({
+          from: startTime as Time,
+          to: (lastBarTime + 300) as Time,
+        });
+      } else {
+        // For longer time spans, show from first bar with some padding
+        const padding = 300; // 5 minutes
+        chartRef.current.timeScale().setVisibleRange({
+          from: (firstBarTime - padding) as Time,
+          to: (lastBarTime + padding) as Time,
+        });
+      }
+    }
   }, [viewMode, data.length]);
 
   const styleHeight = typeof height === "number" ? `${height}px` : height;

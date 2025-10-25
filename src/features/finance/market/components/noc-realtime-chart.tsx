@@ -327,11 +327,23 @@ export function NocRealtimeChart({
           }
         }
 
-        console.log(
-          `[NOC Chart] Loaded ${dedupedBars.length} unique minute bars (${
-            historicalBars.length - dedupedBars.length
-          } duplicates removed)`
-        );
+        // Check for gaps in the data to verify we're not artificially filling them
+        if (dedupedBars.length > 1) {
+          let gapsFound = 0;
+          for (let i = 1; i < dedupedBars.length; i++) {
+            const timeDiff = dedupedBars[i].t - dedupedBars[i - 1].t;
+            const expectedDiff = 60000; // 1 minute in milliseconds
+            if (timeDiff > expectedDiff * 1.5) {
+              // More than 1.5 minutes gap
+              gapsFound++;
+            }
+          }
+          console.log(
+            `[NOC Chart] Loaded ${dedupedBars.length} unique minute bars (${
+              historicalBars.length - dedupedBars.length
+            } duplicates removed, ${gapsFound} gaps detected)`
+          );
+        }
 
         setBars(dedupedBars);
       } catch (error) {
