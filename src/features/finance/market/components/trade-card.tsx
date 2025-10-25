@@ -4,7 +4,7 @@ import { AlertCircle, CheckCircle2, Loader2, TrendingUp } from "lucide-react";
 import { useState } from "react";
 
 import { Badge } from "@/lib/components/ui/badge";
-import { Button } from "@/lib/components/ui/button";
+import { CardActionButton } from "@/lib/components/ui/card-action-button";
 import {
   Card,
   CardContent,
@@ -185,16 +185,11 @@ export function TradeCard({
     <Card className="h-full flex flex-col">
       <CardHeader className="pb-3 flex-shrink-0">
         <CardTitle className="flex items-center justify-between text-base">
-          <div className="flex items-center gap-2">
-            <TrendingUp className="h-4 w-4" />
-            AI Trading Analysis
-          </div>
-          <Button
-            variant="default"
-            size="sm"
+          <div>AI Trading Analysis</div>
+          <CardActionButton
             onClick={handleAnalyze}
             disabled={isAnalyzing}
-            className="h-7 px-3 text-xs"
+            isLoading={isAnalyzing}
           >
             {isAnalyzing ? (
               <>
@@ -204,7 +199,7 @@ export function TradeCard({
             ) : (
               "Analyze & Trade"
             )}
-          </Button>
+          </CardActionButton>
         </CardTitle>
       </CardHeader>
 

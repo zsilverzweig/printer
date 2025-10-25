@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { Badge } from "@/lib/components/ui/badge";
 import { Button } from "@/lib/components/ui/button";
+import { CardActionButton } from "@/lib/components/ui/card-action-button";
 import {
   Card,
   CardContent,
@@ -159,7 +160,6 @@ export function NewsCard({ ticker, onNewsLoad }: NewsCardProps) {
       <Card className="h-full flex flex-col">
         <CardHeader className="flex-shrink-0">
           <CardTitle className="flex items-center gap-2 text-base">
-            <TrendingUp className="h-4 w-4" />
             News Analysis
           </CardTitle>
         </CardHeader>
@@ -185,7 +185,6 @@ export function NewsCard({ ticker, onNewsLoad }: NewsCardProps) {
       <Card className="h-full flex flex-col">
         <CardHeader className="flex-shrink-0">
           <CardTitle className="flex items-center gap-2 text-base">
-            <TrendingUp className="h-4 w-4" />
             News Analysis
           </CardTitle>
         </CardHeader>
@@ -217,7 +216,6 @@ export function NewsCard({ ticker, onNewsLoad }: NewsCardProps) {
       <Card className="h-full flex flex-col">
         <CardHeader className="flex-shrink-0">
           <CardTitle className="flex items-center gap-2 text-base">
-            <TrendingUp className="h-4 w-4" />
             News Analysis
           </CardTitle>
         </CardHeader>
@@ -235,10 +233,7 @@ export function NewsCard({ ticker, onNewsLoad }: NewsCardProps) {
       <CardHeader className="pb-3 flex-shrink-0">
         <div className="space-y-2">
           <CardTitle className="flex items-center justify-between text-base">
-            <div className="flex items-center gap-2">
-              <TrendingUp className="h-4 w-4" />
-              News Analysis
-            </div>
+            <div>News Analysis</div>
             <div className="flex items-center gap-2">
               <Badge variant="outline" className="text-xs">
                 {formatDate(newsData.analyzed_at)}
@@ -261,16 +256,14 @@ export function NewsCard({ ticker, onNewsLoad }: NewsCardProps) {
           {/* Date Range Selector */}
           <div className="flex gap-1">
             {(["24h", "48h", "7d", "30d"] as const).map((range) => (
-              <Button
+              <CardActionButton
                 key={range}
                 variant={dateRange === range ? "default" : "outline"}
-                size="sm"
                 onClick={() => setDateRange(range)}
                 disabled={isLoading}
-                className="h-7 px-2 text-xs"
               >
                 {range}
-              </Button>
+              </CardActionButton>
             ))}
           </div>
         </div>

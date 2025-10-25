@@ -3,6 +3,32 @@
 import { NocTable } from "@/features/finance/market/components/noc-table";
 import { WelcomePage } from "@/lib/components/welcome-page";
 import { useAuthContext } from "@/lib/providers/auth-provider";
+import { useSearchParams } from "next/navigation";
+import { Suspense } from "react";
+
+/**
+ * Home page content with URL parameter support
+ */
+function HomePageContent() {
+  const { isAuthenticated } = useAuthContext();
+  const searchParams = useSearchParams();
+  const tickerFromUrl = searchParams.get("ticker");
+
+  // Show TCC for authenticated users
+  if (isAuthenticated) {
+    return (
+      <div className="w-full h-screen p-6 flex flex-col">
+        <h1 className="text-3xl font-bold mb-6">Trading Command Center</h1>
+        <div className="flex-1 min-h-0">
+          <NocTable initialTicker={tickerFromUrl || undefined} />
+        </div>
+      </div>
+    );
+  }
+
+  // Show welcome page for unauthenticated users
+  return <WelcomePage />;
+}
 
 /**
  * Home page that shows:
@@ -10,18 +36,9 @@ import { useAuthContext } from "@/lib/providers/auth-provider";
  * - TCC (Trading Command Center) for authenticated users
  */
 export default function HomePage() {
-  const { isAuthenticated } = useAuthContext();
-
-  // Show TCC for authenticated users
-  if (isAuthenticated) {
-    return (
-      <div className="w-full h-screen p-6">
-        <h1 className="text-3xl font-bold mb-6">Trading Command Center</h1>
-        <NocTable />
-      </div>
-    );
-  }
-
-  // Show welcome page for unauthenticated users
-  return <WelcomePage />;
+  return (
+    <Suspense fallback={<div className="w-full h-screen p-6 flex items-center justify-center">Loading...</div>}>
+      <HomePageContent />
+    </Suspense>
+  );
 }

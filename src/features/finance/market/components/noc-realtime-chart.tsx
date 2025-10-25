@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useMarketStream } from "@/features/finance/market/hooks/use-market-stream";
 import { Button } from "@/lib/components/ui/button";
 import { CandlestickChart } from "@/lib/components/ui/candlestick-chart";
+import { CardActionButton } from "@/lib/components/ui/card-action-button";
 import {
   Card,
   CardContent,
@@ -526,26 +527,23 @@ export function NocRealtimeChart({
           </div>
           <div className="flex items-center gap-2">
             <div className="flex gap-1">
-              <Button
+              <CardActionButton
                 variant={timeframe === "1min" ? "default" : "outline"}
-                size="sm"
                 onClick={() => setTimeframe("1min")}
                 title="1-minute bars (press 1)"
               >
                 1m
-              </Button>
-              <Button
+              </CardActionButton>
+              <CardActionButton
                 variant={timeframe === "5min" ? "default" : "outline"}
-                size="sm"
                 onClick={() => setTimeframe("5min")}
                 title="5-minute bars (press 5)"
               >
                 5m
-              </Button>
+              </CardActionButton>
             </div>
-            <Button
+            <CardActionButton
               variant={viewMode === "focus" ? "default" : "outline"}
-              size="sm"
               onClick={() => {
                 setViewMode((prev) =>
                   prev === "default" ? "focus" : "default"
@@ -554,12 +552,7 @@ export function NocRealtimeChart({
               title="Focus on last 2 hours (press F)"
             >
               Focus
-            </Button>
-            {onClose && (
-              <Button variant="ghost" size="sm" onClick={onClose}>
-                ✕
-              </Button>
-            )}
+            </CardActionButton>
           </div>
         </CardHeader>
         <CardContent className="flex-1 min-h-0 p-4">

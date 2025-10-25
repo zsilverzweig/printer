@@ -7,6 +7,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/lib/components/ui/card";
+import { CardActionButton } from "@/lib/components/ui/card-action-button";
 import {
   Table,
   TableBody,
@@ -23,6 +24,9 @@ import {
 } from "@/lib/components/ui/tooltip";
 import { useWebSocket } from "@/lib/hooks/use-websocket";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Search } from "lucide-react";
+import { Input } from "@/lib/components/ui/input";
 import { FinancialInfoPanel } from "./financial-info-panel";
 import { NewsCard } from "./news-card";
 import { NocRealtimeChart } from "./noc-realtime-chart";
@@ -131,21 +135,6 @@ const SignalBar = ({ stock }: { stock: StockIndicators }) => {
       description:
         "Today's volume compared to average volume: current_volume / average_volume. Values >1.0 indicate above-average trading activity.",
     },
-    {
-      color: "bg-gray-500", // Placeholder
-      label: "News",
-      value: stock.newsSentiment,
-    },
-    {
-      color: "bg-gray-500", // Placeholder
-      label: "Float",
-      value: stock.float,
-    },
-    {
-      color: "bg-gray-500", // Placeholder
-      label: "Bull Flag",
-      value: stock.bullFlag ? "Yes" : "No",
-    },
   ];
 
   return (
@@ -158,6 +147,58 @@ const SignalBar = ({ stock }: { stock: StockIndicators }) => {
           value={signal.value}
           description={signal.description}
         />
+      ))}
+    </div>
+  );
+};
+
+/**
+ * Compact signal indicators for narrow screener
+ * Strongly colored squares without characters
+ */
+const CompactSignalBar = ({ stock }: { stock: StockIndicators }) => {
+  const signals = [
+    {
+      color: getPriceSignalColor(stock.price),
+      label: "Price Signal",
+      value: `$${stock.price.toFixed(2)}`,
+      description: "Price range: Green (6-8), Yellow (4-14), Red (2-20)",
+    },
+    {
+      color: getChangePercentSignalColor(stock.changePercent),
+      label: "Change Signal",
+      value: `${
+        stock.changePercent >= 0 ? "+" : ""
+      }${stock.changePercent.toFixed(2)}%`,
+      description: "Change: Green (10%+), Yellow (5-10%), Red (<5%)",
+    },
+    {
+      color: getRelativeVolumeSignalColor(stock.relativeVolume),
+      label: "Volume Signal",
+      value: `${stock.relativeVolume.toFixed(2)}x`,
+      description: "Relative Volume: Green (5x+), Yellow (2-5x), Red (<2x)",
+    },
+  ];
+
+  return (
+    <div className="flex gap-0.5">
+      {signals.map((signal, idx) => (
+        <Tooltip key={idx}>
+          <TooltipTrigger asChild>
+            <div
+              className={`w-3 h-3 rounded-sm ${signal.color} cursor-pointer`}
+            />
+          </TooltipTrigger>
+          <TooltipContent side="right">
+            <div className="text-xs">
+              <div className="font-semibold">{signal.label}</div>
+              <div>{signal.value}</div>
+              <div className="mt-1 text-gray-600 dark:text-gray-400 max-w-xs">
+                {signal.description}
+              </div>
+            </div>
+          </TooltipContent>
+        </Tooltip>
       ))}
     </div>
   );
@@ -236,20 +277,28 @@ const DUMMY_STOCKS: StockIndicators[] = [
 type TimeframeFilter = "1m" | "5m" | "1h" | "close";
 
 const TIMEFRAME_LABELS: Record<TimeframeFilter, string> = {
-  "1m": "Last 1m",
-  "5m": "Last 5m",
-  "1h": "Last Hour",
-  close: "Since Close",
+  "1m": "1m",
+  "5m": "5m",
+  "1h": "1h",
+  close: "close",
 };
+
+interface NocTableProps {
+  initialTicker?: string;
+}
 
 /**
  * TCC Table Component
  * Displays stocks with all their indicators in a table format
  * Server filters: 5%+ change, 50k+ volume, up to 50 stocks
  */
-export function NocTable() {
+export function NocTable({ initialTicker }: NocTableProps) {
+  const router = useRouter();
   const [stocks, setStocks] = useState<StockIndicators[]>(DUMMY_STOCKS);
-  const [selectedStock, setSelectedStock] = useState<string | null>(null);
+  const [selectedStock, setSelectedStock] = useState<string | null>(
+    initialTicker || "AAPL" // Default to AAPL or URL param
+  );
+  const [tickerInput, setTickerInput] = useState("");
   const [selectedTimeframe, setSelectedTimeframe] =
     useState<TimeframeFilter>("close");
   const [newsData, setNewsData] = useState<{
@@ -286,7 +335,25 @@ export function NocTable() {
 
   const handleStockClick = (ticker: string) => {
     setSelectedStock(ticker);
+    // Update URL without page reload
+    router.push(`/?ticker=${ticker}`, { scroll: false });
   };
+
+  const handleTickerInputSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const ticker = tickerInput.trim().toUpperCase();
+    if (ticker) {
+      setSelectedStock(ticker);
+      router.push(`/?ticker=${ticker}`, { scroll: false });
+      setTickerInput("");
+    }
+  };
+
+  // Clear card contents when stock changes
+  useEffect(() => {
+    setNewsData(null);
+    setFinancialData(null);
+  }, [selectedStock]);
 
   const handleTimeframeChange = async (timeframe: TimeframeFilter) => {
     setSelectedTimeframe(timeframe);
@@ -340,121 +407,121 @@ export function NocTable() {
 
   return (
     <TooltipProvider>
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 h-full">
-        {/* Stock List */}
-        <div className={selectedStock ? "lg:col-span-5" : "lg:col-span-12"}>
-          <Card className="h-full">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="flex items-center gap-2">
-                    Market Screener
-                    <span
-                      className={`h-2 w-2 rounded-full ${
-                        isConnected ? "bg-green-500" : "bg-red-500"
-                      }`}
-                      title={isConnected ? "Connected" : "Disconnected"}
-                    />
-                  </CardTitle>
-                  <CardDescription>
-                    Real-time stock monitoring with multi-factor signal
-                    analysis. Click a stock to view chart. Hover over signals
-                    for details.
-                    {error && (
-                      <span className="block text-red-500 text-xs mt-1">
-                        Error: {error}
-                      </span>
-                    )}
-                  </CardDescription>
-                </div>
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 h-full w-full">
+        {/* Stock List - Narrower (2 columns) */}
+        <div className="lg:col-span-2">
+          <Card className="h-full flex flex-col">
+            <CardHeader className="pb-2 px-3 pt-3">
+              <div className="flex items-center gap-2 mb-2">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <CardTitle className="flex items-center gap-2 cursor-help text-sm">
+                      Screener
+                      <span
+                        className={`h-2 w-2 rounded-full ${
+                          isConnected ? "bg-green-500" : "bg-red-500"
+                        }`}
+                        title={isConnected ? "Connected" : "Disconnected"}
+                      />
+                    </CardTitle>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p className="max-w-xs">
+                      Real-time stock monitoring. Click to view details.
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
+                {error && (
+                  <span className="block text-red-500 text-xs">
+                    Error: {error}
+                  </span>
+                )}
               </div>
-              {/* Timeframe filter buttons */}
-              <div className="flex flex-wrap gap-2 mt-4">
+              {/* Timeframe filter buttons - Wrap if needed */}
+              <div className="flex flex-wrap gap-1">
                 {(Object.keys(TIMEFRAME_LABELS) as TimeframeFilter[]).map(
                   (timeframe) => (
-                    <button
+                    <CardActionButton
                       key={timeframe}
+                      variant={selectedTimeframe === timeframe ? "default" : "outline"}
                       onClick={() => handleTimeframeChange(timeframe)}
-                      className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                        selectedTimeframe === timeframe
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
-                      }`}
                     >
                       {TIMEFRAME_LABELS[timeframe]}
-                    </button>
+                    </CardActionButton>
                   )
                 )}
               </div>
             </CardHeader>
-            <CardContent>
-              <div className="max-h-[calc(100vh-280px)] overflow-auto">
-                <Table>
-                  <TableHeader className="sticky top-0 bg-background z-10">
-                    <TableRow>
-                      <TableHead>Ticker</TableHead>
-                      <TableHead>Signals</TableHead>
-                      <TableHead className="text-right">Price</TableHead>
-                      <TableHead className="text-right">% Change</TableHead>
-                      <TableHead className="text-right">RV</TableHead>
-                      <TableHead>News</TableHead>
-                      <TableHead>Float</TableHead>
-                      <TableHead>Bull Flag</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {stocks.map((stock) => (
-                      <TableRow
-                        key={stock.ticker}
-                        className={`cursor-pointer hover:bg-muted/50 ${
-                          selectedStock === stock.ticker ? "bg-muted" : ""
+            <CardContent className="flex-1 min-h-0 overflow-auto p-0">
+              <Table>
+                <TableHeader className="sticky top-0 bg-background z-10">
+                  <TableRow>
+                    <TableHead className="text-xs py-1 px-2">Ticker</TableHead>
+                    <TableHead className="text-xs py-1 px-1 text-center">Signals</TableHead>
+                    <TableHead className="text-xs text-right py-1 px-2">%</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {stocks.map((stock) => (
+                    <TableRow
+                      key={stock.ticker}
+                      className={`cursor-pointer hover:bg-muted/50 ${
+                        selectedStock === stock.ticker ? "bg-muted" : ""
+                      }`}
+                      onClick={() => handleStockClick(stock.ticker)}
+                    >
+                      <TableCell className="font-medium text-xs py-1.5 px-2">
+                        {stock.ticker}
+                      </TableCell>
+                      <TableCell className="py-1.5 px-1">
+                        <div className="flex justify-center">
+                          <CompactSignalBar stock={stock} />
+                        </div>
+                      </TableCell>
+                      <TableCell
+                        className={`text-right text-xs py-1.5 px-2 font-medium ${
+                          stock.changePercent >= 0
+                            ? "text-green-600"
+                            : "text-red-600"
                         }`}
-                        onClick={() => handleStockClick(stock.ticker)}
                       >
-                        <TableCell className="font-medium">
-                          {stock.ticker}
-                        </TableCell>
-                        <TableCell>
-                          <SignalBar stock={stock} />
-                        </TableCell>
-                        <TableCell className="text-right">
-                          ${stock.price.toFixed(2)}
-                        </TableCell>
-                        <TableCell
-                          className={`text-right ${
-                            stock.changePercent >= 0
-                              ? "text-green-600"
-                              : "text-red-600"
-                          }`}
-                        >
-                          {stock.changePercent >= 0 ? "+" : ""}
-                          {stock.changePercent.toFixed(2)}%
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {stock.relativeVolume.toFixed(2)}x
-                        </TableCell>
-                        <TableCell>{stock.newsSentiment}</TableCell>
-                        <TableCell>{stock.float}</TableCell>
-                        <TableCell>{stock.bullFlag ? "Yes" : "No"}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+                        {stock.changePercent >= 0 ? "+" : ""}
+                        {stock.changePercent.toFixed(1)}%
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             </CardContent>
           </Card>
         </div>
 
-        {/* Chart, Trade, and News Panel */}
-        {selectedStock && (
-          <div className="lg:col-span-7 h-[calc(100vh-120px)]">
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 h-full">
-              {/* Chart - Takes up 2/3 of the space */}
-              <div className="lg:col-span-2 h-full">
+        {/* Chart, Trade, and News Panel - Always Visible, Wider (10 columns) */}
+        <div className="lg:col-span-10 h-full flex flex-col gap-4">
+          {/* Ticker Input Search */}
+          <form onSubmit={handleTickerInputSubmit}>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                type="text"
+                placeholder="Enter ticker symbol (e.g., AAPL, TSLA)..."
+                value={tickerInput}
+                onChange={(e) => setTickerInput(e.target.value.toUpperCase())}
+                className="pl-10"
+              />
+            </div>
+          </form>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 flex-1 min-h-0">
+            {/* Chart - Takes up 2/3 of the space */}
+            <div className="lg:col-span-2 h-full">
+              {selectedStock ? (
                 <NocRealtimeChart
                   symbol={selectedStock}
-                  onClose={() => setSelectedStock(null)}
-                  onSymbolChange={(newSymbol) => setSelectedStock(newSymbol)}
+                  onSymbolChange={(newSymbol) => {
+                    setSelectedStock(newSymbol);
+                    router.push(`/?ticker=${newSymbol}`, { scroll: false });
+                  }}
                   onCaptureChart={async () => {
                     if (chartCaptureRef.current) {
                       return await chartCaptureRef.current();
@@ -462,16 +529,24 @@ export function NocTable() {
                     throw new Error("Chart capture not available");
                   }}
                 />
-              </div>
+              ) : (
+                <Card className="h-full flex items-center justify-center">
+                  <div className="text-center text-muted-foreground">
+                    <p className="text-lg mb-2">Select a stock or enter a ticker above</p>
+                    <p className="text-sm">Click a stock from the screener or type a symbol</p>
+                  </div>
+                </Card>
+              )}
+            </div>
 
-              {/* Trade and News Cards - Stack vertically, takes up 1/3 of the space */}
-              <div className="lg:col-span-1 h-full flex flex-col gap-4">
-                {/* Trade Card */}
-                <div className="flex-shrink-0" style={{ maxHeight: "45%" }}>
+            {/* Trade and News Cards - Stack vertically, takes up 1/3 of the space */}
+            <div className="lg:col-span-1 h-full flex flex-col gap-4">
+              {/* Trade Card */}
+              <div className="flex-shrink-0" style={{ maxHeight: "45%" }}>
+                {selectedStock ? (
                   <TradeCard
                     ticker={selectedStock}
                     onCaptureChart={async () => {
-                      // Access chart capture via window global or ref
                       const captureFunc = (
                         window as Window & {
                           __captureChartForTrading?: () => Promise<string>;
@@ -485,27 +560,43 @@ export function NocTable() {
                     newsData={newsData}
                     financialData={financialData}
                   />
-                </div>
+                ) : (
+                  <Card className="h-full flex items-center justify-center">
+                    <div className="text-xs text-muted-foreground">
+                      No stock selected
+                    </div>
+                  </Card>
+                )}
+              </div>
 
-                {/* News Card */}
-                <div className="flex-1 min-h-0" style={{ maxHeight: "55%" }}>
+              {/* News Card */}
+              <div className="flex-1 min-h-0" style={{ maxHeight: "55%" }}>
+                {selectedStock ? (
                   <NewsCard
                     ticker={selectedStock}
                     onNewsLoad={handleNewsLoad}
                   />
-                </div>
+                ) : (
+                  <Card className="h-full flex items-center justify-center">
+                    <div className="text-xs text-muted-foreground">
+                      No stock selected
+                    </div>
+                  </Card>
+                )}
+              </div>
 
-                {/* Hidden Financial Info Panel for data collection */}
+              {/* Hidden Financial Info Panel for data collection */}
+              {selectedStock && (
                 <div style={{ display: "none" }}>
                   <FinancialInfoPanel
                     ticker={selectedStock}
                     onDataLoad={handleFinancialDataLoad}
                   />
                 </div>
-              </div>
+              )}
             </div>
           </div>
-        )}
+        </div>
       </div>
     </TooltipProvider>
   );
