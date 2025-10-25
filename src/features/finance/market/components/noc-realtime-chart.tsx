@@ -21,6 +21,7 @@ interface NocRealtimeChartProps {
   symbol: string;
   onClose?: () => void;
   onSymbolChange?: (symbol: string) => void;
+  onCaptureChart?: () => Promise<string>;
 }
 
 type Timeframe = "1min" | "5min";
@@ -88,6 +89,7 @@ export function NocRealtimeChart({
   symbol,
   onClose,
   onSymbolChange,
+  onCaptureChart,
 }: NocRealtimeChartProps) {
   const [timeframe, setTimeframe] = useState<Timeframe>("1min");
   const [viewMode, setViewMode] = useState<ViewMode>("default");
@@ -97,6 +99,7 @@ export function NocRealtimeChart({
   const [tickerInput, setTickerInput] = useState(symbol);
   const [isEditingTicker, setIsEditingTicker] = useState(false);
   const tickerInputRef = useRef<HTMLInputElement>(null);
+  const chartContainerRef = useRef<HTMLDivElement>(null);
 
   // Subscribe to real-time aggregates through FastAPI server
   // Polygon WebSocket subscription types:
@@ -414,10 +417,72 @@ export function NocRealtimeChart({
     [setIsEditingTicker]
   );
 
+  // Capture chart as base64 image
+  const captureChartImage = async (): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      if (!chartContainerRef.current) {
+        reject(new Error("Chart container not found"));
+        return;
+      }
+
+      try {
+        // Try to use html2canvas if available
+        if (
+          typeof window !== "undefined" &&
+          (window as Window & { html2canvas?: Function }).html2canvas
+        ) {
+          const html2canvas = (window as Window & { html2canvas: Function })
+            .html2canvas;
+          html2canvas(chartContainerRef.current, {
+            backgroundColor: null,
+            scale: 2, // Higher resolution
+          })
+            .then((canvas: HTMLCanvasElement) => {
+              const base64 = canvas.toDataURL("image/png").split(",")[1];
+              resolve(base64);
+            })
+            .catch((error: Error) => {
+              // eslint-disable-next-line no-console
+              console.error("html2canvas error:", error);
+              reject(error);
+            });
+        } else {
+          // Fallback: Try to find canvas element directly
+          const canvasElements =
+            chartContainerRef.current.getElementsByTagName("canvas");
+
+          if (canvasElements.length === 0) {
+            reject(new Error("No canvas found in chart container"));
+            return;
+          }
+
+          // Use the first canvas (main chart)
+          const canvas = canvasElements[0];
+          const base64 = canvas.toDataURL("image/png").split(",")[1];
+          resolve(base64);
+        }
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.error("Chart capture error:", error);
+        reject(error);
+      }
+    });
+  };
+
+  // Expose capture function via prop
+  useEffect(() => {
+    if (onCaptureChart) {
+      // Store reference to capture function
+      (
+        window as Window & { __captureChartForTrading?: () => Promise<string> }
+      ).__captureChartForTrading = captureChartImage;
+    }
+  }, [onCaptureChart]);
+
   return (
     <div className="flex flex-col gap-2 h-full">
       {/* Chart Section */}
-      <Card className="flex flex-col flex-1 min-h-0">
+      <Card className="flex flex-col flex-1 min-h-0" ref={chartContainerRef}>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
           <div className="flex items-center gap-3">
             {isEditingTicker ? (

@@ -19,6 +19,10 @@ import { useEffect, useState } from "react";
 
 interface FinancialInfoPanelProps {
   ticker: string;
+  onDataLoad?: (data: {
+    overview: Record<string, unknown>;
+    financials: Record<string, unknown>;
+  }) => void;
 }
 
 /**
@@ -66,7 +70,10 @@ const InfoRow = ({ label, value }: { label: string; value: string }) => (
 /**
  * Financial info panel that displays company details and financial data
  */
-export function FinancialInfoPanel({ ticker }: FinancialInfoPanelProps) {
+export function FinancialInfoPanel({
+  ticker,
+  onDataLoad,
+}: FinancialInfoPanelProps) {
   const [details, setDetails] = useState<TickerDetails | null>(null);
   const [financials, setFinancials] = useState<FinancialData | null>(null);
   const [isLoadingDetails, setIsLoadingDetails] = useState(true);
@@ -124,6 +131,34 @@ export function FinancialInfoPanel({ ticker }: FinancialInfoPanelProps) {
   const incomeStatement = latestFinancial?.financials?.income_statement;
   const balanceSheet = latestFinancial?.financials?.balance_sheet;
   const cashFlow = latestFinancial?.financials?.cash_flow_statement;
+
+  // Notify parent when data is loaded
+  useEffect(() => {
+    if (details && financials && onDataLoad) {
+      onDataLoad({
+        overview: {
+          market_cap: details.market_cap,
+          primary_exchange: details.primary_exchange,
+          type: details.type,
+          currency_name: details.currency_name,
+          share_class_shares_outstanding:
+            details.share_class_shares_outstanding,
+          list_date: details.list_date,
+          total_employees: details.total_employees,
+        },
+        financials: {
+          revenue: incomeStatement?.revenues?.value,
+          gross_profit: incomeStatement?.gross_profit?.value,
+          operating_income: incomeStatement?.operating_income?.value,
+          net_income: incomeStatement?.net_income_loss?.value,
+          eps: incomeStatement?.diluted_earnings_per_share?.value,
+          total_assets: balanceSheet?.assets?.value,
+          total_liabilities: balanceSheet?.liabilities?.value,
+          equity: balanceSheet?.equity?.value,
+        },
+      });
+    }
+  }, [details, financials, onDataLoad]);
 
   return (
     <Card className="w-full flex-shrink-0">

@@ -22,9 +22,11 @@ import {
   TooltipTrigger,
 } from "@/lib/components/ui/tooltip";
 import { useWebSocket } from "@/lib/hooks/use-websocket";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { FinancialInfoPanel } from "./financial-info-panel";
 import { NewsCard } from "./news-card";
 import { NocRealtimeChart } from "./noc-realtime-chart";
+import { TradeCard } from "./trade-card";
 
 /**
  * Stock data with all indicators (raw values, colors calculated on client)
@@ -250,6 +252,15 @@ export function NocTable() {
   const [selectedStock, setSelectedStock] = useState<string | null>(null);
   const [selectedTimeframe, setSelectedTimeframe] =
     useState<TimeframeFilter>("close");
+  const [newsData, setNewsData] = useState<{
+    news_summary?: string;
+    key_events?: Array<{ name: string; summary: string }>;
+  } | null>(null);
+  const [financialData, setFinancialData] = useState<{
+    overview?: Record<string, unknown>;
+    financials?: Record<string, unknown>;
+  } | null>(null);
+  const chartCaptureRef = useRef<(() => Promise<string>) | null>(null);
 
   // WebSocket URL for NOC real-time data
   // Adjust the URL based on your server configuration
@@ -416,7 +427,7 @@ export function NocTable() {
           </Card>
         </div>
 
-        {/* Chart and News Panel */}
+        {/* Chart, Trade, and News Panel */}
         {selectedStock && (
           <div className="lg:col-span-7 h-[calc(100vh-120px)]">
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 h-full">
@@ -426,12 +437,60 @@ export function NocTable() {
                   symbol={selectedStock}
                   onClose={() => setSelectedStock(null)}
                   onSymbolChange={(newSymbol) => setSelectedStock(newSymbol)}
+                  onCaptureChart={async () => {
+                    if (chartCaptureRef.current) {
+                      return await chartCaptureRef.current();
+                    }
+                    throw new Error("Chart capture not available");
+                  }}
                 />
               </div>
 
-              {/* News Card - Takes up 1/3 of the space */}
-              <div className="lg:col-span-1 h-full">
-                <NewsCard ticker={selectedStock} />
+              {/* Trade and News Cards - Stack vertically, takes up 1/3 of the space */}
+              <div className="lg:col-span-1 h-full flex flex-col gap-4">
+                {/* Trade Card */}
+                <div className="flex-shrink-0" style={{ maxHeight: "45%" }}>
+                  <TradeCard
+                    ticker={selectedStock}
+                    onCaptureChart={async () => {
+                      // Access chart capture via window global or ref
+                      const captureFunc = (
+                        window as Window & {
+                          __captureChartForTrading?: () => Promise<string>;
+                        }
+                      ).__captureChartForTrading;
+                      if (captureFunc) {
+                        return await captureFunc();
+                      }
+                      throw new Error("Chart capture not available");
+                    }}
+                    newsData={newsData}
+                    financialData={financialData}
+                  />
+                </div>
+
+                {/* News Card */}
+                <div className="flex-1 min-h-0" style={{ maxHeight: "55%" }}>
+                  <NewsCard
+                    ticker={selectedStock}
+                    onNewsLoad={(data) => {
+                      setNewsData({
+                        news_summary: data.news_summary,
+                        key_events: data.key_events,
+                      });
+                    }}
+                  />
+                </div>
+
+                {/* Hidden Financial Info Panel for data collection */}
+                <div style={{ display: "none" }}>
+                  <FinancialInfoPanel
+                    ticker={selectedStock}
+                    onDataLoad={(data) => {
+                      setFinancialData(data);
+                    }}
+                  />
+                </div>
               </div>
             </div>
           </div>
