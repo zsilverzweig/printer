@@ -66,6 +66,24 @@ export function middleware(request: NextRequest) {
 
   // If authenticated, handle route-specific logic
   if (authToken) {
+    // Redirect authenticated users away from auth pages based on their status
+    if (pathname === "/login" || pathname === "/signup") {
+      let redirectPath = "/portfolios"; // default
+      
+      if (userStatus === "pending") {
+        redirectPath = "/signup-info";
+      } else if (userStatus === "waitlist") {
+        redirectPath = "/waitlist";
+      } else if (userStatus === "active" || userStatus === "invited") {
+        redirectPath = "/portfolios";
+      }
+      
+      console.log(
+        `Redirecting authenticated user (${userStatus}) from ${pathname} to ${redirectPath}`
+      );
+      return NextResponse.redirect(new URL(redirectPath, request.url));
+    }
+
     // Admin routes - require admin role
     if (pathname.startsWith("/admin")) {
       if (userRole !== "admin" && userRole !== "super_admin") {
@@ -76,7 +94,7 @@ export function middleware(request: NextRequest) {
       }
     }
 
-    // Handle user status-based routing
+    // Handle user status-based routing for other pages
     if (userStatus) {
       // Pending users should complete profile setup
       if (

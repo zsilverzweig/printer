@@ -2,7 +2,7 @@
 
 import { AlertCircle, Loader2, Printer } from 'lucide-react'
 import { useRouter } from 'next/navigation'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 
 import { Button } from '@/lib/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/lib/components/ui/card'
@@ -14,6 +14,7 @@ export default function LoginPage() {
   const { signInWithGoogle, loading, error, isAuthenticated } = useAuth()
   const { route, loading: routingLoading } = useUserRouting()
   const router = useRouter()
+  const [isSigningIn, setIsSigningIn] = useState(false)
 
   // Redirect if already authenticated
   useEffect(() => {
@@ -22,27 +23,31 @@ export default function LoginPage() {
         route: route.path, 
         reason: route.reason 
       }, 'LoginPage')
-      router.push(route.path)
+      // Use replace to avoid adding to history stack
+      router.replace(route.path)
     }
   }, [isAuthenticated, route, routingLoading, router])
 
   const handleGoogleSignIn = async () => {
     try {
+      setIsSigningIn(true)
       await signInWithGoogle()
-      router.replace(route?.path ?? "/portfolios")
-      router.refresh()
+      // Don't manually redirect - let the useEffect handle it after auth state updates
+      // Keep isSigningIn true until redirect happens
     } catch (err) {
       log.error('Sign-in failed', err, 'LoginPage')
+      setIsSigningIn(false) // Only reset on error
     }
   }
 
-  if (isAuthenticated || routingLoading) {
+  // Show loading state if authenticated, routing is loading, or signing in
+  if (isAuthenticated || routingLoading || isSigningIn) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center">
           <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-primary" />
           <p className="text-muted-foreground">
-            {isAuthenticated ? 'Redirecting...' : 'Loading...'}
+            {isAuthenticated ? 'Redirecting...' : isSigningIn ? 'Signing in...' : 'Loading...'}
           </p>
         </div>
       </div>
@@ -72,11 +77,11 @@ export default function LoginPage() {
           
           <Button
             onClick={handleGoogleSignIn}
-            disabled={loading}
+            disabled={loading || isSigningIn}
             className="w-full"
             size="lg"
           >
-            {loading ? (
+            {loading || isSigningIn ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 Signing in...

@@ -2,7 +2,7 @@
 
 import { AlertCircle, Loader2, Printer } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 import { Button } from "@/lib/components/ui/button";
 import {
@@ -20,6 +20,7 @@ export default function SignupPage() {
   const { signInWithGoogle, loading, error, isAuthenticated } = useAuth();
   const { route, loading: routingLoading } = useUserRouting();
   const router = useRouter();
+  const [isSigningUp, setIsSigningUp] = useState(false);
 
 
   // Redirect if already authenticated
@@ -33,27 +34,32 @@ export default function SignupPage() {
         },
         "SignupPage"
       );
-      router.push(route.path);
+      // Use replace to avoid adding to history stack
+      router.replace(route.path);
     }
   }, [isAuthenticated, route, routingLoading, router]);
 
   const handleGoogleSignIn = async () => {
     try {
+      setIsSigningUp(true);
       await signInWithGoogle();
-      // Redirect to signup-info page after successful authentication
-      router.push("/signup-info");
+      // Don't manually redirect - let the useEffect handle it after auth state updates
+      // Keep isSigningUp true until redirect happens
     } catch (err) {
       log.error("Sign-up failed", err, "SignupPage");
+      setIsSigningUp(false); // Only reset on error
     }
   };
 
-
-  if (routingLoading) {
+  // Show loading state if authenticated, routing is loading, or signing up
+  if (isAuthenticated || routingLoading || isSigningUp) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center">
           <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-primary" />
-          <p className="text-muted-foreground">Loading...</p>
+          <p className="text-muted-foreground">
+            {isAuthenticated ? 'Redirecting...' : isSigningUp ? 'Creating account...' : 'Loading...'}
+          </p>
         </div>
       </div>
     );
@@ -84,11 +90,11 @@ export default function SignupPage() {
 
           <Button
             onClick={handleGoogleSignIn}
-            disabled={loading}
+            disabled={loading || isSigningUp}
             className="w-full"
             size="lg"
           >
-            {loading ? (
+            {loading || isSigningUp ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 Creating account...
