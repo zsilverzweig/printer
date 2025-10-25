@@ -22,7 +22,7 @@ import {
   TooltipTrigger,
 } from "@/lib/components/ui/tooltip";
 import { useWebSocket } from "@/lib/hooks/use-websocket";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { FinancialInfoPanel } from "./financial-info-panel";
 import { NewsCard } from "./news-card";
 import { NocRealtimeChart } from "./noc-realtime-chart";
@@ -320,6 +320,24 @@ export function NocTable() {
     }
   };
 
+  // Memoize callbacks to prevent infinite re-render loops
+  const handleNewsLoad = useCallback((data: {
+    news_summary?: string;
+    key_events?: Array<{ name: string; summary: string }>;
+  }) => {
+    setNewsData({
+      news_summary: data.news_summary,
+      key_events: data.key_events,
+    });
+  }, []);
+
+  const handleFinancialDataLoad = useCallback((data: {
+    overview?: Record<string, unknown>;
+    financials?: Record<string, unknown>;
+  }) => {
+    setFinancialData(data);
+  }, []);
+
   return (
     <TooltipProvider>
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 h-full">
@@ -473,12 +491,7 @@ export function NocTable() {
                 <div className="flex-1 min-h-0" style={{ maxHeight: "55%" }}>
                   <NewsCard
                     ticker={selectedStock}
-                    onNewsLoad={(data) => {
-                      setNewsData({
-                        news_summary: data.news_summary,
-                        key_events: data.key_events,
-                      });
-                    }}
+                    onNewsLoad={handleNewsLoad}
                   />
                 </div>
 
@@ -486,9 +499,7 @@ export function NocTable() {
                 <div style={{ display: "none" }}>
                   <FinancialInfoPanel
                     ticker={selectedStock}
-                    onDataLoad={(data) => {
-                      setFinancialData(data);
-                    }}
+                    onDataLoad={handleFinancialDataLoad}
                   />
                 </div>
               </div>

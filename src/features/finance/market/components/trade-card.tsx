@@ -69,8 +69,12 @@ export function TradeCard({
     setResult(null);
 
     try {
+      console.log("🔍 [TradeCard] Starting trade analysis for:", ticker);
+      
       // Capture chart image
+      console.log("📸 [TradeCard] Capturing chart image...");
       const chartImage = await onCaptureChart();
+      console.log("✅ [TradeCard] Chart image captured, length:", chartImage.length);
 
       // Prepare request body
       const requestBody = {
@@ -85,6 +89,13 @@ export function TradeCard({
         },
       };
 
+      console.log("📦 [TradeCard] Request body prepared:", {
+        chart_image_length: chartImage.length,
+        has_news: !!newsData?.news_summary,
+        key_events_count: newsData?.key_events?.length || 0,
+        has_financials: !!financialData?.financials,
+      });
+
       // Send to backend
       const baseUrl =
         process.env.NEXT_PUBLIC_WS_URL?.replace("ws://", "http://").replace(
@@ -92,7 +103,15 @@ export function TradeCard({
           "https://"
         ) || "http://localhost:8000";
 
-      const response = await fetch(`${baseUrl}/trade/analyze/${ticker}`, {
+      const fullUrl = `${baseUrl}/trade/analyze/${ticker}`;
+      
+      console.log("🌐 [TradeCard] Sending POST request to:", fullUrl);
+      console.log("🌐 [TradeCard] Base URL source:", {
+        NEXT_PUBLIC_WS_URL: process.env.NEXT_PUBLIC_WS_URL,
+        computed_baseUrl: baseUrl,
+      });
+
+      const response = await fetch(fullUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -100,19 +119,41 @@ export function TradeCard({
         body: JSON.stringify(requestBody),
       });
 
+      console.log("📡 [TradeCard] Response received:", {
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok,
+        headers: Object.fromEntries(response.headers.entries()),
+      });
+
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
+        console.error("❌ [TradeCard] Error response:", errorData);
         throw new Error(
           errorData.detail || `Failed to analyze: ${response.statusText}`
         );
       }
 
       const data: TradingAnalysisResponse = await response.json();
+      console.log("✅ [TradeCard] Analysis complete:", {
+        action: data.decision?.action,
+        confidence: data.decision?.confidence,
+        has_trade_result: !!data.trade_result,
+        trade_error: data.trade_error,
+      });
+      
       setResult(data);
     } catch (err) {
+      console.error("❌ [TradeCard] Analysis failed:", err);
+      console.error("❌ [TradeCard] Error details:", {
+        name: err instanceof Error ? err.name : "Unknown",
+        message: err instanceof Error ? err.message : "Failed to analyze trade",
+        stack: err instanceof Error ? err.stack : undefined,
+      });
       setError(err instanceof Error ? err.message : "Failed to analyze trade");
     } finally {
       setIsAnalyzing(false);
+      console.log("🏁 [TradeCard] Analysis complete (finally block)");
     }
   };
 

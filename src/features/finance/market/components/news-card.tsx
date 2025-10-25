@@ -1,7 +1,7 @@
 "use client";
 
 import { Clock, ExternalLink, RefreshCw, TrendingUp } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { Badge } from "@/lib/components/ui/badge";
 import { Button } from "@/lib/components/ui/button";
@@ -73,7 +73,7 @@ export function NewsCard({ ticker, onNewsLoad }: NewsCardProps) {
     }
   };
 
-  const loadNews = async (forceRefresh = false) => {
+  const loadNews = useCallback(async (forceRefresh = false) => {
     // Check cache first
     const cached = newsCache.get(`${ticker}-${dateRange}`);
     const now = Date.now();
@@ -139,7 +139,7 @@ export function NewsCard({ ticker, onNewsLoad }: NewsCardProps) {
       setIsLoading(false);
       setIsInitialLoad(false);
     }
-  };
+  }, [ticker, dateRange, onNewsLoad]);
 
   // Auto-load news when ticker or dateRange changes
   useEffect(() => {
@@ -152,8 +152,7 @@ export function NewsCard({ ticker, onNewsLoad }: NewsCardProps) {
       // Load news asynchronously without blocking
       loadNews();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ticker, dateRange]);
+  }, [ticker, loadNews]);
 
   if (isLoading) {
     return (
