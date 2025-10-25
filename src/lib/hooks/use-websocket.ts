@@ -58,10 +58,10 @@ export function useWebSocket<TIncoming = unknown>(
     protocols,
     autoReconnect = true,
     reconnectIntervalMs = 2000,
-    maxReconnectAttempts = 10,
+    maxReconnectAttempts = Infinity, // Never stop reconnecting for local dev
     debug = false,
     heartbeatIntervalMs = 30000, // ping every 30 seconds
-    heartbeatTimeoutMs = 10000, // expect pong within 10 seconds
+    heartbeatTimeoutMs = 60000, // expect pong within 60 seconds (increased from 10s)
   }: UseWebSocketOptions = {}
 ): UseWebSocketReturn<TIncoming> {
   const [isConnected, setIsConnected] = useState(false);
@@ -162,7 +162,7 @@ export function useWebSocket<TIncoming = unknown>(
         // Send ping message
         s.send(JSON.stringify({ type: "ping", timestamp: Date.now() }));
 
-        // Set timeout to detect if server doesn't respond
+        // Set timeout to detect if server doesn't respond (lenient for local dev)
         heartbeatTimeoutRef.current = window.setTimeout(() => {
           if (debug) {
             log.warn("[WS] heartbeat timeout - connection appears stale", {
@@ -172,9 +172,12 @@ export function useWebSocket<TIncoming = unknown>(
           }
 
           // Connection is stale, trigger reconnect
-          if (!manuallyClosedRef.current) {
+          // For local dev, be more forgiving - only reconnect if truly dead
+          if (!manuallyClosedRef.current && s.readyState !== WebSocket.OPEN) {
             setError("Connection timeout - reconnecting...");
             s.close();
+          } else if (debug) {
+            log.info("[WS] heartbeat timeout but socket still open, continuing");
           }
         }, heartbeatTimeoutMs);
       } catch (err) {
@@ -228,7 +231,8 @@ export function useWebSocket<TIncoming = unknown>(
         }
         eventHandlersRef.current = {};
 
-        // Decrement refcount and possibly close shared socket
+        // Decrement refcount but DON'T close shared socket for local dev
+        // We want to keep connections alive indefinitely
         const currentCount = (SOCKET_REFCOUNTS.get(key) || 1) - 1;
         if (currentCount <= 0) {
           SOCKET_REFCOUNTS.delete(key);
@@ -237,17 +241,14 @@ export function useWebSocket<TIncoming = unknown>(
             clearTimeout(existingTimer);
             SOCKET_IDLE_TIMERS.delete(key);
           }
-          const delay =
-            !forceImmediate && process.env.NODE_ENV === "development"
-              ? 1000
-              : 0;
-          const timerId = window.setTimeout(() => {
-            SOCKET_IDLE_TIMERS.delete(key);
+          // For local dev, don't close the socket automatically
+          // Only close if forced (manual disconnect)
+          if (forceImmediate) {
             const shared = SOCKET_CACHE.get(key);
             if (shared) {
               try {
                 if (debug) {
-                  log.debug("[WS] closing shared socket (idle)", {
+                  log.debug("[WS] closing shared socket (manual)", {
                     url: resolvedUrl,
                   });
                 }
@@ -255,8 +256,7 @@ export function useWebSocket<TIncoming = unknown>(
               } catch {}
               SOCKET_CACHE.delete(key);
             }
-          }, delay);
-          SOCKET_IDLE_TIMERS.set(key, timerId);
+          }
         } else {
           SOCKET_REFCOUNTS.set(key, currentCount);
         }
@@ -338,11 +338,11 @@ export function useWebSocket<TIncoming = unknown>(
         return;
       }
 
-      // Add a timeout to detect hung connections
+      // Add a timeout to detect hung connections (very generous for local dev)
       const connectionTimeout = window.setTimeout(() => {
         if (socket.readyState === WebSocket.CONNECTING) {
           if (debug) {
-            log.warn("[WS] connection timeout - still CONNECTING after 30s", {
+            log.warn("[WS] connection timeout - still CONNECTING after 120s", {
               url: resolvedUrl,
               readyState: socket.readyState,
             });
@@ -357,7 +357,7 @@ export function useWebSocket<TIncoming = unknown>(
           setError("Connection timeout - server not responding");
           setIsConnecting(false);
         }
-      }, 30000);
+      }, 120000); // 2 minutes instead of 30s
 
       const handleOpen = () => {
         clearTimeout(connectionTimeout);
