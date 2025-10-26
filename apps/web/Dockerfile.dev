@@ -10,6 +10,10 @@ WORKDIR /app
 COPY package*.json ./
 COPY packages/shared/package*.json ./packages/shared/
 
+# Copy apps/web package.json (needed for prepare script)
+COPY apps/web/package*.json ./apps/web/
+COPY apps/web/next.config.js ./apps/web/
+
 # Install dependencies
 RUN npm install
 

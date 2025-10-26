@@ -7,16 +7,26 @@
     "docker:up": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "docker-compose up --build",
-        "cwd": "{workspaceRoot}"
+        "commands": [
+          "lsof -ti:3000,8000,5432 2>/dev/null | xargs kill -9 2>/dev/null || true",
+          "docker info >/dev/null 2>&1 || (echo 'Starting Docker Desktop...' && open -a Docker && sleep 10)",
+          "docker-compose up --build"
+        ],
+        "cwd": "{workspaceRoot}",
+        "parallel": false
       },
       "description": "Start all Docker services (web, server, db) with hot-reload"
     },
     "docker:up:detached": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "docker-compose up --build -d",
-        "cwd": "{workspaceRoot}"
+        "commands": [
+          "lsof -ti:3000,8000,5432 2>/dev/null | xargs kill -9 2>/dev/null || true",
+          "docker info >/dev/null 2>&1 || (echo 'Starting Docker Desktop...' && open -a Docker && sleep 10)",
+          "docker-compose up --build -d"
+        ],
+        "cwd": "{workspaceRoot}",
+        "parallel": false
       },
       "description": "Start all Docker services in detached mode (background)"
     },
