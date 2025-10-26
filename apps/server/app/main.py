@@ -19,14 +19,17 @@ import time
 
 app = FastAPI()
 
-# CORS for frontend dev at localhost:3000
+# CORS for frontend dev at localhost:3000 and Docker internal network
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "ws://localhost:3000",
-        "ws://127.0.0.1:3000"
+        "ws://127.0.0.1:3000",
+        # Docker service names
+        "http://web:3000",
+        "ws://web:3000",
     ],
     allow_credentials=True,
     allow_methods=["*"],

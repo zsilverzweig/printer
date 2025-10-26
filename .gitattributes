@@ -1,0 +1,13 @@
+# git-crypt configuration
+# Encrypt environment files containing secrets
+
+# Root environment file
+.env.local filter=git-crypt diff=git-crypt
+env.local filter=git-crypt diff=git-crypt
+
+# Server environment file
+apps/server/env.local filter=git-crypt diff=git-crypt
+
+# git-crypt key (if stored in repo - optional)
+.git-crypt-key filter=git-crypt diff=git-crypt
+

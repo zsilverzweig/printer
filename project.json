@@ -1,0 +1,101 @@
+{
+  "name": "printer",
+  "$schema": "node_modules/nx/schemas/project-schema.json",
+  "projectType": "application",
+  "sourceRoot": ".",
+  "targets": {
+    "docker:up": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "docker-compose up --build",
+        "cwd": "{workspaceRoot}"
+      },
+      "description": "Start all Docker services (web, server, db) with hot-reload"
+    },
+    "docker:up:detached": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "docker-compose up --build -d",
+        "cwd": "{workspaceRoot}"
+      },
+      "description": "Start all Docker services in detached mode (background)"
+    },
+    "docker:down": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "docker-compose down",
+        "cwd": "{workspaceRoot}"
+      },
+      "description": "Stop all Docker services"
+    },
+    "docker:down:volumes": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "docker-compose down -v",
+        "cwd": "{workspaceRoot}"
+      },
+      "description": "Stop all Docker services and remove volumes (WARNING: deletes database data)"
+    },
+    "docker:restart": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": [
+          "docker-compose down",
+          "docker-compose up --build -d"
+        ],
+        "cwd": "{workspaceRoot}",
+        "parallel": false
+      },
+      "description": "Restart all Docker services"
+    },
+    "docker:logs": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "docker-compose logs -f",
+        "cwd": "{workspaceRoot}"
+      },
+      "description": "View logs from all Docker services (follow mode)"
+    },
+    "docker:logs:web": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "docker-compose logs -f web",
+        "cwd": "{workspaceRoot}"
+      },
+      "description": "View logs from Next.js web service"
+    },
+    "docker:logs:server": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "docker-compose logs -f server",
+        "cwd": "{workspaceRoot}"
+      },
+      "description": "View logs from FastAPI server service"
+    },
+    "docker:logs:db": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "docker-compose logs -f db",
+        "cwd": "{workspaceRoot}"
+      },
+      "description": "View logs from PostgreSQL database service"
+    },
+    "docker:ps": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "docker-compose ps",
+        "cwd": "{workspaceRoot}"
+      },
+      "description": "List all Docker services and their status"
+    },
+    "docker:rebuild": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "docker-compose up --build --force-recreate",
+        "cwd": "{workspaceRoot}"
+      },
+      "description": "Rebuild and restart all Docker services (force recreate containers)"
+    }
+  }
+}
+
