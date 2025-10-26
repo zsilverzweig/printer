@@ -51,8 +51,8 @@ export default function EventsPage() {
     
     try {
       const url = filter === 'all' 
-        ? 'http://localhost:8000/events?limit=100'
-        : `http://localhost:8000/events?limit=100&event_type=${filter}`;
+        ? 'http://localhost:8000/api/events?limit=100'
+        : `http://localhost:8000/api/events?limit=100&event_type=${filter}`;
       
       const response = await fetch(url);
       

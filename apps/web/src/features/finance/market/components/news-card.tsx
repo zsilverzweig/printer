@@ -105,7 +105,7 @@ export function NewsCard({ ticker, onNewsLoad }: NewsCardProps) {
       const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
 
       const response = await fetch(
-        `${baseUrl}/news/analyze/${ticker}?days=${days}`,
+        `${baseUrl}/api/news/analyze/${ticker}?days=${days}`,
         {
           signal: controller.signal,
         }

@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
   try {
     const base = getBaseUrl().replace(/\/$/, "");
     const query = request.nextUrl.search || "";
-    const targetUrl = `${base}/news${query}`;
+    const targetUrl = `${base}/api/news${query}`;
 
     log.info("[NewsProxy] forwarding", { targetUrl, query }, "MarketAPI");
 

@@ -11,7 +11,7 @@ load_dotenv("env.local")
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from app.core import startup_init
-from app.routers.rest import router as rest_router
+from app.routers import market, news, trading, events, noc
 from app.routers.realtime import router as realtime_router
 import logging
 import time
@@ -64,5 +64,12 @@ def health() -> JSONResponse:
     return JSONResponse({"status": "ok"})
 
 
-app.include_router(rest_router)
+# Include domain-specific routers
+app.include_router(market.router, prefix="/api/market", tags=["market"])
+app.include_router(news.router, prefix="/api/news", tags=["news"])
+app.include_router(trading.router, prefix="/api/trading", tags=["trading"])
+app.include_router(events.router, prefix="/api/events", tags=["events"])
+app.include_router(noc.router, prefix="/api/noc", tags=["noc"])
+
+# Include realtime/WebSocket router
 app.include_router(realtime_router)

@@ -354,7 +354,7 @@ export function NocTable({ initialTicker }: NocTableProps) {
           "https://"
         ) || "http://localhost:8000";
 
-      const response = await fetch(`${baseUrl}/noc/config`, {
+      const response = await fetch(`${baseUrl}/api/noc/config`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

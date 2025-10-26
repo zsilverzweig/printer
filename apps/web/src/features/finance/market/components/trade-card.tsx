@@ -103,7 +103,7 @@ export function TradeCard({
           "https://"
         ) || "http://localhost:8000";
 
-      const fullUrl = `${baseUrl}/trade/analyze/${ticker}`;
+      const fullUrl = `${baseUrl}/api/trading/analyze/${ticker}`;
       
       console.log("🌐 [TradeCard] Sending POST request to:", fullUrl);
       console.log("🌐 [TradeCard] Base URL source:", {
