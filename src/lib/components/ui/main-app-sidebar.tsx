@@ -85,7 +85,7 @@ export function MainAppSidebar() {
         },
         {
           id: "news-test",
-          title: "News Test",
+          title: "News",
           href: "/news-test",
           icon: <Newspaper className="h-4 w-4" />,
         },

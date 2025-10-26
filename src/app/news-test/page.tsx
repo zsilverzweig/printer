@@ -25,9 +25,9 @@ export default function NewsTestPage() {
   return (
     <div className="container mx-auto p-6 max-w-6xl">
       <div className="mb-6">
-        <h1 className="text-3xl font-bold mb-2">News Test Page</h1>
+        <h1 className="text-3xl font-bold mb-2">News</h1>
         <p className="text-muted-foreground">
-          Quick test interface for Benzinga news analysis
+          Benzinga news analysis
         </p>
       </div>
 
