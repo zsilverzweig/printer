@@ -62,11 +62,12 @@ services:
       - NODE_ENV=development
       - NEXT_PUBLIC_API_URL=http://localhost:8000
       - NEXT_PUBLIC_WS_URL=ws://localhost:8000
+      - NX_DAEMON=false
     depends_on:
       - server
     networks:
       - printer-network
-    command: sh -c "cd /app && npm run dev:web"
+    command: sh -c "cd /app/apps/web && npx next dev --hostname 0.0.0.0"
 
 volumes:
   postgres_data:
