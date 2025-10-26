@@ -17,6 +17,9 @@ COPY apps/web/next.config.js ./apps/web/
 # Install dependencies
 RUN npm install
 
+# Install Rollup for Alpine Linux (musl) - fixes optional dependency issue
+RUN npm install @rollup/rollup-linux-x64-musl --save-optional || true
+
 # Copy the rest of the application
 COPY . .
 
