@@ -1,0 +1,38 @@
+{
+  "name": "server",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "apps/server/app",
+  "projectType": "application",
+  "tags": ["type:app", "scope:server", "lang:python"],
+  "targets": {
+    "dev": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "cd apps/server && ./start_server.sh",
+        "cwd": "{workspaceRoot}"
+      }
+    },
+    "start": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "cd apps/server && ./start_server.sh",
+        "cwd": "{workspaceRoot}"
+      }
+    },
+    "kill": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "cd apps/server && ./kill_server.sh",
+        "cwd": "{workspaceRoot}"
+      }
+    },
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "cd apps/server && python -m pylint app",
+        "cwd": "{workspaceRoot}"
+      }
+    }
+  }
+}
+
