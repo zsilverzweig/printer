@@ -5,6 +5,7 @@ import {
   Bot,
   Briefcase,
   Building2,
+  Database,
   FileText,
   Home,
   Newspaper,
@@ -75,6 +76,12 @@ export function MainAppSidebar() {
           title: "Company Research",
           href: "/company-research",
           icon: <Building2 className="h-4 w-4" />,
+        },
+        {
+          id: "events",
+          title: "Events",
+          href: "/events",
+          icon: <Database className="h-4 w-4" />,
         },
         {
           id: "news-test",
