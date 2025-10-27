@@ -581,6 +581,7 @@ export function NocRealtimeChart({
                 showVolume={true}
                 showMACD={true}
                 showLegend={true}
+                barIntervalSeconds={timeframe === "5min" ? 300 : 60}
               />
               <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
                 <span>

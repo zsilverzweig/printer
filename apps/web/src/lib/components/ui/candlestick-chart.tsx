@@ -39,6 +39,8 @@ interface CandlestickChartProps {
   showTradingDays?: boolean; // highlight trading days vs weekends/holidays
   tradingDayColor?: string; // background color for trading days (e.g., "#1f2937")
   nonTradingDayColor?: string; // background color for non-trading days (e.g., "#374151")
+  // Bar interval in seconds (e.g., 60 for 1-minute, 300 for 5-minute)
+  barIntervalSeconds?: number;
 }
 
 type BarLike = AggregateBar & {
@@ -162,7 +164,7 @@ function withAlpha(color: string, alpha: number): string {
   return color;
 }
 
-function mapToCandles(bars: AggregateBar[]) {
+function mapToCandles(bars: AggregateBar[], barIntervalSeconds?: number) {
   // Support both shapes:
   // 1) { t, o, h, l, c }
   // 2) { timestamp, open, high, low, close }
@@ -213,9 +215,38 @@ function mapToCandles(bars: AggregateBar[]) {
   const firstTime = validBars[0].time;
   const lastTime = validBars[validBars.length - 1].time;
   
-  // Determine interval (assuming 1-minute bars = 60 seconds)
-  // Could be adjusted based on data density
-  const interval = 60;
+  // Determine interval: use provided value or detect from data
+  let interval = barIntervalSeconds || 60; // Default to 1-minute bars
+  
+  // Only auto-detect if not explicitly provided
+  if (!barIntervalSeconds && validBars.length >= 2) {
+    // Calculate intervals between consecutive bars
+    const intervals = new Map<number, number>();
+    
+    for (let i = 1; i < Math.min(validBars.length, 20); i++) {
+      const diff = validBars[i].time - validBars[i - 1].time;
+      // Only consider intervals between 30 seconds and 1 hour (common trading timeframes)
+      if (diff >= 30 && diff <= 3600) {
+        intervals.set(diff, (intervals.get(diff) || 0) + 1);
+      }
+    }
+    
+    // Find the most common interval
+    let maxCount = 0;
+    for (const [intervalValue, count] of intervals) {
+      if (count > maxCount) {
+        maxCount = count;
+        interval = intervalValue;
+      }
+    }
+  }
+  
+  // Log interval for debugging
+  console.log(
+    `[CandlestickChart] Using ${interval}s interval (${
+      interval / 60
+    } minute bars) - ${barIntervalSeconds ? 'provided' : 'detected'}`
+  );
   
   // Create a map for quick lookup
   const barMap = new Map(validBars.map((b) => [b.time, b]));
@@ -252,6 +283,7 @@ export function CandlestickChart({
   showTradingDays = false,
   tradingDayColor,
   nonTradingDayColor,
+  barIntervalSeconds,
 }: CandlestickChartProps) {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const chartRef = React.useRef<IChartApi | null>(null);
@@ -388,7 +420,7 @@ export function CandlestickChart({
 
     // Add trading day highlighting if enabled
     if (showTradingDays && data.length > 0) {
-      const candles = mapToCandles(data);
+      const candles = mapToCandles(data, barIntervalSeconds);
       if (candles.length > 0) {
         const firstTime = candles[0].time as number;
         const lastTime = candles[candles.length - 1].time as number;
@@ -525,7 +557,7 @@ export function CandlestickChart({
   // Update data
   React.useEffect(() => {
     if (!seriesRef.current) return;
-    const candles = mapToCandles(data);
+    const candles = mapToCandles(data, barIntervalSeconds);
     // Cast to any first to handle whitespace data points (with only time property)
     seriesRef.current.setData(candles as any);
 
@@ -609,13 +641,14 @@ export function CandlestickChart({
     macdHistogramUpColor,
     macdHistogramDownColor,
     macdHistogramAlpha,
+    barIntervalSeconds,
   ]);
 
   // Separate effect for view range - only updates when viewMode or data length changes significantly
   React.useEffect(() => {
     if (!chartRef.current || data.length === 0) return;
 
-    const candles = mapToCandles(data);
+    const candles = mapToCandles(data, barIntervalSeconds);
     if (candles.length === 0) return;
 
     // Use the last bar's timestamp instead of Date.now() for consistency
@@ -654,7 +687,7 @@ export function CandlestickChart({
         });
       }
     }
-  }, [viewMode, data.length]);
+  }, [viewMode, data.length, barIntervalSeconds]);
 
   const styleHeight = typeof height === "number" ? `${height}px` : height;
   const ema12Color = withAlpha(resolveColor("--blue-400", "#60a5fa"), 0.75);
