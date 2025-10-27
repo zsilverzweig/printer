@@ -141,10 +141,27 @@ class ScreenerService:
             len(self.subscribers),
             len(payload),
         )
-        await asyncio.gather(
-            *(ws.send_text(msg) for ws in list(self.subscribers)),
-            return_exceptions=True,
-        )
+        # Broadcast to subscribers with error handling and cleanup
+        dead_connections = []
+        for ws in list(self.subscribers):
+            try:
+                # Check if websocket is in a valid state before sending
+                if hasattr(ws, 'client_state') and hasattr(ws, 'application_state'):
+                    # FastAPI WebSocket has client_state and application_state
+                    from starlette.websockets import WebSocketState
+                    if ws.client_state != WebSocketState.CONNECTED or ws.application_state != WebSocketState.CONNECTED:
+                        self.logger.debug("Removing disconnected websocket from screener subscribers")
+                        dead_connections.append(ws)
+                        continue
+                
+                await ws.send_text(msg)
+            except Exception as e:
+                self.logger.warning("Failed to send to screener subscriber: %s", e)
+                dead_connections.append(ws)
+        
+        # Clean up dead connections
+        for ws in dead_connections:
+            self.subscribers.discard(ws)
 
     def _update_price_history(self, snaps: List[Any], current_time: float) -> None:
         """Update price history tracker with latest snapshot data.

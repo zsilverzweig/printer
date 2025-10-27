@@ -345,6 +345,12 @@ async def unified_realtime(websocket: WebSocket):
                 if msg is None:  # Connection failure signal
                     break
                 
+                # Check if websocket is still connected before sending
+                from starlette.websockets import WebSocketState
+                if websocket.client_state != WebSocketState.CONNECTED:
+                    logger.warning("WebSocket disconnected, stopping Polygon message forwarding")
+                    break
+                
                 # Wrap in our message format
                 wrapped_msg = {
                     "type": "market_data",
@@ -386,30 +392,35 @@ async def unified_realtime(websocket: WebSocket):
         service.subscribers.add(websocket)
         
         # Send initial connection status
-        await websocket.send_json({
-            "type": "connection_status",
-            "data": {
-                "noc": True,
-                "screener": True,
-                "market": True
-            },
-            "timestamp": int(time.time() * 1000)
-        })
-        
-        # Send cached data if available
-        if noc_service.cached_payload:
+        try:
             await websocket.send_json({
-                "type": "noc_update",
-                "data": noc_service.cached_payload,
+                "type": "connection_status",
+                "data": {
+                    "noc": True,
+                    "screener": True,
+                    "market": True
+                },
                 "timestamp": int(time.time() * 1000)
             })
-        
-        if service.cached_payload:
-            await websocket.send_json({
-                "type": "screener_update",
-                "data": service.cached_payload,
-                "timestamp": int(time.time() * 1000)
-            })
+            
+            # Send cached data if available
+            if noc_service.cached_payload:
+                await websocket.send_json({
+                    "type": "noc_update",
+                    "data": noc_service.cached_payload,
+                    "timestamp": int(time.time() * 1000)
+                })
+            
+            if service.cached_payload:
+                await websocket.send_json({
+                    "type": "screener_update",
+                    "data": service.cached_payload,
+                    "timestamp": int(time.time() * 1000)
+                })
+        except Exception as e:
+            logger.error("Failed to send initial data to client: %s", e)
+            await websocket.close()
+            return
         
         # Handle client messages (market subscriptions, ping/pong)
         while True:

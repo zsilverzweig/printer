@@ -10,6 +10,7 @@ import type {
 } from "@/lib/types/websocket";
 import type { ScreenedStockPreview } from "@/lib/types/market";
 import { log } from "@/lib/utils/logger";
+import { diagnoseWebSocketConnection } from "@/lib/utils/websocket-diagnostics";
 
 const WebSocketContext = createContext<WebSocketContextValue | null>(null);
 
@@ -86,14 +87,17 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
     }
   }, []);
   
-  // WebSocket connection
+  // WebSocket connection with aggressive reconnection
   const wsUrl = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000";
-  const { isConnected, sendJson, error: wsError, lastMessage } = useWebSocket<WebSocketMessage>(
+  const { isConnected, sendJson, error: wsError, lastMessage, connect } = useWebSocket<WebSocketMessage>(
     `${wsUrl}/realtime`,
     {
       autoReconnect: true,
-      reconnectIntervalMs: 3000,
+      reconnectIntervalMs: 2000, // Faster reconnection
+      maxReconnectAttempts: Infinity, // Never stop trying
       debug: true,
+      heartbeatIntervalMs: 20000, // Ping every 20 seconds (more frequent)
+      heartbeatTimeoutMs: 45000, // 45 second timeout before considering dead
     }
   );
   
@@ -101,6 +105,33 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
   useEffect(() => {
     setError(wsError);
   }, [wsError]);
+  
+  // Log connection state changes for debugging
+  useEffect(() => {
+    if (isConnected) {
+      log.info("[WebSocket] ✅ CONNECTED to", wsUrl + "/realtime");
+      console.log(`%c[WebSocket] ✅ CONNECTED`, 'color: green; font-weight: bold', wsUrl + "/realtime");
+    } else {
+      log.warn("[WebSocket] ❌ DISCONNECTED from", wsUrl + "/realtime");
+      console.log(`%c[WebSocket] ❌ DISCONNECTED`, 'color: red; font-weight: bold', wsUrl + "/realtime");
+      console.log('%cTip: Run diagnoseWebSocket() in console to troubleshoot', 'color: blue; font-style: italic');
+    }
+  }, [isConnected, wsUrl]);
+  
+  // Run diagnostics on mount if connection fails
+  useEffect(() => {
+    if (!isConnected && wsError) {
+      // Run diagnostics after 5 seconds of being disconnected with error
+      const timer = setTimeout(() => {
+        if (!isConnected) {
+          log.warn("[WebSocket] Connection issues detected, running diagnostics...");
+          diagnoseWebSocketConnection();
+        }
+      }, 5000);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [isConnected, wsError]);
   
   // Handle incoming messages when lastMessage changes
   useEffect(() => {
@@ -145,7 +176,7 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
     log.debug("[WebSocket] Unsubscribed from symbol", { symbol });
   }, [subscribedSymbols, sendJson]);
   
-  // Send ping messages for connection health
+  // Send ping messages for connection health and monitor connection state
   useEffect(() => {
     if (!isConnected) return;
     
@@ -154,10 +185,25 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
         type: "ping",
         timestamp: Date.now()
       });
-    }, 30000); // Ping every 30 seconds
+    }, 20000); // Ping every 20 seconds (matches heartbeat)
     
     return () => clearInterval(pingInterval);
   }, [isConnected, sendJson]);
+  
+  // Aggressively monitor connection health and force reconnect if needed
+  useEffect(() => {
+    if (isConnected) return; // Already connected, no action needed
+    
+    // If disconnected for more than 10 seconds, force a reconnection attempt
+    const reconnectTimer = setTimeout(() => {
+      if (!isConnected) {
+        log.warn("[WebSocket] Connection lost for 10+ seconds, forcing reconnection");
+        connect();
+      }
+    }, 10000);
+    
+    return () => clearTimeout(reconnectTimer);
+  }, [isConnected, connect]);
   
   // Process pending subscriptions/unsubscriptions
   useEffect(() => {
