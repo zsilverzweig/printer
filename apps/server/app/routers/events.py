@@ -110,3 +110,4 @@ async def get_events(limit: int = 50, event_type: Optional[str] = None):
     except Exception as e:
         logger.error(f"Failed to fetch events: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to fetch events: {str(e)}")
+

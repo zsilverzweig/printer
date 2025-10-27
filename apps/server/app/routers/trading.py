@@ -160,3 +160,4 @@ async def analyze_trade(ticker: str, request: TradingAnalysisRequest):
     except Exception as e:
         logger.error(f"Unexpected error analyzing trade for {ticker}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to analyze trade for {ticker}: {str(e)}")
+

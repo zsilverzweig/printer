@@ -22,7 +22,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/lib/components/ui/tooltip";
-import { useWebSocket } from "@/lib/hooks/use-websocket";
+import { useNocData } from "@/lib/hooks/use-noc-data";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Search } from "lucide-react";
@@ -282,7 +282,6 @@ interface NocTableProps {
  */
 export function NocTable({ initialTicker }: NocTableProps) {
   const router = useRouter();
-  const [stocks, setStocks] = useState<StockIndicators[]>(DUMMY_STOCKS);
   const [selectedStock, setSelectedStock] = useState<string | null>(
     initialTicker || "AAPL" // Default to AAPL or URL param
   );
@@ -299,27 +298,8 @@ export function NocTable({ initialTicker }: NocTableProps) {
   } | null>(null);
   const chartCaptureRef = useRef<(() => Promise<string>) | null>(null);
 
-  // WebSocket URL for NOC real-time data
-  // Adjust the URL based on your server configuration
-  const wsUrl = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000";
-  const nocWsUrl = `${wsUrl}/noc/ws`;
-
-  const { lastMessage, isConnected, error } = useWebSocket<StockIndicators[]>(
-    nocWsUrl,
-    {
-      autoReconnect: true,
-      reconnectIntervalMs: 3000,
-      debug: true,
-    }
-  );
-
-  // Update stocks when new WebSocket data arrives
-  // Server already filters for 5%+ change and 50k+ volume
-  useEffect(() => {
-    if (lastMessage && Array.isArray(lastMessage)) {
-      setStocks(lastMessage);
-    }
-  }, [lastMessage]);
+  // Use new unified WebSocket hook
+  const { data: stocks, isConnected, error } = useNocData();
 
   const handleStockClick = (ticker: string) => {
     setSelectedStock(ticker);
@@ -450,7 +430,7 @@ export function NocTable({ initialTicker }: NocTableProps) {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {stocks.map((stock) => (
+                  {(stocks || []).map((stock) => (
                     <TableRow
                       key={stock.ticker}
                       className={`cursor-pointer hover:bg-muted/50 ${

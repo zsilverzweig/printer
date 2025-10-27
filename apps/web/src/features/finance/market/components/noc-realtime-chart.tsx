@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { useMarketStream } from "@/features/finance/market/hooks/use-market-stream";
+import { useMarketData } from "@/lib/hooks/use-market-data";
 import { Button } from "@/lib/components/ui/button";
 import { CandlestickChart } from "@/lib/components/ui/candlestick-chart";
 import { CardActionButton } from "@/lib/components/ui/card-action-button";
@@ -220,22 +220,19 @@ export function NocRealtimeChart({
     [symbol]
   );
 
-  // Connect to FastAPI WebSocket proxy
-  // URL format: ws://localhost:8000/ws?subs=A.AAPL
-  const wsEndpoint = process.env.NEXT_PUBLIC_WS_URL
-    ? `${process.env.NEXT_PUBLIC_WS_URL}/ws`
-    : "ws://localhost:8000/ws";
-
-  const { isConnected: wsConnected } = useMarketStream({
-    endpoint: wsEndpoint,
-    subs: subscription,
-    onMessage: handleMessage,
-    debug: true,
-  });
+  // Use new unified WebSocket hook
+  const { data: marketData, isConnected: wsConnected } = useMarketData(symbol);
 
   useEffect(() => {
     setIsConnected(wsConnected);
   }, [wsConnected]);
+
+  // Handle market data updates
+  useEffect(() => {
+    if (marketData) {
+      handleMessage(marketData);
+    }
+  }, [marketData, handleMessage]);
 
   // Fetch historical data when symbol changes
   useEffect(() => {

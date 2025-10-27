@@ -27,7 +27,9 @@ import { Toaster } from "sonner";
 import { getServerUser } from "@/lib/auth/server";
 import { AppLayout } from "@/lib/components/app-layout";
 import { LayoutWidgets } from "@/lib/components/layout-widgets";
+import { WebSocketStatus } from "@/lib/components/websocket-status";
 import { AuthProvider } from "@/lib/providers/auth-provider";
+import { WebSocketProvider } from "@/lib/providers/websocket-provider";
 
 import "./globals.css";
 
@@ -52,14 +54,17 @@ export default async function RootLayout({
       <meta name="apple-mobile-web-app-title" content="printer" />
       <body className={inter.className}>
         <AuthProvider initialUser={user}>
-          <AppLayout>{children}</AppLayout>
-          <LayoutWidgets />
-          <Toaster
-            position="bottom-right"
-            expand={true}
-            richColors={true}
-            closeButton={true}
-          />
+          <WebSocketProvider>
+            <AppLayout>{children}</AppLayout>
+            <LayoutWidgets />
+            <WebSocketStatus />
+            <Toaster
+              position="bottom-right"
+              expand={true}
+              richColors={true}
+              closeButton={true}
+            />
+          </WebSocketProvider>
         </AuthProvider>
       </body>
     </html>

@@ -70,3 +70,4 @@ async def update_noc_config(config: NocConfigUpdate):
             "min_change_percent": noc_service.min_change_percent,
         }
     }
+

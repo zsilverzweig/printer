@@ -4,18 +4,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import * as React from "react";
 
-import { useMarketStream } from "@/features/finance/market/hooks/use-market-stream";
+import { useScreenerData } from "@/lib/hooks/use-screener-data";
 import { Card } from "@/lib/components/ui/card";
 import type { ScreenedStockPreview } from "@/lib/types/market";
 import { log } from "@/lib/utils/logger";
-
-// Global cache for screener data (persists across navigation)
-type ScreenerGlobals = {
-  __PR_SCREENER_CACHE__?: ScreenedStockPreview[] | null;
-};
-const __SCREENER_GLOBAL__ = globalThis as unknown as ScreenerGlobals;
-if (!__SCREENER_GLOBAL__.__PR_SCREENER_CACHE__)
-  __SCREENER_GLOBAL__.__PR_SCREENER_CACHE__ = null;
 
 function formatNumber(n: number | undefined) {
   if (typeof n !== "number") return "-";
@@ -43,14 +35,13 @@ const TIMEFRAME_LABELS: Record<TimeframeFilter, string> = {
 };
 
 export default function ScreenerPage() {
-  // Initialize from global cache
-  const [data, setData] = React.useState<ScreenedStockPreview[] | null>(
-    () => __SCREENER_GLOBAL__.__PR_SCREENER_CACHE__ ?? null
-  );
-  const [error, setError] = React.useState<string | null>(null);
   const [selectedTimeframe, setSelectedTimeframe] =
     React.useState<TimeframeFilter>("close");
   const router = useRouter();
+  
+  // Use new unified WebSocket hook
+  const { data, isConnected, error } = useScreenerData();
+  
   const avgVolume = React.useMemo(() => {
     if (!data || data.length === 0) return 0;
     const sum = data.reduce(
@@ -59,144 +50,6 @@ export default function ScreenerPage() {
     );
     return sum / data.length;
   }, [data]);
-  const mapIncomingToPreview = React.useCallback(
-    (raw: unknown): ScreenedStockPreview | null => {
-      if (!raw || typeof raw !== "object") return null;
-      const r = raw as Record<string, unknown>;
-      const toNum = (v: unknown, fallback = 0): number =>
-        typeof v === "number" ? v : Number(v ?? fallback) || fallback;
-      const toStr = (v: unknown, fallback = ""): string =>
-        typeof v === "string" ? v : String(v ?? fallback);
-
-      const toNumOrNull = (v: unknown): number | null => {
-        if (v === null || v === undefined) return null;
-        const n = typeof v === "number" ? v : Number(v);
-        return isNaN(n) ? null : n;
-      };
-
-      return {
-        ticker: toStr(r["T"] ?? r["ticker"] ?? ""),
-        open: toNum(r["o"] ?? r["open"]),
-        high: toNum(r["h"] ?? r["high"] ?? r["c"]),
-        low: toNum(r["l"] ?? r["low"] ?? r["c"]),
-        close: toNum(r["c"] ?? r["close"]),
-        price: toNum(r["p"] ?? r["price"]),
-        volume: toNum(r["v"] ?? r["volume"]),
-        transactions: toNum(r["n"] ?? r["transactions"]),
-        window_start: toNum(r["t"] ?? r["window_start"]),
-        rv: toNum(r["rv"]),
-        rv30: toNum(r["rv30"]),
-        rv60: toNum(r["rv60"]),
-        change_1m: toNumOrNull(r["change_1m"]),
-        change_5m: toNumOrNull(r["change_5m"]),
-        change_1h: toNumOrNull(r["change_1h"]),
-        change_close: toNum(r["change_close"]),
-      };
-    },
-    []
-  );
-
-  const onMessage = React.useCallback(
-    (msg: unknown) => {
-      try {
-        let payload: unknown = msg;
-        if (typeof msg === "string") {
-          try {
-            payload = JSON.parse(msg);
-          } catch {
-            // pass-through
-          }
-        }
-
-        if (Array.isArray(payload)) {
-          const items = (payload as unknown[])
-            .map(mapIncomingToPreview)
-            .filter(Boolean) as ScreenedStockPreview[];
-          try {
-            log.info("[Screener] received batch", {
-              count: items.length,
-              sample: items[0],
-            });
-          } catch {}
-          // Update both local state and global cache
-          __SCREENER_GLOBAL__.__PR_SCREENER_CACHE__ = items;
-          setData(items);
-          return;
-        }
-
-        if (payload && typeof payload === "object") {
-          const maybe = payload as Record<string, unknown>;
-          const maybeItems = (maybe["items"] || maybe["data"]) as unknown;
-          if (Array.isArray(maybeItems)) {
-            const items = (maybeItems as unknown[])
-              .map(mapIncomingToPreview)
-              .filter(Boolean) as ScreenedStockPreview[];
-            try {
-              log.info("[Screener] received envelope batch", {
-                count: items.length,
-                sample: items[0],
-              });
-            } catch {}
-            // Update both local state and global cache
-            __SCREENER_GLOBAL__.__PR_SCREENER_CACHE__ = items;
-            setData(items);
-            return;
-          }
-
-          // Single update - upsert into current list
-          const one = mapIncomingToPreview(payload);
-          if (one) {
-            try {
-              log.debug("[Screener] received single update", {
-                ticker: one.ticker,
-              });
-            } catch {}
-            setData((prev) => {
-              const list = Array.isArray(prev) ? [...prev] : [];
-              const idx = list.findIndex(
-                (d) =>
-                  d.ticker === one.ticker && d.window_start === one.window_start
-              );
-              if (idx >= 0) list[idx] = one;
-              else list.push(one);
-              // Update global cache
-              __SCREENER_GLOBAL__.__PR_SCREENER_CACHE__ = list;
-              return list;
-            });
-            return;
-          }
-        }
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "WS message error");
-      }
-    },
-    [mapIncomingToPreview]
-  );
-
-  const {
-    isConnected,
-    isConnecting,
-    error: wsError,
-  } = useMarketStream({
-    subs: "SCREENER",
-    onMessage,
-    subscribeOnOpen: true,
-    debug: true,
-  });
-
-  React.useEffect(() => {
-    setError(wsError || null);
-  }, [wsError]);
-
-  React.useEffect(() => {
-    try {
-      log.debug("[Screener] WS status", {
-        isConnected,
-        isConnecting,
-        hasError: !!wsError,
-      });
-    } catch {}
-  }, [isConnected, isConnecting, wsError]);
 
   // Filter and sort data based on selected timeframe
   const filteredData = React.useMemo(() => {
@@ -280,10 +133,13 @@ export default function ScreenerPage() {
 
       <Card className="p-4 overflow-x-auto space-y-4">
         <div className="flex items-center justify-between text-sm text-muted-foreground">
-          <div>
-            {isConnecting && <span>Connecting…</span>}
-            {isConnected && <span>Live</span>}
-            {!isConnecting && !isConnected && <span>Disconnected</span>}
+          <div className="flex items-center gap-2">
+            <div className={`h-2 w-2 rounded-full ${
+              isConnected ? "bg-green-500" : "bg-red-500"
+            }`} />
+            <span>
+              {isConnected ? "Live" : "Disconnected"}
+            </span>
           </div>
           {avgVolume > 0 && <div>Avg Volume: {formatNumber(avgVolume)}</div>}
         </div>

@@ -130,7 +130,12 @@ class ScreenerService:
                 payload = []
         
         self.cached_payload = payload
-        msg = json.dumps(jsonable_encoder(payload))
+        # Wrap in message envelope for unified WebSocket
+        msg = json.dumps({
+            "type": "screener_update",
+            "data": jsonable_encoder(payload),
+            "timestamp": int(time.time() * 1000)
+        })
         self.logger.debug(
             "Broadcasting payload to %s subscribers; top=%s",
             len(self.subscribers),

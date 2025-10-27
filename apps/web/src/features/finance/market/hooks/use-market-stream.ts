@@ -1,12 +1,21 @@
 "use client";
 
+/**
+ * @deprecated This hook is deprecated. Use the new unified WebSocket hooks instead:
+ * - useNocData() for NOC data
+ * - useScreenerData() for screener data  
+ * - useMarketData(symbol) for market data
+ * 
+ * This hook is kept for backward compatibility but will be removed in a future version.
+ */
+
 import { useEffect, useMemo } from "react";
 
 import { useWebSocket } from "@/lib/hooks/use-websocket";
 import { log } from "@/lib/utils/logger";
 
 export interface UseMarketStreamOptions {
-  endpoint?: string; // default uses NEXT_PUBLIC_MARKET_WS_URL
+  endpoint?: string; // default uses NEXT_PUBLIC_WS_URL
   subs: string; // e.g., "AM.*" or comma-separated list
   onMessage?: (msg: unknown) => void;
   subscribeOnOpen?: boolean; // send a subscribe message when connected
@@ -15,7 +24,7 @@ export interface UseMarketStreamOptions {
 }
 
 export function useMarketStream({
-  endpoint = process.env.NEXT_PUBLIC_MARKET_WS_URL as string,
+  endpoint = process.env.NEXT_PUBLIC_WS_URL as string,
   subs,
   onMessage,
   subscribeOnOpen = false,
@@ -27,7 +36,7 @@ export function useMarketStream({
     try {
       if (!endpoint) {
         log.error("[MarketStream] No endpoint configured", {
-          NEXT_PUBLIC_MARKET_WS_URL: process.env.NEXT_PUBLIC_MARKET_WS_URL,
+          NEXT_PUBLIC_WS_URL: process.env.NEXT_PUBLIC_WS_URL,
         });
         return "";
       }
@@ -41,7 +50,7 @@ export function useMarketStream({
           endpoint,
           subs,
           finalUrl,
-          envVarSet: !!process.env.NEXT_PUBLIC_MARKET_WS_URL,
+          envVarSet: !!process.env.NEXT_PUBLIC_WS_URL,
         });
       }
       return finalUrl;

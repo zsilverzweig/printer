@@ -5,6 +5,7 @@ import contextlib
 import json
 import logging
 import random
+import time
 from typing import Any, Dict, List, Set
 
 from fastapi.encoders import jsonable_encoder
@@ -63,7 +64,12 @@ class NocService:
             payload = await self._compute_noc_data()
             self.cached_payload = payload
             
-            msg = json.dumps(jsonable_encoder(payload))
+            # Wrap in message envelope for unified WebSocket
+            msg = json.dumps({
+                "type": "noc_update",
+                "data": jsonable_encoder(payload),
+                "timestamp": int(time.time() * 1000)
+            })
             self.logger.info(
                 "Broadcasting NOC payload to %s subscribers; stocks=%s",
                 len(self.subscribers),

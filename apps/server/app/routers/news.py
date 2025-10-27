@@ -148,3 +148,4 @@ async def analyze_news(ticker: str, days: int = 7):
     except Exception as e:
         logger.error(f"Error analyzing news for {ticker}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to analyze news for {ticker}: {str(e)}")
+
