@@ -453,6 +453,9 @@ async def unified_realtime(websocket: WebSocket):
                 logger.warning("Received invalid JSON from client")
             except Exception as e:
                 logger.error("Error handling client message: %s", e)
+                # Break on WebSocket disconnect errors
+                if "disconnect" in str(e).lower() or "closed" in str(e).lower():
+                    break
     
     except Exception as e:
         logger.info("Unified realtime WebSocket connection closed: %s", e)

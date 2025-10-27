@@ -37,21 +37,14 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
   const pendingSubscriptions = useRef<Set<string>>(new Set());
   const pendingUnsubscriptions = useRef<Set<string>>(new Set());
   
-  // WebSocket connection
-  const wsUrl = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000";
-  const { isConnected, sendJson, error: wsError } = useWebSocket<WebSocketMessage>(
-    `${wsUrl}/realtime`,
-    {
-      autoReconnect: true,
-      reconnectIntervalMs: 3000,
-      debug: true,
+  // Extract symbol from market data message
+  const extractSymbolFromMarketData = (data: unknown): string | null => {
+    if (data && typeof data === "object") {
+      const obj = data as Record<string, unknown>;
+      return (obj.sym || obj.symbol || obj.T) as string || null;
     }
-  );
-  
-  // Update error state when WebSocket error changes
-  useEffect(() => {
-    setError(wsError);
-  }, [wsError]);
+    return null;
+  };
   
   // Handle incoming messages
   const handleMessage = useCallback((message: WebSocketMessage) => {
@@ -93,14 +86,28 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
     }
   }, []);
   
-  // Extract symbol from market data message
-  const extractSymbolFromMarketData = (data: unknown): string | null => {
-    if (data && typeof data === "object") {
-      const obj = data as Record<string, unknown>;
-      return (obj.sym || obj.symbol || obj.T) as string || null;
+  // WebSocket connection
+  const wsUrl = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000";
+  const { isConnected, sendJson, error: wsError, lastMessage } = useWebSocket<WebSocketMessage>(
+    `${wsUrl}/realtime`,
+    {
+      autoReconnect: true,
+      reconnectIntervalMs: 3000,
+      debug: true,
     }
-    return null;
-  };
+  );
+  
+  // Update error state when WebSocket error changes
+  useEffect(() => {
+    setError(wsError);
+  }, [wsError]);
+  
+  // Handle incoming messages when lastMessage changes
+  useEffect(() => {
+    if (lastMessage) {
+      handleMessage(lastMessage);
+    }
+  }, [lastMessage, handleMessage]);
   
   // Subscribe to market symbol
   const subscribeToSymbol = useCallback((symbol: string) => {
