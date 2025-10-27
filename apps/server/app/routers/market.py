@@ -1,8 +1,7 @@
 """Market data API endpoints."""
 
 from typing import Optional
-from fastapi import APIRouter, Query, Depends
-from polygon import RESTClient
+from fastapi import APIRouter, Query
 
 from app.lib.dependencies import PolygonClient, PolygonClientNoPagination
 from app.services import market as market_service
@@ -20,7 +19,7 @@ async def get_aggregates(
     to: str = Query(),
     limit: int = 50000,
     paginate: bool = True,
-    client: RESTClient = Depends(PolygonClient),
+    client: PolygonClient = None,
 ):
     """Get aggregate bars for a ticker over a given time range."""
     return market_service.list_aggs(client, ticker, multiplier, timespan, from_, to, limit)
@@ -29,7 +28,7 @@ async def get_aggregates(
 @router.get("/last-trade/{ticker}")
 async def get_last_trade(
     ticker: str,
-    client: RESTClient = Depends(PolygonClient),
+    client: PolygonClient = None,
 ):
     """Get the last trade for a ticker."""
     return market_service.get_last_trade(client, ticker)
@@ -38,7 +37,7 @@ async def get_last_trade(
 @router.get("/last-quote/{ticker}")
 async def get_last_quote(
     ticker: str,
-    client: RESTClient = Depends(PolygonClient),
+    client: PolygonClient = None,
 ):
     """Get the last quote for a ticker."""
     return market_service.get_last_quote(client, ticker)
@@ -50,7 +49,7 @@ async def list_trades(
     timestamp: Optional[str] = None,
     limit: int = 100,
     paginate: bool = True,
-    client: RESTClient = Depends(PolygonClient),
+    client: PolygonClient = None,
 ):
     """List trades for a ticker."""
     return market_service.list_trades(client, ticker, timestamp, limit)
@@ -62,7 +61,7 @@ async def list_quotes(
     timestamp: Optional[str] = None,
     limit: int = 100,
     paginate: bool = True,
-    client: RESTClient = Depends(PolygonClient),
+    client: PolygonClient = None,
 ):
     """List quotes for a ticker."""
     return market_service.list_quotes(client, ticker, timestamp, limit)
@@ -71,7 +70,7 @@ async def list_quotes(
 @router.get("/ticker-details/{ticker}")
 async def get_ticker_details(
     ticker: str,
-    client: RESTClient = Depends(PolygonClient),
+    client: PolygonClient = None,
 ):
     """Get detailed company information for a ticker."""
     return market_service.get_ticker_details(client, ticker)
@@ -81,7 +80,7 @@ async def get_ticker_details(
 async def get_ticker_financials(
     ticker: str,
     limit: int = 5,
-    client: RESTClient = Depends(PolygonClient),
+    client: PolygonClient = None,
 ):
     """Get financial data for a ticker (quarterly/annual reports)."""
     return market_service.get_ticker_financials(client, ticker, limit)

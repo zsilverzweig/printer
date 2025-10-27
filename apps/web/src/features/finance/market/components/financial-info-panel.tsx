@@ -93,7 +93,7 @@ export function FinancialInfoPanel({
     setErrorFinancials(null);
 
     // Fetch ticker details
-    fetch(`${apiUrl}/ticker-details/${ticker}`)
+    fetch(`${apiUrl}/api/market/ticker-details/${ticker}`)
       .then((res) => {
         if (!res.ok) throw new Error(`Failed to fetch details: ${res.status}`);
         return res.json();
@@ -109,7 +109,7 @@ export function FinancialInfoPanel({
       });
 
     // Fetch financials
-    fetch(`${apiUrl}/financials/${ticker}?limit=4`)
+    fetch(`${apiUrl}/api/market/financials/${ticker}?limit=4`)
       .then((res) => {
         if (!res.ok)
           throw new Error(`Failed to fetch financials: ${res.status}`);

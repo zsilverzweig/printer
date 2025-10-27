@@ -266,7 +266,7 @@ export function NocRealtimeChart({
           paginate: "true", // Enable pagination to get all bars
         });
 
-        const url = `${baseUrl}/aggs/${encodeURIComponent(
+        const url = `${baseUrl}/api/market/aggs/${encodeURIComponent(
           symbol
         )}?${params.toString()}`;
         console.log(
