@@ -9,7 +9,7 @@
       "options": {
         "commands": [
           "lsof -ti:3000,8000,5432 2>/dev/null | xargs kill -9 2>/dev/null || true",
-          "docker info >/dev/null 2>&1 || (echo 'Starting Docker Desktop...' && open -a Docker && sleep 10)",
+          "docker info >/dev/null 2>&1 || (echo 'Starting Docker Desktop...' && open -a 'Docker Desktop' && sleep 10)",
           "set -a && source .env.local && set +a && docker-compose up --build"
         ],
         "cwd": "{workspaceRoot}",
@@ -22,7 +22,7 @@
       "options": {
         "commands": [
           "lsof -ti:3000,8000,5432 2>/dev/null | xargs kill -9 2>/dev/null || true",
-          "docker info >/dev/null 2>&1 || (echo 'Starting Docker Desktop...' && open -a Docker && sleep 10)",
+          "docker info >/dev/null 2>&1 || (echo 'Starting Docker Desktop...' && open -a 'Docker Desktop' && sleep 10)",
           "docker-compose up --build -d"
         ],
         "cwd": "{workspaceRoot}",
@@ -49,10 +49,7 @@
     "docker:restart": {
       "executor": "nx:run-commands",
       "options": {
-        "commands": [
-          "docker-compose down",
-          "docker-compose up --build -d"
-        ],
+        "commands": ["docker-compose down", "docker-compose up --build -d"],
         "cwd": "{workspaceRoot}",
         "parallel": false
       },
@@ -108,4 +105,3 @@
     }
   }
 }
-
