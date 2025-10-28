@@ -1,8 +1,7 @@
 "use client";
 
-import { CheckCircle, RefreshCw } from "lucide-react";
-import { useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { RefreshCw } from "lucide-react";
+import { useState } from "react";
 
 import { Button } from "@/lib/components/ui/button";
 import { useAuth } from "@/lib/hooks/use-auth";
@@ -16,12 +15,13 @@ import {
   TradingProvider,
   useTradingContext,
 } from "../contexts/trading-context";
-import { useTrading } from "../hooks/use-trading";
+import { useAlpacaTrading } from "../hooks/use-alpaca-trading";
 
 import { AccountSummary } from "./account-summary";
 import { ClosePositionModal } from "./close-position-modal";
 import { OrderConfirmationModal } from "./order-confirmation-modal";
 import { OrderForm } from "./order-form";
+import { OrdersTable } from "./orders-table";
 import { PositionsList } from "./positions-list";
 import { RecentOrdersList } from "./recent-orders-list";
 import { TradingEnvironmentToggle } from "./trading-environment-toggle";
@@ -54,16 +54,12 @@ function TradingPanelContent() {
     orders,
     loading,
     isPlacingOrder,
-    isConnected,
     refresh,
     placeOrder,
-  } = useTrading();
+  } = useAlpacaTrading();
 
   const [orderError, setOrderError] = useState<string | null>(null);
   const [orderSuccess, setOrderSuccess] = useState<string | null>(null);
-  const [connectionSuccess, setConnectionSuccess] = useState<string | null>(
-    null
-  );
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [estimatedCost, setEstimatedCost] = useState<number | null>(null);
   const [confirmationData, setConfirmationData] =
@@ -74,18 +70,6 @@ function TradingPanelContent() {
     symbol: string;
     qty: number;
   } | null>(null);
-
-  const searchParams = useSearchParams();
-
-  // Check for success message from OAuth callback
-  useEffect(() => {
-    const success = searchParams.get("success");
-    if (success === "alpaca_connected") {
-      setConnectionSuccess("Alpaca account connected successfully!");
-      // Clear the success message after 5 seconds
-      setTimeout(() => setConnectionSuccess(null), 5000);
-    }
-  }, [searchParams]);
 
   const accountCurrency = account?.currency || "USD";
 
@@ -221,47 +205,6 @@ function TradingPanelContent() {
     );
   }
 
-  if (!isConnected) {
-    return (
-      <div className="space-y-6">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <h1 className="text-3xl font-bold">Trading Dashboard</h1>
-            <p className="text-muted-foreground">
-              Manage your investment portfolio with real-time trading
-              capabilities. Place orders, monitor positions, and track your
-              performance.
-            </p>
-          </div>
-          <Button onClick={refresh} variant="outline" size="sm">
-            <RefreshCw className="mr-2 h-4 w-4" />
-            Refresh data
-          </Button>
-        </div>
-
-        {connectionSuccess && (
-          <div className="rounded-md border border-green-200 bg-green-50 p-4 text-green-800 dark:border-green-800 dark:bg-green-950 dark:text-green-200">
-            <div className="flex items-center gap-2">
-              <CheckCircle className="h-4 w-4" />
-              {connectionSuccess}
-            </div>
-          </div>
-        )}
-
-        <div className="flex items-center justify-center py-12">
-          <div className="text-center">
-            <h2 className="text-2xl font-bold text-muted-foreground">
-              Trading account integration not yet implemented
-            </h2>
-            <p className="text-muted-foreground mt-2">
-              Connect your Alpaca account to start trading.
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -278,15 +221,6 @@ function TradingPanelContent() {
           Refresh data
         </Button>
       </div>
-
-      {connectionSuccess && (
-        <div className="rounded-md border border-green-200 bg-green-50 p-4 text-green-800 dark:border-green-800 dark:bg-green-950 dark:text-green-200">
-          <div className="flex items-center gap-2">
-            <CheckCircle className="h-4 w-4" />
-            {connectionSuccess}
-          </div>
-        </div>
-      )}
 
       <TradingEnvironmentToggle />
 
@@ -315,6 +249,13 @@ function TradingPanelContent() {
           />
         </div>
       </div>
+
+      {/* Full-width Orders Table */}
+      <OrdersTable
+        orders={orders}
+        loading={loading}
+        accountCurrency={accountCurrency}
+      />
 
       {confirmationData && (
         <OrderConfirmationModal

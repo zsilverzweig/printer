@@ -9,6 +9,8 @@ from typing import Dict, Any, Optional
 from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import MarketOrderRequest
 from alpaca.trading.enums import OrderSide, TimeInForce
+from alpaca.data.historical import StockHistoricalDataClient
+from alpaca.data.requests import StockLatestQuoteRequest
 
 logger = logging.getLogger("app.alpaca_service")
 
@@ -24,6 +26,7 @@ class AlpacaService:
         if not api_key or not secret_key:
             logger.warning("Alpaca API credentials not found in environment variables")
             self.client = None
+            self.data_client = None
             return
         
         # Force paper trading
@@ -31,6 +34,12 @@ class AlpacaService:
             api_key=api_key,
             secret_key=secret_key,
             paper=True  # Ensure paper trading only
+        )
+        
+        # Initialize data client for market data (quotes, bars, etc.)
+        self.data_client = StockHistoricalDataClient(
+            api_key=api_key,
+            secret_key=secret_key
         )
         
         logger.info("Alpaca trading client initialized (PAPER TRADING MODE)")
@@ -102,46 +111,129 @@ class AlpacaService:
     async def place_market_order(
         self, 
         symbol: str, 
-        notional: float = 1000.0,
-        side: str = "buy"
+        notional: float = None,
+        qty: float = None,
+        side: str = "buy",
+        time_in_force: str = "gtc"
     ) -> Dict[str, Any]:
         """
-        Place a market order with notional amount (dollar-based).
+        Place a market order with either notional amount (dollar-based) or quantity.
         
         Args:
             symbol: Stock ticker symbol
-            notional: Dollar amount to trade (default $1000)
+            notional: Dollar amount to trade (optional)
+            qty: Number of shares to trade (optional)
             side: "buy" or "sell"
+            time_in_force: "day", "gtc", "ioc", "fok" (default: "gtc")
             
         Returns:
             Dictionary with order details
         """
+        logger.info("=" * 80)
+        logger.info(f"📝 ORDER REQUEST RECEIVED")
+        logger.info(f"   Symbol: {symbol}")
+        logger.info(f"   Notional: ${notional:.2f}" if notional else f"   Quantity: {qty}")
+        logger.info(f"   Side: {side.upper()}")
+        logger.info(f"   Time in Force: {time_in_force.upper()}")
+        logger.info("=" * 80)
+        
         if not self.client:
+            logger.error("❌ Alpaca client not initialized")
             raise ValueError("Alpaca client not initialized. Check API credentials.")
+        
+        if not notional and not qty:
+            logger.error("❌ Neither notional nor qty provided")
+            raise ValueError("Either notional or qty must be provided")
         
         try:
             # Validate side
             order_side = OrderSide.BUY if side.lower() == "buy" else OrderSide.SELL
+            logger.info(f"✓ Order side validated: {order_side.value}")
             
-            logger.info(
-                f"Placing market order: {side.upper()} ${notional:.2f} notional of {symbol}"
-            )
+            # Convert time_in_force string to enum
+            tif_map = {
+                "day": TimeInForce.DAY,
+                "gtc": TimeInForce.GTC,
+                "ioc": TimeInForce.IOC,
+                "fok": TimeInForce.FOK,
+            }
+            time_in_force_enum = tif_map.get(time_in_force.lower(), TimeInForce.GTC)
+            logger.info(f"✓ Time in force: {time_in_force_enum.value}")
             
-            # Create market order request with notional amount
-            order_request = MarketOrderRequest(
-                symbol=symbol,
-                notional=notional,
-                side=order_side,
-                time_in_force=TimeInForce.DAY
-            )
-            
-            # Submit order
-            order = self.client.submit_order(order_request)
+            # Try notional first if provided
+            if notional and not qty:
+                logger.info(f"💵 Attempting NOTIONAL order: ${notional:.2f} of {symbol}")
+                
+                try:
+                    # Create market order request with notional amount
+                    order_request = MarketOrderRequest(
+                        symbol=symbol,
+                        notional=notional,
+                        side=order_side,
+                        time_in_force=time_in_force_enum
+                    )
+                    logger.info(f"📤 Submitting notional order to Alpaca API...")
+                    
+                    # Submit order
+                    order = self.client.submit_order(order_request)
+                    logger.info(f"✅ Notional order accepted by Alpaca")
+                    
+                except Exception as notional_error:
+                    # If the asset is not fractionable, fall back to quantity-based order
+                    if "not fractionable" in str(notional_error).lower():
+                        logger.warning(f"⚠️  {symbol} is NOT fractionable")
+                        logger.info(f"🔄 Falling back to quantity-based order")
+                        
+                        # Get current quote to calculate quantity
+                        logger.info(f"📊 Fetching quote for {symbol}...")
+                        quote = await self.get_quote(symbol)
+                        current_price = (quote["ask_price"] + quote["bid_price"]) / 2
+                        logger.info(f"   Current price: ${current_price:.2f}")
+                        
+                        qty = int(notional / current_price)
+                        logger.info(f"   Calculated quantity: {qty} shares")
+                        
+                        if qty < 1:
+                            logger.error(f"❌ Insufficient funds: ${notional:.2f} < ${current_price:.2f}")
+                            raise ValueError(
+                                f"Insufficient notional amount (${notional:.2f}) to buy at least 1 share at ${current_price:.2f}"
+                            )
+                        
+                        logger.info(f"💰 Placing QTY order: {qty} shares of {symbol}")
+                        
+                        order_request = MarketOrderRequest(
+                            symbol=symbol,
+                            qty=qty,
+                            side=order_side,
+                            time_in_force=time_in_force_enum
+                        )
+                        logger.info(f"📤 Submitting qty order to Alpaca API...")
+                        
+                        order = self.client.submit_order(order_request)
+                        logger.info(f"✅ Quantity order accepted by Alpaca")
+                    else:
+                        logger.error(f"❌ Notional order failed: {notional_error}")
+                        raise
+            else:
+                # Use quantity-based order
+                logger.info(f"💰 Placing QTY order: {qty} shares of {symbol}")
+                
+                order_request = MarketOrderRequest(
+                    symbol=symbol,
+                    qty=qty,
+                    side=order_side,
+                    time_in_force=time_in_force_enum
+                )
+                logger.info(f"📤 Submitting qty order to Alpaca API...")
+                
+                order = self.client.submit_order(order_request)
+                logger.info(f"✅ Quantity order accepted by Alpaca")
             
             order_data = {
                 "id": str(order.id),
                 "client_order_id": order.client_order_id,
                 "symbol": order.symbol,
+                "qty": float(order.qty) if order.qty else None,
                 "notional": notional,
                 "side": order.side.value,
                 "type": order.type.value,
@@ -153,14 +245,32 @@ class AlpacaService:
                 "filled_avg_price": float(order.filled_avg_price) if order.filled_avg_price else None,
             }
             
-            logger.info(
-                f"Order submitted: {order_data['id']} - {order_data['status']}"
-            )
+            logger.info("=" * 80)
+            logger.info(f"✅ ORDER RESPONSE FROM ALPACA")
+            logger.info(f"   Order ID: {order_data['id']}")
+            logger.info(f"   Client Order ID: {order_data['client_order_id']}")
+            logger.info(f"   Status: {order_data['status'].upper()}")
+            logger.info(f"   Symbol: {order_data['symbol']}")
+            logger.info(f"   Side: {order_data['side'].upper()}")
+            logger.info(f"   Type: {order_data['type'].upper()}")
+            logger.info(f"   Time in Force: {order_data['time_in_force'].upper()}")
+            logger.info(f"   Quantity: {order_data['qty'] if order_data['qty'] else 'N/A'}")
+            logger.info(f"   Notional: ${order_data['notional']:.2f}" if order_data['notional'] else "   Notional: N/A")
+            logger.info(f"   Filled Qty: {order_data['filled_qty']}")
+            logger.info(f"   Filled Avg Price: ${order_data['filled_avg_price']:.2f}" if order_data['filled_avg_price'] else "   Filled Avg Price: N/A")
+            logger.info(f"   Submitted At: {order_data['submitted_at']}")
+            logger.info(f"   Filled At: {order_data['filled_at'] if order_data['filled_at'] else 'Not filled yet'}")
+            logger.info("=" * 80)
             
             return order_data
             
         except Exception as e:
-            logger.error(f"Failed to place market order for {symbol}: {e}")
+            logger.error("=" * 80)
+            logger.error(f"❌ ORDER FAILED")
+            logger.error(f"   Symbol: {symbol}")
+            logger.error(f"   Error Type: {type(e).__name__}")
+            logger.error(f"   Error Message: {str(e)}")
+            logger.error("=" * 80)
             raise
     
     async def get_positions(self) -> list[Dict[str, Any]]:
@@ -233,6 +343,44 @@ class AlpacaService:
             if "position does not exist" in str(e).lower():
                 return None
             logger.error(f"Failed to get position for {symbol}: {e}")
+            raise
+    
+    async def get_quote(self, symbol: str) -> Dict[str, Any]:
+        """
+        Get latest quote for a symbol.
+        
+        Args:
+            symbol: Stock ticker symbol
+            
+        Returns:
+            Dictionary with latest quote data
+        """
+        if not self.data_client:
+            raise ValueError("Alpaca data client not initialized. Check API credentials.")
+        
+        try:
+            request = StockLatestQuoteRequest(symbol_or_symbols=symbol)
+            quotes = self.data_client.get_stock_latest_quote(request)
+            
+            if symbol not in quotes:
+                raise ValueError(f"No quote data found for {symbol}")
+            
+            quote = quotes[symbol]
+            
+            quote_data = {
+                "symbol": symbol,
+                "ask_price": float(quote.ask_price),
+                "bid_price": float(quote.bid_price),
+                "ask_size": int(quote.ask_size),
+                "bid_size": int(quote.bid_size),
+                "timestamp": quote.timestamp.isoformat() if quote.timestamp else None,
+            }
+            
+            logger.info(f"Retrieved quote for {symbol}: bid=${quote_data['bid_price']:.2f}, ask=${quote_data['ask_price']:.2f}")
+            return quote_data
+            
+        except Exception as e:
+            logger.error(f"Failed to get quote for {symbol}: {e}")
             raise
 
 

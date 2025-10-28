@@ -1,11 +1,6 @@
 "use client";
 
-import type {
-  CandlestickData,
-  HistogramData,
-  LineData,
-  Time,
-} from "lightweight-charts";
+import type { HistogramData, LineData, Time } from "lightweight-charts";
 import {
   createChart,
   CrosshairMode,
@@ -200,70 +195,9 @@ function mapToCandles(bars: AggregateBar[], barIntervalSeconds?: number) {
       close: b.c as number,
     }));
 
-  if (validBars.length === 0) return [];
-
-  // Fill in whitespace data points for missing time intervals
-  // This ensures consistent timeline spacing with visible gaps
-  const result: Array<{
-    time: number;
-    open?: number;
-    high?: number;
-    low?: number;
-    close?: number;
-  }> = [];
-
-  const firstTime = validBars[0].time;
-  const lastTime = validBars[validBars.length - 1].time;
-  
-  // Determine interval: use provided value or detect from data
-  let interval = barIntervalSeconds || 60; // Default to 1-minute bars
-  
-  // Only auto-detect if not explicitly provided
-  if (!barIntervalSeconds && validBars.length >= 2) {
-    // Calculate intervals between consecutive bars
-    const intervals = new Map<number, number>();
-    
-    for (let i = 1; i < Math.min(validBars.length, 20); i++) {
-      const diff = validBars[i].time - validBars[i - 1].time;
-      // Only consider intervals between 30 seconds and 1 hour (common trading timeframes)
-      if (diff >= 30 && diff <= 3600) {
-        intervals.set(diff, (intervals.get(diff) || 0) + 1);
-      }
-    }
-    
-    // Find the most common interval
-    let maxCount = 0;
-    for (const [intervalValue, count] of intervals) {
-      if (count > maxCount) {
-        maxCount = count;
-        interval = intervalValue;
-      }
-    }
-  }
-  
-  // Log interval for debugging
-  console.log(
-    `[CandlestickChart] Using ${interval}s interval (${
-      interval / 60
-    } minute bars) - ${barIntervalSeconds ? 'provided' : 'detected'}`
-  );
-  
-  // Create a map for quick lookup
-  const barMap = new Map(validBars.map((b) => [b.time, b]));
-
-  // Fill in all time points from first to last
-  for (let time = firstTime; time <= lastTime; time += interval) {
-    const bar = barMap.get(time);
-    if (bar) {
-      // Real data exists
-      result.push(bar);
-    } else {
-      // Add whitespace point for missing data
-      result.push({ time });
-    }
-  }
-
-  return result;
+  // Return bars without filling whitespace - show only actual data points
+  // This prevents confusing gaps and makes the chart cleaner
+  return validBars;
 }
 
 export function CandlestickChart({
@@ -351,7 +285,6 @@ export function CandlestickChart({
         secondsVisible: false,
         shiftVisibleRangeOnNewBar: true, // Smoothly shift view when new bars arrive
         lockVisibleTimeRangeOnResize: true, // Maintain zoom level on resize
-        allowShiftVisibleRangeOnWhitespaceReplacement: true, // Allow proper gap handling
         // Timestamps are in Unix epoch (seconds), library uses browser's local timezone
         tickMarkFormatter: (
           time: number,
@@ -558,7 +491,6 @@ export function CandlestickChart({
   React.useEffect(() => {
     if (!seriesRef.current) return;
     const candles = mapToCandles(data, barIntervalSeconds);
-    // Cast to any first to handle whitespace data points (with only time property)
     seriesRef.current.setData(candles as any);
 
     // overlays
@@ -644,50 +576,79 @@ export function CandlestickChart({
     barIntervalSeconds,
   ]);
 
-  // Separate effect for view range - only updates when viewMode or data length changes significantly
+  // Track previous state to detect when we should reset the visible range
+  const prevDataLengthRef = React.useRef(0);
+  const prevBarIntervalRef = React.useRef(barIntervalSeconds);
+  const prevViewModeRef = React.useRef(viewMode);
+
+  // Effect to manage visible range
+  // This effect runs on every data update to handle:
+  // 1. Initial load - set full visible range
+  // 2. Symbol/history changes - reset to show new data
+  // 3. Realtime updates - scroll to follow new bars
+  // 4. Timeframe switches - maintain following behavior
   React.useEffect(() => {
     if (!chartRef.current || data.length === 0) return;
 
     const candles = mapToCandles(data, barIntervalSeconds);
     if (candles.length === 0) return;
 
-    // Use the last bar's timestamp instead of Date.now() for consistency
     const lastBarTime = candles[candles.length - 1].time as number;
     const firstBarTime = candles[0].time as number;
-    
-    if (viewMode === "focus") {
-      // Focus mode: Show last 2 hours with proper time spacing
-      const hoursToShow = 2;
-      const startTime = lastBarTime - hoursToShow * 60 * 60;
-      
-      chartRef.current.timeScale().setVisibleRange({
-        from: startTime as Time,
-        to: (lastBarTime + 300) as Time, // Add 5 minutes padding
-      });
-    } else {
-      // Default mode: Show time-based range, not just fitting bars
-      // Calculate actual time span from first to last bar
-      const timeSpan = lastBarTime - firstBarTime;
-      
-      // If data spans less than 24 hours, show 24 hours centered on the data
-      // This ensures consistent time scale regardless of data density
-      if (timeSpan < 24 * 60 * 60) {
-        const hoursToShow = 24;
+
+    // Detect significant data change (>20% = symbol change or history reload)
+    const prevLength = prevDataLengthRef.current;
+    const dataLengthChanged =
+      prevLength > 0 &&
+      Math.abs(data.length - prevLength) / Math.max(data.length, 1) > 0.2;
+
+    // Detect timeframe switch
+    const timeframeChanged = prevBarIntervalRef.current !== barIntervalSeconds;
+
+    // Detect view mode change
+    const viewModeChanged = prevViewModeRef.current !== viewMode;
+
+    // Initial load (first time with data)
+    const isInitialLoad = prevLength === 0;
+
+    if (isInitialLoad || dataLengthChanged || viewModeChanged) {
+      // Set full visible range for initial load, data changes, or view mode changes
+      if (viewMode === "focus") {
+        const hoursToShow = 2;
         const startTime = lastBarTime - hoursToShow * 60 * 60;
         chartRef.current.timeScale().setVisibleRange({
           from: startTime as Time,
           to: (lastBarTime + 300) as Time,
         });
       } else {
-        // For longer time spans, show from first bar with some padding
-        const padding = 300; // 5 minutes
-        chartRef.current.timeScale().setVisibleRange({
-          from: (firstBarTime - padding) as Time,
-          to: (lastBarTime + padding) as Time,
-        });
+        const timeSpan = lastBarTime - firstBarTime;
+        if (timeSpan < 24 * 60 * 60) {
+          const hoursToShow = 24;
+          const startTime = lastBarTime - hoursToShow * 60 * 60;
+          chartRef.current.timeScale().setVisibleRange({
+            from: startTime as Time,
+            to: (lastBarTime + 300) as Time,
+          });
+        } else {
+          const padding = 300;
+          chartRef.current.timeScale().setVisibleRange({
+            from: (firstBarTime - padding) as Time,
+            to: (lastBarTime + padding) as Time,
+          });
+        }
       }
+    } else if (timeframeChanged) {
+      // On timeframe switch, scroll to show the latest bars
+      // Use scrollToPosition to maintain auto-follow behavior
+      chartRef.current.timeScale().scrollToPosition(12, false);
     }
-  }, [viewMode, data.length, barIntervalSeconds]);
+    // For small updates (new realtime bars), the chart's shiftVisibleRangeOnNewBar
+    // setting will automatically scroll to follow new data
+
+    prevDataLengthRef.current = data.length;
+    prevBarIntervalRef.current = barIntervalSeconds;
+    prevViewModeRef.current = viewMode;
+  }, [data, viewMode, barIntervalSeconds]);
 
   const styleHeight = typeof height === "number" ? `${height}px` : height;
   const ema12Color = withAlpha(resolveColor("--blue-400", "#60a5fa"), 0.75);

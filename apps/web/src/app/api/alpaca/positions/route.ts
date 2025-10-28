@@ -1,17 +1,10 @@
 import { NextResponse } from "next/server";
 
-import { alpacaService } from "@/features/finance/lib/alpaca-service";
-import { getServerUser } from "@/lib/auth/server";
-
 export async function GET() {
   try {
-    const user = await getServerUser();
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const positions = await alpacaService.getPositions(user.uid, "paper");
-    return NextResponse.json({ positions });
+    const response = await fetch("http://server:8000/api/trading/positions");
+    const data = await response.json();
+    return NextResponse.json(data);
   } catch (error) {
     const message =
       error instanceof Error

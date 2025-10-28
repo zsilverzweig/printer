@@ -63,13 +63,23 @@ export function useQuote() {
 
         const data = await response.json();
 
+        // Map API response to Quote interface
+        const quote: Quote = {
+          symbol: data.quote.symbol,
+          bid: data.quote.bid_price,
+          ask: data.quote.ask_price,
+          bid_size: data.quote.bid_size,
+          ask_size: data.quote.ask_size,
+          timestamp: data.quote.timestamp,
+        };
+
         // Cache the result
         cacheRef.current.set(cacheKey, {
-          quote: data.quote,
+          quote,
           timestamp: now,
         });
 
-        return data.quote;
+        return quote;
       } catch (err) {
         const errorMessage =
           err instanceof Error ? err.message : "Failed to fetch quote";

@@ -56,6 +56,16 @@ export function StrategyEditor({
   const [aiTradingPrompt, setAiTradingPrompt] = useState("");
   const [chartTimeHorizon, setChartTimeHorizon] = useState("5d");
   const [chartGranularity, setChartGranularity] = useState("5min");
+  const [tradingStartTime, setTradingStartTime] = useState("09:30");
+  const [tradingEndTime, setTradingEndTime] = useState("16:00");
+  const [timezone, setTimezone] = useState("America/New_York");
+  const [tradingDays, setTradingDays] = useState<string[]>([
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+  ]);
 
   // Load existing strategy data
   useEffect(() => {
@@ -71,6 +81,18 @@ export function StrategyEditor({
       setAiTradingPrompt(strategy.aiTradingPrompt);
       setChartTimeHorizon(strategy.chartTimeHorizon);
       setChartGranularity(strategy.chartGranularity);
+      setTradingStartTime(strategy.tradingStartTime || "09:30");
+      setTradingEndTime(strategy.tradingEndTime || "16:00");
+      setTimezone(strategy.timezone || "America/New_York");
+      setTradingDays(
+        strategy.tradingDays || [
+          "monday",
+          "tuesday",
+          "wednesday",
+          "thursday",
+          "friday",
+        ]
+      );
     }
   }, [strategy]);
 
@@ -92,6 +114,10 @@ export function StrategyEditor({
         aiTradingPrompt,
         chartTimeHorizon,
         chartGranularity,
+        tradingStartTime,
+        tradingEndTime,
+        timezone,
+        tradingDays,
       };
 
       if (strategy) {
@@ -319,6 +345,111 @@ export function StrategyEditor({
               This prompt guides the AI on how to analyze opportunities and make
               trading decisions
             </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Trading Time Windows */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Trading Time Windows</CardTitle>
+          <CardDescription>Define when trades can be executed</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="tradingStartTime">Trading Start Time</Label>
+              <Input
+                id="tradingStartTime"
+                type="time"
+                value={tradingStartTime}
+                onChange={(e) => setTradingStartTime(e.target.value)}
+                disabled={isReadOnly || isSaving}
+              />
+              <p className="text-sm text-muted-foreground">
+                Market open (e.g., 09:30)
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="tradingEndTime">Trading End Time</Label>
+              <Input
+                id="tradingEndTime"
+                type="time"
+                value={tradingEndTime}
+                onChange={(e) => setTradingEndTime(e.target.value)}
+                disabled={isReadOnly || isSaving}
+              />
+              <p className="text-sm text-muted-foreground">
+                Market close (e.g., 16:00)
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="timezone">Timezone</Label>
+              <Select
+                value={timezone}
+                onValueChange={setTimezone}
+                disabled={isReadOnly || isSaving}
+              >
+                <SelectTrigger id="timezone">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="America/New_York">
+                    Eastern Time (ET)
+                  </SelectItem>
+                  <SelectItem value="America/Chicago">
+                    Central Time (CT)
+                  </SelectItem>
+                  <SelectItem value="America/Denver">
+                    Mountain Time (MT)
+                  </SelectItem>
+                  <SelectItem value="America/Los_Angeles">
+                    Pacific Time (PT)
+                  </SelectItem>
+                  <SelectItem value="UTC">UTC</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Trading Days</Label>
+              <div className="space-y-2">
+                {[
+                  "monday",
+                  "tuesday",
+                  "wednesday",
+                  "thursday",
+                  "friday",
+                  "saturday",
+                  "sunday",
+                ].map((day) => (
+                  <label
+                    key={day}
+                    className="flex items-center space-x-2 cursor-pointer"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={tradingDays.includes(day)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setTradingDays([...tradingDays, day]);
+                        } else {
+                          setTradingDays(tradingDays.filter((d) => d !== day));
+                        }
+                      }}
+                      disabled={isReadOnly || isSaving}
+                      className="h-4 w-4"
+                    />
+                    <span className="text-sm capitalize">{day}</span>
+                  </label>
+                ))}
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Select days when trading is allowed
+              </p>
+            </div>
           </div>
         </CardContent>
       </Card>

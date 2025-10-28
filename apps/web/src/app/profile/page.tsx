@@ -2,8 +2,6 @@
 
 import { Bell, CreditCard, Settings, Shield, User } from "lucide-react";
 
-import { AlpacaAccountsCard } from "@/features/finance/funds/components/alpaca-accounts-card";
-import { AlpacaConnectionCard } from "@/features/finance/trading/components/alpaca-connection-card";
 import {
   Card,
   CardContent,
@@ -101,10 +99,6 @@ export default function ProfilePage() {
               Manage your integrations with external services
             </p>
           </div>
-
-          <AlpacaConnectionCard />
-
-          <AlpacaAccountsCard />
 
           {/* Placeholder for other connections */}
           <Card>

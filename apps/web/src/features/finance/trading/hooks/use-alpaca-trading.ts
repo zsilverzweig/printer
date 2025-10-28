@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { useAuthContext } from "@/lib/providers/auth-provider";
 import {
   AlpacaAccount,
   AlpacaOrder,
@@ -58,7 +57,6 @@ async function fetchJson<T>(
 }
 
 export function useAlpacaTrading(): UseAlpacaTradingReturn {
-  const { isAdmin } = useAuthContext();
   const [account, setAccount] = useState<AlpacaAccount | null>(null);
   const [positions, setPositions] = useState<AlpacaPosition[]>([]);
   const [orders, setOrders] = useState<AlpacaOrder[]>([]);
@@ -75,12 +73,6 @@ export function useAlpacaTrading(): UseAlpacaTradingReturn {
   }, []);
 
   const loadTradingData = useCallback(async () => {
-    if (!isAdmin) {
-      resetState();
-      setLoading(false);
-      return;
-    }
-
     try {
       setLoading(true);
       setError(null);
@@ -102,14 +94,11 @@ export function useAlpacaTrading(): UseAlpacaTradingReturn {
       const message =
         err instanceof Error ? err.message : "Failed to load Alpaca data";
       setError(message);
-      // Only log error if it's not a credential configuration issue
-      if (!message.includes("credentials are not configured")) {
-        log.error("Failed to load Alpaca data", err, "useAlpacaTrading");
-      }
+      log.error("Failed to load Alpaca data", err, "useAlpacaTrading");
     } finally {
       setLoading(false);
     }
-  }, [isAdmin, resetState]);
+  }, [resetState]);
 
   useEffect(() => {
     void loadTradingData();
@@ -117,10 +106,6 @@ export function useAlpacaTrading(): UseAlpacaTradingReturn {
 
   const placeOrder = useCallback(
     async (order: AlpacaOrderRequest): Promise<AlpacaOrder> => {
-      if (!isAdmin) {
-        throw new Error("Only administrators can place Alpaca orders");
-      }
-
       try {
         setIsPlacingOrder(true);
         setError(null);
@@ -146,7 +131,7 @@ export function useAlpacaTrading(): UseAlpacaTradingReturn {
         setIsPlacingOrder(false);
       }
     },
-    [isAdmin, loadTradingData]
+    [loadTradingData]
   );
 
   const value: UseAlpacaTradingReturn = useMemo(

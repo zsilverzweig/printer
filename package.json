@@ -26,6 +26,9 @@
     "test": "nx test web",
     "test:watch": "nx test web --watch",
     "test:coverage": "nx test web --coverage",
+    "test:python": "cd apps/server && python3 -m pytest",
+    "test:python:watch": "cd apps/server && python3 -m pytest --watch",
+    "test:python:coverage": "cd apps/server && python3 -m pytest --cov=app --cov-report=html",
     "prepare": "cd apps/web && next-ws patch",
     "nx": "nx"
   },

@@ -102,43 +102,45 @@ export function RecentOrdersList({
       </CardHeader>
       <CardContent>
         <div className="space-y-2">
-          {orders.map((order) => (
-            <div
-              key={order.id}
-              className="flex items-center justify-between rounded-md border p-3"
-            >
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-2">
-                  <span className="font-medium">{order.symbol}</span>
-                  <Badge
-                    variant={getOrderStatusVariant(order.status)}
-                    className="text-xs"
-                  >
-                    {order.status.replace(/_/g, " ")}
-                  </Badge>
+          {orders
+            .filter((order) => order && order.side)
+            .map((order) => (
+              <div
+                key={order.id}
+                className="flex items-center justify-between rounded-md border p-3"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium">{order.symbol}</span>
+                    <Badge
+                      variant={getOrderStatusVariant(order.status)}
+                      className="text-xs"
+                    >
+                      {order.status.replace(/_/g, " ")}
+                    </Badge>
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    {order.side.toUpperCase()}
+                    {order.position_side ? ` (${order.position_side})` : ""}
+                  </div>
                 </div>
-                <div className="text-sm text-muted-foreground">
-                  {order.side.toUpperCase()}
-                  {order.position_side ? ` (${order.position_side})` : ""}
+                <div className="text-right">
+                  <div className="text-sm font-medium">
+                    {order.qty
+                      ? formatNumber(parseFloat(order.qty), 4)
+                      : order.notional
+                      ? formatCurrency(
+                          parseFloat(order.notional),
+                          accountCurrency
+                        )
+                      : "-"}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {new Date(order.submitted_at).toLocaleString()}
+                  </div>
                 </div>
               </div>
-              <div className="text-right">
-                <div className="text-sm font-medium">
-                  {order.qty
-                    ? formatNumber(parseFloat(order.qty), 4)
-                    : order.notional
-                    ? formatCurrency(
-                        parseFloat(order.notional),
-                        accountCurrency
-                      )
-                    : "-"}
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  {new Date(order.submitted_at).toLocaleString()}
-                </div>
-              </div>
-            </div>
-          ))}
+            ))}
         </div>
       </CardContent>
     </Card>

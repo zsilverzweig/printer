@@ -35,6 +35,11 @@ export interface Strategy {
   aiTradingPrompt: string; // Text guidance for AI
   chartTimeHorizon: string; // e.g., "5d", "1mo"
   chartGranularity: string; // e.g., "5min", "1hour"
+  // Trading time windows
+  tradingStartTime?: string; // e.g., "09:30" (market open)
+  tradingEndTime?: string; // e.g., "16:00" (market close)
+  timezone?: string; // e.g., "America/New_York" (default: ET)
+  tradingDays?: string[]; // e.g., ["monday", "tuesday", "wednesday", "thursday", "friday"]
   createdAt: Date;
   updatedAt: Date;
 }
@@ -88,6 +93,10 @@ export interface CreateStrategyInput {
   aiTradingPrompt: string;
   chartTimeHorizon: string;
   chartGranularity: string;
+  tradingStartTime?: string;
+  tradingEndTime?: string;
+  timezone?: string;
+  tradingDays?: string[];
 }
 
 export interface UpdateStrategyInput

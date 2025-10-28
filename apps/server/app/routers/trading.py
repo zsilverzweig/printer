@@ -21,6 +21,16 @@ class TradingAnalysisRequest(BaseModel):
     financial_summary: dict
 
 
+class OrderRequest(BaseModel):
+    """Request model for placing orders."""
+    symbol: str
+    qty: float
+    side: str
+    order_type: str = "market"
+    time_in_force: str = "gtc"  # day, gtc, ioc, fok
+    notional: float = None  # For notional orders
+
+
 @router.post("/analyze/{ticker}")
 async def analyze_trade(ticker: str, request: TradingAnalysisRequest):
     """
@@ -160,4 +170,97 @@ async def analyze_trade(ticker: str, request: TradingAnalysisRequest):
     except Exception as e:
         logger.error(f"Unexpected error analyzing trade for {ticker}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to analyze trade for {ticker}: {str(e)}")
+
+
+@router.get("/account")
+async def get_account():
+    """Get account info (buying power, equity, cash)"""
+    try:
+        if not alpaca_service.is_available():
+            raise HTTPException(
+                status_code=503,
+                detail="Alpaca trading service not configured. Please set ALPACA_API_KEY and ALPACA_SECRET_KEY."
+            )
+        
+        account_data = await alpaca_service.get_account()
+        return {"account": account_data}
+    except Exception as e:
+        logger.error(f"Failed to get account info: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get account info: {str(e)}")
+
+
+@router.get("/positions")
+async def get_positions():
+    """Get all current positions"""
+    try:
+        if not alpaca_service.is_available():
+            raise HTTPException(
+                status_code=503,
+                detail="Alpaca trading service not configured. Please set ALPACA_API_KEY and ALPACA_SECRET_KEY."
+            )
+        
+        positions = await alpaca_service.get_positions()
+        return {"positions": positions}
+    except Exception as e:
+        logger.error(f"Failed to get positions: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get positions: {str(e)}")
+
+
+@router.get("/orders")
+async def get_orders(status: str = "all", limit: int = 25):
+    """Get order history"""
+    try:
+        if not alpaca_service.is_available():
+            raise HTTPException(
+                status_code=503,
+                detail="Alpaca trading service not configured. Please set ALPACA_API_KEY and ALPACA_SECRET_KEY."
+            )
+        
+        # For now, return empty orders - can be implemented later
+        # when we add get_orders method to AlpacaService
+        return {"orders": []}
+    except Exception as e:
+        logger.error(f"Failed to get orders: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get orders: {str(e)}")
+
+
+@router.post("/orders")
+async def place_order(request: OrderRequest):
+    """Place a trading order"""
+    try:
+        if not alpaca_service.is_available():
+            raise HTTPException(
+                status_code=503,
+                detail="Alpaca trading service not configured. Please set ALPACA_API_KEY and ALPACA_SECRET_KEY."
+            )
+        
+        # Use qty if provided, otherwise use notional
+        result = await alpaca_service.place_market_order(
+            symbol=request.symbol,
+            qty=request.qty if request.qty else None,
+            notional=request.notional if request.notional else None,
+            side=request.side,
+            time_in_force=request.time_in_force
+        )
+        return {"order": result}
+    except Exception as e:
+        logger.error(f"Failed to place order: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to place order: {str(e)}")
+
+
+@router.get("/quote")
+async def get_quote(symbol: str):
+    """Get latest quote for a symbol"""
+    try:
+        if not alpaca_service.is_available():
+            raise HTTPException(
+                status_code=503,
+                detail="Alpaca trading service not configured. Please set ALPACA_API_KEY and ALPACA_SECRET_KEY."
+            )
+        
+        quote = await alpaca_service.get_quote(symbol)
+        return {"quote": quote}
+    except Exception as e:
+        logger.error(f"Failed to get quote for {symbol}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get quote for {symbol}: {str(e)}")
 
