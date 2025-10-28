@@ -7,17 +7,16 @@
 "use client";
 
 import { Loader2 } from "lucide-react";
-import { use } from "react";
 
 import { FundDetailView } from "@/features/finance/funds/components/fund-detail-view";
 import { useAuthContext } from "@/lib/providers/auth-provider";
 
 interface FundDetailPageProps {
-  params: Promise<{ fundId: string }>;
+  params: { fundId: string };
 }
 
 export default function FundDetailPage({ params }: FundDetailPageProps) {
-  const { fundId } = use(params);
+  const { fundId } = params;
   const { isAuthenticated, loading } = useAuthContext();
 
   if (loading) {

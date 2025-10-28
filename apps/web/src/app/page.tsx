@@ -1,10 +1,11 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
+import { Suspense } from "react";
+
 import { NocTable } from "@/features/finance/market/components/noc-table";
 import { WelcomePage } from "@/lib/components/welcome-page";
 import { useAuthContext } from "@/lib/providers/auth-provider";
-import { useSearchParams } from "next/navigation";
-import { Suspense } from "react";
 
 /**
  * Home page content with URL parameter support

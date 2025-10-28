@@ -8,12 +8,14 @@ import {
   Database,
   FileText,
   Home,
+  Layers,
   Newspaper,
   Settings,
   Shield,
   Target,
   TrendingUp,
   Users,
+  Wallet,
 } from "lucide-react";
 
 import { useUserRouting } from "@/lib/hooks/use-user-routing";
@@ -29,13 +31,25 @@ export function MainAppSidebar() {
   // Base navigation items for all authenticated users
   const baseSections: SidebarSection[] = [
     {
-      title: "Dashboard",
+      title: "TCC",
       items: [
         {
           id: "home",
           title: "TCC",
           href: "/",
           icon: <Home className="h-4 w-4" />,
+        },
+        {
+          id: "funds",
+          title: "Funds",
+          href: "/funds",
+          icon: <Wallet className="h-4 w-4" />,
+        },
+        {
+          id: "strategies",
+          title: "Strategies",
+          href: "/funds",
+          icon: <Layers className="h-4 w-4" />,
         },
       ],
     },
