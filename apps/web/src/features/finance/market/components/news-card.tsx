@@ -1,17 +1,17 @@
 "use client";
 
-import { Clock, ExternalLink, RefreshCw, TrendingUp } from "lucide-react";
+import { Clock, ExternalLink, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { Badge } from "@/lib/components/ui/badge";
 import { Button } from "@/lib/components/ui/button";
-import { CardActionButton } from "@/lib/components/ui/card-action-button";
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
 } from "@/lib/components/ui/card";
+import { CardActionButton } from "@/lib/components/ui/card-action-button";
 import { formatET, formatETTime, useTimeSince } from "@/lib/utils/date-time";
 
 interface KeyEvent {
@@ -74,73 +74,76 @@ export function NewsCard({ ticker, onNewsLoad }: NewsCardProps) {
     }
   };
 
-  const loadNews = useCallback(async (forceRefresh = false) => {
-    // Check cache first
-    const cached = newsCache.get(`${ticker}-${dateRange}`);
-    const now = Date.now();
+  const loadNews = useCallback(
+    async (forceRefresh = false) => {
+      // Check cache first
+      const cached = newsCache.get(`${ticker}-${dateRange}`);
+      const now = Date.now();
 
-    if (!forceRefresh && cached && now - cached.timestamp < CACHE_DURATION) {
-      setNewsData(cached.data);
-      onNewsLoad?.(cached.data);
-      setIsInitialLoad(false);
-      return;
-    }
+      if (!forceRefresh && cached && now - cached.timestamp < CACHE_DURATION) {
+        setNewsData(cached.data);
+        onNewsLoad?.(cached.data);
+        setIsInitialLoad(false);
+        return;
+      }
 
-    setIsLoading(true);
-    setError(null);
+      setIsLoading(true);
+      setError(null);
 
-    try {
-      const baseUrl =
-        process.env.NEXT_PUBLIC_WS_URL?.replace("ws://", "http://").replace(
-          "wss://",
-          "https://"
-        ) || "http://localhost:8000";
+      try {
+        const baseUrl =
+          process.env.NEXT_PUBLIC_WS_URL?.replace("ws://", "http://").replace(
+            "wss://",
+            "https://"
+          ) || "http://localhost:8000";
 
-      // Map date ranges to days
-      const daysMap = { "24h": 1, "48h": 2, "7d": 7, "30d": 30 };
-      const days = daysMap[dateRange];
+        // Map date ranges to days
+        const daysMap = { "24h": 1, "48h": 2, "7d": 7, "30d": 30 };
+        const days = daysMap[dateRange];
 
-      // Add timeout to prevent blocking
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+        // Add timeout to prevent blocking
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
 
-      const response = await fetch(
-        `${baseUrl}/api/news/analyze/${ticker}?days=${days}`,
-        {
-          signal: controller.signal,
+        const response = await fetch(
+          `${baseUrl}/api/news/analyze/${ticker}?days=${days}`,
+          {
+            signal: controller.signal,
+          }
+        );
+
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          throw new Error(
+            `Failed to fetch news analysis: ${response.statusText}`
+          );
         }
-      );
 
-      clearTimeout(timeoutId);
+        const data = await response.json();
 
-      if (!response.ok) {
-        throw new Error(
-          `Failed to fetch news analysis: ${response.statusText}`
-        );
+        // Cache the data with dateRange in key
+        newsCache.set(`${ticker}-${dateRange}`, { data, timestamp: now });
+
+        setNewsData(data);
+        onNewsLoad?.(data);
+      } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") {
+          setError(
+            "Request timed out. News analysis is taking longer than expected."
+          );
+        } else {
+          setError(
+            error instanceof Error ? error.message : "Failed to load news"
+          );
+        }
+      } finally {
+        setIsLoading(false);
+        setIsInitialLoad(false);
       }
-
-      const data = await response.json();
-
-      // Cache the data with dateRange in key
-      newsCache.set(`${ticker}-${dateRange}`, { data, timestamp: now });
-
-      setNewsData(data);
-      onNewsLoad?.(data);
-    } catch (error) {
-      if (error instanceof Error && error.name === "AbortError") {
-        setError(
-          "Request timed out. News analysis is taking longer than expected."
-        );
-      } else {
-        setError(
-          error instanceof Error ? error.message : "Failed to load news"
-        );
-      }
-    } finally {
-      setIsLoading(false);
-      setIsInitialLoad(false);
-    }
-  }, [ticker, dateRange, onNewsLoad]);
+    },
+    [ticker, dateRange, onNewsLoad]
+  );
 
   // Auto-load news when ticker or dateRange changes
   useEffect(() => {
@@ -230,9 +233,9 @@ export function NewsCard({ ticker, onNewsLoad }: NewsCardProps) {
 
   return (
     <Card className="h-full flex flex-col">
-      <CardHeader className="pb-3 flex-shrink-0">
-        <div className="space-y-2">
-          <CardTitle className="flex items-center justify-between text-base">
+      <CardHeader className="pb-2 flex-shrink-0">
+        <div className="space-y-1.5">
+          <CardTitle className="flex items-center justify-between text-sm">
             <div>News Analysis</div>
             <div className="flex items-center gap-2">
               <Badge variant="outline" className="text-xs">
@@ -269,19 +272,19 @@ export function NewsCard({ ticker, onNewsLoad }: NewsCardProps) {
         </div>
       </CardHeader>
 
-      <CardContent className="space-y-4 flex-1 min-h-0 overflow-y-auto">
+      <CardContent className="space-y-2 flex-1 min-h-0 overflow-y-auto text-xs">
         {/* News Summary */}
-        <div className="space-y-2">
-          <h4 className="text-sm font-medium">Summary</h4>
+        <div className="space-y-1">
+          <h4 className="text-xs font-medium">Summary</h4>
           <p className="text-xs text-muted-foreground line-clamp-3">
             {newsData.news_summary}
           </p>
         </div>
 
         {/* Trade Recommendation */}
-        <div className="space-y-2">
-          <h4 className="text-sm font-medium">Analysis</h4>
-          <div className="bg-muted p-3 rounded-lg max-h-60 overflow-y-auto">
+        <div className="space-y-1">
+          <h4 className="text-xs font-medium">Analysis</h4>
+          <div className="bg-muted p-2 rounded-lg max-h-40 overflow-y-auto">
             <p className="text-xs whitespace-pre-wrap leading-relaxed">
               {typeof newsData.trade_recommendation === "string"
                 ? newsData.trade_recommendation
@@ -292,18 +295,18 @@ export function NewsCard({ ticker, onNewsLoad }: NewsCardProps) {
 
         {/* Key Events */}
         {newsData.key_events && newsData.key_events.length > 0 ? (
-          <div className="space-y-2">
-            <h4 className="text-sm font-medium">
+          <div className="space-y-1">
+            <h4 className="text-xs font-medium">
               Key Events ({newsData.key_events.length})
             </h4>
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               {newsData.key_events.map((event) => (
                 <div
                   key={event.event_id}
-                  className="border rounded-lg p-3 text-xs hover:bg-muted/50 transition-colors"
+                  className="border rounded-lg p-2 text-xs hover:bg-muted/50 transition-colors"
                 >
                   <div className="flex items-start justify-between gap-2 mb-1">
-                    <h5 className="font-semibold text-sm flex-1">
+                    <h5 className="font-semibold text-xs flex-1">
                       {event.name}
                     </h5>
                     {event.url && event.url !== "No URL" && (
@@ -319,7 +322,7 @@ export function NewsCard({ ticker, onNewsLoad }: NewsCardProps) {
                     )}
                   </div>
 
-                  <p className="text-muted-foreground leading-relaxed mb-2">
+                  <p className="text-muted-foreground leading-relaxed mb-1">
                     {event.summary}
                   </p>
 
@@ -332,9 +335,9 @@ export function NewsCard({ ticker, onNewsLoad }: NewsCardProps) {
             </div>
           </div>
         ) : (
-          <div className="space-y-2">
-            <h4 className="text-sm font-medium">Key Events</h4>
-            <div className="text-xs text-muted-foreground p-3 bg-muted rounded-lg text-center">
+          <div className="space-y-1">
+            <h4 className="text-xs font-medium">Key Events</h4>
+            <div className="text-xs text-muted-foreground p-2 bg-muted rounded-lg text-center">
               No significant events identified in recent news
             </div>
           </div>
@@ -342,15 +345,15 @@ export function NewsCard({ ticker, onNewsLoad }: NewsCardProps) {
 
         {/* Raw News List */}
         {newsData.raw_news && newsData.raw_news.length > 0 && (
-          <div className="space-y-2">
-            <h4 className="text-sm font-medium">
+          <div className="space-y-1">
+            <h4 className="text-xs font-medium">
               Recent Articles ({newsData.raw_news.length})
             </h4>
-            <div className="space-y-2 max-h-60 overflow-y-auto">
+            <div className="space-y-1.5 max-h-40 overflow-y-auto">
               {newsData.raw_news.map((article, idx) => (
                 <div
                   key={idx}
-                  className="border rounded-lg p-2 text-xs hover:bg-muted/30 transition-colors"
+                  className="border rounded-lg p-1.5 text-xs hover:bg-muted/30 transition-colors"
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1">

@@ -17,9 +17,11 @@ function HomePageContent() {
   // Show TCC for authenticated users
   if (isAuthenticated) {
     return (
-      <div className="w-full h-screen p-6 flex flex-col">
-        <h1 className="text-3xl font-bold mb-6">Trading Command Center</h1>
-        <div className="flex-1 min-h-0">
+      <div className="w-full h-screen flex flex-col overflow-hidden">
+        <h1 className="text-3xl font-bold px-6 pt-6 pb-4">
+          Trading Command Center
+        </h1>
+        <div className="flex-1 min-h-0 px-6 pb-6">
           <NocTable initialTicker={tickerFromUrl || undefined} />
         </div>
       </div>
@@ -37,7 +39,13 @@ function HomePageContent() {
  */
 export default function HomePage() {
   return (
-    <Suspense fallback={<div className="w-full h-screen p-6 flex items-center justify-center">Loading...</div>}>
+    <Suspense
+      fallback={
+        <div className="w-full h-screen p-6 flex items-center justify-center">
+          Loading...
+        </div>
+      }
+    >
       <HomePageContent />
     </Suspense>
   );

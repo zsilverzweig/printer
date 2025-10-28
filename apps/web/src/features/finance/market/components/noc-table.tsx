@@ -3,11 +3,11 @@
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/lib/components/ui/card";
 import { CardActionButton } from "@/lib/components/ui/card-action-button";
+import { Input } from "@/lib/components/ui/input";
 import {
   Table,
   TableBody,
@@ -23,15 +23,14 @@ import {
   TooltipTrigger,
 } from "@/lib/components/ui/tooltip";
 import { useNocData } from "@/lib/hooks/use-noc-data";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import type { StockIndicators } from "@printer/shared";
 import { Search } from "lucide-react";
-import { Input } from "@/lib/components/ui/input";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { FinancialInfoPanel } from "./financial-info-panel";
 import { NewsCard } from "./news-card";
 import { NocRealtimeChart } from "./noc-realtime-chart";
 import { TradeCard } from "./trade-card";
-import type { StockIndicators } from "@printer/shared";
 
 /**
  * Calculate price signal color based on value
@@ -356,30 +355,36 @@ export function NocTable({ initialTicker }: NocTableProps) {
   };
 
   // Memoize callbacks to prevent infinite re-render loops
-  const handleNewsLoad = useCallback((data: {
-    news_summary?: string;
-    key_events?: Array<{ name: string; summary: string }>;
-  }) => {
-    setNewsData({
-      news_summary: data.news_summary,
-      key_events: data.key_events,
-    });
-  }, []);
+  const handleNewsLoad = useCallback(
+    (data: {
+      news_summary?: string;
+      key_events?: Array<{ name: string; summary: string }>;
+    }) => {
+      setNewsData({
+        news_summary: data.news_summary,
+        key_events: data.key_events,
+      });
+    },
+    []
+  );
 
-  const handleFinancialDataLoad = useCallback((data: {
-    overview?: Record<string, unknown>;
-    financials?: Record<string, unknown>;
-  }) => {
-    setFinancialData(data);
-  }, []);
+  const handleFinancialDataLoad = useCallback(
+    (data: {
+      overview?: Record<string, unknown>;
+      financials?: Record<string, unknown>;
+    }) => {
+      setFinancialData(data);
+    },
+    []
+  );
 
   return (
     <TooltipProvider>
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 h-full w-full">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 h-full w-full">
         {/* Stock List - Narrower (2 columns) */}
-        <div className="lg:col-span-2">
-          <Card className="h-full flex flex-col">
-            <CardHeader className="pb-2 px-3 pt-3">
+        <div className="lg:col-span-2 h-full max-h-full overflow-hidden">
+          <Card className="h-full flex flex-col max-h-full">
+            <CardHeader className="pb-2 px-3 pt-3 flex-shrink-0">
               <div className="flex items-center gap-2 mb-2">
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -411,7 +416,9 @@ export function NocTable({ initialTicker }: NocTableProps) {
                   (timeframe) => (
                     <CardActionButton
                       key={timeframe}
-                      variant={selectedTimeframe === timeframe ? "default" : "outline"}
+                      variant={
+                        selectedTimeframe === timeframe ? "default" : "outline"
+                      }
                       onClick={() => handleTimeframeChange(timeframe)}
                     >
                       {TIMEFRAME_LABELS[timeframe]}
@@ -425,8 +432,12 @@ export function NocTable({ initialTicker }: NocTableProps) {
                 <TableHeader className="sticky top-0 bg-background z-10">
                   <TableRow>
                     <TableHead className="text-xs py-1 px-2">Ticker</TableHead>
-                    <TableHead className="text-xs py-1 px-1 text-center">Signals</TableHead>
-                    <TableHead className="text-xs text-right py-1 px-2">%</TableHead>
+                    <TableHead className="text-xs py-1 px-1 text-center">
+                      Signals
+                    </TableHead>
+                    <TableHead className="text-xs text-right py-1 px-2">
+                      %
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -465,9 +476,9 @@ export function NocTable({ initialTicker }: NocTableProps) {
         </div>
 
         {/* Chart, Trade, and News Panel - Always Visible, Wider (10 columns) */}
-        <div className="lg:col-span-10 h-full flex flex-col gap-4">
+        <div className="lg:col-span-10 h-full flex flex-col gap-2">
           {/* Ticker Input Search */}
-          <form onSubmit={handleTickerInputSubmit}>
+          <form onSubmit={handleTickerInputSubmit} className="flex-shrink-0">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
@@ -480,9 +491,9 @@ export function NocTable({ initialTicker }: NocTableProps) {
             </div>
           </form>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 flex-1 min-h-0">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 flex-1 min-h-0">
             {/* Chart - Takes up 2/3 of the space */}
-            <div className="lg:col-span-2 h-full">
+            <div className="lg:col-span-2 h-full min-h-[500px]">
               {selectedStock ? (
                 <NocRealtimeChart
                   symbol={selectedStock}
@@ -500,17 +511,21 @@ export function NocTable({ initialTicker }: NocTableProps) {
               ) : (
                 <Card className="h-full flex items-center justify-center">
                   <div className="text-center text-muted-foreground">
-                    <p className="text-lg mb-2">Select a stock or enter a ticker above</p>
-                    <p className="text-sm">Click a stock from the screener or type a symbol</p>
+                    <p className="text-lg mb-2">
+                      Select a stock or enter a ticker above
+                    </p>
+                    <p className="text-sm">
+                      Click a stock from the screener or type a symbol
+                    </p>
                   </div>
                 </Card>
               )}
             </div>
 
             {/* Trade and News Cards - Stack vertically, takes up 1/3 of the space */}
-            <div className="lg:col-span-1 h-full flex flex-col gap-4">
+            <div className="lg:col-span-1 h-full flex flex-col gap-2">
               {/* Trade Card */}
-              <div className="flex-shrink-0" style={{ maxHeight: "45%" }}>
+              <div className="flex-shrink-0" style={{ maxHeight: "40%" }}>
                 {selectedStock ? (
                   <TradeCard
                     ticker={selectedStock}
@@ -538,7 +553,7 @@ export function NocTable({ initialTicker }: NocTableProps) {
               </div>
 
               {/* News Card */}
-              <div className="flex-1 min-h-0" style={{ maxHeight: "55%" }}>
+              <div className="flex-1 min-h-0" style={{ maxHeight: "60%" }}>
                 {selectedStock ? (
                   <NewsCard
                     ticker={selectedStock}

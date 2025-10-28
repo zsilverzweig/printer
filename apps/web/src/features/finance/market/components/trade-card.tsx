@@ -4,13 +4,13 @@ import { AlertCircle, CheckCircle2, Loader2, TrendingUp } from "lucide-react";
 import { useState } from "react";
 
 import { Badge } from "@/lib/components/ui/badge";
-import { CardActionButton } from "@/lib/components/ui/card-action-button";
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
 } from "@/lib/components/ui/card";
+import { CardActionButton } from "@/lib/components/ui/card-action-button";
 
 interface TradingDecision {
   action: "buy" | "hold" | "sell";
@@ -70,11 +70,14 @@ export function TradeCard({
 
     try {
       console.log("🔍 [TradeCard] Starting trade analysis for:", ticker);
-      
+
       // Capture chart image
       console.log("📸 [TradeCard] Capturing chart image...");
       const chartImage = await onCaptureChart();
-      console.log("✅ [TradeCard] Chart image captured, length:", chartImage.length);
+      console.log(
+        "✅ [TradeCard] Chart image captured, length:",
+        chartImage.length
+      );
 
       // Prepare request body
       const requestBody = {
@@ -104,7 +107,7 @@ export function TradeCard({
         ) || "http://localhost:8000";
 
       const fullUrl = `${baseUrl}/api/trading/analyze/${ticker}`;
-      
+
       console.log("🌐 [TradeCard] Sending POST request to:", fullUrl);
       console.log("🌐 [TradeCard] Base URL source:", {
         NEXT_PUBLIC_WS_URL: process.env.NEXT_PUBLIC_WS_URL,
@@ -141,7 +144,7 @@ export function TradeCard({
         has_trade_result: !!data.trade_result,
         trade_error: data.trade_error,
       });
-      
+
       setResult(data);
     } catch (err) {
       console.error("❌ [TradeCard] Analysis failed:", err);
@@ -183,8 +186,8 @@ export function TradeCard({
 
   return (
     <Card className="h-full flex flex-col">
-      <CardHeader className="pb-3 flex-shrink-0">
-        <CardTitle className="flex items-center justify-between text-base">
+      <CardHeader className="pb-2 flex-shrink-0">
+        <CardTitle className="flex items-center justify-between text-sm">
           <div>AI Trading Analysis</div>
           <CardActionButton
             onClick={handleAnalyze}
@@ -203,26 +206,26 @@ export function TradeCard({
         </CardTitle>
       </CardHeader>
 
-      <CardContent className="space-y-3 flex-1 min-h-0 overflow-y-auto">
+      <CardContent className="space-y-2 flex-1 min-h-0 overflow-y-auto text-xs">
         {error && (
-          <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-3">
+          <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-2">
             <div className="flex items-start gap-2">
-              <AlertCircle className="h-4 w-4 text-destructive mt-0.5 flex-shrink-0" />
+              <AlertCircle className="h-3 w-3 text-destructive mt-0.5 flex-shrink-0" />
               <div className="text-xs text-destructive">{error}</div>
             </div>
           </div>
         )}
 
         {!result && !error && !isAnalyzing && (
-          <div className="text-xs text-muted-foreground text-center py-8">
+          <div className="text-xs text-muted-foreground text-center py-4">
             Click "Analyze & Trade" to get AI-powered trading recommendations
             based on chart patterns, news, and financial data.
           </div>
         )}
 
         {isAnalyzing && (
-          <div className="flex flex-col items-center justify-center py-8 space-y-3">
-            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <div className="flex flex-col items-center justify-center py-4 space-y-2">
+            <Loader2 className="h-6 w-6 animate-spin text-primary" />
             <div className="text-xs text-muted-foreground text-center">
               <div>Analyzing chart patterns...</div>
               <div className="mt-1">Evaluating news sentiment...</div>
@@ -232,7 +235,7 @@ export function TradeCard({
         )}
 
         {result && (
-          <div className="space-y-3">
+          <div className="space-y-2">
             {/* Decision Badge */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
