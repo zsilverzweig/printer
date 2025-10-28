@@ -11,7 +11,7 @@ from typing import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine, async_sessionmaker
 
-from app.models.events import Base
+from app.models.assets import Base
 
 logger = logging.getLogger("app.database")
 

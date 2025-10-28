@@ -133,6 +133,12 @@ export function MainAppSidebar() {
           icon: <Shield className="h-4 w-4" />,
         },
         {
+          id: "ticker-database",
+          title: "Ticker Database",
+          href: "/admin/assets",
+          icon: <Database className="h-4 w-4" />,
+        },
+        {
           id: "agent-management",
           title: "Agent Management",
           href: "/admin/agents",
