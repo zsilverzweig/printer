@@ -4,10 +4,13 @@ import logging
 from datetime import datetime
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import select, func
 
 from app.services.ai_service import AIService
-from app.services.alpaca_service import alpaca_service
+from app.services.alpaca_service import alpaca_service, AlpacaService
 from app.services.event_service import event_service
+from app.services.database import get_async_session
+from app.models.strategies import Fund
 
 logger = logging.getLogger("app.routers.trading")
 
@@ -263,4 +266,59 @@ async def get_quote(symbol: str):
     except Exception as e:
         logger.error(f"Failed to get quote for {symbol}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get quote for {symbol}: {str(e)}")
+
+
+@router.get("/alpaca/account-summary")
+async def get_alpaca_account_summary():
+    """Get Alpaca account balances and fund allocations for paper and real trading"""
+    try:
+        # Initialize both paper and real trading services
+        paper_service = AlpacaService(paper_trading=True)
+        real_service = AlpacaService(paper_trading=False)
+        
+        # Get account balances
+        paper_balance = 0.0
+        real_balance = 0.0
+        
+        if paper_service.is_available():
+            try:
+                paper_account = paper_service.client.get_account()
+                paper_balance = float(paper_account.cash)
+            except Exception as e:
+                logger.warning(f"Failed to get paper trading account: {e}")
+        
+        if real_service.is_available():
+            try:
+                real_account = real_service.client.get_account()
+                real_balance = float(real_account.cash)
+            except Exception as e:
+                logger.warning(f"Failed to get real trading account: {e}")
+        
+        # Calculate total allocated across funds
+        async with get_async_session() as session:
+            result = await session.execute(
+                select(func.sum(Fund.balance), Fund.mode).group_by(Fund.mode)
+            )
+            allocations = {mode: float(total) if total else 0.0 for total, mode in result}
+        
+        paper_allocated = allocations.get("sim", 0.0)
+        real_allocated = allocations.get("real", 0.0)
+        
+        return {
+            "paper": {
+                "balance": paper_balance,
+                "allocated": paper_allocated,
+                "available": paper_balance - paper_allocated,
+                "allocated_percent": (paper_allocated / paper_balance * 100) if paper_balance > 0 else 0,
+            },
+            "real": {
+                "balance": real_balance,
+                "allocated": real_allocated,
+                "available": real_balance - real_allocated,
+                "allocated_percent": (real_allocated / real_balance * 100) if real_balance > 0 else 0,
+            }
+        }
+    except Exception as e:
+        logger.error(f"Failed to get Alpaca account summary: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 

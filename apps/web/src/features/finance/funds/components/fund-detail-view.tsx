@@ -19,13 +19,17 @@ import {
 } from "@/lib/components/ui/tabs";
 
 import { useFundDetails } from "../hooks/use-fund-details";
+import { useFundTransfers } from "../hooks/use-fund-transfers";
 import { setupService } from "../services/setup-service";
 import { CreateSetupInput } from "../types";
 
+import { FundLedger } from "./fund-ledger";
 import { FundOverview } from "./fund-overview";
+import { RiskManagement } from "./risk-management";
+import { ScreenerLink } from "./screener-link";
 import { SetupEditor } from "./setup-editor";
-import { SetupSelector } from "./setup-selector";
-import { StrategyEditor } from "./strategy-editor";
+import { StrategySelection } from "./strategy-selection";
+import { TimeWindows } from "./time-windows";
 
 interface FundDetailViewProps {
   fundId: string;
@@ -33,6 +37,7 @@ interface FundDetailViewProps {
 
 export function FundDetailView({ fundId }: FundDetailViewProps) {
   const { details, loading, error, refresh } = useFundDetails(fundId);
+  const { transfers, loading: transfersLoading } = useFundTransfers(fundId);
   const [selectedSetupId, setSelectedSetupId] = useState<string | null>(null);
   const [showSetupEditor, setShowSetupEditor] = useState(false);
   const [activeTab, setActiveTab] = useState("overview");
@@ -90,10 +95,13 @@ export function FundDetailView({ fundId }: FundDetailViewProps) {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full max-w-[600px] grid-cols-3">
+        <TabsList className="grid w-full grid-cols-2 md:grid-cols-6 gap-1">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="strategy">Strategy</TabsTrigger>
-          <TabsTrigger value="setup">Setup</TabsTrigger>
+          <TabsTrigger value="risk">Risk</TabsTrigger>
+          <TabsTrigger value="time">Time Windows</TabsTrigger>
+          <TabsTrigger value="screener">Screener</TabsTrigger>
+          <TabsTrigger value="ledger">Ledger</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-6">
@@ -101,19 +109,39 @@ export function FundDetailView({ fundId }: FundDetailViewProps) {
         </TabsContent>
 
         <TabsContent value="strategy" className="space-y-6">
-          <StrategyEditor
+          <StrategySelection
             fundId={fund.id}
             strategy={strategy}
             onUpdate={refresh}
           />
         </TabsContent>
 
-        <TabsContent value="setup" className="space-y-6">
-          <SetupSelector
-            selectedSetupId={selectedSetupId}
-            onSelectSetup={setSelectedSetupId}
-            onCreateNew={() => setShowSetupEditor(true)}
+        <TabsContent value="risk" className="space-y-6">
+          <RiskManagement
+            fundId={fund.id}
+            strategy={strategy}
+            onUpdate={refresh}
           />
+        </TabsContent>
+
+        <TabsContent value="time" className="space-y-6">
+          <TimeWindows
+            fundId={fund.id}
+            strategy={strategy}
+            onUpdate={refresh}
+          />
+        </TabsContent>
+
+        <TabsContent value="screener" className="space-y-6">
+          <ScreenerLink
+            fundId={fund.id}
+            strategy={strategy}
+            onUpdate={refresh}
+          />
+        </TabsContent>
+
+        <TabsContent value="ledger" className="space-y-6">
+          <FundLedger transfers={transfers} loading={transfersLoading} />
         </TabsContent>
       </Tabs>
 

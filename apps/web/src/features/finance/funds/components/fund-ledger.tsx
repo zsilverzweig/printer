@@ -1,7 +1,8 @@
 /**
- * TransferHistory Component
+ * FundLedger Component
  *
- * Displays the transfer history for a fund.
+ * Displays the ledger (transfer history) for a fund.
+ * Shows all deposits and withdrawals with running balance.
  */
 
 import { ArrowDownCircle, ArrowUpCircle } from "lucide-react";
@@ -16,17 +17,17 @@ import {
 
 import { FundTransfer } from "../types";
 
-interface TransferHistoryProps {
+interface FundLedgerProps {
   transfers: FundTransfer[];
   loading: boolean;
 }
 
-export function TransferHistory({ transfers, loading }: TransferHistoryProps) {
+export function FundLedger({ transfers, loading }: FundLedgerProps) {
   if (loading) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Transfer History</CardTitle>
+          <CardTitle>Ledger</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="text-center py-8">
@@ -43,8 +44,10 @@ export function TransferHistory({ transfers, loading }: TransferHistoryProps) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Transfer History</CardTitle>
-        <CardDescription>Recent deposits and withdrawals</CardDescription>
+        <CardTitle>Ledger</CardTitle>
+        <CardDescription>
+          All deposits, withdrawals, and transactions
+        </CardDescription>
       </CardHeader>
       <CardContent>
         {transfers.length === 0 ? (

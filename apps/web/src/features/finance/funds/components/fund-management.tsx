@@ -19,6 +19,7 @@ import {
 
 import { useFunds } from "../hooks/use-funds";
 
+import { AlpacaBalanceSummary } from "./alpaca-balance-summary";
 import { CreateFundDialog } from "./create-fund-dialog";
 import { FundList } from "./fund-list";
 
@@ -78,6 +79,9 @@ export function FundManagement() {
           </Button>
         </div>
       </div>
+
+      {/* Alpaca Account Summary */}
+      <AlpacaBalanceSummary />
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
