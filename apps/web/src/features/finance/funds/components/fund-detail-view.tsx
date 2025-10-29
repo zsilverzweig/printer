@@ -105,7 +105,11 @@ export function FundDetailView({ fundId }: FundDetailViewProps) {
         </TabsList>
 
         <TabsContent value="overview" className="space-y-6">
-          <FundOverview fund={fund} onFundUpdate={refresh} />
+          <FundOverview
+            fund={fund}
+            strategy={strategy}
+            onFundUpdate={refresh}
+          />
         </TabsContent>
 
         <TabsContent value="strategy" className="space-y-6">

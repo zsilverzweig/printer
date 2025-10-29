@@ -21,6 +21,9 @@ router = APIRouter()
 service: ScreenerService | None = None
 noc_service: NocService | None = None
 
+# Trading activity subscribers
+trading_activity_subscribers: Set[WebSocket] = set()
+
 
 @router.websocket("/noc/ws")
 async def noc_ws(websocket: WebSocket):

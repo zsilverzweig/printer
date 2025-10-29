@@ -349,7 +349,7 @@ async def start_trading(fund_id: str) -> dict:
             
             # Create and start engine
             logger.info(f"Starting trading for fund {fund_id} ({fund.name})")
-            engine = await create_strategy_engine(fund=fund, strategy_config=strategy)
+            engine = await create_strategy_engine(fund=fund, strategy=strategy)
             await engine.start()
             
             # Register engine

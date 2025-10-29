@@ -7,8 +7,8 @@ import {
   Building2,
   Database,
   FileText,
+  FolderOpen,
   Home,
-  Layers,
   Newspaper,
   Settings,
   Shield,
@@ -18,6 +18,7 @@ import {
   Wallet,
 } from "lucide-react";
 
+import { useFunds } from "@/features/finance/funds/hooks/use-funds";
 import { useUserRouting } from "@/lib/hooks/use-user-routing";
 import { useAuthContext } from "@/lib/providers/auth-provider";
 
@@ -27,6 +28,7 @@ import { UserProfile } from "./user-profile";
 export function MainAppSidebar() {
   const { isAdmin } = useAuthContext();
   const { isOnWaitlist } = useUserRouting();
+  const { funds, loading: fundsLoading } = useFunds();
 
   // Base navigation items for all authenticated users
   const baseSections: SidebarSection[] = [
@@ -39,18 +41,25 @@ export function MainAppSidebar() {
           href: "/",
           icon: <Home className="h-4 w-4" />,
         },
+      ],
+    },
+    {
+      title: "Funds",
+      items: [
         {
-          id: "funds",
-          title: "Funds",
+          id: "funds-overview",
+          title: "All Funds",
           href: "/funds",
-          icon: <Wallet className="h-4 w-4" />,
+          icon: <FolderOpen className="h-4 w-4" />,
         },
-        {
-          id: "strategies",
-          title: "Strategies",
-          href: "/funds",
-          icon: <Layers className="h-4 w-4" />,
-        },
+        ...(fundsLoading
+          ? []
+          : funds.map((fund) => ({
+              id: `fund-${fund.id}`,
+              title: fund.name,
+              href: `/funds/${fund.id}`,
+              icon: <Wallet className="h-4 w-4" />,
+            }))),
       ],
     },
     {

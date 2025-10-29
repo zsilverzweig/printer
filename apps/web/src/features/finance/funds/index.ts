@@ -20,6 +20,7 @@ export { FundOverview } from "./components/fund-overview";
 export { FundTransferForm } from "./components/fund-transfer-form";
 export { RiskManagement } from "./components/risk-management";
 export { ScreenerLink } from "./components/screener-link";
+export { ScreeningCriteriaForm } from "./components/screening-criteria-form";
 export { SetupEditor } from "./components/setup-editor";
 export { SetupSelector } from "./components/setup-selector";
 export { StrategyEditor } from "./components/strategy-editor";
@@ -33,6 +34,7 @@ export { useFunds } from "./hooks/use-funds";
 
 // Services
 export { fundService } from "./services/fund-service";
+export { screeningCriteriaService } from "./services/screening-criteria-service";
 export { setupService } from "./services/setup-service";
 export { strategyService } from "./services/strategy-service";
 export { transferService } from "./services/transfer-service";

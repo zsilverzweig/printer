@@ -59,6 +59,7 @@ export type {
   PositionStatus,
   RunningFundSummary,
   ScreeningCriteria,
+  ScreeningCriteriaParams,
   Setup, // Backward compatibility
   Strategy,
   StrategyType,

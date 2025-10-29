@@ -54,6 +54,27 @@ export interface ExecutionStrategy {
 }
 
 /**
+ * Screening Criteria Parameters
+ *
+ * Configuration object for both database and real-time filtering.
+ */
+export interface ScreeningCriteriaParams {
+  // Database filters (asset metadata)
+  asset_types?: string[]; // e.g., ["CS", "ETF"]
+  market_cap_min?: number; // Min market cap in dollars
+  market_cap_max?: number; // Max market cap in dollars
+  sic_codes?: string[]; // Industry SIC codes
+
+  // Real-time screener filters (price/volume dynamics)
+  min_price?: number; // Min yesterday's close price
+  max_price?: number; // Max yesterday's close price
+  min_volume?: number; // Min volume for liquidity
+  min_change_percent?: number; // Min % change from yesterday's close
+  order_by?: string; // Sort field: "rv14" | "rv30" | "rv60" | "avg_volume"
+  limit?: number; // Max results to return
+}
+
+/**
  * Screening Criteria
  *
  * Reusable screening configuration for filtering market candidates.
@@ -63,7 +84,7 @@ export interface ScreeningCriteria {
   id: string;
   name: string;
   description?: string;
-  criteria: Record<string, any>; // Flexible JSON for screener params
+  criteria: ScreeningCriteriaParams;
   createdAt: Date | string;
   updatedAt: Date | string;
 }
@@ -175,7 +196,7 @@ export interface UpdateStrategyInput
 export interface CreateScreeningCriteriaInput {
   name: string;
   description?: string;
-  criteria: Record<string, any>;
+  criteria: ScreeningCriteriaParams;
 }
 
 export interface UpdateScreeningCriteriaInput

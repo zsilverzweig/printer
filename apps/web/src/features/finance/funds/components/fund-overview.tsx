@@ -4,7 +4,8 @@
  * Overview tab showing fund stats, status, and transfer form.
  */
 
-import { Play, Square } from "lucide-react";
+import { Filter, Play, Square } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
 
 import { Badge } from "@/lib/components/ui/badge";
@@ -18,19 +19,31 @@ import {
 
 import { useFundTransfers } from "../hooks/use-fund-transfers";
 import { fundService } from "../services/fund-service";
-import { Fund } from "../types";
+import { screeningCriteriaService } from "../services/screening-criteria-service";
+import { Fund, Strategy } from "../types";
 
 import { FundTransferForm } from "./fund-transfer-form";
 
 interface FundOverviewProps {
   fund: Fund;
+  strategy: Strategy | null;
   onFundUpdate: () => void;
 }
 
-export function FundOverview({ fund, onFundUpdate }: FundOverviewProps) {
+export function FundOverview({
+  fund,
+  strategy,
+  onFundUpdate,
+}: FundOverviewProps) {
   const { createTransfer } = useFundTransfers(fund.id);
   const [isStarting, setIsStarting] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
+  const [isRunningScreener, setIsRunningScreener] = useState(false);
+  const [screenerResults, setScreenerResults] = useState<{
+    tickerCount: number;
+    tickers: string[];
+  } | null>(null);
+  const [screenerError, setScreenerError] = useState<string | null>(null);
 
   const modeColor = fund.mode === "sim" ? "bg-blue-500" : "bg-green-500";
   const modeLabel = fund.mode === "sim" ? "SIM" : "REAL";
@@ -78,6 +91,29 @@ export function FundOverview({ fund, onFundUpdate }: FundOverviewProps) {
       console.error("Error stopping trading:", err);
     } finally {
       setIsStopping(false);
+    }
+  };
+
+  const handleRunScreener = async () => {
+    if (!strategy?.screeningCriteriaId) {
+      setScreenerError("No screening criteria configured for this fund");
+      return;
+    }
+
+    try {
+      setIsRunningScreener(true);
+      setScreenerError(null);
+      const results = await screeningCriteriaService.runScreener(
+        strategy.screeningCriteriaId
+      );
+      setScreenerResults(results);
+    } catch (err) {
+      console.error("Error running screener:", err);
+      setScreenerError(
+        err instanceof Error ? err.message : "Failed to run screener"
+      );
+    } finally {
+      setIsRunningScreener(false);
     }
   };
 
@@ -158,6 +194,72 @@ export function FundOverview({ fund, onFundUpdate }: FundOverviewProps) {
             <Square className="h-4 w-4 mr-2" />
             {isStopping ? "Stopping..." : "Stop Trading"}
           </Button>
+        </CardContent>
+      </Card>
+
+      {/* Screener */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Screener</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={handleRunScreener}
+              disabled={!strategy?.screeningCriteriaId || isRunningScreener}
+              variant="outline"
+            >
+              <Filter className="h-4 w-4 mr-2" />
+              {isRunningScreener ? "Running..." : "Run Screener"}
+            </Button>
+            {screenerResults && (
+              <div className="flex items-center gap-2">
+                <Badge variant="secondary" className="text-lg px-3 py-1">
+                  {screenerResults.tickerCount} tickers
+                </Badge>
+              </div>
+            )}
+          </div>
+
+          {!strategy?.screeningCriteriaId && (
+            <p className="text-sm text-muted-foreground">
+              Configure screening criteria in the Screener tab to use this
+              feature.
+            </p>
+          )}
+
+          {screenerError && (
+            <div className="rounded-lg bg-red-50 dark:bg-red-950/30 p-3 text-sm text-red-800 dark:text-red-200">
+              {screenerError}
+            </div>
+          )}
+
+          {screenerResults && screenerResults.tickerCount > 0 && (
+            <div className="rounded-lg border p-3">
+              <p className="text-sm font-medium mb-2">Matching Tickers:</p>
+              <div className="flex flex-wrap gap-1">
+                {screenerResults.tickers.slice(0, 20).map((ticker) => (
+                  <Link
+                    key={ticker}
+                    href={`/?ticker=${ticker}`}
+                    className="inline-block"
+                  >
+                    <Badge
+                      variant="outline"
+                      className="text-xs cursor-pointer hover:bg-accent hover:text-accent-foreground transition-colors"
+                    >
+                      {ticker}
+                    </Badge>
+                  </Link>
+                ))}
+                {screenerResults.tickerCount > 20 && (
+                  <Badge variant="outline" className="text-xs">
+                    +{screenerResults.tickerCount - 20} more
+                  </Badge>
+                )}
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 

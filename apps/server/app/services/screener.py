@@ -6,7 +6,7 @@ import contextlib
 import json
 import logging
 from collections import deque
-from typing import Any, Deque, Dict, List, Set
+from typing import Any, Deque, Dict, List, Optional, Set
 
 from fastapi.encoders import jsonable_encoder
 from polygon import RESTClient
@@ -201,6 +201,8 @@ class ScreenerService:
         snaps: List[Any],
         min_price: float = 2.0,
         max_price: float = 20.0,
+        min_volume: float = 50000.0,
+        min_change_percent: float = 5.0,
         order_by: str = "rv14",
         limit: int = 200,
     ) -> List[dict]:
@@ -210,6 +212,8 @@ class ScreenerService:
             snaps: List of market snapshots
             min_price: Minimum price filter (for yesterday's close)
             max_price: Maximum price filter (for yesterday's close)
+            min_volume: Minimum volume for liquidity
+            min_change_percent: Minimum % change from yesterday's close
             order_by: Field to sort by (rv14, rv30, rv60, avg_volume)
             limit: Maximum number of results to return
         
@@ -271,10 +275,21 @@ class ScreenerService:
             if not passes_price_filter(current_price, yesterday_close, min_price, max_price):
                 continue
             
-            if not passes_volume_filter(yesterday_vol):
+            if not passes_volume_filter(yesterday_vol, min_volume):
                 continue
             
             if is_likely_etf(ticker):
+                continue
+            
+            # Calculate change percent before adding to rows
+            change_close_pct = (
+                ((current_price - yesterday_close) / yesterday_close) * 100
+                if yesterday_close > 0
+                else 0.0
+            )
+            
+            # Filter by minimum change percent
+            if abs(change_close_pct) < min_change_percent:
                 continue
             
             # Calculate relative volumes
@@ -287,11 +302,6 @@ class ScreenerService:
             
             # Calculate percentage changes for different timeframes
             changes = self.price_tracker.calculate_all_changes(ticker)
-            change_close = (
-                ((current_price - yesterday_close) / yesterday_close) * 100
-                if yesterday_close > 0
-                else 0.0
-            )
             
             rows.append({
                 "ticker": ticker,
@@ -308,7 +318,7 @@ class ScreenerService:
                 "change_1m": changes["change_1m"],
                 "change_5m": changes["change_5m"],
                 "change_1h": changes["change_1h"],
-                "change_close": change_close,
+                "change_close": change_close_pct,
             })
         
         # Sort results
