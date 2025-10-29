@@ -114,9 +114,6 @@ class Strategy(Base):
     max_bet_percent: Mapped[float] = mapped_column(Float, nullable=False, default=5.0)
     max_total_exposure: Mapped[float] = mapped_column(Float, nullable=False, default=10000.0)
     
-    # Trading rules
-    risk_reward_ratio: Mapped[float] = mapped_column(Float, nullable=False, default=2.0)
-    
     # Trading time windows
     trading_start_time: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)  # e.g., "09:30"
     trading_end_time: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)    # e.g., "16:00"

@@ -54,9 +54,6 @@ class CreateStrategyInput(BaseModel):
     max_bet_percent: float = 5.0
     max_total_exposure: float = 10000.0
     
-    # Trading rules
-    risk_reward_ratio: float = 2.0
-    
     # Trading time windows
     trading_start_time: Optional[str] = None
     trading_end_time: Optional[str] = None
@@ -205,6 +202,44 @@ async def get_fund(fund_id: str) -> dict:
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/funds/{fund_id}/strategy", response_model=StrategyResponse)
+async def get_strategy(fund_id: str) -> dict:
+    """Get strategy for a fund."""
+    try:
+        async with get_async_session() as session:
+            from sqlalchemy import select
+            result = await session.execute(
+                select(Strategy).where(Strategy.fund_id == fund_id)
+            )
+            strategy = result.scalar_one_or_none()
+            
+            if not strategy:
+                raise HTTPException(status_code=404, detail="Strategy not found for this fund")
+            
+            return {
+                "id": strategy.id,
+                "fund_id": strategy.fund_id,
+                "execution_strategy_id": strategy.execution_strategy_id,
+                "screening_criteria_id": strategy.screening_criteria_id,
+                "execution_config": strategy.execution_config,
+                "max_loss_percent": strategy.max_loss_percent,
+                "max_loss_dollars": strategy.max_loss_dollars,
+                "size_per_trade": strategy.size_per_trade,
+                "max_bet_percent": strategy.max_bet_percent,
+                "max_total_exposure": strategy.max_total_exposure,
+                "trading_start_time": strategy.trading_start_time,
+                "trading_end_time": strategy.trading_end_time,
+                "timezone": strategy.timezone,
+                "created_at": strategy.created_at.isoformat(),
+                "updated_at": strategy.updated_at.isoformat(),
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting strategy: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/funds/{fund_id}/strategy", response_model=StrategyResponse)
 async def create_or_update_strategy(fund_id: str, strategy_data: CreateStrategyInput) -> dict:
     """Create or update strategy for a fund."""
@@ -234,7 +269,6 @@ async def create_or_update_strategy(fund_id: str, strategy_data: CreateStrategyI
                 existing_strategy.min_bet_percent = strategy_data.min_bet_percent
                 existing_strategy.max_bet_percent = strategy_data.max_bet_percent
                 existing_strategy.max_total_exposure = strategy_data.max_total_exposure
-                existing_strategy.risk_reward_ratio = strategy_data.risk_reward_ratio
                 existing_strategy.trading_start_time = strategy_data.trading_start_time
                 existing_strategy.trading_end_time = strategy_data.trading_end_time
                 existing_strategy.timezone = strategy_data.timezone
@@ -256,7 +290,6 @@ async def create_or_update_strategy(fund_id: str, strategy_data: CreateStrategyI
                     min_bet_percent=strategy_data.min_bet_percent,
                     max_bet_percent=strategy_data.max_bet_percent,
                     max_total_exposure=strategy_data.max_total_exposure,
-                    risk_reward_ratio=strategy_data.risk_reward_ratio,
                     trading_start_time=strategy_data.trading_start_time,
                     trading_end_time=strategy_data.trading_end_time,
                     timezone=strategy_data.timezone,

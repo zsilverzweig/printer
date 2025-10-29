@@ -4,7 +4,7 @@
  * Service for fetching available execution strategies from the API.
  */
 
-import { ExecutionStrategy } from "../types";
+import type { ExecutionStrategy } from "@printer/shared";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -66,4 +66,3 @@ export const executionStrategyService = {
     return data;
   },
 };
-

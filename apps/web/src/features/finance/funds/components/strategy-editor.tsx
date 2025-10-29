@@ -1,7 +1,10 @@
 /**
  * StrategyEditor Component
  *
- * Form for editing fund strategy including risk parameters, position sizing, and trading rules.
+ * Form for configuring fund strategy with execution strategy selection,
+ * risk parameters, position sizing, and trading windows.
+ *
+ * Now uses the plugin architecture with ExecutionStrategy selection.
  */
 
 import { useEffect, useState } from "react";
@@ -23,10 +26,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/lib/components/ui/select";
-import { Textarea } from "@/lib/components/ui/textarea";
 
+import type { ExecutionStrategy, Strategy } from "@printer/shared";
+import { executionStrategyService } from "../services/execution-strategy-service";
 import { strategyService } from "../services/strategy-service";
-import { Strategy } from "../types";
 
 interface StrategyEditorProps {
   fundId: string;
@@ -39,37 +42,67 @@ export function StrategyEditor({
   strategy,
   onUpdate,
 }: StrategyEditorProps) {
-  const [isEditing, setIsEditing] = useState(false);
+  const [isEditing, setIsEditing] = useState(!strategy);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
+  // Available execution strategies
+  const [executionStrategies, setExecutionStrategies] = useState<
+    ExecutionStrategy[]
+  >([]);
+  const [loadingStrategies, setLoadingStrategies] = useState(true);
+
   // Form state
+  const [executionStrategyId, setExecutionStrategyId] = useState("");
+  const [executionConfig, setExecutionConfig] = useState<Record<string, any>>(
+    {}
+  );
+
+  // Risk parameters
   const [maxLossPercent, setMaxLossPercent] = useState("2");
   const [maxLossDollars, setMaxLossDollars] = useState("1000");
-  const [maxGivebackPercent, setMaxGivebackPercent] = useState("1.5");
-  const [sizePerTrade, setSizePerTrade] = useState("5000");
-  const [minBetPercent, setMinBetPercent] = useState("2");
-  const [maxBetPercent, setMaxBetPercent] = useState("10");
-  const [maxTotalExposure, setMaxTotalExposure] = useState("40000");
-  const [riskRewardRatio, setRiskRewardRatio] = useState("2.0");
-  const [aiTradingPrompt, setAiTradingPrompt] = useState("");
-  const [chartTimeHorizon, setChartTimeHorizon] = useState("5d");
-  const [chartGranularity, setChartGranularity] = useState("5min");
+  const [maxGivebackPercent, setMaxGivebackPercent] = useState("50");
+
+  // Position sizing
+  const [sizePerTrade, setSizePerTrade] = useState("1000");
+  const [minBetPercent, setMinBetPercent] = useState("1");
+  const [maxBetPercent, setMaxBetPercent] = useState("5");
+  const [maxTotalExposure, setMaxTotalExposure] = useState("10000");
+
+  // Trading windows
   const [tradingStartTime, setTradingStartTime] = useState("09:30");
   const [tradingEndTime, setTradingEndTime] = useState("16:00");
   const [timezone, setTimezone] = useState("America/New_York");
-  const [tradingDays, setTradingDays] = useState<string[]>([
-    "monday",
-    "tuesday",
-    "wednesday",
-    "thursday",
-    "friday",
-  ]);
+
+  // Load available execution strategies
+  useEffect(() => {
+    const loadExecutionStrategies = async () => {
+      try {
+        const strategies =
+          await executionStrategyService.getExecutionStrategies();
+        setExecutionStrategies(strategies);
+
+        // Default to first strategy if creating new
+        if (!strategy && strategies.length > 0) {
+          setExecutionStrategyId(strategies[0].id);
+        }
+      } catch (err) {
+        console.error("Failed to load execution strategies:", err);
+        setError("Failed to load available strategies");
+      } finally {
+        setLoadingStrategies(false);
+      }
+    };
+
+    loadExecutionStrategies();
+  }, [strategy]);
 
   // Load existing strategy data
   useEffect(() => {
     if (strategy) {
+      setExecutionStrategyId(strategy.executionStrategyId);
+      setExecutionConfig(strategy.executionConfig || {});
       setMaxLossPercent(strategy.maxLossPercent.toString());
       setMaxLossDollars(strategy.maxLossDollars.toString());
       setMaxGivebackPercent(strategy.maxGivebackPercent.toString());
@@ -77,24 +110,15 @@ export function StrategyEditor({
       setMinBetPercent(strategy.minBetPercent.toString());
       setMaxBetPercent(strategy.maxBetPercent.toString());
       setMaxTotalExposure(strategy.maxTotalExposure.toString());
-      setRiskRewardRatio(strategy.riskRewardRatio.toString());
-      setAiTradingPrompt(strategy.aiTradingPrompt);
-      setChartTimeHorizon(strategy.chartTimeHorizon);
-      setChartGranularity(strategy.chartGranularity);
       setTradingStartTime(strategy.tradingStartTime || "09:30");
       setTradingEndTime(strategy.tradingEndTime || "16:00");
       setTimezone(strategy.timezone || "America/New_York");
-      setTradingDays(
-        strategy.tradingDays || [
-          "monday",
-          "tuesday",
-          "wednesday",
-          "thursday",
-          "friday",
-        ]
-      );
     }
   }, [strategy]);
+
+  const selectedStrategy = executionStrategies.find(
+    (s) => s.id === executionStrategyId
+  );
 
   const handleSave = async () => {
     try {
@@ -103,6 +127,9 @@ export function StrategyEditor({
       setSuccess(null);
 
       const data = {
+        fundId,
+        executionStrategyId,
+        executionConfig,
         maxLossPercent: parseFloat(maxLossPercent),
         maxLossDollars: parseFloat(maxLossDollars),
         maxGivebackPercent: parseFloat(maxGivebackPercent),
@@ -110,21 +137,12 @@ export function StrategyEditor({
         minBetPercent: parseFloat(minBetPercent),
         maxBetPercent: parseFloat(maxBetPercent),
         maxTotalExposure: parseFloat(maxTotalExposure),
-        riskRewardRatio: parseFloat(riskRewardRatio),
-        aiTradingPrompt,
-        chartTimeHorizon,
-        chartGranularity,
         tradingStartTime,
         tradingEndTime,
         timezone,
-        tradingDays,
       };
 
-      if (strategy) {
-        await strategyService.updateStrategy(strategy.id, data);
-      } else {
-        await strategyService.createStrategy({ ...data, fundId });
-      }
+      await strategyService.createOrUpdateStrategy(data);
 
       setSuccess("Strategy saved successfully");
       setIsEditing(false);
@@ -140,6 +158,14 @@ export function StrategyEditor({
 
   const isReadOnly = !isEditing && strategy !== null;
 
+  if (loadingStrategies) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <p className="text-muted-foreground">Loading strategies...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {error && (
@@ -153,6 +179,57 @@ export function StrategyEditor({
           {success}
         </div>
       )}
+
+      {/* Execution Strategy Selection */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Execution Strategy</CardTitle>
+          <CardDescription>
+            Choose the trading logic for this fund
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="executionStrategy">Strategy Type</Label>
+            <Select
+              value={executionStrategyId}
+              onValueChange={setExecutionStrategyId}
+              disabled={isReadOnly || isSaving}
+            >
+              <SelectTrigger id="executionStrategy">
+                <SelectValue placeholder="Select a strategy" />
+              </SelectTrigger>
+              <SelectContent>
+                {executionStrategies.map((strat) => (
+                  <SelectItem key={strat.id} value={strat.id}>
+                    {strat.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {selectedStrategy && (
+            <div className="rounded-lg bg-muted p-4 space-y-2">
+              <p className="text-sm font-medium">{selectedStrategy.name}</p>
+              <p className="text-sm text-muted-foreground">
+                {selectedStrategy.description}
+              </p>
+              <div className="flex gap-4 text-xs text-muted-foreground">
+                <span>Type: {selectedStrategy.strategyType}</span>
+                <span>Timeframe: {selectedStrategy.expectedTimeframe}</span>
+              </div>
+              {selectedStrategy.requiredIndicators?.length > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Requires: {selectedStrategy.requiredIndicators.join(", ")}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* TODO: Add dynamic config editor based on selectedStrategy.configSchema */}
+        </CardContent>
+      </Card>
 
       {/* Risk Parameters */}
       <Card>
@@ -267,88 +344,6 @@ export function StrategyEditor({
         </CardContent>
       </Card>
 
-      {/* Trading Rules */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Trading Rules</CardTitle>
-          <CardDescription>
-            Define trading behavior and AI guidance
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-3">
-            <div className="space-y-2">
-              <Label htmlFor="riskRewardRatio">Risk/Reward Ratio</Label>
-              <Input
-                id="riskRewardRatio"
-                type="number"
-                step="0.1"
-                value={riskRewardRatio}
-                onChange={(e) => setRiskRewardRatio(e.target.value)}
-                disabled={isReadOnly || isSaving}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="chartTimeHorizon">Chart Time Horizon</Label>
-              <Select
-                value={chartTimeHorizon}
-                onValueChange={setChartTimeHorizon}
-                disabled={isReadOnly || isSaving}
-              >
-                <SelectTrigger id="chartTimeHorizon">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="1d">1 Day</SelectItem>
-                  <SelectItem value="5d">5 Days</SelectItem>
-                  <SelectItem value="1mo">1 Month</SelectItem>
-                  <SelectItem value="3mo">3 Months</SelectItem>
-                  <SelectItem value="6mo">6 Months</SelectItem>
-                  <SelectItem value="1y">1 Year</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="chartGranularity">Chart Granularity</Label>
-              <Select
-                value={chartGranularity}
-                onValueChange={setChartGranularity}
-                disabled={isReadOnly || isSaving}
-              >
-                <SelectTrigger id="chartGranularity">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="1min">1 Minute</SelectItem>
-                  <SelectItem value="5min">5 Minutes</SelectItem>
-                  <SelectItem value="15min">15 Minutes</SelectItem>
-                  <SelectItem value="1hour">1 Hour</SelectItem>
-                  <SelectItem value="1day">1 Day</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="aiTradingPrompt">AI Trading Prompt</Label>
-            <Textarea
-              id="aiTradingPrompt"
-              placeholder="Provide guidance for the AI trading system..."
-              value={aiTradingPrompt}
-              onChange={(e) => setAiTradingPrompt(e.target.value)}
-              disabled={isReadOnly || isSaving}
-              rows={6}
-            />
-            <p className="text-sm text-muted-foreground">
-              This prompt guides the AI on how to analyze opportunities and make
-              trading decisions
-            </p>
-          </div>
-        </CardContent>
-      </Card>
-
       {/* Trading Time Windows */}
       <Card>
         <CardHeader>
@@ -356,7 +351,7 @@ export function StrategyEditor({
           <CardDescription>Define when trades can be executed</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
             <div className="space-y-2">
               <Label htmlFor="tradingStartTime">Trading Start Time</Label>
               <Input
@@ -411,44 +406,6 @@ export function StrategyEditor({
                   <SelectItem value="UTC">UTC</SelectItem>
                 </SelectContent>
               </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Trading Days</Label>
-              <div className="space-y-2">
-                {[
-                  "monday",
-                  "tuesday",
-                  "wednesday",
-                  "thursday",
-                  "friday",
-                  "saturday",
-                  "sunday",
-                ].map((day) => (
-                  <label
-                    key={day}
-                    className="flex items-center space-x-2 cursor-pointer"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={tradingDays.includes(day)}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          setTradingDays([...tradingDays, day]);
-                        } else {
-                          setTradingDays(tradingDays.filter((d) => d !== day));
-                        }
-                      }}
-                      disabled={isReadOnly || isSaving}
-                      className="h-4 w-4"
-                    />
-                    <span className="text-sm capitalize">{day}</span>
-                  </label>
-                ))}
-              </div>
-              <p className="text-sm text-muted-foreground">
-                Select days when trading is allowed
-              </p>
             </div>
           </div>
         </CardContent>

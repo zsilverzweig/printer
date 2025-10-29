@@ -3,21 +3,21 @@
 
 // Re-export all Alpaca trading types
 export type {
+  AlpacaAPIError,
   AlpacaAccount,
-  AlpacaPosition,
-  AlpacaPositionSide,
-  AlpacaOrder,
-  AlpacaOrderSide,
-  AlpacaTimeInForce,
-  AlpacaOrderRequest,
-  AlpacaQuote,
-  AlpacaQuoteData,
+  AlpacaError,
   AlpacaMarketDataResponse,
   AlpacaOAuthTokens,
-  AlpacaUserInfo,
+  AlpacaOrder,
+  AlpacaOrderRequest,
+  AlpacaOrderSide,
+  AlpacaPosition,
+  AlpacaPositionSide,
+  AlpacaQuote,
+  AlpacaQuoteData,
   AlpacaServiceConfig,
-  AlpacaError,
-  AlpacaAPIError,
+  AlpacaTimeInForce,
+  AlpacaUserInfo,
 } from "./types/alpaca";
 
 // Re-export all market data types
@@ -30,10 +30,41 @@ export type {
 
 // Re-export all NOC/TCC types
 export type {
-  SignalStatus,
   NocStockData,
-  StockIndicators,
-  ScreenerResult,
   PolygonAggBar,
+  ScreenerResult,
+  SignalStatus,
+  StockIndicators,
 } from "./types/noc";
 
+// Re-export all fund management types
+export type {
+  // Input types
+  CreateFundInput,
+  CreateScreeningCriteriaInput,
+  CreateSetupInput,
+  CreateStrategyInput, // Backward compatibility
+  CreateTransferInput,
+  ExecutionStrategy,
+  // Core entities
+  Fund,
+  // Enums and literal types
+  FundMode,
+  FundStatus,
+  FundTradingStatus,
+  FundTransfer,
+  // Composite types
+  FundWithStrategy,
+  // Trading control types
+  PositionStatus,
+  RunningFundSummary,
+  ScreeningCriteria,
+  Setup, // Backward compatibility
+  Strategy,
+  StrategyType,
+  TransferType,
+  UpdateFundInput,
+  UpdateScreeningCriteriaInput, // Backward compatibility
+  UpdateSetupInput,
+  UpdateStrategyInput,
+} from "./types/funds";
