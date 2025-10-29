@@ -421,7 +421,8 @@ class StrategyEngine:
             order = await self.alpaca_service.place_market_order(
                 symbol=symbol,
                 notional=position_size,
-                side="buy"
+                side="buy",
+                time_in_force="day"  # Required for fractional/notional orders
             )
             
             # Create position context
@@ -496,7 +497,8 @@ class StrategyEngine:
             order = await self.alpaca_service.place_market_order(
                 symbol=position.symbol,
                 qty=position.quantity,
-                side="sell"
+                side="sell",
+                time_in_force="day"  # Required for fractional shares
             )
             
             # Calculate P&L
@@ -560,7 +562,8 @@ class StrategyEngine:
             order = await self.alpaca_service.place_market_order(
                 symbol=position.symbol,
                 qty=scale_quantity,
-                side="sell"
+                side="sell",
+                time_in_force="day"  # Required for fractional shares
             )
             
             # Update position
@@ -622,7 +625,8 @@ class StrategyEngine:
             order = await self.alpaca_service.place_market_order(
                 symbol=position.symbol,
                 qty=additional_size,
-                side="buy"
+                side="buy",
+                time_in_force="day"  # Required for fractional shares
             )
             
             # Update position
