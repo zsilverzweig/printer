@@ -35,6 +35,7 @@ class Fund(Base):
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     mode: Mapped[str] = mapped_column(String(10), nullable=False)  # 'sim' or 'real'
     balance: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="paused")  # 'active' or 'paused'
     
     created_at: Mapped[datetime] = mapped_column(
         DateTime, 

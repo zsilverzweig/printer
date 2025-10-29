@@ -25,6 +25,21 @@ from app.services.screener_volume import VolumeCalculator
 from app.types import ScreenerResult
 
 
+# Global screener service instance for strategy engines to access
+_global_screener_service: Optional['ScreenerService'] = None
+
+
+def get_screener_service() -> Optional['ScreenerService']:
+    """Get the global screener service instance."""
+    return _global_screener_service
+
+
+def set_screener_service(service: 'ScreenerService') -> None:
+    """Set the global screener service instance."""
+    global _global_screener_service
+    _global_screener_service = service
+
+
 class ScreenerService:
     """Orchestrates screener functionality: fetching snapshots, filtering, and streaming results."""
 

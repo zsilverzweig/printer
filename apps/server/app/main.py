@@ -11,7 +11,7 @@ load_dotenv("env.local")
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from app.core import startup_init
-from app.routers import market, news, trading, events, noc, admin, screener, strategies
+from app.routers import market, news, trading, events, noc, admin, screener, strategies, funds
 from app.routers.realtime import router as realtime_router
 import logging
 import time
@@ -57,6 +57,16 @@ async def on_startup() -> None:
     await startup_init()
     logger.info("FastAPI application started, WebSocket endpoints registered")
     
+    # Initialize global screener service for strategy engines
+    from app.services.screener import ScreenerService, set_screener_service
+    import app.core as core
+    
+    logger.info("Initializing global ScreenerService...")
+    screener_service = ScreenerService(core.get_client(), interval_s=20)
+    await screener_service.start()
+    set_screener_service(screener_service)
+    logger.info("✓ Global ScreenerService initialized and running")
+    
     # Log all registered routes
     for route in app.routes:
         logger.info(f"Registered route: {route.path} ({getattr(route, 'methods', 'WEBSOCKET' if 'WebSocket' in str(type(route)) else 'UNKNOWN')})")
@@ -76,6 +86,7 @@ app.include_router(noc.router, prefix="/api/noc", tags=["noc"])
 app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
 app.include_router(screener.router, prefix="/api/screener", tags=["screener"])
 app.include_router(strategies.router)
+app.include_router(funds.router, prefix="/api", tags=["funds"])
 
 # Include realtime/WebSocket router
 app.include_router(realtime_router)

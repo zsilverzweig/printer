@@ -27,7 +27,7 @@ from app.strategies.registry import get_strategy
 from app.services.market_data_provider import MarketDataProvider
 from app.services.alpaca_service import AlpacaService
 from app.models.strategies import Fund, Strategy, PositionContext as PositionContextModel
-from app.services.database import get_session
+from app.services.database import get_async_session
 
 logger = logging.getLogger(__name__)
 
@@ -184,9 +184,21 @@ class StrategyEngine:
     async def _update_candidates(self) -> None:
         """Update list of monitored symbols from screener."""
         try:
-            # TODO: Integrate with actual screener service
-            # For now, use a placeholder
-            screener_results = []
+            from app.services.screener import get_screener_service
+            
+            # Get global screener service
+            screener = get_screener_service()
+            if not screener or not screener.cached_payload:
+                logger.debug("Screener not ready or no data, using empty candidates")
+                self.monitored_symbols = []
+                return
+            
+            # Get screener results
+            screener_results = screener.cached_payload
+            
+            # Optional: Apply ScreeningCriteria filters
+            if self.strategy_config.screening_criteria_id:
+                screener_results = await self._apply_screening_filters(screener_results)
             
             # Ask strategy which symbols to monitor
             # Pass active position count so strategy can make informed decision
@@ -204,6 +216,53 @@ class StrategyEngine:
         except Exception as e:
             logger.error(f"Error updating candidates: {e}")
     
+    def _is_trading_time(self) -> bool:
+        """Check if current time is within trading hours."""
+        if not self.strategy_config.trading_start_time:
+            return True  # No restrictions
+        
+        import pytz
+        from datetime import time as dt_time
+        
+        try:
+            tz = pytz.timezone(self.strategy_config.timezone or "America/New_York")
+            now = datetime.now(tz)
+            current_time = now.time()
+            
+            # Parse times like "09:30"
+            start = dt_time(*map(int, self.strategy_config.trading_start_time.split(":")))
+            end = dt_time(*map(int, self.strategy_config.trading_end_time.split(":")))
+            
+            return start <= current_time <= end
+        except Exception as e:
+            logger.error(f"Error checking trading time: {e}")
+            return True  # Default to allowing trades if check fails
+    
+    def _check_risk_limits(self) -> tuple[bool, str]:
+        """Check if we can trade based on Strategy risk parameters."""
+        # Calculate daily P&L from positions (memory only)
+        daily_pnl = sum(p.unrealized_pnl for p in self.active_positions.values())
+        
+        # Check daily loss limit (dollars)
+        if daily_pnl < 0 and abs(daily_pnl) >= self.strategy_config.max_loss_dollars:
+            return False, f"Daily loss limit hit: ${abs(daily_pnl):.2f}"
+        
+        # Check daily loss limit (percent)
+        if daily_pnl < 0:
+            loss_percent = (abs(daily_pnl) / self.fund.balance) * 100
+            if loss_percent >= self.strategy_config.max_loss_percent:
+                return False, f"Daily loss % limit hit: {loss_percent:.1f}%"
+        
+        # Check total exposure
+        total_exposure = sum(
+            p.quantity * p.current_price 
+            for p in self.active_positions.values()
+        )
+        if total_exposure >= self.strategy_config.max_total_exposure:
+            return False, "Total exposure limit reached"
+        
+        return True, ""
+    
     async def _monitor_entries(self) -> None:
         """
         Monitor entry conditions for candidate symbols.
@@ -211,6 +270,17 @@ class StrategyEngine:
         Unified approach for all strategies - no special cases!
         Strategy decides which symbols to monitor via get_monitored_symbols().
         """
+        # Check trading hours BEFORE monitoring
+        if not self._is_trading_time():
+            logger.debug("Outside trading hours, skipping entry monitoring")
+            return
+        
+        # Check risk limits BEFORE monitoring
+        can_trade, reason = self._check_risk_limits()
+        if not can_trade:
+            logger.warning(f"Cannot enter new positions: {reason}")
+            return
+        
         for symbol in self.monitored_symbols:
             # Skip if already have a position
             if symbol in self.active_positions:
@@ -504,4 +574,52 @@ class StrategyEngine:
             )
             logger.error(error_msg)
             raise RuntimeError(error_msg)
+    
+    async def _apply_screening_filters(
+        self,
+        candidates: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """Apply ScreeningCriteria filters if configured."""
+        if not self.strategy_config.screening_criteria_id:
+            return candidates
+        
+        try:
+            # Load criteria from database
+            from app.services.database import get_async_session
+            from app.models.strategies import ScreeningCriteria
+            
+            async with get_async_session() as session:
+                criteria = await session.get(ScreeningCriteria, self.strategy_config.screening_criteria_id)
+                
+                if not criteria:
+                    logger.warning(f"ScreeningCriteria {self.strategy_config.screening_criteria_id} not found")
+                    return candidates
+                
+                filtered = []
+                for candidate in candidates:
+                    # Apply filters from criteria.criteria dict
+                    if "min_volume" in criteria.criteria:
+                        if candidate.get("today_vol", 0) < criteria.criteria["min_volume"]:
+                            continue
+                    
+                    if "min_price" in criteria.criteria:
+                        if candidate.get("price", 0) < criteria.criteria["min_price"]:
+                            continue
+                    
+                    if "max_price" in criteria.criteria:
+                        if candidate.get("price", 999999) > criteria.criteria["max_price"]:
+                            continue
+                    
+                    if "min_relative_volume" in criteria.criteria:
+                        if candidate.get("rv14", 0) < criteria.criteria["min_relative_volume"]:
+                            continue
+                    
+                    filtered.append(candidate)
+                
+                logger.info(f"Screening filters applied: {len(filtered)} of {len(candidates)} candidates passed")
+                return filtered
+        
+        except Exception as e:
+            logger.error(f"Error applying screening filters: {e}")
+            return candidates  # Return unfiltered on error
 
