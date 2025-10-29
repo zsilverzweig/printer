@@ -335,9 +335,9 @@ async def _load_polygon_ticker_details(status_id: int, ticker_symbols: List[str]
                                f"Processed {processed}/{len(ticker_symbols)} tickers...",
                                processed_tickers=processed, failed_tickers=failed)
             
-            # Rate limiting between batches
-            logger.debug(f"[{status_id}] Sleeping 0.5s between batches for rate limiting")
-            await asyncio.sleep(0.5)
+            # Rate limiting between batches (2s to be conservative with API limits)
+            logger.debug(f"[{status_id}] Sleeping 2s between batches for rate limiting")
+            await asyncio.sleep(2.0)
     
     logger.info(f"[{status_id}] ✅ Completed loading ticker details: {processed} processed, {failed} failed")
 

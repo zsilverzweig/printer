@@ -30,6 +30,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { FinancialInfoPanel } from "./financial-info-panel";
 import { NewsCard } from "./news-card";
 import { NocRealtimeChart } from "./noc-realtime-chart";
+import { TickerFilterMenu, type FilterCriteria } from "./ticker-filter-menu";
 import { TradeCard } from "./trade-card";
 
 /**
@@ -297,6 +298,12 @@ export function NocTable({ initialTicker }: NocTableProps) {
   } | null>(null);
   const chartCaptureRef = useRef<(() => Promise<string>) | null>(null);
 
+  // Filter state
+  const [filteredTickers, setFilteredTickers] = useState<Set<string> | null>(
+    null
+  );
+  const [activeFilterCount, setActiveFilterCount] = useState(0);
+
   // Use new unified WebSocket hook
   const { data: stocks, isConnected, error } = useNocData();
 
@@ -378,6 +385,72 @@ export function NocTable({ initialTicker }: NocTableProps) {
     []
   );
 
+  // Filter handlers
+  const handleFilterApply = async (criteria: FilterCriteria) => {
+    try {
+      const baseUrl =
+        process.env.NEXT_PUBLIC_WS_URL?.replace("ws://", "http://").replace(
+          "wss://",
+          "https://"
+        ) || "http://localhost:8000";
+
+      const response = await fetch(`${baseUrl}/api/screener/filter`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          asset_types:
+            criteria.assetTypes.length > 0 ? criteria.assetTypes : null,
+          market_cap_min: criteria.marketCapMin,
+          market_cap_max: criteria.marketCapMax,
+          sic_codes: criteria.sicCodes.length > 0 ? criteria.sicCodes : null,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setFilteredTickers(new Set(data.tickers));
+
+        // Count active filters
+        let count = 0;
+        if (criteria.assetTypes.length > 0) count++;
+        if (criteria.marketCapMin !== null || criteria.marketCapMax !== null)
+          count++;
+        if (criteria.sicCodes.length > 0) count++;
+        setActiveFilterCount(count);
+
+        console.log(
+          `✅ Applied filters: ${data.count} tickers match criteria`,
+          "\n  Asset types:",
+          criteria.assetTypes.length > 0 ? criteria.assetTypes : "any",
+          "\n  Market cap:",
+          criteria.marketCapMin || criteria.marketCapMax
+            ? `${criteria.marketCapMin || 0} - ${criteria.marketCapMax || "∞"}`
+            : "any",
+          "\n  SIC codes:",
+          criteria.sicCodes.length > 0 ? criteria.sicCodes : "any",
+          "\n  Matched tickers:",
+          data.tickers.slice(0, 10).join(", ") + (data.count > 10 ? "..." : "")
+        );
+      } else {
+        console.error("Failed to apply filters:", await response.text());
+      }
+    } catch (error) {
+      console.error("Error applying filters:", error);
+    }
+  };
+
+  const handleFilterClear = () => {
+    setFilteredTickers(null);
+    setActiveFilterCount(0);
+  };
+
+  // Apply client-side filtering to WebSocket stocks
+  const displayedStocks = filteredTickers
+    ? (stocks || []).filter((stock) => filteredTickers.has(stock.ticker))
+    : stocks || [];
+
   return (
     <TooltipProvider>
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 h-full w-full">
@@ -385,30 +458,37 @@ export function NocTable({ initialTicker }: NocTableProps) {
         <div className="lg:col-span-2 h-full max-h-full overflow-hidden">
           <Card className="h-full flex flex-col max-h-full">
             <CardHeader className="pb-2 px-3 pt-3 flex-shrink-0">
-              <div className="flex items-center gap-2 mb-2">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <CardTitle className="flex items-center gap-2 cursor-help text-sm">
-                      Screener
-                      <span
-                        className={`h-2 w-2 rounded-full ${
-                          isConnected ? "bg-green-500" : "bg-red-500"
-                        }`}
-                        title={isConnected ? "Connected" : "Disconnected"}
-                      />
-                    </CardTitle>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p className="max-w-xs">
-                      Real-time stock monitoring. Click to view details.
-                    </p>
-                  </TooltipContent>
-                </Tooltip>
-                {error && (
-                  <span className="block text-red-500 text-xs">
-                    Error: {error}
-                  </span>
-                )}
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <div className="flex items-center gap-2">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <CardTitle className="flex items-center gap-2 cursor-help text-sm">
+                        Screener
+                        <span
+                          className={`h-2 w-2 rounded-full ${
+                            isConnected ? "bg-green-500" : "bg-red-500"
+                          }`}
+                          title={isConnected ? "Connected" : "Disconnected"}
+                        />
+                      </CardTitle>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p className="max-w-xs">
+                        Real-time stock monitoring. Click to view details.
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                  {error && (
+                    <span className="block text-red-500 text-xs">
+                      Error: {error}
+                    </span>
+                  )}
+                </div>
+                <TickerFilterMenu
+                  onFilterApply={handleFilterApply}
+                  onFilterClear={handleFilterClear}
+                  activeFilterCount={activeFilterCount}
+                />
               </div>
               {/* Timeframe filter buttons - Wrap if needed */}
               <div className="flex flex-wrap gap-1">
@@ -441,34 +521,55 @@ export function NocTable({ initialTicker }: NocTableProps) {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {(stocks || []).map((stock) => (
-                    <TableRow
-                      key={stock.ticker}
-                      className={`cursor-pointer hover:bg-muted/50 ${
-                        selectedStock === stock.ticker ? "bg-muted" : ""
-                      }`}
-                      onClick={() => handleStockClick(stock.ticker)}
-                    >
-                      <TableCell className="font-medium text-xs py-1.5 px-2">
-                        {stock.ticker}
-                      </TableCell>
-                      <TableCell className="py-1.5 px-1">
-                        <div className="flex justify-center">
-                          <CompactSignalBar stock={stock} />
+                  {displayedStocks.length === 0 && filteredTickers !== null ? (
+                    <TableRow>
+                      <TableCell colSpan={3} className="text-center py-4">
+                        <div className="text-xs text-muted-foreground">
+                          <div className="font-medium">No matches</div>
+                          <div className="text-[10px] mt-1">
+                            Try different filters
+                          </div>
                         </div>
                       </TableCell>
-                      <TableCell
-                        className={`text-right text-xs py-1.5 px-2 font-medium ${
-                          stock.changePercent >= 0
-                            ? "text-green-600"
-                            : "text-red-600"
-                        }`}
-                      >
-                        {stock.changePercent >= 0 ? "+" : ""}
-                        {stock.changePercent.toFixed(1)}%
+                    </TableRow>
+                  ) : displayedStocks.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={3} className="text-center py-4">
+                        <div className="text-xs text-muted-foreground">
+                          Waiting for data...
+                        </div>
                       </TableCell>
                     </TableRow>
-                  ))}
+                  ) : (
+                    displayedStocks.map((stock) => (
+                      <TableRow
+                        key={stock.ticker}
+                        className={`cursor-pointer hover:bg-muted/50 ${
+                          selectedStock === stock.ticker ? "bg-muted" : ""
+                        }`}
+                        onClick={() => handleStockClick(stock.ticker)}
+                      >
+                        <TableCell className="font-medium text-xs py-1.5 px-2">
+                          {stock.ticker}
+                        </TableCell>
+                        <TableCell className="py-1.5 px-1">
+                          <div className="flex justify-center">
+                            <CompactSignalBar stock={stock} />
+                          </div>
+                        </TableCell>
+                        <TableCell
+                          className={`text-right text-xs py-1.5 px-2 font-medium ${
+                            stock.changePercent >= 0
+                              ? "text-green-600"
+                              : "text-red-600"
+                          }`}
+                        >
+                          {stock.changePercent >= 0 ? "+" : ""}
+                          {stock.changePercent.toFixed(1)}%
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
                 </TableBody>
               </Table>
             </CardContent>

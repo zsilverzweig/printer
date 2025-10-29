@@ -1,5 +1,6 @@
 "use client";
 
+import { Badge } from "@/lib/components/ui/badge";
 import {
   Card,
   CardContent,
@@ -15,6 +16,7 @@ import {
   TabsTrigger,
 } from "@/lib/components/ui/tabs";
 import type { FinancialData, TickerDetails } from "@/lib/types/ticker";
+import { Database, Globe } from "lucide-react";
 import { useEffect, useState } from "react";
 
 interface FinancialInfoPanelProps {
@@ -60,7 +62,13 @@ function formatDate(dateStr: string | undefined): string {
 /**
  * Info row component for key-value pairs
  */
-const InfoRow = ({ label, value }: { label: string; value: string | React.ReactNode }) => (
+const InfoRow = ({
+  label,
+  value,
+}: {
+  label: string;
+  value: string | React.ReactNode;
+}) => (
   <div className="flex justify-between py-2 border-b border-border/40 last:border-0">
     <span className="text-sm text-muted-foreground">{label}</span>
     <span className="text-sm font-medium">{value}</span>
@@ -163,19 +171,43 @@ export function FinancialInfoPanel({
   return (
     <Card className="w-full flex-shrink-0">
       <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-base">
-          {ticker}
-          {details?.name && (
-            <span className="text-sm font-normal text-muted-foreground">
-              — {details.name}
-            </span>
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex-1 min-w-0">
+            <CardTitle className="flex items-center gap-2 text-base">
+              {ticker}
+              {details?.name && (
+                <span className="text-sm font-normal text-muted-foreground">
+                  — {details.name}
+                </span>
+              )}
+            </CardTitle>
+            {details?.description && (
+              <CardDescription className="line-clamp-1 text-xs mt-1">
+                {details.description}
+              </CardDescription>
+            )}
+          </div>
+          {!isLoadingDetails && details && (
+            <Badge
+              variant={
+                (details as any).source === "database" ? "default" : "outline"
+              }
+              className="flex items-center gap-1 text-[10px] h-5 px-1.5"
+            >
+              {(details as any).source === "database" ? (
+                <>
+                  <Database className="h-3 w-3" />
+                  DB
+                </>
+              ) : (
+                <>
+                  <Globe className="h-3 w-3" />
+                  API
+                </>
+              )}
+            </Badge>
           )}
-        </CardTitle>
-        {details?.description && (
-          <CardDescription className="line-clamp-1 text-xs">
-            {details.description}
-          </CardDescription>
-        )}
+        </div>
       </CardHeader>
 
       <CardContent className="pt-0">

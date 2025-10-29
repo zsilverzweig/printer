@@ -15,7 +15,6 @@ import {
   CheckCircle,
   Clock,
   Database,
-  Play,
   RefreshCw,
   Square,
   XCircle,
@@ -224,10 +223,6 @@ export default function AdminAssetsPage() {
             Load and manage comprehensive ticker details from Polygon API
           </p>
         </div>
-        <Button onClick={refreshData} variant="outline" size="sm">
-          <RefreshCw className="h-4 w-4 mr-2" />
-          Refresh
-        </Button>
       </div>
 
       {error && (
@@ -240,14 +235,41 @@ export default function AdminAssetsPage() {
       {/* Loading Status Card */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            {getStatusIcon(loadingStatus?.status || "idle")}
-            Loading Status
-            {loadingStatus?.status && getStatusBadge(loadingStatus.status)}
-          </CardTitle>
-          <CardDescription>
-            {loadingStatus?.current_phase || "No active loading task"}
-          </CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                {getStatusIcon(loadingStatus?.status || "idle")}
+                Loading Status
+                {loadingStatus?.status && getStatusBadge(loadingStatus.status)}
+              </CardTitle>
+              <CardDescription>
+                {loadingStatus?.current_phase || "No active loading task"}
+              </CardDescription>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                onClick={() => startLoading(false)}
+                disabled={isLoading || loadingStatus?.status === "running"}
+                size="lg"
+                className="flex items-center gap-2"
+              >
+                <RefreshCw className="h-4 w-4" />
+                Refresh Data
+              </Button>
+              {loadingStatus?.status === "running" && (
+                <Button
+                  onClick={cancelLoading}
+                  disabled={isLoading}
+                  variant="destructive"
+                  size="lg"
+                  className="flex items-center gap-2"
+                >
+                  <Square className="h-4 w-4" />
+                  Cancel
+                </Button>
+              )}
+            </div>
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           {loadingStatus?.status === "running" && (
@@ -307,37 +329,6 @@ export default function AdminAssetsPage() {
                 </AlertDescription>
               </Alert>
             )}
-
-          <div className="flex gap-2">
-            <Button
-              onClick={() => startLoading(true)}
-              disabled={isLoading || loadingStatus?.status === "running"}
-              variant="outline"
-              className="flex items-center gap-2"
-            >
-              <Play className="h-4 w-4" />
-              Load Sample (1 ticker)
-            </Button>
-
-            <Button
-              onClick={() => startLoading(false)}
-              disabled={isLoading || loadingStatus?.status === "running"}
-              className="flex items-center gap-2"
-            >
-              <Play className="h-4 w-4" />
-              Start Full Load
-            </Button>
-
-            <Button
-              onClick={cancelLoading}
-              disabled={isLoading || loadingStatus?.status !== "running"}
-              variant="destructive"
-              className="flex items-center gap-2"
-            >
-              <Square className="h-4 w-4" />
-              Cancel
-            </Button>
-          </div>
         </CardContent>
       </Card>
 
