@@ -37,3 +37,4 @@ def run_migrations():
 if __name__ == "__main__":
     sys.exit(run_migrations())
 
+

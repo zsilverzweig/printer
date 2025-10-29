@@ -191,3 +191,4 @@ This is what we did for the float scraper feature:
 3. **Deployed** - migration runs automatically on next startup
 
 That's it! No manual database commands needed. 🚀
+

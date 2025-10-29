@@ -16,24 +16,38 @@ logger = logging.getLogger("app.alpaca_service")
 
 
 class AlpacaService:
-    """Service for interacting with Alpaca paper trading API."""
+    """Service for interacting with Alpaca trading API (paper or real)."""
     
-    def __init__(self):
-        """Initialize Alpaca trading client with paper trading credentials."""
-        api_key = os.getenv("ALPACA_API_KEY")
-        secret_key = os.getenv("ALPACA_SECRET_KEY")
+    def __init__(self, paper_trading: bool = True):
+        """
+        Initialize Alpaca trading client.
+        
+        Args:
+            paper_trading: If True, use paper trading credentials. If False, use real trading.
+        """
+        self.paper_trading = paper_trading
+        
+        if paper_trading:
+            api_key = os.getenv("ALPACA_API_KEY")
+            secret_key = os.getenv("ALPACA_SECRET_KEY")
+            mode_label = "PAPER TRADING"
+        else:
+            # Real trading uses separate credentials for safety
+            api_key = os.getenv("ALPACA_REAL_API_KEY")
+            secret_key = os.getenv("ALPACA_REAL_SECRET_KEY")
+            mode_label = "REAL TRADING"
         
         if not api_key or not secret_key:
-            logger.warning("Alpaca API credentials not found in environment variables")
+            logger.warning(f"Alpaca {mode_label} credentials not found in environment variables")
             self.client = None
             self.data_client = None
             return
         
-        # Force paper trading
+        # Initialize trading client with explicit paper flag
         self.client = TradingClient(
             api_key=api_key,
             secret_key=secret_key,
-            paper=True  # Ensure paper trading only
+            paper=paper_trading
         )
         
         # Initialize data client for market data (quotes, bars, etc.)
@@ -42,7 +56,20 @@ class AlpacaService:
             secret_key=secret_key
         )
         
-        logger.info("Alpaca trading client initialized (PAPER TRADING MODE)")
+        logger.info(f"Alpaca trading client initialized ({mode_label} MODE)")
+        
+        # Double-check account is in expected mode
+        try:
+            account = self.client.get_account()
+            is_paper = getattr(account, 'account_number', '').startswith('P')
+            if paper_trading and not is_paper:
+                raise RuntimeError("Expected paper trading account but got real account!")
+            if not paper_trading and is_paper:
+                raise RuntimeError("Expected real trading account but got paper account!")
+            logger.info(f"✓ Account mode verified: {mode_label}")
+        except Exception as e:
+            logger.error(f"Failed to verify account mode: {e}")
+            raise
     
     def is_available(self) -> bool:
         """Check if Alpaca service is properly configured."""

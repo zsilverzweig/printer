@@ -1,12 +1,13 @@
 /**
  * Fund Management Types
  *
- * Types for the fund management system including funds, strategies, setups,
- * and fund transfers.
+ * Types for the fund management system including funds, strategies,
+ * screening criteria, execution strategies, and fund transfers.
  */
 
 export type FundMode = "sim" | "real";
 export type TransferType = "deposit" | "withdrawal";
+export type StrategyType = "math-based" | "ai-based" | "hybrid";
 
 export interface Fund {
   id: string;
@@ -18,9 +19,34 @@ export interface Fund {
   updatedAt: Date;
 }
 
+export interface ExecutionStrategy {
+  id: string; // e.g., "bull_flag"
+  name: string; // e.g., "Bull Flag Pattern"
+  description: string;
+  strategyType: StrategyType;
+  expectedTimeframe: string; // e.g., "1-3 minutes"
+  requiredIndicators: string[]; // e.g., ["MACD", "RSI"]
+  configSchema: Record<string, any>; // JSON schema for configuration
+}
+
+export interface ScreeningCriteria {
+  id: string;
+  name: string;
+  description?: string;
+  criteria: Record<string, any>; // Flexible JSON for screener params
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// Backward compatibility alias
+export type Setup = ScreeningCriteria;
+
 export interface Strategy {
   id: string;
   fundId: string;
+  // References to execution components
+  executionStrategyId: string; // References ExecutionStrategy (e.g., "bull_flag")
+  screeningCriteriaId?: string; // References ScreeningCriteria
   // Risk parameters
   maxLossPercent: number; // Max loss % per day
   maxLossDollars: number; // Max loss $ per day
@@ -32,23 +58,13 @@ export interface Strategy {
   maxTotalExposure: number; // Max total $ in positions
   // Trading rules
   riskRewardRatio: number; // Default 2.0 for 2:1
-  aiTradingPrompt: string; // Text guidance for AI
-  chartTimeHorizon: string; // e.g., "5d", "1mo"
-  chartGranularity: string; // e.g., "5min", "1hour"
   // Trading time windows
   tradingStartTime?: string; // e.g., "09:30" (market open)
   tradingEndTime?: string; // e.g., "16:00" (market close)
   timezone?: string; // e.g., "America/New_York" (default: ET)
   tradingDays?: string[]; // e.g., ["monday", "tuesday", "wednesday", "thursday", "friday"]
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-export interface Setup {
-  id: string;
-  name: string;
-  description?: string;
-  screeningCriteria: Record<string, any>; // Flexible JSON for screener params
+  // Strategy-specific configuration
+  executionConfig: Record<string, any>; // Plugin-specific params
   createdAt: Date;
   updatedAt: Date;
 }
@@ -64,7 +80,8 @@ export interface FundTransfer {
 
 export interface FundWithStrategy extends Fund {
   strategy?: Strategy;
-  setup?: Setup;
+  screeningCriteria?: ScreeningCriteria;
+  executionStrategy?: ExecutionStrategy;
 }
 
 export interface CreateFundInput {
@@ -82,6 +99,8 @@ export interface UpdateFundInput {
 
 export interface CreateStrategyInput {
   fundId: string;
+  executionStrategyId: string;
+  screeningCriteriaId?: string;
   maxLossPercent: number;
   maxLossDollars: number;
   maxGivebackPercent: number;
@@ -90,25 +109,28 @@ export interface CreateStrategyInput {
   maxBetPercent: number;
   maxTotalExposure: number;
   riskRewardRatio: number;
-  aiTradingPrompt: string;
-  chartTimeHorizon: string;
-  chartGranularity: string;
   tradingStartTime?: string;
   tradingEndTime?: string;
   timezone?: string;
   tradingDays?: string[];
+  executionConfig: Record<string, any>;
 }
 
 export interface UpdateStrategyInput
   extends Partial<Omit<CreateStrategyInput, "fundId">> {}
 
-export interface CreateSetupInput {
+export interface CreateScreeningCriteriaInput {
   name: string;
   description?: string;
-  screeningCriteria: Record<string, any>;
+  criteria: Record<string, any>;
 }
 
-export interface UpdateSetupInput extends Partial<CreateSetupInput> {}
+export interface UpdateScreeningCriteriaInput
+  extends Partial<CreateScreeningCriteriaInput> {}
+
+// Backward compatibility aliases
+export type CreateSetupInput = CreateScreeningCriteriaInput;
+export type UpdateSetupInput = UpdateScreeningCriteriaInput;
 
 export interface CreateTransferInput {
   fundId: string;

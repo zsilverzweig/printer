@@ -11,7 +11,7 @@ load_dotenv("env.local")
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from app.core import startup_init
-from app.routers import market, news, trading, events, noc, admin, screener
+from app.routers import market, news, trading, events, noc, admin, screener, strategies
 from app.routers.realtime import router as realtime_router
 import logging
 import time
@@ -75,6 +75,7 @@ app.include_router(events.router, prefix="/api/events", tags=["events"])
 app.include_router(noc.router, prefix="/api/noc", tags=["noc"])
 app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
 app.include_router(screener.router, prefix="/api/screener", tags=["screener"])
+app.include_router(strategies.router)
 
 # Include realtime/WebSocket router
 app.include_router(realtime_router)

@@ -48,3 +48,4 @@ def downgrade() -> None:
     # Drop the task_type column
     op.drop_column('asset_loading_status', 'task_type')
 
+

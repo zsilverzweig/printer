@@ -41,3 +41,4 @@ def downgrade() -> None:
     op.drop_column('ticker_details', 'short_percent_of_float')
     op.drop_column('ticker_details', 'public_float')
 
+

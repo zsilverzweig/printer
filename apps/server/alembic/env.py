@@ -10,7 +10,16 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from alembic import context
 
 # Import your models' Base metadata
-from app.models.assets import Base
+from app.models.assets import Base as AssetsBase
+from app.models.strategies import Base as StrategiesBase
+from app.models.events import Base as EventsBase
+
+# Combine all metadata
+from sqlalchemy import MetaData
+target_metadata = MetaData()
+for base in [AssetsBase, StrategiesBase, EventsBase]:
+    for table in base.metadata.tables.values():
+        table.to_metadata(target_metadata)
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -21,9 +30,7 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# add your model's MetaData object here
-# for 'autogenerate' support
-target_metadata = Base.metadata
+# target_metadata is set above from multiple Base classes
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
