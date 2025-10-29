@@ -390,9 +390,10 @@ async def unified_realtime(websocket: WebSocket):
                 await websocket.close()
                 return
         
-        # Subscribe to NOC and Screener broadcasts
+        # Subscribe to NOC, Screener, and Trading Activity broadcasts
         noc_service.subscribers.add(websocket)
         service.subscribers.add(websocket)
+        trading_activity_subscribers.add(websocket)
         
         # Send initial connection status
         try:
@@ -479,10 +480,45 @@ async def unified_realtime(websocket: WebSocket):
             noc_service.subscribers.discard(websocket)
         if service:
             service.subscribers.discard(websocket)
+        trading_activity_subscribers.discard(websocket)
         
         if polygon_ws:
             await stop_polygon_websocket()
         
         logger.info("Cleaned up unified realtime connection")
+
+
+async def broadcast_trading_activity(event: dict) -> None:
+    """Broadcast trading activity event to all subscribers."""
+    global trading_activity_subscribers
+    logger = logging.getLogger("app.realtime")
+    
+    if not trading_activity_subscribers:
+        return
+    
+    message = {
+        "type": "trading_activity",
+        "data": event,
+        "timestamp": int(time.time() * 1000)
+    }
+    
+    # Send to all subscribers
+    disconnected = set()
+    for ws in trading_activity_subscribers:
+        try:
+            from starlette.websockets import WebSocketState
+            if ws.client_state == WebSocketState.CONNECTED:
+                await ws.send_json(message)
+            else:
+                disconnected.add(ws)
+        except Exception as e:
+            logger.warning(f"Error sending trading activity to subscriber: {e}")
+            disconnected.add(ws)
+    
+    # Remove disconnected subscribers
+    for ws in disconnected:
+        trading_activity_subscribers.discard(ws)
+    
+    logger.debug(f"Broadcasted trading activity to {len(trading_activity_subscribers)} subscribers")
 
 

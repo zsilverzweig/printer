@@ -26,6 +26,7 @@ export { SetupSelector } from "./components/setup-selector";
 export { StrategyEditor } from "./components/strategy-editor";
 export { StrategySelection } from "./components/strategy-selection";
 export { TimeWindows } from "./components/time-windows";
+export { TradingActivityFeed } from "./components/trading-activity-feed";
 
 // Hooks
 export { useFundDetails } from "./hooks/use-fund-details";

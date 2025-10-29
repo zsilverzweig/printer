@@ -103,16 +103,16 @@ class Strategy(Base):
         nullable=True
     )
     
-    # Risk parameters
-    max_loss_percent: Mapped[float] = mapped_column(Float, nullable=False, default=2.0)
-    max_loss_dollars: Mapped[float] = mapped_column(Float, nullable=False, default=1000.0)
-    max_giveback_percent: Mapped[float] = mapped_column(Float, nullable=False, default=50.0)
+    # Risk parameters (nullable - None means no limit)
+    max_loss_percent: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
+    max_loss_dollars: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
+    max_giveback_percent: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
     
     # Position sizing
     size_per_trade: Mapped[float] = mapped_column(Float, nullable=False, default=1000.0)
-    min_bet_percent: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
-    max_bet_percent: Mapped[float] = mapped_column(Float, nullable=False, default=5.0)
-    max_total_exposure: Mapped[float] = mapped_column(Float, nullable=False, default=10000.0)
+    min_bet_percent: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
+    max_bet_percent: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
+    max_total_exposure: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
     
     # Trading time windows
     trading_start_time: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)  # e.g., "09:30"

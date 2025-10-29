@@ -30,6 +30,7 @@ import { ScreenerLink } from "./screener-link";
 import { SetupEditor } from "./setup-editor";
 import { StrategySelection } from "./strategy-selection";
 import { TimeWindows } from "./time-windows";
+import { TradingActivityFeed } from "./trading-activity-feed";
 
 interface FundDetailViewProps {
   fundId: string;
@@ -95,8 +96,9 @@ export function FundDetailView({ fundId }: FundDetailViewProps) {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-2 md:grid-cols-6 gap-1">
+        <TabsList className="grid w-full grid-cols-2 md:grid-cols-7 gap-1">
           <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="activity">Activity</TabsTrigger>
           <TabsTrigger value="strategy">Strategy</TabsTrigger>
           <TabsTrigger value="risk">Risk</TabsTrigger>
           <TabsTrigger value="time">Time Windows</TabsTrigger>
@@ -110,6 +112,10 @@ export function FundDetailView({ fundId }: FundDetailViewProps) {
             strategy={strategy}
             onFundUpdate={refresh}
           />
+        </TabsContent>
+
+        <TabsContent value="activity" className="space-y-6">
+          <TradingActivityFeed fundId={fundId} />
         </TabsContent>
 
         <TabsContent value="strategy" className="space-y-6">

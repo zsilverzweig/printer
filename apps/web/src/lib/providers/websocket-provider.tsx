@@ -6,7 +6,8 @@ import type {
   WebSocketMessage, 
   WebSocketContextValue, 
   ConnectionStatus,
-  StockIndicators 
+  StockIndicators,
+  TradingActivityEvent
 } from "@/lib/types/websocket";
 import type { ScreenedStockPreview } from "@/lib/types/market";
 import { log } from "@/lib/utils/logger";
@@ -23,6 +24,7 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
   const [nocData, setNocData] = useState<StockIndicators[] | null>(null);
   const [screenerData, setScreenerData] = useState<ScreenedStockPreview[] | null>(null);
   const [marketData, setMarketData] = useState<Map<string, unknown>>(new Map());
+  const [tradingActivity, setTradingActivity] = useState<TradingActivityEvent[]>([]);
   
   // Connection state
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>({
@@ -80,6 +82,11 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
       case "connection_status":
         setConnectionStatus(message.data as ConnectionStatus);
         log.debug("[WebSocket] Connection status updated", message.data);
+        break;
+        
+      case "trading_activity":
+        setTradingActivity(prev => [message.data as TradingActivityEvent, ...prev].slice(0, 100)); // Keep last 100 events
+        log.debug("[WebSocket] Trading activity received", message.data);
         break;
         
       default:
@@ -234,6 +241,7 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
     nocData,
     screenerData,
     marketData,
+    tradingActivity,
     
     // Connection state
     isConnected,

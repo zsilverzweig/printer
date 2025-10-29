@@ -9,7 +9,7 @@ Orchestrates the execution of trading strategies including:
 - State tracking
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any
 import logging
 import asyncio
@@ -30,6 +30,20 @@ from app.models.strategies import Fund, Strategy, PositionContext as PositionCon
 from app.services.database import get_async_session
 
 logger = logging.getLogger(__name__)
+
+
+def _get_utc_timestamp() -> str:
+    """Get current UTC timestamp in ISO format."""
+    return datetime.now(timezone.utc).isoformat()
+
+
+async def _broadcast_trading_event(event: dict) -> None:
+    """Broadcast trading event to WebSocket subscribers."""
+    try:
+        from app.routers.realtime import broadcast_trading_activity
+        await broadcast_trading_activity(event)
+    except Exception as e:
+        logger.warning(f"Failed to broadcast trading event: {e}")
 
 
 class StrategyEngine:
@@ -239,27 +253,41 @@ class StrategyEngine:
             return True  # Default to allowing trades if check fails
     
     def _check_risk_limits(self) -> tuple[bool, str]:
-        """Check if we can trade based on Strategy risk parameters."""
+        """
+        Check if we can trade based on Strategy risk parameters.
+        
+        Returns:
+            (can_trade, reason) - If can_trade is False, reason contains the error message
+        """
         # Calculate daily P&L from positions (memory only)
         daily_pnl = sum(p.unrealized_pnl for p in self.active_positions.values())
         
-        # Check daily loss limit (dollars)
-        if daily_pnl < 0 and abs(daily_pnl) >= self.strategy_config.max_loss_dollars:
-            return False, f"Daily loss limit hit: ${abs(daily_pnl):.2f}"
+        # Check daily loss limit (dollars) - only if set
+        if (
+            self.strategy_config.max_loss_dollars is not None
+            and daily_pnl < 0
+            and abs(daily_pnl) >= self.strategy_config.max_loss_dollars
+        ):
+            return False, f"Daily loss limit hit: ${abs(daily_pnl):.2f} >= ${self.strategy_config.max_loss_dollars:.2f}"
         
-        # Check daily loss limit (percent)
-        if daily_pnl < 0:
+        # Check daily loss limit (percent) - only if set
+        if (
+            self.strategy_config.max_loss_percent is not None
+            and daily_pnl < 0
+            and self.fund.balance > 0
+        ):
             loss_percent = (abs(daily_pnl) / self.fund.balance) * 100
             if loss_percent >= self.strategy_config.max_loss_percent:
-                return False, f"Daily loss % limit hit: {loss_percent:.1f}%"
+                return False, f"Daily loss % limit hit: {loss_percent:.1f}% >= {self.strategy_config.max_loss_percent:.1f}%"
         
-        # Check total exposure
-        total_exposure = sum(
-            p.quantity * p.current_price 
-            for p in self.active_positions.values()
-        )
-        if total_exposure >= self.strategy_config.max_total_exposure:
-            return False, "Total exposure limit reached"
+        # Check total exposure - only if set
+        if self.strategy_config.max_total_exposure is not None:
+            total_exposure = sum(
+                p.quantity * p.current_price 
+                for p in self.active_positions.values()
+            )
+            if total_exposure >= self.strategy_config.max_total_exposure:
+                return False, f"Total exposure limit reached: ${total_exposure:.2f} >= ${self.strategy_config.max_total_exposure:.2f}"
         
         return True, ""
     
@@ -279,6 +307,16 @@ class StrategyEngine:
         can_trade, reason = self._check_risk_limits()
         if not can_trade:
             logger.warning(f"Cannot enter new positions: {reason}")
+            
+            # Broadcast warning event
+            await _broadcast_trading_event({
+                "fund_id": str(self.fund_id),
+                "fund_name": self.fund.name,
+                "event_type": "warning",
+                "timestamp": _get_utc_timestamp(),
+                "reason": "Risk limit check",
+                "message": f"Cannot enter new positions: {reason}",
+            })
             return
         
         for symbol in self.monitored_symbols:
@@ -354,6 +392,11 @@ class StrategyEngine:
             # Safety check: Verify we're still in the correct trading mode
             self._verify_trading_mode()
             
+            # Skip if price is invalid/zero
+            if market_data.price <= 0:
+                logger.warning(f"Skipping entry for {symbol}: invalid price {market_data.price}")
+                return
+            
             logger.info(
                 f"[{self.fund.mode.upper()}] Entering position: {symbol} @ {signal.entry_price} "
                 f"(reason: {signal.reason})"
@@ -375,12 +418,11 @@ class StrategyEngine:
             )
             
             # Place order via Alpaca
-            # TODO: Uncomment when ready to trade
-            # order = await self.alpaca_service.place_market_order(
-            #     symbol=symbol,
-            #     notional=position_size,
-            #     side="buy"
-            # )
+            order = await self.alpaca_service.place_market_order(
+                symbol=symbol,
+                notional=position_size,
+                side="buy"
+            )
             
             # Create position context
             position_id = str(uuid.uuid4())
@@ -406,9 +448,33 @@ class StrategyEngine:
             self.active_positions[symbol] = position
             
             logger.info(f"Position entered: {symbol}, quantity: {quantity:.2f}, size: ${position_size:.2f}")
+            
+            # Broadcast trading event
+            await _broadcast_trading_event({
+                "fund_id": str(self.fund_id),
+                "fund_name": self.fund.name,
+                "event_type": "entry",
+                "symbol": symbol,
+                "quantity": quantity,
+                "price": market_data.price,
+                "position_size": position_size,
+                "timestamp": _get_utc_timestamp(),
+                "reason": signal.reason,
+            })
         
         except Exception as e:
             logger.error(f"Error entering position for {symbol}: {e}", exc_info=True)
+            
+            # Broadcast error event
+            await _broadcast_trading_event({
+                "fund_id": str(self.fund_id),
+                "fund_name": self.fund.name,
+                "event_type": "error",
+                "symbol": symbol,
+                "timestamp": _get_utc_timestamp(),
+                "reason": "Entry execution failed",
+                "message": f"Failed to enter position in {symbol}: {str(e)}",
+            })
     
     async def _exit_position(
         self, 
@@ -427,12 +493,11 @@ class StrategyEngine:
             )
             
             # Place sell order via Alpaca
-            # TODO: Uncomment when ready to trade
-            # order = await self.alpaca_service.place_market_order(
-            #     symbol=position.symbol,
-            #     qty=position.quantity,
-            #     side="sell"
-            # )
+            order = await self.alpaca_service.place_market_order(
+                symbol=position.symbol,
+                qty=position.quantity,
+                side="sell"
+            )
             
             # Calculate P&L
             realized_pnl = position.unrealized_pnl
@@ -444,9 +509,34 @@ class StrategyEngine:
             del self.active_positions[position.symbol]
             
             logger.info(f"Position exited: {position.symbol}, P&L: ${realized_pnl:.2f}")
+            
+            # Broadcast trading event
+            await _broadcast_trading_event({
+                "fund_id": str(self.fund_id),
+                "fund_name": self.fund.name,
+                "event_type": "exit",
+                "symbol": position.symbol,
+                "quantity": position.quantity,
+                "price": market_data.price,
+                "pnl": realized_pnl,
+                "pnl_percent": position.unrealized_pnl_percent,
+                "timestamp": _get_utc_timestamp(),
+                "reason": signal.reason,
+            })
         
         except Exception as e:
             logger.error(f"Error exiting position for {position.symbol}: {e}", exc_info=True)
+            
+            # Broadcast error event
+            await _broadcast_trading_event({
+                "fund_id": str(self.fund_id),
+                "fund_name": self.fund.name,
+                "event_type": "error",
+                "symbol": position.symbol,
+                "timestamp": _get_utc_timestamp(),
+                "reason": "Exit execution failed",
+                "message": f"Failed to exit position in {position.symbol}: {str(e)}",
+            })
     
     async def _scale_out_position(
         self,
@@ -467,12 +557,11 @@ class StrategyEngine:
             )
             
             # Place partial sell order
-            # TODO: Uncomment when ready to trade
-            # order = await self.alpaca_service.place_market_order(
-            #     symbol=position.symbol,
-            #     qty=scale_quantity,
-            #     side="sell"
-            # )
+            order = await self.alpaca_service.place_market_order(
+                symbol=position.symbol,
+                qty=scale_quantity,
+                side="sell"
+            )
             
             # Update position
             position.quantity -= scale_quantity
@@ -483,9 +572,33 @@ class StrategyEngine:
             
             # Update database
             await self._update_position(position)
+            
+            # Broadcast trading event
+            await _broadcast_trading_event({
+                "fund_id": str(self.fund_id),
+                "fund_name": self.fund.name,
+                "event_type": "scale_out",
+                "symbol": position.symbol,
+                "quantity": scale_quantity,
+                "price": market_data.price,
+                "percent": signal.percent,
+                "timestamp": _get_utc_timestamp(),
+                "reason": signal.reason,
+            })
         
         except Exception as e:
             logger.error(f"Error scaling out of {position.symbol}: {e}")
+            
+            # Broadcast error event
+            await _broadcast_trading_event({
+                "fund_id": str(self.fund_id),
+                "fund_name": self.fund.name,
+                "event_type": "error",
+                "symbol": position.symbol,
+                "timestamp": _get_utc_timestamp(),
+                "reason": "Scale out failed",
+                "message": f"Failed to scale out of {position.symbol}: {str(e)}",
+            })
     
     async def _scale_in_position(
         self,
@@ -506,12 +619,11 @@ class StrategyEngine:
             )
             
             # Place additional buy order
-            # TODO: Uncomment when ready to trade
-            # order = await self.alpaca_service.place_market_order(
-            #     symbol=position.symbol,
-            #     qty=additional_size,
-            #     side="buy"
-            # )
+            order = await self.alpaca_service.place_market_order(
+                symbol=position.symbol,
+                qty=additional_size,
+                side="buy"
+            )
             
             # Update position
             old_quantity = position.quantity
@@ -529,9 +641,33 @@ class StrategyEngine:
             
             # Update database
             await self._update_position(position)
+            
+            # Broadcast trading event
+            await _broadcast_trading_event({
+                "fund_id": str(self.fund_id),
+                "fund_name": self.fund.name,
+                "event_type": "scale_in",
+                "symbol": position.symbol,
+                "quantity": additional_size,
+                "price": market_data.price,
+                "multiplier": signal.multiplier,
+                "timestamp": _get_utc_timestamp(),
+                "reason": signal.reason,
+            })
         
         except Exception as e:
             logger.error(f"Error scaling into {position.symbol}: {e}")
+            
+            # Broadcast error event
+            await _broadcast_trading_event({
+                "fund_id": str(self.fund_id),
+                "fund_name": self.fund.name,
+                "event_type": "error",
+                "symbol": position.symbol,
+                "timestamp": _get_utc_timestamp(),
+                "reason": "Scale in failed",
+                "message": f"Failed to scale into {position.symbol}: {str(e)}",
+            })
     
     async def _save_position(self, position: PositionContext) -> None:
         """Save new position to database."""

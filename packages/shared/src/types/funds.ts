@@ -99,6 +99,8 @@ export type Setup = ScreeningCriteria;
  * - ExecutionStrategy (code plugin like "bull_flag")
  * - ScreeningCriteria (reusable screening config)
  * - Risk parameters, position sizing, and execution configuration
+ *
+ * Note: Risk parameters are optional. When null/undefined, those risk checks are disabled.
  */
 export interface Strategy {
   id: string;
@@ -106,15 +108,15 @@ export interface Strategy {
   // References to execution components
   executionStrategyId: string; // References ExecutionStrategy (e.g., "bull_flag")
   screeningCriteriaId?: string; // References ScreeningCriteria
-  // Risk parameters
-  maxLossPercent: number; // Max loss % per day
-  maxLossDollars: number; // Max loss $ per day
-  maxGivebackPercent: number; // Max loss from high water mark
+  // Risk parameters (optional - null/undefined means no limit)
+  maxLossPercent?: number | null; // Max loss % per day
+  maxLossDollars?: number | null; // Max loss $ per day
+  maxGivebackPercent?: number | null; // Max loss from high water mark
   // Position sizing
-  sizePerTrade: number; // Default position size
-  minBetPercent: number; // Min % of fund per trade
-  maxBetPercent: number; // Max % of fund per trade
-  maxTotalExposure: number; // Max total $ in positions
+  sizePerTrade: number; // Default position size (required)
+  minBetPercent?: number | null; // Min % of fund per trade
+  maxBetPercent?: number | null; // Max % of fund per trade
+  maxTotalExposure?: number | null; // Max total $ in positions
   // Trading time windows
   tradingStartTime?: string; // e.g., "09:30" (market open)
   tradingEndTime?: string; // e.g., "16:00" (market close)
@@ -176,13 +178,13 @@ export interface CreateStrategyInput {
   fundId: string;
   executionStrategyId: string;
   screeningCriteriaId?: string;
-  maxLossPercent: number;
-  maxLossDollars: number;
-  maxGivebackPercent: number;
+  maxLossPercent?: number | null;
+  maxLossDollars?: number | null;
+  maxGivebackPercent?: number | null;
   sizePerTrade: number;
-  minBetPercent: number;
-  maxBetPercent: number;
-  maxTotalExposure: number;
+  minBetPercent?: number | null;
+  maxBetPercent?: number | null;
+  maxTotalExposure?: number | null;
   tradingStartTime?: string;
   tradingEndTime?: string;
   timezone?: string;

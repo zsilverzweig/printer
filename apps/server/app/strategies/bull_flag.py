@@ -350,8 +350,8 @@ class BullFlagStrategy(ExecutionStrategy):
         return None
     
     async def position_sizing(
-        self, 
-        signal: EntrySignal, 
+        self,
+        signal: EntrySignal,
         fund_balance: float,
         risk_params: Dict[str, Any]
     ) -> float:
@@ -361,14 +361,15 @@ class BullFlagStrategy(ExecutionStrategy):
         Uses the fund's size_per_trade as base, adjusted by risk/reward.
         """
         size_per_trade = risk_params.get("size_per_trade", 1000.0)
-        max_bet_percent = risk_params.get("max_bet_percent", 5.0)
+        max_bet_percent = risk_params.get("max_bet_percent")
         
         # Start with configured size per trade
         position_size = size_per_trade
         
-        # Don't exceed max bet percentage of fund
-        max_position = fund_balance * (max_bet_percent / 100.0)
-        position_size = min(position_size, max_position)
+        # Don't exceed max bet percentage of fund (if set)
+        if max_bet_percent is not None:
+            max_position = fund_balance * (max_bet_percent / 100.0)
+            position_size = min(position_size, max_position)
         
         # Adjust by confidence
         position_size *= signal.confidence

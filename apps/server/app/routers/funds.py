@@ -43,16 +43,16 @@ class CreateStrategyInput(BaseModel):
     screening_criteria_id: Optional[str] = None
     execution_config: dict = {}
     
-    # Risk parameters
-    max_loss_percent: float = 2.0
-    max_loss_dollars: float = 1000.0
-    max_giveback_percent: float = 50.0
+    # Risk parameters (optional - None means no limit)
+    max_loss_percent: Optional[float] = None
+    max_loss_dollars: Optional[float] = None
+    max_giveback_percent: Optional[float] = None
     
     # Position sizing
     size_per_trade: float = 1000.0
-    min_bet_percent: float = 1.0
-    max_bet_percent: float = 5.0
-    max_total_exposure: float = 10000.0
+    min_bet_percent: Optional[float] = None
+    max_bet_percent: Optional[float] = None
+    max_total_exposure: Optional[float] = None
     
     # Trading time windows
     trading_start_time: Optional[str] = None
@@ -80,11 +80,13 @@ class StrategyResponse(BaseModel):
     execution_strategy_id: str
     screening_criteria_id: Optional[str]
     execution_config: dict
-    max_loss_percent: float
-    max_loss_dollars: float
+    max_loss_percent: Optional[float]
+    max_loss_dollars: Optional[float]
+    max_giveback_percent: Optional[float]
     size_per_trade: float
-    max_bet_percent: float
-    max_total_exposure: float
+    min_bet_percent: Optional[float]
+    max_bet_percent: Optional[float]
+    max_total_exposure: Optional[float]
     trading_start_time: Optional[str]
     trading_end_time: Optional[str]
     timezone: Optional[str]
@@ -224,7 +226,9 @@ async def get_strategy(fund_id: str) -> dict:
                 "execution_config": strategy.execution_config,
                 "max_loss_percent": strategy.max_loss_percent,
                 "max_loss_dollars": strategy.max_loss_dollars,
+                "max_giveback_percent": strategy.max_giveback_percent,
                 "size_per_trade": strategy.size_per_trade,
+                "min_bet_percent": strategy.min_bet_percent,
                 "max_bet_percent": strategy.max_bet_percent,
                 "max_total_exposure": strategy.max_total_exposure,
                 "trading_start_time": strategy.trading_start_time,
@@ -308,7 +312,9 @@ async def create_or_update_strategy(fund_id: str, strategy_data: CreateStrategyI
                 "execution_config": strategy.execution_config,
                 "max_loss_percent": strategy.max_loss_percent,
                 "max_loss_dollars": strategy.max_loss_dollars,
+                "max_giveback_percent": strategy.max_giveback_percent,
                 "size_per_trade": strategy.size_per_trade,
+                "min_bet_percent": strategy.min_bet_percent,
                 "max_bet_percent": strategy.max_bet_percent,
                 "max_total_exposure": strategy.max_total_exposure,
                 "trading_start_time": strategy.trading_start_time,
@@ -379,22 +385,25 @@ async def stop_trading(fund_id: str) -> dict:
     """Stop trading for a fund."""
     try:
         engine = get_engine(fund_id)
-        if not engine:
-            raise HTTPException(status_code=404, detail="Fund not trading")
         
-        # Stop engine
-        logger.info(f"Stopping trading for fund {fund_id}")
-        await engine.stop()
-        unregister_engine(fund_id)
+        if engine:
+            # Stop and unregister engine
+            logger.info(f"Stopping trading for fund {fund_id}")
+            await engine.stop()
+            unregister_engine(fund_id)
+            logger.info(f"✓ Trading engine stopped for fund {fund_id}")
+        else:
+            logger.info(f"No active engine for fund {fund_id}, updating status only")
         
-        # Update fund status
+        # Update fund status regardless of whether engine was running
         async with get_async_session() as session:
             fund = await session.get(Fund, fund_id)
-            if fund:
-                fund.status = "paused"
-                await session.commit()
-        
-        logger.info(f"✓ Trading stopped for fund {fund_id}")
+            if not fund:
+                raise HTTPException(status_code=404, detail="Fund not found")
+            
+            fund.status = "paused"
+            await session.commit()
+            logger.info(f"✓ Fund {fund_id} status updated to paused")
         
         return {
             "status": "stopped",

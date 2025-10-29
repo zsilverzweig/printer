@@ -119,6 +119,10 @@ export const fundService = {
     });
 
     if (!response.ok) {
+      // If fund is not trading (404), treat as success since the goal is achieved
+      if (response.status === 404) {
+        return;
+      }
       const error = await response.json();
       throw new Error(error.detail || "Failed to stop trading");
     }

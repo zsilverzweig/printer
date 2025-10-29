@@ -194,7 +194,7 @@ class MonkeyDartsStrategy(ExecutionStrategy):
     
     async def position_sizing(
         self, 
-        signal: EntrySignal, 
+        signal: EntrySignal,
         fund_balance: float,
         risk_params: Dict[str, Any]
     ) -> float:
@@ -204,13 +204,15 @@ class MonkeyDartsStrategy(ExecutionStrategy):
         Monkeys use consistent bet sizes.
         """
         size_per_trade = risk_params.get("size_per_trade", 1000.0)
-        max_bet_percent = risk_params.get("max_bet_percent", 5.0)
+        max_bet_percent = risk_params.get("max_bet_percent")
         
-        # Use configured size, but respect max bet percent
-        position_size = min(
-            size_per_trade,
-            fund_balance * (max_bet_percent / 100.0)
-        )
+        # Use configured size
+        position_size = size_per_trade
+        
+        # If max_bet_percent is set, respect it
+        if max_bet_percent is not None:
+            max_position = fund_balance * (max_bet_percent / 100.0)
+            position_size = min(position_size, max_position)
         
         logger.debug(f"🐵 Monkey bet size: ${position_size:.2f}")
         
