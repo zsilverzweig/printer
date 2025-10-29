@@ -44,6 +44,15 @@ fi
 echo "Verifying environment setup..."
 python3 setup_env.py
 
+if [ $? -ne 0 ]; then
+    echo "❌ Environment setup failed. Please fix the issues above."
+    exit 1
+fi
+
+# Run database migrations
+echo "🔄 Running database migrations..."
+python3 run_migrations.py
+
 if [ $? -eq 0 ]; then
     echo ""
     echo "🚀 Starting server on http://0.0.0.0:8000"

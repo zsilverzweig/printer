@@ -53,6 +53,7 @@ async def start_asset_loading_task(sample_mode: bool = False) -> Dict[str, any]:
     # Create new status record
     async with get_async_session() as session:
         status = AssetLoadingStatus(
+            task_type="asset_loading",
             status="running",
             started_at=datetime.utcnow(),
             last_updated=datetime.utcnow()
@@ -93,6 +94,7 @@ async def cancel_asset_loading_task() -> bool:
         await session.execute(
             update(AssetLoadingStatus)
             .where(AssetLoadingStatus.status == "running")
+            .where(AssetLoadingStatus.task_type == "asset_loading")
             .values(
                 status="cancelled",
                 completed_at=datetime.utcnow(),
@@ -114,6 +116,7 @@ async def get_loading_status() -> Optional[Dict]:
     async with get_async_session() as session:
         result = await session.execute(
             select(AssetLoadingStatus)
+            .where(AssetLoadingStatus.task_type == "asset_loading")
             .order_by(AssetLoadingStatus.id.desc())
             .limit(1)
         )

@@ -24,9 +24,16 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code (will be overridden by volume mount in dev)
 COPY apps/server/app ./app
+COPY apps/server/alembic ./alembic
+COPY apps/server/alembic.ini ./alembic.ini
+COPY apps/server/run_migrations.py ./run_migrations.py
+COPY apps/server/docker-start.sh ./docker-start.sh
+
+# Make startup script executable
+RUN chmod +x docker-start.sh
 
 # Expose FastAPI port
 EXPOSE 8000
 
-# Start development server with hot reload (command specified in docker-compose.yml)
+# Start development server with migrations (command specified in docker-compose.yml)
 

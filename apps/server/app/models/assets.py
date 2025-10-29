@@ -49,6 +49,11 @@ class TickerDetails(Base):
     total_employees: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     list_date: Mapped[Optional[datetime]] = mapped_column(Date, nullable=True)
     
+    # Float metrics from knowthefloat.com
+    public_float: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    short_percent_of_float: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    outstanding_shares_scraped: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    
     # Contact information
     homepage_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     phone_number: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
@@ -92,6 +97,7 @@ class TickerDetails(Base):
         Index('idx_ticker_details_active', 'active'),
         Index('idx_ticker_details_tradable', 'tradable'),
         Index('idx_ticker_details_market_locale', 'market', 'locale'),
+        Index('idx_ticker_details_public_float', 'public_float'),
     )
 
 
@@ -105,6 +111,10 @@ class AssetLoadingStatus(Base):
     __tablename__ = "asset_loading_status"
     
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    
+    # Task type
+    task_type: Mapped[str] = mapped_column(String(30), nullable=False, default="asset_loading")
+    # Valid types: "asset_loading", "float_scraping"
     
     # Task status
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="idle")
@@ -134,5 +144,5 @@ class AssetLoadingStatus(Base):
     
     # Index for status queries
     __table_args__ = (
-        Index('idx_asset_loading_status', 'status'),
+        Index('idx_asset_loading_status_type', 'status', 'task_type'),
     )

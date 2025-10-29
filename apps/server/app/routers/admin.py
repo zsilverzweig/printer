@@ -18,6 +18,11 @@ from app.services.asset_loader import (
     cancel_asset_loading_task,
     get_loading_status
 )
+from app.services.float_scraper import (
+    start_float_scraping_task,
+    cancel_float_scraping_task,
+    get_float_scraping_status
+)
 
 logger = logging.getLogger("app.admin")
 
@@ -175,10 +180,11 @@ async def cancel_asset_loading() -> CancelResponse:
 @router.get("/assets/summary")
 async def get_asset_summary() -> Dict[str, Any]:
     """
-    Get a summary of the loaded asset data.
+    Get a summary of the loaded asset data, with focus on CS (Common Stock) metrics.
     
     Returns:
-        Dictionary with counts and statistics about loaded ticker data
+        Dictionary with counts and statistics about loaded ticker data,
+        including float metrics completeness for CS stocks
         
     Raises:
         HTTPException: If there's an error retrieving summary
@@ -192,6 +198,14 @@ async def get_asset_summary() -> Dict[str, Any]:
             # Get total count
             total_result = await session.execute(select(func.count(TickerDetails.symbol)))
             total_count = total_result.scalar()
+            
+            # Get CS stock count
+            cs_result = await session.execute(
+                select(func.count(TickerDetails.symbol))
+                .where(TickerDetails.type == "CS")
+                .where(TickerDetails.active == True)
+            )
+            cs_count = cs_result.scalar()
             
             # Get counts by exchange
             exchange_result = await session.execute(
@@ -223,7 +237,7 @@ async def get_asset_summary() -> Dict[str, Any]:
             )
             tradable_counts = dict(tradable_result.fetchall())
             
-            # Get data completeness stats
+            # Get data completeness stats for all tickers
             completeness_result = await session.execute(
                 select(
                     func.count(TickerDetails.market_cap).label("with_market_cap"),
@@ -234,8 +248,25 @@ async def get_asset_summary() -> Dict[str, Any]:
             )
             completeness = completeness_result.first()
             
+            # Get data completeness for CS stocks only
+            cs_completeness_result = await session.execute(
+                select(
+                    func.count(TickerDetails.market_cap).label("with_market_cap"),
+                    func.count(TickerDetails.total_employees).label("with_employees"),
+                    func.count(TickerDetails.sic_code).label("with_sic_code"),
+                    func.count(TickerDetails.description).label("with_description"),
+                    func.count(TickerDetails.public_float).label("with_float"),
+                    func.count(TickerDetails.short_percent_of_float).label("with_short_percent"),
+                    func.count(TickerDetails.outstanding_shares_scraped).label("with_outstanding")
+                )
+                .where(TickerDetails.type == "CS")
+                .where(TickerDetails.active == True)
+            )
+            cs_completeness = cs_completeness_result.first()
+            
             return {
                 "total_tickers": total_count,
+                "cs_stocks": cs_count,
                 "exchanges": exchanges,
                 "types": types,
                 "active_status": active_counts,
@@ -249,6 +280,23 @@ async def get_asset_summary() -> Dict[str, Any]:
                     "employees_percentage": round(completeness.with_employees / total_count * 100, 1) if total_count > 0 else 0,
                     "sic_code_percentage": round(completeness.with_sic_code / total_count * 100, 1) if total_count > 0 else 0,
                     "description_percentage": round(completeness.with_description / total_count * 100, 1) if total_count > 0 else 0,
+                },
+                "cs_data_quality": {
+                    "total_cs_stocks": cs_count,
+                    "with_market_cap": cs_completeness.with_market_cap,
+                    "with_employees": cs_completeness.with_employees,
+                    "with_sic_code": cs_completeness.with_sic_code,
+                    "with_description": cs_completeness.with_description,
+                    "with_public_float": cs_completeness.with_float,
+                    "with_short_percent": cs_completeness.with_short_percent,
+                    "with_outstanding_shares": cs_completeness.with_outstanding,
+                    "market_cap_percentage": round(cs_completeness.with_market_cap / cs_count * 100, 1) if cs_count > 0 else 0,
+                    "employees_percentage": round(cs_completeness.with_employees / cs_count * 100, 1) if cs_count > 0 else 0,
+                    "sic_code_percentage": round(cs_completeness.with_sic_code / cs_count * 100, 1) if cs_count > 0 else 0,
+                    "description_percentage": round(cs_completeness.with_description / cs_count * 100, 1) if cs_count > 0 else 0,
+                    "float_percentage": round(cs_completeness.with_float / cs_count * 100, 1) if cs_count > 0 else 0,
+                    "short_percent_percentage": round(cs_completeness.with_short_percent / cs_count * 100, 1) if cs_count > 0 else 0,
+                    "outstanding_percentage": round(cs_completeness.with_outstanding / cs_count * 100, 1) if cs_count > 0 else 0,
                 }
             }
             
@@ -257,4 +305,123 @@ async def get_asset_summary() -> Dict[str, Any]:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve asset summary"
+        )
+
+
+@router.post("/float/scrape/sample", response_model=AssetLoadingResponse)
+async def start_sample_float_scraping() -> AssetLoadingResponse:
+    """
+    Scrape float data for one sample ticker for testing.
+    
+    This scrapes just one ticker (AAPL) to verify the integration works
+    before running a full scrape.
+    """
+    try:
+        result = await start_float_scraping_task(sample_mode=True)
+        return AssetLoadingResponse(**result)
+    except Exception as e:
+        logger.error(f"Failed to start sample float scraping: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to start sample float scraping: {str(e)}"
+        )
+
+
+@router.post("/float/scrape", response_model=AssetLoadingResponse)
+async def start_float_scraping() -> AssetLoadingResponse:
+    """
+    Start the full float scraping background task.
+    
+    This will begin scraping float metrics (public float, short % of float,
+    outstanding shares) from knowthefloat.com for all CS (Common Stock) type
+    tickers in the database.
+    
+    Returns:
+        AssetLoadingResponse with status_id and message
+        
+    Raises:
+        HTTPException: If a task is already running
+    """
+    try:
+        result = await start_float_scraping_task()
+        return AssetLoadingResponse(**result)
+    except ValueError as e:
+        if "already running" in str(e):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Float scraping task is already running"
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(e)
+            )
+    except Exception as e:
+        logger.error(f"Failed to start float scraping task: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to start float scraping task"
+        )
+
+
+@router.get("/float/status", response_model=AssetStatusResponse | None)
+async def get_float_status() -> AssetStatusResponse | None:
+    """
+    Get the current float scraping status.
+    
+    Returns:
+        AssetStatusResponse with current progress and status,
+        or None if no scraping task has been run
+        
+    Raises:
+        HTTPException: If there's an error retrieving status
+    """
+    try:
+        status_data = await get_float_scraping_status()
+        
+        if not status_data:
+            return None
+        
+        return AssetStatusResponse(**status_data)
+        
+    except Exception as e:
+        logger.error(f"Failed to get float scraping status: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve float scraping status"
+        )
+
+
+@router.post("/float/cancel", response_model=CancelResponse)
+async def cancel_float_scraping() -> CancelResponse:
+    """
+    Cancel the currently running float scraping task.
+    
+    This will gracefully stop the background task and mark it as cancelled.
+    
+    Returns:
+        CancelResponse indicating whether the task was cancelled
+        
+    Raises:
+        HTTPException: If there's an error cancelling the task
+    """
+    try:
+        cancelled = await cancel_float_scraping_task()
+        
+        if cancelled:
+            return CancelResponse(
+                cancelled=True,
+                message="Float scraping task cancelled successfully"
+            )
+        else:
+            return CancelResponse(
+                cancelled=False,
+                message="No float scraping task is currently running"
+            )
+            
+    except Exception as e:
+        logger.error(f"Failed to cancel float scraping task: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to cancel float scraping task"
         )
