@@ -283,7 +283,7 @@ interface NocTableProps {
 export function NocTable({ initialTicker }: NocTableProps) {
   const router = useRouter();
   const [selectedStock, setSelectedStock] = useState<string | null>(
-    initialTicker || "AAPL" // Default to AAPL or URL param
+    initialTicker ?? null
   );
   const [tickerInput, setTickerInput] = useState("");
   const [selectedTimeframe, setSelectedTimeframe] =
