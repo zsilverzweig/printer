@@ -799,15 +799,23 @@ async def get_fund_positions(fund_id: str) -> dict:
             if not fund:
                 raise HTTPException(status_code=404, detail="Fund not found")
         
-        # Get engine if running
+        # Get engine if running (for reference)
         engine = get_engine(fund_id)
         
-        # Get positions from Alpaca
+        # Get positions from Alpaca - always fetch, regardless of whether fund is running
         alpaca_positions = []
-        alpaca_service = None
-        if engine:
-            alpaca_service = engine.alpaca_service
-            try:
+        try:
+            # Create Alpaca service based on fund mode
+            from app.services.alpaca_service import AlpacaService
+            
+            if engine:
+                # Use engine's alpaca service if available (already initialized)
+                alpaca_service = engine.alpaca_service
+            else:
+                # Create a temporary alpaca service for this fund's mode
+                alpaca_service = AlpacaService(paper_trading=(fund.mode == "sim"))
+            
+            if alpaca_service and alpaca_service.is_available():
                 alpaca_positions_raw = await alpaca_service.get_positions()
                 alpaca_positions = [
                     {
@@ -821,8 +829,11 @@ async def get_fund_positions(fund_id: str) -> dict:
                     }
                     for p in alpaca_positions_raw
                 ]
-            except Exception as e:
-                logger.error(f"Error getting Alpaca positions: {e}")
+                logger.debug(f"Fetched {len(alpaca_positions)} positions from Alpaca for fund {fund_id}")
+            else:
+                logger.warning(f"Alpaca service not available for fund {fund_id}")
+        except Exception as e:
+            logger.error(f"Error getting Alpaca positions for fund {fund_id}: {e}", exc_info=True)
         
         # Get positions from our database (via transactions)
         from sqlalchemy import select, and_

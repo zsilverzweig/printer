@@ -156,7 +156,7 @@ async def test_position_size_validation_helper(fund_factory):
     """
     fund = fund_factory(
         balance=10000.0,
-        size_per_trade=1000.0,
+        size_per_trade=2000.0,  # Increased to allow max_bet_percent of 15%
         max_bet_percent=15.0,  # Max $1500
         min_bet_percent=5.0,   # Min $500
     )
@@ -164,13 +164,17 @@ async def test_position_size_validation_helper(fund_factory):
     # Valid position size
     assert_position_size_valid(fund, calculated_size=1000.0, share_price=100.0)
     
-    # Should accept position at max limit
+    # Should accept position at max bet percent limit ($1500 = 15% of $10,000)
     assert_position_size_valid(fund, calculated_size=1500.0, share_price=100.0)
     
     # Should accept position at min limit
     assert_position_size_valid(fund, calculated_size=500.0, share_price=100.0)
     
-    # Should reject position over max
+    # Should reject position over size_per_trade
+    with pytest.raises(AssertionError, match="exceeds size_per_trade"):
+        assert_position_size_valid(fund, calculated_size=2500.0, share_price=100.0)
+    
+    # Should reject position over max_bet_percent
     with pytest.raises(AssertionError, match="exceeds max_bet_percent"):
         assert_position_size_valid(fund, calculated_size=2000.0, share_price=100.0)
     

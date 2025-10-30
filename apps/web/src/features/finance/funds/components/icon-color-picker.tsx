@@ -1,28 +1,35 @@
 /**
  * IconColorPicker Component
- * 
- * Minimal icon and color picker with a tiny button and popup.
+ *
+ * Minimal icon and color picker with a tiny button and dialog.
  */
 
 "use client";
 
-import { useState } from "react";
-import { ChevronDown, Search } from "lucide-react";
 import { Button } from "@/lib/components/ui/button";
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/lib/components/ui/popover";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/lib/components/ui/dialog";
 import { Input } from "@/lib/components/ui/input";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/lib/components/ui/tabs";
-import { ScrollArea } from "@/lib/components/ui/scroll-area";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/lib/components/ui/tabs";
+import { Palette, Search } from "lucide-react";
+import { useState } from "react";
 
 import {
-  ICON_OPTIONS,
   COLOR_OPTIONS,
-  getIconByName,
   getColorClasses,
+  getIconByName,
+  ICON_OPTIONS,
 } from "../config/icon-options";
 
 interface IconColorPickerProps {
@@ -54,46 +61,51 @@ export function IconColorPicker({
   );
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
         <Button
+          type="button"
           variant="outline"
           size="sm"
           disabled={disabled}
-          className="gap-2 h-8 px-2"
+          className="gap-1.5 h-8 px-2"
         >
           <div
             className={`
               p-1 rounded ${colorClasses.bgClass} border ${colorClasses.borderClass}
             `}
           >
-            <SelectedIconComponent className={`h-3 w-3 ${colorClasses.textClass}`} />
+            <SelectedIconComponent
+              className={`h-3 w-3 ${colorClasses.textClass}`}
+            />
           </div>
-          <ChevronDown className="h-3 w-3 opacity-50" />
+          <Palette className="h-3 w-3 opacity-50" />
         </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-[400px] p-0" align="start">
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-[500px] max-h-[85vh]">
+        <DialogHeader>
+          <DialogTitle>Choose Icon & Color</DialogTitle>
+          <DialogDescription>
+            Select an icon and color for your fund
+          </DialogDescription>
+        </DialogHeader>
         <Tabs defaultValue="icon" className="w-full">
-          <TabsList className="grid w-full grid-cols-2 rounded-none border-b">
-            <TabsTrigger value="icon" className="rounded-none">
-              Icon
-            </TabsTrigger>
-            <TabsTrigger value="color" className="rounded-none">
-              Color
-            </TabsTrigger>
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="icon">Icon</TabsTrigger>
+            <TabsTrigger value="color">Color</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="icon" className="p-4 space-y-3">
+          <TabsContent value="icon" className="space-y-3 mt-4">
             <div className="relative">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="Search icons..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-8 h-8"
+                className="pl-8"
               />
             </div>
-            <ScrollArea className="h-[280px]">
+            <div className="max-h-[400px] overflow-y-auto pr-2">
               <div className="grid grid-cols-8 gap-1">
                 {filteredIcons.map((option) => {
                   const IconComponent = option.icon;
@@ -119,7 +131,9 @@ export function IconColorPicker({
                     >
                       <IconComponent
                         className={`h-4 w-4 ${
-                          isSelected ? colorClasses.textClass : "text-foreground"
+                          isSelected
+                            ? colorClasses.textClass
+                            : "text-foreground"
                         }`}
                       />
                     </button>
@@ -131,11 +145,11 @@ export function IconColorPicker({
                   No icons found
                 </div>
               )}
-            </ScrollArea>
+            </div>
           </TabsContent>
 
-          <TabsContent value="color" className="p-4">
-            <div className="grid grid-cols-4 gap-2">
+          <TabsContent value="color" className="mt-4">
+            <div className="grid grid-cols-4 gap-2 max-h-[400px] overflow-y-auto">
               {COLOR_OPTIONS.map((option) => {
                 const isSelected = selectedColor === option.name;
                 return (
@@ -159,15 +173,16 @@ export function IconColorPicker({
                     <div
                       className={`w-6 h-6 rounded-full ${option.bgClass} border-2 ${option.borderClass}`}
                     />
-                    <span className="text-[10px] font-medium">{option.label}</span>
+                    <span className="text-[10px] font-medium">
+                      {option.label}
+                    </span>
                   </button>
                 );
               })}
             </div>
           </TabsContent>
         </Tabs>
-      </PopoverContent>
-    </Popover>
+      </DialogContent>
+    </Dialog>
   );
 }
-

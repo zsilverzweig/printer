@@ -216,12 +216,14 @@ class MonkeyDartsStrategy(ExecutionStrategy):
         """
         size_per_trade = risk_params.get("size_per_trade", 1000.0)
         max_bet_percent = risk_params.get("max_bet_percent")
+        min_bet_percent = risk_params.get("min_bet_percent")
         
         logger.info(
             f"🐵 Monkey position sizing inputs: "
             f"fund_balance=${fund_balance:.2f}, "
             f"size_per_trade=${size_per_trade:.2f}, "
-            f"max_bet_percent={max_bet_percent}"
+            f"max_bet_percent={max_bet_percent}, "
+            f"min_bet_percent={min_bet_percent}"
         )
         
         # Use configured size
@@ -251,6 +253,28 @@ class MonkeyDartsStrategy(ExecutionStrategy):
                 logger.info("🐵 max_bet_percent is 0.0 - treating as no limit")
             else:
                 logger.info("🐵 No max_bet_percent limit set")
+        
+        # If min_bet_percent is set and > 0, enforce minimum position size
+        # If position is below minimum, return 0 to reject the trade
+        if min_bet_percent is not None and min_bet_percent > 0:
+            min_position = fund_balance * (min_bet_percent / 100.0)
+            logger.info(
+                f"🐵 min_bet_percent is set: {min_bet_percent}% of ${fund_balance:.2f} = ${min_position:.2f}"
+            )
+            
+            if position_size < min_position:
+                logger.info(
+                    f"🐵 Position size ${position_size:.2f} is below minimum ${min_position:.2f} - "
+                    f"rejecting trade (returning 0)"
+                )
+                return 0.0
+            else:
+                logger.info(f"🐵 Position size meets minimum requirement")
+        else:
+            if min_bet_percent == 0.0:
+                logger.info("🐵 min_bet_percent is 0.0 - treating as no limit")
+            else:
+                logger.info("🐵 No min_bet_percent limit set")
         
         logger.info(f"🐵 Final monkey bet size: ${position_size:.2f}")
         

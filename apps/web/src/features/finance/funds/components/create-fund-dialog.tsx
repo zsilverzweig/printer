@@ -32,13 +32,9 @@ import {
 } from "@/lib/components/ui/tabs";
 import { Textarea } from "@/lib/components/ui/textarea";
 
-import {
-  COLOR_OPTIONS,
-  getColorClasses,
-  getIconByName,
-  ICON_OPTIONS,
-} from "../config/icon-options";
+import { getColorClasses, getIconByName } from "../config/icon-options";
 import { CreateFundInput, FundMode } from "../types";
+import { IconColorPicker } from "./icon-color-picker";
 
 interface CreateFundDialogProps {
   open: boolean;
@@ -209,72 +205,14 @@ export function CreateFundDialog({
 
             <TabsContent value="appearance" className="space-y-4 mt-4">
               <div className="space-y-2">
-                <Label>Icon</Label>
-                <div className="grid grid-cols-7 gap-2">
-                  {ICON_OPTIONS.map((option) => {
-                    const IconComponent = option.icon;
-                    const isSelected = selectedIcon === option.name;
-                    return (
-                      <button
-                        key={option.name}
-                        type="button"
-                        onClick={() => setSelectedIcon(option.name)}
-                        disabled={isSubmitting}
-                        className={`
-                          p-3 rounded-md border-2 transition-all
-                          flex items-center justify-center
-                          hover:scale-110
-                          ${
-                            isSelected
-                              ? `${colorClasses.borderClass} ${colorClasses.bgClass}`
-                              : "border-border hover:border-muted-foreground"
-                          }
-                        `}
-                        title={option.label}
-                      >
-                        <IconComponent
-                          className={`h-5 w-5 ${
-                            isSelected
-                              ? colorClasses.textClass
-                              : "text-foreground"
-                          }`}
-                        />
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Color</Label>
-                <div className="grid grid-cols-6 gap-2">
-                  {COLOR_OPTIONS.map((option) => {
-                    const isSelected = selectedColor === option.name;
-                    return (
-                      <button
-                        key={option.name}
-                        type="button"
-                        onClick={() => setSelectedColor(option.name)}
-                        disabled={isSubmitting}
-                        className={`
-                          p-3 rounded-md border-2 transition-all
-                          flex flex-col items-center justify-center gap-1
-                          hover:scale-105
-                          ${
-                            isSelected
-                              ? `${option.borderClass} ${option.bgClass}`
-                              : "border-border hover:border-muted-foreground"
-                          }
-                        `}
-                      >
-                        <div
-                          className={`w-6 h-6 rounded-full ${option.bgClass} border ${option.borderClass}`}
-                        />
-                        <span className="text-xs">{option.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
+                <Label>Icon & Color</Label>
+                <IconColorPicker
+                  selectedIcon={selectedIcon}
+                  selectedColor={selectedColor}
+                  onIconChange={setSelectedIcon}
+                  onColorChange={setSelectedColor}
+                  disabled={isSubmitting}
+                />
               </div>
 
               <div className="space-y-2">

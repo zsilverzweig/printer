@@ -719,10 +719,12 @@ class StrategyEngine:
             risk_params = {
                 "size_per_trade": self.fund.size_per_trade,
                 "max_bet_percent": self.fund.max_bet_percent,
+                "min_bet_percent": self.fund.min_bet_percent,
             }
             logger.info(
                 f"📊 Risk params: size_per_trade=${risk_params['size_per_trade']:.2f}, "
-                f"max_bet_percent={risk_params['max_bet_percent']}"
+                f"max_bet_percent={risk_params['max_bet_percent']}, "
+                f"min_bet_percent={risk_params['min_bet_percent']}"
             )
             
             position_size = await self.execution_strategy.position_sizing(

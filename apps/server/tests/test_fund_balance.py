@@ -122,6 +122,7 @@ async def test_balance_check_before_alpaca_submission(fund_factory, mock_market_
     """
     from app.services.strategy_engine import StrategyEngine
     from app.strategies.monkey_darts import MonkeyDartsStrategy
+    from unittest.mock import AsyncMock
     
     fund = fund_factory(
         balance=100.0,  # Only $100
@@ -133,6 +134,9 @@ async def test_balance_check_before_alpaca_submission(fund_factory, mock_market_
     # Mock market data
     market_data = build_market_data(symbol="TEST", price=10.0)
     mock_market_data.build_market_data = AsyncMock(return_value=market_data)
+    
+    # Wrap place_market_order with AsyncMock to track calls
+    mock_alpaca.place_market_order = AsyncMock(wraps=mock_alpaca.place_market_order)
     
     # Create engine
     engine = StrategyEngine(
@@ -151,10 +155,13 @@ async def test_balance_check_before_alpaca_submission(fund_factory, mock_market_
         mock_session.__aexit__ = AsyncMock()
         mock_session.add = Mock()
         mock_session.commit = AsyncMock()
+        mock_session.execute = AsyncMock()
         mock_get_session.return_value = mock_session
         
-        # Try to enter
-        await engine._enter_position("TEST", signal, market_data)
+        # Mock get_pending_orders to return empty list
+        with patch.object(engine, 'get_pending_orders', return_value=[]):
+            # Try to enter
+            await engine._enter_position("TEST", signal, market_data)
         
         # Alpaca should NOT have been called (balance check should have failed)
         assert not mock_alpaca.place_market_order.called, (

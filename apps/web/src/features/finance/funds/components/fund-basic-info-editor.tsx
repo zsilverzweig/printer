@@ -1,14 +1,14 @@
 /**
  * FundBasicInfoEditor Component
- * 
+ *
  * Allows editing fund name, description, icon, and color.
  */
 
 "use client";
 
-import { useState } from "react";
 import { Fund, UpdateFundInput } from "@shared/types";
 import { Check } from "lucide-react";
+import { useState } from "react";
 
 import { Button } from "@/lib/components/ui/button";
 import {
@@ -22,13 +22,9 @@ import { Input } from "@/lib/components/ui/input";
 import { Label } from "@/lib/components/ui/label";
 import { Textarea } from "@/lib/components/ui/textarea";
 
-import {
-  ICON_OPTIONS,
-  COLOR_OPTIONS,
-  getIconByName,
-  getColorClasses,
-} from "../config/icon-options";
+import { getColorClasses, getIconByName } from "../config/icon-options";
 import { fundService } from "../services/fund-service";
+import { IconColorPicker } from "./icon-color-picker";
 
 interface FundBasicInfoEditorProps {
   fund: Fund;
@@ -145,70 +141,14 @@ export function FundBasicInfoEditor({
           </div>
 
           <div className="space-y-2">
-            <Label>Icon</Label>
-            <div className="grid grid-cols-7 gap-2">
-              {ICON_OPTIONS.map((option) => {
-                const IconComponent = option.icon;
-                const isSelected = selectedIcon === option.name;
-                return (
-                  <button
-                    key={option.name}
-                    type="button"
-                    onClick={() => setSelectedIcon(option.name)}
-                    disabled={isSaving}
-                    className={`
-                      p-3 rounded-md border-2 transition-all
-                      flex items-center justify-center
-                      hover:scale-110
-                      ${
-                        isSelected
-                          ? `${colorClasses.borderClass} ${colorClasses.bgClass}`
-                          : "border-border hover:border-muted-foreground"
-                      }
-                    `}
-                    title={option.label}
-                  >
-                    <IconComponent
-                      className={`h-5 w-5 ${
-                        isSelected ? colorClasses.textClass : "text-foreground"
-                      }`}
-                    />
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label>Color</Label>
-            <div className="grid grid-cols-6 gap-2">
-              {COLOR_OPTIONS.map((option) => {
-                const isSelected = selectedColor === option.name;
-                return (
-                  <button
-                    key={option.name}
-                    type="button"
-                    onClick={() => setSelectedColor(option.name)}
-                    disabled={isSaving}
-                    className={`
-                      p-3 rounded-md border-2 transition-all
-                      flex flex-col items-center justify-center gap-1
-                      hover:scale-105
-                      ${
-                        isSelected
-                          ? `${option.borderClass} ${option.bgClass}`
-                          : "border-border hover:border-muted-foreground"
-                      }
-                    `}
-                  >
-                    <div
-                      className={`w-6 h-6 rounded-full ${option.bgClass} border ${option.borderClass}`}
-                    />
-                    <span className="text-xs">{option.label}</span>
-                  </button>
-                );
-              })}
-            </div>
+            <Label>Icon & Color</Label>
+            <IconColorPicker
+              selectedIcon={selectedIcon}
+              selectedColor={selectedColor}
+              onIconChange={setSelectedIcon}
+              onColorChange={setSelectedColor}
+              disabled={isSaving}
+            />
           </div>
 
           <div className="space-y-2">
@@ -254,4 +194,3 @@ export function FundBasicInfoEditor({
     </Card>
   );
 }
-

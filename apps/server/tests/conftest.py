@@ -144,7 +144,11 @@ class MockAlpacaService:
             filled_at=None,
         )
         self.orders[order_id] = alpaca_order
-        return alpaca_order
+        return {"id": order_id, "status": "new"}  # Return dict format
+    
+    async def place_market_order(self, symbol, qty, side, time_in_force="day"):
+        """Mock placing a market order (alternative method signature)."""
+        return await self.place_order(symbol, side, qty, order_type="market", time_in_force=time_in_force)
     
     async def get_positions(self):
         """Mock getting positions - returns list of dict-like objects."""
