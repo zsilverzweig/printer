@@ -38,6 +38,12 @@ class CreateFundInput(BaseModel):
     initial_balance: float = 10000.0
 
 
+class UpdateFundInput(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    balance: Optional[float] = None
+
+
 class CreateStrategyInput(BaseModel):
     execution_strategy_id: str
     screening_criteria_id: Optional[str] = None
@@ -204,6 +210,56 @@ async def get_fund(fund_id: str) -> dict:
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.patch("/funds/{fund_id}", response_model=FundResponse)
+async def update_fund(fund_id: str, update_data: UpdateFundInput) -> dict:
+    """Update a fund's properties."""
+    try:
+        async with get_async_session() as session:
+            fund = await session.get(Fund, fund_id)
+            if not fund:
+                raise HTTPException(status_code=404, detail="Fund not found")
+            
+            # Check if fund is actively trading
+            engine = get_engine(fund_id)
+            if engine and update_data.balance is not None:
+                logger.warning(
+                    f"Cannot update balance for fund {fund_id} while trading. "
+                    "Stop the fund first."
+                )
+                raise HTTPException(
+                    status_code=400,
+                    detail="Cannot update balance while fund is actively trading. Stop the fund first."
+                )
+            
+            # Update fields if provided
+            if update_data.name is not None:
+                fund.name = update_data.name
+            if update_data.description is not None:
+                fund.description = update_data.description
+            if update_data.balance is not None:
+                fund.balance = update_data.balance
+                logger.info(f"Updated fund {fund_id} balance to ${fund.balance:.2f}")
+            
+            await session.commit()
+            await session.refresh(fund)
+            
+            return {
+                "id": fund.id,
+                "name": fund.name,
+                "description": fund.description,
+                "mode": fund.mode,
+                "balance": fund.balance,
+                "status": fund.status,
+                "created_at": fund.created_at.isoformat(),
+                "updated_at": fund.updated_at.isoformat(),
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating fund: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/funds/{fund_id}/strategy", response_model=StrategyResponse)
 async def get_strategy(fund_id: str) -> dict:
     """Get strategy for a fund."""
@@ -344,6 +400,12 @@ async def start_trading(fund_id: str) -> dict:
             if not fund:
                 raise HTTPException(status_code=404, detail="Fund not found")
             
+            logger.info(
+                f"🎬 START REQUEST: Fund loaded from database: "
+                f"id={fund.id}, name={fund.name}, balance=${fund.balance:.2f}, "
+                f"mode={fund.mode}, status={fund.status}"
+            )
+            
             # Load strategy
             from sqlalchemy import select
             result = await session.execute(
@@ -353,19 +415,46 @@ async def start_trading(fund_id: str) -> dict:
             if not strategy:
                 raise HTTPException(status_code=404, detail="Strategy not found for this fund")
             
+            logger.info(
+                f"🎬 START REQUEST: Strategy loaded from database: "
+                f"id={strategy.id}, execution_strategy={strategy.execution_strategy_id}, "
+                f"size_per_trade=${strategy.size_per_trade:.2f}, "
+                f"max_bet_percent={strategy.max_bet_percent}, "
+                f"min_bet_percent={strategy.min_bet_percent}"
+            )
+            
             # Create and start engine
-            logger.info(f"Starting trading for fund {fund_id} ({fund.name})")
+            logger.info(f"🎬 START REQUEST: Creating strategy engine for fund {fund_id} ({fund.name})")
             engine = await create_strategy_engine(fund=fund, strategy=strategy)
             await engine.start()
             
             # Register engine
             register_engine(fund_id, engine)
+            logger.info(f"🎬 START REQUEST: Engine registered in global registry")
             
             # Update fund status
             fund.status = "active"
             await session.commit()
             
-            logger.info(f"✓ Trading started for fund {fund_id}")
+            logger.info(f"✅ Trading started successfully for fund {fund_id}")
+            
+            # Broadcast startup event
+            from app.routers.realtime import broadcast_trading_activity
+            from datetime import datetime, timezone
+            await broadcast_trading_activity({
+                "fund_id": str(fund_id),
+                "fund_name": fund.name,
+                "event_type": "startup",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "message": f"Trading engine started for {fund.name}",
+                "details": {
+                    "balance": fund.balance,
+                    "mode": fund.mode,
+                    "strategy": strategy.execution_strategy_id,
+                    "size_per_trade": strategy.size_per_trade,
+                    "max_bet_percent": strategy.max_bet_percent,
+                }
+            })
             
             return {
                 "status": "started",

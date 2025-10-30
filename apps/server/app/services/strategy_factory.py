@@ -43,7 +43,15 @@ async def create_strategy_engine(
         ValueError: If fund mode doesn't match available credentials
         RuntimeError: If strategy instantiation fails
     """
-    logger.info(f"Creating strategy engine for fund {fund.id} (mode: {fund.mode})")
+    logger.info(
+        f"🏗️  Creating strategy engine for fund {fund.id} "
+        f"(name={fund.name}, mode={fund.mode}, balance=${fund.balance:.2f})"
+    )
+    logger.info(
+        f"🏗️  Strategy parameters: execution_strategy={strategy.execution_strategy_id}, "
+        f"size_per_trade=${strategy.size_per_trade:.2f}, "
+        f"max_bet_percent={strategy.max_bet_percent}"
+    )
     
     # Determine if this is paper trading based on fund mode
     is_paper_trading = (fund.mode == "sim")

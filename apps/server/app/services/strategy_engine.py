@@ -80,6 +80,19 @@ class StrategyEngine:
         Raises:
             ValueError: If fund mode doesn't match Alpaca service mode
         """
+        logger.info(f"🔧 StrategyEngine.__init__ called for fund {fund.id}")
+        logger.info(
+            f"🔧 Fund object received: "
+            f"id={fund.id}, name={fund.name}, balance=${fund.balance:.2f}, "
+            f"mode={fund.mode}, status={fund.status}"
+        )
+        logger.info(
+            f"🔧 Strategy config received: "
+            f"id={strategy_config.id}, execution_strategy={strategy_config.execution_strategy_id}, "
+            f"size_per_trade=${strategy_config.size_per_trade:.2f}, "
+            f"max_bet_percent={strategy_config.max_bet_percent}"
+        )
+        
         self.fund = fund
         self.fund_id = fund.id
         self.strategy_config = strategy_config
@@ -97,7 +110,7 @@ class StrategyEngine:
             )
         
         logger.info(
-            f"✓ StrategyEngine initialized for fund {fund.id} "
+            f"✅ StrategyEngine initialized for fund {fund.id} "
             f"(mode: {fund.mode}, balance: ${fund.balance:.2f})"
         )
         
@@ -118,7 +131,15 @@ class StrategyEngine:
             return
         
         self.is_running = True
-        logger.info(f"Starting strategy engine for fund {self.fund_id}")
+        logger.info(
+            f"🚀 Starting strategy engine for fund {self.fund_id} "
+            f"(name={self.fund.name}, balance=${self.fund.balance:.2f}, mode={self.fund.mode})"
+        )
+        logger.info(
+            f"📋 Strategy config: execution_strategy={self.strategy_config.execution_strategy_id}, "
+            f"size_per_trade=${self.strategy_config.size_per_trade:.2f}, "
+            f"max_bet_percent={self.strategy_config.max_bet_percent}"
+        )
         
         # Load existing positions from database
         await self._load_positions()
@@ -209,26 +230,39 @@ class StrategyEngine:
             
             # Get screener results
             screener_results = screener.cached_payload
+            logger.debug(f"📊 Screener has {len(screener_results)} total candidates")
             
             # Optional: Apply ScreeningCriteria filters
             if self.strategy_config.screening_criteria_id:
+                logger.debug(f"🔍 Applying screening criteria: {self.strategy_config.screening_criteria_id}")
                 screener_results = await self._apply_screening_filters(screener_results)
+                logger.debug(f"🔍 After filtering: {len(screener_results)} candidates")
             
             # Ask strategy which symbols to monitor
             # Pass active position count so strategy can make informed decision
+            logger.debug(
+                f"🎯 Asking strategy to select symbols "
+                f"(candidates={len(screener_results)}, active_positions={len(self.active_positions)})"
+            )
             self.monitored_symbols = await self.execution_strategy.get_monitored_symbols(
                 screener_results,
                 active_position_count=len(self.active_positions)
             )
             
-            logger.debug(
-                f"Monitoring {len(self.monitored_symbols)} symbols "
-                f"(from {len(screener_results)} candidates, "
-                f"{len(self.active_positions)} active positions)"
-            )
+            if self.monitored_symbols:
+                logger.info(
+                    f"📡 Monitoring symbols: {self.monitored_symbols} "
+                    f"({len(self.monitored_symbols)} of {len(screener_results)} candidates)"
+                )
+            else:
+                logger.debug(
+                    f"📡 No symbols to monitor "
+                    f"({len(screener_results)} candidates available, "
+                    f"{len(self.active_positions)} active positions)"
+                )
         
         except Exception as e:
-            logger.error(f"Error updating candidates: {e}")
+            logger.error(f"Error updating candidates: {e}", exc_info=True)
     
     def _is_trading_time(self) -> bool:
         """Check if current time is within trading hours."""
@@ -300,13 +334,13 @@ class StrategyEngine:
         """
         # Check trading hours BEFORE monitoring
         if not self._is_trading_time():
-            logger.debug("Outside trading hours, skipping entry monitoring")
+            logger.debug("🕐 Outside trading hours, skipping entry monitoring")
             return
         
         # Check risk limits BEFORE monitoring
         can_trade, reason = self._check_risk_limits()
         if not can_trade:
-            logger.warning(f"Cannot enter new positions: {reason}")
+            logger.warning(f"⚠️  Cannot enter new positions: {reason}")
             
             # Broadcast warning event
             await _broadcast_trading_event({
@@ -319,23 +353,36 @@ class StrategyEngine:
             })
             return
         
+        if not self.monitored_symbols:
+            logger.debug("📭 No symbols to monitor for entries")
+            return
+        
+        logger.debug(f"👀 Checking entry conditions for {len(self.monitored_symbols)} symbols")
+        
         for symbol in self.monitored_symbols:
             # Skip if already have a position
             if symbol in self.active_positions:
+                logger.debug(f"⏭️  Skipping {symbol} - already have position")
                 continue
             
             try:
+                logger.debug(f"📈 Getting market data for {symbol}")
                 # Get current market data
                 market_data = await self.market_data_provider.build_market_data(symbol)
+                logger.debug(f"📈 {symbol} price: ${market_data.price:.2f}")
                 
                 # Check entry conditions
+                logger.debug(f"🤔 Checking if strategy wants to enter {symbol}")
                 entry_signal = await self.execution_strategy.should_enter(symbol, market_data)
                 
                 if entry_signal.should_enter:
+                    logger.info(f"✅ Entry signal received for {symbol}")
                     await self._enter_position(symbol, entry_signal, market_data)
+                else:
+                    logger.debug(f"❌ No entry signal for {symbol}")
             
             except Exception as e:
-                logger.error(f"Error monitoring entry for {symbol}: {e}")
+                logger.error(f"Error monitoring entry for {symbol}: {e}", exc_info=True)
     
     async def _monitor_exits(self) -> None:
         """Monitor exit conditions for active positions."""
@@ -404,30 +451,98 @@ class StrategyEngine:
             
             # Get fund balance
             fund_balance = self.fund.balance
+            logger.info(
+                f"💰 Fund balance from memory: ${fund_balance:.2f} "
+                f"(fund_id={self.fund_id}, mode={self.fund.mode})"
+            )
             
             # Calculate position size
             risk_params = {
                 "size_per_trade": self.strategy_config.size_per_trade,
                 "max_bet_percent": self.strategy_config.max_bet_percent,
             }
+            logger.info(
+                f"📊 Risk params: size_per_trade=${risk_params['size_per_trade']:.2f}, "
+                f"max_bet_percent={risk_params['max_bet_percent']}"
+            )
             
             position_size = await self.execution_strategy.position_sizing(
                 signal,
                 fund_balance,
                 risk_params
             )
+            logger.info(f"💵 Calculated position size: ${position_size:.2f}")
             
-            # Place order via Alpaca
+            # Calculate whole shares to buy
+            quantity = int(position_size / market_data.price)
+            logger.info(
+                f"🧮 Position calculation: ${position_size:.2f} / ${market_data.price:.2f} = "
+                f"{quantity} shares (truncated from {position_size / market_data.price:.4f})"
+            )
+            
+            # Skip if we can't afford even 1 share
+            if quantity < 1:
+                logger.warning(
+                    f"❌ Skipping entry for {symbol}: position size ${position_size:.2f} "
+                    f"can't buy 1 share at ${market_data.price:.2f}"
+                )
+                
+                # Broadcast skip event with full diagnostic details
+                await _broadcast_trading_event({
+                    "fund_id": str(self.fund_id),
+                    "fund_name": self.fund.name,
+                    "event_type": "skip",
+                    "timestamp": _get_utc_timestamp(),
+                    "symbol": symbol,
+                    "reason": "Insufficient position size",
+                    "message": f"Cannot buy {symbol}: need ${market_data.price:.2f} but only have ${position_size:.2f}",
+                    "details": {
+                        "fund_balance": fund_balance,
+                        "size_per_trade": self.strategy_config.size_per_trade,
+                        "max_bet_percent": self.strategy_config.max_bet_percent,
+                        "calculated_position_size": position_size,
+                        "share_price": market_data.price,
+                        "quantity_calculated": position_size / market_data.price,
+                        "quantity_truncated": quantity,
+                    }
+                })
+                return
+            
+            actual_cost = quantity * market_data.price
+            logger.info(
+                f"✅ Executing buy: {quantity} shares of {symbol} @ ${market_data.price:.2f} "
+                f"(cost: ${actual_cost:.2f}, target: ${position_size:.2f})"
+            )
+            
+            # Broadcast pre-trade diagnostic info
+            await _broadcast_trading_event({
+                "fund_id": str(self.fund_id),
+                "fund_name": self.fund.name,
+                "event_type": "diagnostic",
+                "timestamp": _get_utc_timestamp(),
+                "symbol": symbol,
+                "message": f"Preparing to buy {quantity} shares of {symbol}",
+                "details": {
+                    "fund_balance": fund_balance,
+                    "size_per_trade": self.strategy_config.size_per_trade,
+                    "max_bet_percent": self.strategy_config.max_bet_percent,
+                    "calculated_position_size": position_size,
+                    "share_price": market_data.price,
+                    "quantity": quantity,
+                    "actual_cost": actual_cost,
+                }
+            })
+            
+            # Place order via Alpaca (quantity-based, whole shares)
             order = await self.alpaca_service.place_market_order(
                 symbol=symbol,
-                notional=position_size,
+                qty=quantity,
                 side="buy",
-                time_in_force="day"  # Required for fractional/notional orders
+                time_in_force="day"
             )
             
             # Create position context
             position_id = str(uuid.uuid4())
-            quantity = position_size / market_data.price
             
             position = PositionContext(
                 position_id=position_id,

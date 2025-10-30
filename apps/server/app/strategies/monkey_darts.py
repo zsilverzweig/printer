@@ -104,14 +104,19 @@ class MonkeyDartsStrategy(ExecutionStrategy):
         Note: All volume/price filtering should already be done by ScreeningCriteria.
         We accept any candidates that made it through the screener.
         """
+        logger.info(
+            f"🐵 Monkey selection called: "
+            f"candidates={len(candidates)}, active_positions={active_position_count}"
+        )
+        
         # Only pick if we don't have an active position
         if active_position_count > 0:
-            logger.debug(f"🐵 Monkey waiting (have {active_position_count} active position)")
+            logger.info(f"🐵 Monkey waiting (have {active_position_count} active position)")
             return []
         
         # Need candidates to pick from
         if not candidates:
-            logger.debug("🐵 Monkey has no candidates to choose from")
+            logger.info("🐵 Monkey has no candidates to choose from")
             return []
         
         # Randomly pick one candidate
@@ -122,7 +127,7 @@ class MonkeyDartsStrategy(ExecutionStrategy):
             logger.warning("🐵 Monkey selected candidate with no ticker")
             return []
         
-        logger.info(f"🐵 Monkey threw dart at: {symbol}")
+        logger.info(f"🐵 Monkey threw dart at: {symbol} (from {len(candidates)} candidates)")
         return [symbol]
     
     async def should_enter(self, symbol: str, market_data: MarketData) -> EntrySignal:
@@ -206,15 +211,38 @@ class MonkeyDartsStrategy(ExecutionStrategy):
         size_per_trade = risk_params.get("size_per_trade", 1000.0)
         max_bet_percent = risk_params.get("max_bet_percent")
         
+        logger.info(
+            f"🐵 Monkey position sizing inputs: "
+            f"fund_balance=${fund_balance:.2f}, "
+            f"size_per_trade=${size_per_trade:.2f}, "
+            f"max_bet_percent={max_bet_percent}"
+        )
+        
         # Use configured size
         position_size = size_per_trade
+        logger.info(f"🐵 Initial position size (from size_per_trade): ${position_size:.2f}")
         
         # If max_bet_percent is set, respect it
         if max_bet_percent is not None:
             max_position = fund_balance * (max_bet_percent / 100.0)
+            logger.info(
+                f"🐵 max_bet_percent is set: {max_bet_percent}% of ${fund_balance:.2f} = ${max_position:.2f}"
+            )
+            
+            old_size = position_size
             position_size = min(position_size, max_position)
+            
+            if position_size != old_size:
+                logger.info(
+                    f"🐵 Position size LIMITED by max_bet_percent: "
+                    f"${old_size:.2f} → ${position_size:.2f}"
+                )
+            else:
+                logger.info(f"🐵 Position size unchanged (within max_bet_percent limit)")
+        else:
+            logger.info("🐵 No max_bet_percent limit set")
         
-        logger.debug(f"🐵 Monkey bet size: ${position_size:.2f}")
+        logger.info(f"🐵 Final monkey bet size: ${position_size:.2f}")
         
         return position_size
     
