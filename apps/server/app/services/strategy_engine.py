@@ -352,6 +352,21 @@ class StrategyEngine:
         
         return self._position_cache
     
+    async def get_pending_orders(self) -> List[Order]:
+        """
+        Get pending orders for this fund from database.
+        
+        Returns:
+            List of pending Order objects
+        """
+        async with get_async_session() as session:
+            stmt = select(Order).where(
+                Order.fund_id == self.fund_id,
+                Order.status == "pending"
+            )
+            result = await session.execute(stmt)
+            return result.scalars().all()
+    
     async def _cancel_stale_orders(self) -> None:
         """
         Cancel pending buy orders that exceed the configured max age.
@@ -468,15 +483,18 @@ class StrategyEngine:
                 logger.debug(f"🔍 After filtering: {len(screener_results)} candidates")
             
             # Ask strategy which symbols to monitor
-            # Pass active position count so strategy can make informed decision
+            # Pass active position count AND pending order count so strategy can make informed decision
             active_positions = await self.get_active_positions()
+            pending_orders = await self.get_pending_orders()
             logger.debug(
                 f"🎯 Asking strategy to select symbols "
-                f"(candidates={len(screener_results)}, active_positions={len(active_positions)})"
+                f"(candidates={len(screener_results)}, active_positions={len(active_positions)}, "
+                f"pending_orders={len(pending_orders)})"
             )
             self.monitored_symbols = await self.execution_strategy.get_monitored_symbols(
                 screener_results,
-                active_position_count=len(active_positions)
+                active_position_count=len(active_positions),
+                active_order_count=len(pending_orders)
             )
             
             if self.monitored_symbols:
@@ -488,7 +506,8 @@ class StrategyEngine:
                 logger.debug(
                     f"📡 No symbols to monitor "
                     f"({len(screener_results)} candidates available, "
-                    f"{len(active_positions)} active positions)"
+                    f"{len(active_positions)} active positions, "
+                    f"{len(pending_orders)} pending orders)"
                 )
         
         except Exception as e:

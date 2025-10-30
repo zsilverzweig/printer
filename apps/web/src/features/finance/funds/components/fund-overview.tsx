@@ -18,19 +18,31 @@ import {
 } from "@/lib/components/ui/card";
 
 import { useFundTransfers } from "../hooks/use-fund-transfers";
+import { useFundPerformance } from "../hooks/use-fund-performance";
 import { fundService } from "../services/fund-service";
 import { screeningCriteriaService } from "../services/screening-criteria-service";
-import { Fund } from "../types";
+import { Fund, FundOrder, FundTransaction, FundTransfer } from "../types";
 
 import { FundTransferForm } from "./fund-transfer-form";
+import { FundPerformanceCard } from "./fund-performance-card";
 
 interface FundOverviewProps {
   fund: Fund;
+  orders: FundOrder[];
+  transactions: FundTransaction[];
+  transfers: FundTransfer[];
   onFundUpdate: () => void;
 }
 
-export function FundOverview({ fund, onFundUpdate }: FundOverviewProps) {
+export function FundOverview({
+  fund,
+  orders,
+  transactions,
+  transfers,
+  onFundUpdate,
+}: FundOverviewProps) {
   const { createTransfer } = useFundTransfers(fund.id);
+  const { balance, performance } = useFundPerformance(transfers, transactions);
   const [isStarting, setIsStarting] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
   const [isRunningScreener, setIsRunningScreener] = useState(false);
@@ -114,6 +126,9 @@ export function FundOverview({ fund, onFundUpdate }: FundOverviewProps) {
 
   return (
     <div className="space-y-6">
+      {/* Performance Metrics */}
+      <FundPerformanceCard balance={balance} performance={performance} />
+
       {/* Fund Stats */}
       <div className="grid gap-4 md:grid-cols-4">
         <Card>

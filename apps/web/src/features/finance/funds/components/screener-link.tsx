@@ -50,11 +50,7 @@ interface ScreenerLinkProps {
   onUpdate: () => void;
 }
 
-export function ScreenerLink({
-  fundId,
-  fund,
-  onUpdate,
-}: ScreenerLinkProps) {
+export function ScreenerLink({ fundId, fund, onUpdate }: ScreenerLinkProps) {
   const [screeningCriteriaId, setScreeningCriteriaId] =
     useState<string>("none");
   const [availableCriteria, setAvailableCriteria] = useState<

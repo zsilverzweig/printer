@@ -19,7 +19,7 @@ import {
 } from "@/lib/components/ui/tabs";
 
 import { useFundDetails } from "../hooks/use-fund-details";
-import { useFundTransfers } from "../hooks/use-fund-transfers";
+import { useFundLedger } from "../hooks/use-fund-ledger";
 import { setupService } from "../services/setup-service";
 import { CreateSetupInput } from "../types";
 
@@ -38,7 +38,12 @@ interface FundDetailViewProps {
 
 export function FundDetailView({ fundId }: FundDetailViewProps) {
   const { details, loading, error, refresh } = useFundDetails(fundId);
-  const { transfers, loading: transfersLoading } = useFundTransfers(fundId);
+  const {
+    orders,
+    transactions,
+    transfers,
+    loading: ledgerLoading,
+  } = useFundLedger(fundId);
   const [selectedSetupId, setSelectedSetupId] = useState<string | null>(null);
   const [showSetupEditor, setShowSetupEditor] = useState(false);
   const [activeTab, setActiveTab] = useState("overview");
@@ -105,7 +110,13 @@ export function FundDetailView({ fundId }: FundDetailViewProps) {
         </TabsList>
 
         <TabsContent value="overview" className="space-y-6">
-          <FundOverview fund={fund} onFundUpdate={refresh} />
+          <FundOverview
+            fund={fund}
+            orders={orders}
+            transactions={transactions}
+            transfers={transfers}
+            onFundUpdate={refresh}
+          />
         </TabsContent>
 
         <TabsContent value="configuration" className="space-y-6">
@@ -143,7 +154,12 @@ export function FundDetailView({ fundId }: FundDetailViewProps) {
         </TabsContent>
 
         <TabsContent value="ledger" className="space-y-6">
-          <FundLedger transfers={transfers} loading={transfersLoading} />
+          <FundLedger
+            orders={orders}
+            transactions={transactions}
+            transfers={transfers}
+            loading={ledgerLoading}
+          />
         </TabsContent>
       </Tabs>
 

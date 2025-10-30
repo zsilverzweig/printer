@@ -324,3 +324,37 @@ export interface RunningFundSummary {
   activePositions: number;
   monitoredSymbols: number;
 }
+
+/**
+ * Fund Order
+ *
+ * Represents an order submitted to the broker for a fund.
+ */
+export interface FundOrder {
+  id: string;
+  symbol: string;
+  side: "buy" | "sell";
+  quantity: number;
+  status: string; // pending, filled, partially_filled, canceled, failed
+  orderType: string; // market, limit, stop
+  submittedAt: string;
+  filledAt?: string | null;
+  filledQty?: number | null;
+  filledAvgPrice?: number | null;
+  alpacaOrderId?: string | null;
+}
+
+/**
+ * Fund Transaction
+ *
+ * Represents a completed trade (filled order) in the ledger.
+ */
+export interface FundTransaction {
+  id: string;
+  symbol: string;
+  side: "buy" | "sell";
+  quantity: number;
+  price: number;
+  totalValue: number;
+  timestamp: string;
+}

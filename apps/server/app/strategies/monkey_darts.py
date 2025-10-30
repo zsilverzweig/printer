@@ -92,13 +92,14 @@ class MonkeyDartsStrategy(ExecutionStrategy):
     async def get_monitored_symbols(
         self,
         candidates: List[Dict[str, Any]],
-        active_position_count: int = 0
+        active_position_count: int = 0,
+        active_order_count: int = 0
     ) -> List[str]:
         """
-        Random selection: pick ONE candidate if we have no active positions.
+        Random selection: pick ONE candidate if we have no active positions OR pending orders.
         
         Monkey Darts only trades one position at a time, so:
-        - If we have an active position, return empty list (wait for it to close)
+        - If we have an active position OR pending order, return empty list (wait for it to close)
         - Otherwise, randomly pick one candidate from the list
         
         Note: All volume/price filtering should already be done by ScreeningCriteria.
@@ -106,12 +107,17 @@ class MonkeyDartsStrategy(ExecutionStrategy):
         """
         logger.info(
             f"🐵 Monkey selection called: "
-            f"candidates={len(candidates)}, active_positions={active_position_count}"
+            f"candidates={len(candidates)}, active_positions={active_position_count}, "
+            f"pending_orders={active_order_count}"
         )
         
-        # Only pick if we don't have an active position
+        # Only pick if we don't have an active position OR pending order
         if active_position_count > 0:
             logger.info(f"🐵 Monkey waiting (have {active_position_count} active position)")
+            return []
+        
+        if active_order_count > 0:
+            logger.info(f"🐵 Monkey waiting (have {active_order_count} pending order)")
             return []
         
         # Need candidates to pick from

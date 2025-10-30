@@ -158,7 +158,8 @@ class ExecutionStrategy(ABC):
     async def get_monitored_symbols(
         self,
         candidates: List[Dict[str, Any]],
-        active_position_count: int = 0
+        active_position_count: int = 0,
+        active_order_count: int = 0
     ) -> List[str]:
         """
         Select which symbols to actively monitor for entry.
@@ -169,20 +170,25 @@ class ExecutionStrategy(ABC):
         
         Args:
             candidates: List of stocks from screener (already filtered by ScreeningCriteria)
-            active_position_count: Number of currently active positions
+            active_position_count: Number of currently filled positions
+            active_order_count: Number of pending orders (not yet filled)
             
         Returns:
             List of symbols to monitor for entry
             
         Examples:
             - Bull Flag: Returns all candidates (will check pattern on each)
-            - Monkey Darts: Returns one random pick (or empty if have position)
+            - Monkey Darts: Returns one random pick (or empty if have position/pending order)
             - Chart Analysis: Returns top N by volume/momentum
             
         Note:
             All basic filtering (volume, price range, etc.) should already be
             done by ScreeningCriteria. This method is for strategy-specific
             selection logic only.
+            
+            Strategies should consider BOTH active positions AND pending orders
+            when deciding whether to place new orders. A pending order might
+            fill at any moment!
         """
         pass
     

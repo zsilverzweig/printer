@@ -15,6 +15,8 @@ export type {
   ExecutionStrategy,
   // Core entities
   Fund,
+  FundOrder,
+  FundTransaction,
   // Enums and literal types
   FundMode,
   FundStatus,

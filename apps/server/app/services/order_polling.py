@@ -216,6 +216,11 @@ class OrderPollingService:
             filled_qty = float(alpaca_order.filled_qty) if alpaca_order.filled_qty else order.quantity
             filled_price = float(alpaca_order.filled_avg_price) if alpaca_order.filled_avg_price else 0.0
             
+            # Convert timezone-aware datetime to timezone-naive UTC for database
+            transaction_timestamp = alpaca_order.filled_at if alpaca_order.filled_at else datetime.now(timezone.utc)
+            if transaction_timestamp.tzinfo:
+                transaction_timestamp = transaction_timestamp.replace(tzinfo=None)
+            
             transaction = Transaction(
                 id=str(uuid.uuid4()),
                 order_id=order.id,
@@ -226,7 +231,7 @@ class OrderPollingService:
                 quantity=filled_qty,
                 price=filled_price,
                 total_value=filled_qty * filled_price,
-                timestamp=alpaca_order.filled_at if alpaca_order.filled_at else datetime.now(timezone.utc),
+                timestamp=transaction_timestamp,
                 high_water_mark=filled_price if order.side == "buy" else None,
                 strategy_state={},
             )
