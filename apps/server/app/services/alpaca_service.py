@@ -409,6 +409,60 @@ class AlpacaService:
         except Exception as e:
             logger.error(f"Failed to get quote for {symbol}: {e}")
             raise
+    
+    async def get_open_orders(self, symbol: Optional[str] = None) -> list:
+        """
+        Get all open orders, optionally filtered by symbol.
+        
+        Args:
+            symbol: Optional symbol to filter orders
+            
+        Returns:
+            List of open order objects from Alpaca
+        """
+        if not self.client:
+            raise ValueError("Alpaca client not initialized. Check API credentials.")
+        
+        try:
+            from alpaca.trading.requests import GetOrdersRequest
+            from alpaca.trading.enums import QueryOrderStatus
+            
+            # Build request for open orders
+            request = GetOrdersRequest(
+                status=QueryOrderStatus.OPEN,
+                symbols=[symbol] if symbol else None
+            )
+            
+            orders = self.client.get_orders(filter=request)
+            logger.debug(f"Retrieved {len(orders)} open orders{f' for {symbol}' if symbol else ''}")
+            
+            return orders
+            
+        except Exception as e:
+            logger.error(f"Failed to get open orders{f' for {symbol}' if symbol else ''}: {e}")
+            raise
+    
+    async def cancel_order(self, order_id: str) -> bool:
+        """
+        Cancel an open order.
+        
+        Args:
+            order_id: Order ID to cancel
+            
+        Returns:
+            True if successfully canceled
+        """
+        if not self.client:
+            raise ValueError("Alpaca client not initialized. Check API credentials.")
+        
+        try:
+            self.client.cancel_order_by_id(order_id)
+            logger.info(f"✅ Successfully canceled order {order_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to cancel order {order_id}: {e}")
+            raise
 
 
 # Global instance

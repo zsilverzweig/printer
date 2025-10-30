@@ -222,8 +222,9 @@ class MonkeyDartsStrategy(ExecutionStrategy):
         position_size = size_per_trade
         logger.info(f"🐵 Initial position size (from size_per_trade): ${position_size:.2f}")
         
-        # If max_bet_percent is set, respect it
-        if max_bet_percent is not None:
+        # If max_bet_percent is set and > 0, respect it
+        # Treat 0.0 as "no limit" just like None
+        if max_bet_percent is not None and max_bet_percent > 0:
             max_position = fund_balance * (max_bet_percent / 100.0)
             logger.info(
                 f"🐵 max_bet_percent is set: {max_bet_percent}% of ${fund_balance:.2f} = ${max_position:.2f}"
@@ -240,7 +241,10 @@ class MonkeyDartsStrategy(ExecutionStrategy):
             else:
                 logger.info(f"🐵 Position size unchanged (within max_bet_percent limit)")
         else:
-            logger.info("🐵 No max_bet_percent limit set")
+            if max_bet_percent == 0.0:
+                logger.info("🐵 max_bet_percent is 0.0 - treating as no limit")
+            else:
+                logger.info("🐵 No max_bet_percent limit set")
         
         logger.info(f"🐵 Final monkey bet size: ${position_size:.2f}")
         

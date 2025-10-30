@@ -162,7 +162,7 @@ class StrategyEngine:
     async def _load_positions(self) -> None:
         """Load existing open positions from database."""
         try:
-            async with get_session() as session:
+            async with get_async_session() as session:
                 # Query for open positions for this fund
                 from sqlalchemy import select
                 stmt = select(PositionContextModel).where(
@@ -608,6 +608,9 @@ class StrategyEngine:
                 f"(reason: {signal.reason})"
             )
             
+            # Cancel any pending buy orders for this symbol to avoid wash trade detection
+            await self._cancel_pending_orders(position.symbol)
+            
             # Place sell order via Alpaca
             order = await self.alpaca_service.place_market_order(
                 symbol=position.symbol,
@@ -808,6 +811,65 @@ class StrategyEngine:
         """Close position in database."""
         # TODO: Implement database close
         pass
+    
+    async def _cancel_pending_orders(self, symbol: str) -> None:
+        """
+        Cancel any pending orders for a symbol.
+        
+        This is called before placing exit orders to avoid wash trade detection
+        when there are pending buy orders.
+        
+        Args:
+            symbol: Symbol to cancel orders for
+        """
+        try:
+            logger.debug(f"🔍 Checking for pending orders for {symbol}")
+            
+            # Get all open orders for this symbol
+            open_orders = await self.alpaca_service.get_open_orders(symbol=symbol)
+            
+            if not open_orders:
+                logger.debug(f"✓ No pending orders for {symbol}")
+                return
+            
+            logger.info(f"⚠️  Found {len(open_orders)} pending order(s) for {symbol}, canceling...")
+            
+            for order in open_orders:
+                try:
+                    order_id = order.id
+                    order_side = order.side
+                    order_qty = order.qty
+                    
+                    logger.info(
+                        f"🗑️  Canceling pending {order_side} order: "
+                        f"{order_qty} shares of {symbol} (order_id={order_id})"
+                    )
+                    
+                    await self.alpaca_service.cancel_order(order_id)
+                    
+                    logger.info(f"✅ Canceled order {order_id}")
+                    
+                    # Broadcast cancellation event
+                    await _broadcast_trading_event({
+                        "fund_id": str(self.fund_id),
+                        "fund_name": self.fund.name,
+                        "event_type": "order_cancelled",
+                        "symbol": symbol,
+                        "timestamp": _get_utc_timestamp(),
+                        "reason": "Exit signal received with pending order",
+                        "message": f"Canceled pending {order_side} order for {symbol}",
+                        "details": {
+                            "order_id": order_id,
+                            "side": str(order_side),
+                            "quantity": float(order_qty) if order_qty else 0,
+                        }
+                    })
+                    
+                except Exception as e:
+                    logger.error(f"Error canceling order {order_id}: {e}", exc_info=True)
+            
+        except Exception as e:
+            logger.error(f"Error checking/canceling pending orders for {symbol}: {e}", exc_info=True)
     
     def _verify_trading_mode(self) -> None:
         """
