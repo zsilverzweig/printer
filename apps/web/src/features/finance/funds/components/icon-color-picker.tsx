@@ -6,7 +6,6 @@
 
 "use client";
 
-import { Button } from "@/lib/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -22,7 +21,7 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/lib/components/ui/tabs";
-import { Palette, Search } from "lucide-react";
+import { Search } from "lucide-react";
 import { useState } from "react";
 
 import {
@@ -63,24 +62,21 @@ export function IconColorPicker({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button
+        <button
           type="button"
-          variant="outline"
-          size="sm"
           disabled={disabled}
-          className="gap-1.5 h-8 px-2"
+          className="inline-flex items-center hover:opacity-80 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <div
             className={`
-              p-1 rounded ${colorClasses.bgClass} border ${colorClasses.borderClass}
+              p-1.5 rounded ${colorClasses.bgClass} border ${colorClasses.borderClass}
             `}
           >
             <SelectedIconComponent
-              className={`h-3 w-3 ${colorClasses.textClass}`}
+              className={`h-4 w-4 ${colorClasses.textClass}`}
             />
           </div>
-          <Palette className="h-3 w-3 opacity-50" />
-        </Button>
+        </button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-[500px] max-h-[85vh]">
         <DialogHeader>

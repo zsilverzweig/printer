@@ -8,7 +8,7 @@
 
 import { Fund, UpdateFundInput } from "@shared/types";
 import { Check } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Button } from "@/lib/components/ui/button";
 import {
@@ -22,7 +22,6 @@ import { Input } from "@/lib/components/ui/input";
 import { Label } from "@/lib/components/ui/label";
 import { Textarea } from "@/lib/components/ui/textarea";
 
-import { getColorClasses, getIconByName } from "../config/icon-options";
 import { fundService } from "../services/fund-service";
 import { IconColorPicker } from "./icon-color-picker";
 
@@ -42,6 +41,14 @@ export function FundBasicInfoEditor({
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  // Sync local state with fund prop when it changes
+  useEffect(() => {
+    setName(fund.name);
+    setDescription(fund.description || "");
+    setSelectedIcon(fund.icon || "Wallet");
+    setSelectedColor(fund.iconColor || "blue");
+  }, [fund]);
 
   const hasChanges =
     name !== fund.name ||
@@ -91,9 +98,6 @@ export function FundBasicInfoEditor({
     setSuccessMessage(null);
   };
 
-  const SelectedIconComponent = getIconByName(selectedIcon);
-  const colorClasses = getColorClasses(selectedColor);
-
   return (
     <Card>
       <CardHeader>
@@ -119,13 +123,23 @@ export function FundBasicInfoEditor({
 
           <div className="space-y-2">
             <Label htmlFor="name">Fund Name</Label>
-            <Input
-              id="name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              disabled={isSaving}
-              placeholder="e.g., Momentum Breakout Fund"
-            />
+            <div className="flex items-center gap-2">
+              <IconColorPicker
+                selectedIcon={selectedIcon}
+                selectedColor={selectedColor}
+                onIconChange={setSelectedIcon}
+                onColorChange={setSelectedColor}
+                disabled={isSaving}
+              />
+              <Input
+                id="name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                disabled={isSaving}
+                placeholder="e.g., Momentum Breakout Fund"
+                className="flex-1"
+              />
+            </div>
           </div>
 
           <div className="space-y-2">
@@ -138,40 +152,6 @@ export function FundBasicInfoEditor({
               placeholder="Brief description of the fund's strategy or purpose"
               rows={3}
             />
-          </div>
-
-          <div className="space-y-2">
-            <Label>Icon & Color</Label>
-            <IconColorPicker
-              selectedIcon={selectedIcon}
-              selectedColor={selectedColor}
-              onIconChange={setSelectedIcon}
-              onColorChange={setSelectedColor}
-              disabled={isSaving}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label>Preview</Label>
-            <div className="p-4 border rounded-md bg-muted/30 flex items-center gap-3">
-              <div
-                className={`
-                p-3 rounded-lg ${colorClasses.bgClass} border ${colorClasses.borderClass}
-              `}
-              >
-                <SelectedIconComponent
-                  className={`h-6 w-6 ${colorClasses.textClass}`}
-                />
-              </div>
-              <div>
-                <div className="font-semibold">{name || "Fund Name"}</div>
-                {description && (
-                  <div className="text-sm text-muted-foreground">
-                    {description}
-                  </div>
-                )}
-              </div>
-            </div>
           </div>
 
           <div className="flex gap-2">

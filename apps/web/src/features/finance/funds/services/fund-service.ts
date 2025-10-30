@@ -20,6 +20,8 @@ function parseFundDates(data: any): Fund {
   return {
     ...data,
     // Convert snake_case to camelCase
+    icon: data.icon,
+    iconColor: data.icon_color ?? data.iconColor,
     strategyId: data.strategy_id ?? data.strategyId,
     strategyConfig: data.strategy_config || data.strategyConfig || {},
     screeningCriteriaId: data.screening_criteria_id ?? data.screeningCriteriaId,
@@ -81,6 +83,9 @@ export const fundService = {
         description: input.description,
         mode: input.mode,
         initial_balance: input.initialBalance,
+        // UI customization
+        icon: input.icon,
+        icon_color: input.iconColor,
         // Strategy configuration
         strategy_id: input.strategyId,
         strategy_config: input.strategyConfig || {},
@@ -124,6 +129,9 @@ export const fundService = {
         name: input.name,
         description: input.description,
         balance: input.balance,
+        // UI customization
+        icon: input.icon,
+        icon_color: input.iconColor,
         // Strategy configuration
         strategy_id: input.strategyId,
         strategy_config: input.strategyConfig,
