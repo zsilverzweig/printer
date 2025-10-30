@@ -2,7 +2,7 @@
 
 from app.models.events import Event, AITradeEvent, AlpacaTradeEvent
 from app.models.assets import TickerDetails, AssetLoadingStatus
-from app.models.strategies import Fund, ScreeningCriteria, Strategy, PositionContext
+from app.models.strategies import Fund, ScreeningCriteria, Order, Transaction
 
 __all__ = [
     "Event", 
@@ -12,7 +12,7 @@ __all__ = [
     "AssetLoadingStatus",
     "Fund",
     "ScreeningCriteria",
-    "Strategy",
-    "PositionContext",
+    "Order",
+    "Transaction",
 ]
 

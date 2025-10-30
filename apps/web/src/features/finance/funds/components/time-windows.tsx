@@ -1,16 +1,16 @@
 /**
  * TimeWindows Component
  *
- * Focused tab for configuring trading time windows
+ * Component for configuring trading time windows
  */
 
 "use client";
 
 import { useEffect, useState } from "react";
 
-import { Strategy } from "@printer/shared";
+import { Fund } from "@printer/shared";
 
-import { strategyService } from "../services/strategy-service";
+import { fundService } from "../services/fund-service";
 
 import { Button } from "@/lib/components/ui/button";
 import {
@@ -32,11 +32,11 @@ import {
 
 interface TimeWindowsProps {
   fundId: string;
-  strategy: Strategy | null;
+  fund: Fund;
   onUpdate: () => void;
 }
 
-export function TimeWindows({ fundId, strategy, onUpdate }: TimeWindowsProps) {
+export function TimeWindows({ fundId, fund, onUpdate }: TimeWindowsProps) {
   const [tradingStartTime, setTradingStartTime] = useState("");
   const [tradingEndTime, setTradingEndTime] = useState("");
   const [timezone, setTimezone] = useState("America/New_York");
@@ -45,12 +45,12 @@ export function TimeWindows({ fundId, strategy, onUpdate }: TimeWindowsProps) {
   const [success, setSuccess] = useState(false);
 
   useEffect(() => {
-    if (strategy) {
-      setTradingStartTime(strategy.tradingStartTime || "");
-      setTradingEndTime(strategy.tradingEndTime || "");
-      setTimezone(strategy.timezone || "America/New_York");
+    if (fund) {
+      setTradingStartTime(fund.tradingStartTime || "");
+      setTradingEndTime(fund.tradingEndTime || "");
+      setTimezone(fund.timezone || "America/New_York");
     }
-  }, [strategy]);
+  }, [fund]);
 
   const handleSave = async () => {
     try {
@@ -58,21 +58,10 @@ export function TimeWindows({ fundId, strategy, onUpdate }: TimeWindowsProps) {
       setError(null);
       setSuccess(false);
 
-      await strategyService.createOrUpdateStrategy({
-        fundId,
-        executionStrategyId: strategy?.executionStrategyId || "",
-        executionConfig: strategy?.executionConfig || {},
-        maxLossPercent: strategy?.maxLossPercent || 0,
-        maxLossDollars: strategy?.maxLossDollars || 0,
-        maxGivebackPercent: strategy?.maxGivebackPercent || 0,
-        sizePerTrade: strategy?.sizePerTrade || 0,
-        minBetPercent: strategy?.minBetPercent || 0,
-        maxBetPercent: strategy?.maxBetPercent || 0,
-        maxTotalExposure: strategy?.maxTotalExposure || 0,
+      await fundService.updateFund(fundId, {
         tradingStartTime,
         tradingEndTime,
         timezone,
-        screeningCriteriaId: strategy?.screeningCriteriaId,
       });
 
       setSuccess(true);

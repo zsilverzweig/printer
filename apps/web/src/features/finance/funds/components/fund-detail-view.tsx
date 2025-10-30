@@ -67,7 +67,7 @@ export function FundDetailView({ fundId }: FundDetailViewProps) {
     );
   }
 
-  const { fund, strategy, setup } = details;
+  const { fund, setup } = details;
 
   const handleSaveSetup = async (input: CreateSetupInput) => {
     const newSetup = await setupService.createSetup(input);
@@ -96,58 +96,50 @@ export function FundDetailView({ fundId }: FundDetailViewProps) {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-2 md:grid-cols-7 gap-1">
+        <TabsList className="grid w-full grid-cols-2 md:grid-cols-5 gap-1">
           <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="configuration">Configuration</TabsTrigger>
           <TabsTrigger value="activity">Activity</TabsTrigger>
-          <TabsTrigger value="strategy">Strategy</TabsTrigger>
-          <TabsTrigger value="risk">Risk</TabsTrigger>
-          <TabsTrigger value="time">Time Windows</TabsTrigger>
           <TabsTrigger value="screener">Screener</TabsTrigger>
           <TabsTrigger value="ledger">Ledger</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-6">
-          <FundOverview
-            fund={fund}
-            strategy={strategy}
-            onFundUpdate={refresh}
-          />
+          <FundOverview fund={fund} onFundUpdate={refresh} />
+        </TabsContent>
+
+        <TabsContent value="configuration" className="space-y-6">
+          {/* Strategy Selection Section */}
+          <div>
+            <h2 className="text-xl font-semibold mb-4">
+              Strategy Configuration
+            </h2>
+            <StrategySelection
+              fundId={fund.id}
+              fund={fund}
+              onUpdate={refresh}
+            />
+          </div>
+
+          {/* Risk Management Section */}
+          <div className="pt-6 border-t">
+            <h2 className="text-xl font-semibold mb-4">Risk Management</h2>
+            <RiskManagement fundId={fund.id} fund={fund} onUpdate={refresh} />
+          </div>
+
+          {/* Time Windows Section */}
+          <div className="pt-6 border-t">
+            <h2 className="text-xl font-semibold mb-4">Trading Time Windows</h2>
+            <TimeWindows fundId={fund.id} fund={fund} onUpdate={refresh} />
+          </div>
         </TabsContent>
 
         <TabsContent value="activity" className="space-y-6">
           <TradingActivityFeed fundId={fundId} />
         </TabsContent>
 
-        <TabsContent value="strategy" className="space-y-6">
-          <StrategySelection
-            fundId={fund.id}
-            strategy={strategy}
-            onUpdate={refresh}
-          />
-        </TabsContent>
-
-        <TabsContent value="risk" className="space-y-6">
-          <RiskManagement
-            fundId={fund.id}
-            strategy={strategy}
-            onUpdate={refresh}
-          />
-        </TabsContent>
-
-        <TabsContent value="time" className="space-y-6">
-          <TimeWindows
-            fundId={fund.id}
-            strategy={strategy}
-            onUpdate={refresh}
-          />
-        </TabsContent>
-
         <TabsContent value="screener" className="space-y-6">
-          <ScreenerLink
-            fundId={fund.id}
-            strategy={strategy}
-            onUpdate={refresh}
-          />
+          <ScreenerLink fundId={fund.id} fund={fund} onUpdate={refresh} />
         </TabsContent>
 
         <TabsContent value="ledger" className="space-y-6">

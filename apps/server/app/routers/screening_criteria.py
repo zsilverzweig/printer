@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.strategies import ScreeningCriteria, Strategy
+from app.models.strategies import ScreeningCriteria, Fund
 from app.services.database import get_async_session
 
 logger = logging.getLogger("app.screening_criteria")
@@ -402,18 +402,18 @@ async def delete_screening_criteria(criteria_id: str):
                     detail=f"Screening criteria {criteria_id} not found"
                 )
             
-            # Check if any strategies are using this criteria
-            strategy_result = await session.execute(
-                select(func.count(Strategy.id)).where(
-                    Strategy.screening_criteria_id == criteria_id
+            # Check if any funds are using this criteria
+            fund_result = await session.execute(
+                select(func.count(Fund.id)).where(
+                    Fund.screening_criteria_id == criteria_id
                 )
             )
-            strategy_count = strategy_result.scalar()
+            fund_count = fund_result.scalar()
             
-            if strategy_count > 0:
+            if fund_count > 0:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
-                    detail=f"Cannot delete screening criteria: {strategy_count} strategy(ies) are using it"
+                    detail=f"Cannot delete screening criteria: {fund_count} fund(s) are using it"
                 )
             
             # Delete criteria

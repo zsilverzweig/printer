@@ -26,8 +26,9 @@ from app.strategies.base import (
 from app.strategies.registry import get_strategy
 from app.services.market_data_provider import MarketDataProvider
 from app.services.alpaca_service import AlpacaService
-from app.models.strategies import Fund, Strategy, PositionContext as PositionContextModel
+from app.models.strategies import Fund, Order, Transaction
 from app.services.database import get_async_session
+from sqlalchemy import select, and_
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +63,6 @@ class StrategyEngine:
     def __init__(
         self,
         fund: Fund,
-        strategy_config: Strategy,
         execution_strategy: ExecutionStrategy,
         market_data_provider: MarketDataProvider,
         alpaca_service: AlpacaService,
@@ -71,8 +71,7 @@ class StrategyEngine:
         Initialize strategy engine.
         
         Args:
-            fund: Fund object with balance and mode
-            strategy_config: Strategy configuration from database
+            fund: Fund object with all configuration (strategy, risk params, position sizing)
             execution_strategy: Instantiated execution strategy
             market_data_provider: Market data provider
             alpaca_service: Alpaca trading service (must match fund mode)
@@ -84,18 +83,17 @@ class StrategyEngine:
         logger.info(
             f"🔧 Fund object received: "
             f"id={fund.id}, name={fund.name}, balance=${fund.balance:.2f}, "
-            f"mode={fund.mode}, status={fund.status}"
+            f"mode={fund.mode}, status={fund.status}, strategy={fund.strategy_id}"
         )
         logger.info(
-            f"🔧 Strategy config received: "
-            f"id={strategy_config.id}, execution_strategy={strategy_config.execution_strategy_id}, "
-            f"size_per_trade=${strategy_config.size_per_trade:.2f}, "
-            f"max_bet_percent={strategy_config.max_bet_percent}"
+            f"🔧 Strategy config: "
+            f"strategy_id={fund.strategy_id}, "
+            f"size_per_trade=${fund.size_per_trade:.2f}, "
+            f"max_bet_percent={fund.max_bet_percent}"
         )
         
         self.fund = fund
         self.fund_id = fund.id
-        self.strategy_config = strategy_config
         self.execution_strategy = execution_strategy
         self.market_data_provider = market_data_provider
         self.alpaca_service = alpaca_service
@@ -114,15 +112,16 @@ class StrategyEngine:
             f"(mode: {fund.mode}, balance: ${fund.balance:.2f})"
         )
         
-        # Active positions
-        self.active_positions: Dict[str, PositionContext] = {}
-        
         # Monitored candidates
         self.monitored_symbols: List[str] = []
         
         # Running state
         self.is_running = False
         self._monitoring_task: Optional[asyncio.Task] = None
+        
+        # Position cache (refreshed from Alpaca on each check)
+        self._position_cache: Dict[str, PositionContext] = {}
+        self._last_position_refresh: Optional[datetime] = None
     
     async def start(self) -> None:
         """Start the strategy execution loop."""
@@ -136,13 +135,20 @@ class StrategyEngine:
             f"(name={self.fund.name}, balance=${self.fund.balance:.2f}, mode={self.fund.mode})"
         )
         logger.info(
-            f"📋 Strategy config: execution_strategy={self.strategy_config.execution_strategy_id}, "
-            f"size_per_trade=${self.strategy_config.size_per_trade:.2f}, "
-            f"max_bet_percent={self.strategy_config.max_bet_percent}"
+            f"📋 Strategy config: strategy_id={self.fund.strategy_id}, "
+            f"size_per_trade=${self.fund.size_per_trade:.2f}, "
+            f"max_bet_percent={self.fund.max_bet_percent}"
         )
         
-        # Load existing positions from database
-        await self._load_positions()
+        # Log risk management settings
+        max_order_age = self.fund.max_order_age_seconds or 60
+        logger.info(
+            f"⏱️  Risk management: max_order_age={max_order_age}s "
+            f"(orders older than this will be auto-canceled)"
+        )
+        
+        # Sync initial positions from Alpaca
+        await self._refresh_positions_from_alpaca()
         
         # Start monitoring loop
         self._monitoring_task = asyncio.create_task(self._monitoring_loop())
@@ -159,47 +165,270 @@ class StrategyEngine:
             except asyncio.CancelledError:
                 pass
     
-    async def _load_positions(self) -> None:
-        """Load existing open positions from database."""
+    async def _refresh_positions_from_alpaca(self) -> None:
+        """
+        Refresh position cache from Alpaca.
+        
+        Queries Alpaca for current positions and filters to only positions
+        that belong to this fund (based on transaction history).
+        """
         try:
-            async with get_async_session() as session:
-                # Query for open positions for this fund
-                from sqlalchemy import select
-                stmt = select(PositionContextModel).where(
-                    PositionContextModel.fund_id == self.fund_id,
-                    PositionContextModel.status == "open"
-                )
-                result = await session.execute(stmt)
-                positions = result.scalars().all()
+            logger.debug(f"📊 Querying active positions from Alpaca for fund {self.fund_id}")
+            
+            # Get ALL positions from Alpaca
+            alpaca_positions = await self.alpaca_service.get_positions()
+            
+            # Clear cache
+            self._position_cache.clear()
+            
+            logger.debug(f"📊 Alpaca reports {len(alpaca_positions)} total position(s) in account")
+            
+            # Get symbols that belong to this fund (have buy transactions)
+            fund_symbols = await self._get_fund_symbols()
+            logger.debug(
+                f"📊 This fund has transactions for: {fund_symbols if fund_symbols else 'none'}"
+            )
+            
+            for alpaca_pos in alpaca_positions:
+                symbol = alpaca_pos["symbol"]
                 
-                for pos in positions:
-                    # Convert to PositionContext
-                    position = PositionContext(
-                        position_id=pos.id,
-                        symbol=pos.symbol,
-                        entry_price=pos.entry_price,
-                        entry_time=pos.entry_time,
-                        quantity=pos.quantity,
-                        current_price=pos.entry_price,  # Will be updated
-                        unrealized_pnl=0.0,
-                        unrealized_pnl_percent=0.0,
-                        high_water_mark=pos.high_water_mark,
-                        strategy_state=pos.strategy_state or {},
-                        has_scaled_out=pos.strategy_state.get("has_scaled_out", False),
-                        has_taken_profits=pos.strategy_state.get("has_taken_profits", False),
-                        scale_in_count=pos.strategy_state.get("scale_in_count", 0),
+                # FILTER: Only include positions that belong to this fund
+                if symbol not in fund_symbols:
+                    logger.debug(
+                        f"📊 Skipping {symbol} - not owned by this fund "
+                        f"(belongs to different fund/strategy)"
                     )
-                    
-                    self.active_positions[pos.symbol] = position
-                    logger.info(f"Loaded position: {pos.symbol} @ {pos.entry_price}")
+                    continue
+                
+                # Get buy transactions for this symbol to calculate entry info
+                entry_price, entry_time, strategy_state, high_water_mark = await self._get_position_details(symbol)
+                
+                # Create PositionContext from Alpaca + our data
+                position = PositionContext(
+                    position_id=symbol,  # Use symbol as ID since we query from Alpaca
+                    symbol=symbol,
+                    entry_price=entry_price,
+                    entry_time=entry_time,
+                    quantity=alpaca_pos["qty"],
+                    current_price=alpaca_pos["current_price"],
+                    unrealized_pnl=alpaca_pos["unrealized_pl"],
+                    unrealized_pnl_percent=alpaca_pos["unrealized_plpc"] * 100,
+                    high_water_mark=high_water_mark or alpaca_pos["current_price"],
+                    strategy_state=strategy_state,
+                    has_scaled_out=strategy_state.get("has_scaled_out", False),
+                    has_taken_profits=strategy_state.get("has_taken_profits", False),
+                    scale_in_count=strategy_state.get("scale_in_count", 0),
+                )
+                
+                self._position_cache[symbol] = position
+                logger.debug(
+                    f"📊 Position loaded: {symbol} - {alpaca_pos['qty']} shares @ "
+                    f"${entry_price:.2f}, current ${alpaca_pos['current_price']:.2f}, "
+                    f"P&L: ${alpaca_pos['unrealized_pl']:.2f}"
+                )
+            
+            self._last_position_refresh = datetime.utcnow()
+            
+            if self._position_cache:
+                logger.info(
+                    f"📊 Synced {len(self._position_cache)} position(s) from Alpaca for this fund: "
+                    f"{list(self._position_cache.keys())}"
+                )
+            else:
+                logger.debug("📊 No active positions for this fund")
         
         except Exception as e:
-            logger.error(f"Error loading positions: {e}")
+            logger.error(f"Error refreshing positions from Alpaca: {e}", exc_info=True)
+    
+    async def _get_fund_symbols(self) -> set[str]:
+        """
+        Get all symbols that have open positions for this fund.
+        
+        Identifies symbols by checking if we have more buy transactions than sell transactions.
+        
+        Returns:
+            Set of symbols that belong to this fund
+        """
+        try:
+            async with get_async_session() as session:
+                # Get all transactions for this fund, grouped by symbol
+                stmt = select(
+                    Transaction.symbol,
+                    Transaction.side,
+                    Transaction.quantity
+                ).where(
+                    Transaction.fund_id == self.fund_id
+                ).order_by(Transaction.timestamp.asc())
+                
+                result = await session.execute(stmt)
+                transactions = result.all()
+                
+                # Calculate net position for each symbol
+                position_tracker = {}
+                for symbol, side, quantity in transactions:
+                    if symbol not in position_tracker:
+                        position_tracker[symbol] = 0
+                    
+                    if side == "buy":
+                        position_tracker[symbol] += quantity
+                    else:  # sell
+                        position_tracker[symbol] -= quantity
+                
+                # Return symbols with net positive positions
+                fund_symbols = {
+                    symbol for symbol, qty in position_tracker.items()
+                    if qty > 0.001  # Use small threshold to handle floating point
+                }
+                
+                return fund_symbols
+        
+        except Exception as e:
+            logger.error(f"Error getting fund symbols: {e}", exc_info=True)
+            return set()
+    
+    async def _get_position_details(self, symbol: str) -> tuple[float, datetime, dict, Optional[float]]:
+        """
+        Get position entry details from transaction history.
+        
+        Args:
+            symbol: Symbol to get details for
+            
+        Returns:
+            (entry_price, entry_time, strategy_state, high_water_mark)
+        """
+        try:
+            async with get_async_session() as session:
+                # Get all buy transactions for this symbol
+                stmt = select(Transaction).where(
+                    and_(
+                        Transaction.fund_id == self.fund_id,
+                        Transaction.symbol == symbol,
+                        Transaction.side == "buy"
+                    )
+                ).order_by(Transaction.timestamp.asc())
+                
+                result = await session.execute(stmt)
+                buy_transactions = result.scalars().all()
+                
+                if not buy_transactions:
+                    # No transaction history, use defaults
+                    return 0.0, datetime.utcnow(), {}, None
+                
+                # Calculate weighted average entry price
+                total_qty = sum(t.quantity for t in buy_transactions)
+                weighted_sum = sum(t.quantity * t.price for t in buy_transactions)
+                entry_price = weighted_sum / total_qty if total_qty > 0 else 0.0
+                
+                # Use first buy as entry time
+                entry_time = buy_transactions[0].timestamp
+                
+                # Get most recent strategy state and high water mark
+                latest_transaction = buy_transactions[-1]
+                strategy_state = latest_transaction.strategy_state or {}
+                high_water_mark = latest_transaction.high_water_mark
+                
+                return entry_price, entry_time, strategy_state, high_water_mark
+        
+        except Exception as e:
+            logger.error(f"Error getting position details for {symbol}: {e}", exc_info=True)
+            return 0.0, datetime.utcnow(), {}, None
+    
+    async def get_active_positions(self) -> Dict[str, PositionContext]:
+        """
+        Get current active positions.
+        
+        Returns cached positions if recently refreshed, otherwise
+        queries Alpaca for current state.
+        
+        Returns:
+            Dictionary mapping symbol to PositionContext
+        """
+        # Refresh if cache is stale (older than 10 seconds)
+        if (
+            not self._last_position_refresh
+            or (datetime.utcnow() - self._last_position_refresh).total_seconds() > 10
+        ):
+            await self._refresh_positions_from_alpaca()
+        
+        return self._position_cache
+    
+    async def _cancel_stale_orders(self) -> None:
+        """
+        Cancel pending buy orders that exceed the configured max age.
+        
+        Prevents orders from sitting unfilled and clogging up the system.
+        This is especially important for strategies with time windows or
+        that need to move quickly.
+        
+        The timeout is configurable via fund.max_order_age_seconds.
+        """
+        try:
+            # Get the configured timeout (default 60 seconds if not set)
+            max_age_seconds = self.fund.max_order_age_seconds or 60
+            
+            async with get_async_session() as session:
+                # Get all pending buy orders for this fund
+                stmt = select(Order).where(
+                    Order.fund_id == self.fund_id,
+                    Order.side == "buy",
+                    Order.status == "pending"
+                )
+                result = await session.execute(stmt)
+                pending_orders = result.scalars().all()
+                
+                if not pending_orders:
+                    return
+                
+                now = datetime.utcnow()
+                
+                for order in pending_orders:
+                    # Calculate order age
+                    order_age_seconds = (now - order.submitted_at).total_seconds()
+                    
+                    # Cancel if older than configured max age
+                    if order_age_seconds > max_age_seconds:
+                        logger.info(
+                            f"🚫 Canceling stale order: {order.symbol} (age: {order_age_seconds:.0f}s, "
+                            f"order_id={order.id}, alpaca_id={order.alpaca_order_id})"
+                        )
+                        
+                        try:
+                            # Cancel with Alpaca
+                            if order.alpaca_order_id:
+                                await self.alpaca_service.cancel_order(order.alpaca_order_id)
+                                logger.info(f"✅ Alpaca order canceled: {order.alpaca_order_id}")
+                            
+                            # Update database
+                            order.status = "canceled"
+                            order.error_message = f"Canceled: stale order (age: {order_age_seconds:.0f}s)"
+                            await session.commit()
+                            
+                            # Broadcast cancellation
+                            await _broadcast_trading_event({
+                                "type": "order_canceled",
+                                "message": f"Canceled stale {order.symbol} order (age: {order_age_seconds:.0f}s)",
+                                "data": {
+                                    "fund_id": self.fund_id,
+                                    "symbol": order.symbol,
+                                    "order_id": order.id,
+                                    "age_seconds": order_age_seconds,
+                                    "reason": "stale_order"
+                                }
+                            })
+                            
+                        except Exception as e:
+                            logger.error(f"Error canceling stale order {order.id}: {e}", exc_info=True)
+                            
+        except Exception as e:
+            logger.error(f"Error checking for stale orders: {e}", exc_info=True)
     
     async def _monitoring_loop(self) -> None:
         """Main monitoring loop."""
         while self.is_running:
             try:
+                # Cancel stale orders
+                await self._cancel_stale_orders()
+                
                 # Update monitored candidates from screener
                 await self._update_candidates()
                 
@@ -233,20 +462,21 @@ class StrategyEngine:
             logger.debug(f"📊 Screener has {len(screener_results)} total candidates")
             
             # Optional: Apply ScreeningCriteria filters
-            if self.strategy_config.screening_criteria_id:
-                logger.debug(f"🔍 Applying screening criteria: {self.strategy_config.screening_criteria_id}")
+            if self.fund.screening_criteria_id:
+                logger.debug(f"🔍 Applying screening criteria: {self.fund.screening_criteria_id}")
                 screener_results = await self._apply_screening_filters(screener_results)
                 logger.debug(f"🔍 After filtering: {len(screener_results)} candidates")
             
             # Ask strategy which symbols to monitor
             # Pass active position count so strategy can make informed decision
+            active_positions = await self.get_active_positions()
             logger.debug(
                 f"🎯 Asking strategy to select symbols "
-                f"(candidates={len(screener_results)}, active_positions={len(self.active_positions)})"
+                f"(candidates={len(screener_results)}, active_positions={len(active_positions)})"
             )
             self.monitored_symbols = await self.execution_strategy.get_monitored_symbols(
                 screener_results,
-                active_position_count=len(self.active_positions)
+                active_position_count=len(active_positions)
             )
             
             if self.monitored_symbols:
@@ -258,7 +488,7 @@ class StrategyEngine:
                 logger.debug(
                     f"📡 No symbols to monitor "
                     f"({len(screener_results)} candidates available, "
-                    f"{len(self.active_positions)} active positions)"
+                    f"{len(active_positions)} active positions)"
                 )
         
         except Exception as e:
@@ -266,62 +496,65 @@ class StrategyEngine:
     
     def _is_trading_time(self) -> bool:
         """Check if current time is within trading hours."""
-        if not self.strategy_config.trading_start_time:
+        if not self.fund.trading_start_time:
             return True  # No restrictions
         
         import pytz
         from datetime import time as dt_time
         
         try:
-            tz = pytz.timezone(self.strategy_config.timezone or "America/New_York")
+            tz = pytz.timezone(self.fund.timezone or "America/New_York")
             now = datetime.now(tz)
             current_time = now.time()
             
             # Parse times like "09:30"
-            start = dt_time(*map(int, self.strategy_config.trading_start_time.split(":")))
-            end = dt_time(*map(int, self.strategy_config.trading_end_time.split(":")))
+            start = dt_time(*map(int, self.fund.trading_start_time.split(":")))
+            end = dt_time(*map(int, self.fund.trading_end_time.split(":")))
             
             return start <= current_time <= end
         except Exception as e:
             logger.error(f"Error checking trading time: {e}")
             return True  # Default to allowing trades if check fails
     
-    def _check_risk_limits(self) -> tuple[bool, str]:
+    async def _check_risk_limits(self) -> tuple[bool, str]:
         """
         Check if we can trade based on Strategy risk parameters.
         
         Returns:
             (can_trade, reason) - If can_trade is False, reason contains the error message
         """
-        # Calculate daily P&L from positions (memory only)
-        daily_pnl = sum(p.unrealized_pnl for p in self.active_positions.values())
+        # Get current positions
+        active_positions = await self.get_active_positions()
+        
+        # Calculate daily P&L from positions
+        daily_pnl = sum(p.unrealized_pnl for p in active_positions.values())
         
         # Check daily loss limit (dollars) - only if set
         if (
-            self.strategy_config.max_loss_dollars is not None
+            self.fund.max_loss_dollars is not None
             and daily_pnl < 0
-            and abs(daily_pnl) >= self.strategy_config.max_loss_dollars
+            and abs(daily_pnl) >= self.fund.max_loss_dollars
         ):
-            return False, f"Daily loss limit hit: ${abs(daily_pnl):.2f} >= ${self.strategy_config.max_loss_dollars:.2f}"
+            return False, f"Daily loss limit hit: ${abs(daily_pnl):.2f} >= ${self.fund.max_loss_dollars:.2f}"
         
         # Check daily loss limit (percent) - only if set
         if (
-            self.strategy_config.max_loss_percent is not None
+            self.fund.max_loss_percent is not None
             and daily_pnl < 0
             and self.fund.balance > 0
         ):
             loss_percent = (abs(daily_pnl) / self.fund.balance) * 100
-            if loss_percent >= self.strategy_config.max_loss_percent:
-                return False, f"Daily loss % limit hit: {loss_percent:.1f}% >= {self.strategy_config.max_loss_percent:.1f}%"
+            if loss_percent >= self.fund.max_loss_percent:
+                return False, f"Daily loss % limit hit: {loss_percent:.1f}% >= {self.fund.max_loss_percent:.1f}%"
         
         # Check total exposure - only if set
-        if self.strategy_config.max_total_exposure is not None:
+        if self.fund.max_total_exposure is not None:
             total_exposure = sum(
                 p.quantity * p.current_price 
-                for p in self.active_positions.values()
+                for p in active_positions.values()
             )
-            if total_exposure >= self.strategy_config.max_total_exposure:
-                return False, f"Total exposure limit reached: ${total_exposure:.2f} >= ${self.strategy_config.max_total_exposure:.2f}"
+            if total_exposure >= self.fund.max_total_exposure:
+                return False, f"Total exposure limit reached: ${total_exposure:.2f} >= ${self.fund.max_total_exposure:.2f}"
         
         return True, ""
     
@@ -338,7 +571,7 @@ class StrategyEngine:
             return
         
         # Check risk limits BEFORE monitoring
-        can_trade, reason = self._check_risk_limits()
+        can_trade, reason = await self._check_risk_limits()
         if not can_trade:
             logger.warning(f"⚠️  Cannot enter new positions: {reason}")
             
@@ -359,9 +592,12 @@ class StrategyEngine:
         
         logger.debug(f"👀 Checking entry conditions for {len(self.monitored_symbols)} symbols")
         
+        # Get current positions to avoid duplicate entries
+        active_positions = await self.get_active_positions()
+        
         for symbol in self.monitored_symbols:
             # Skip if already have a position
-            if symbol in self.active_positions:
+            if symbol in active_positions:
                 logger.debug(f"⏭️  Skipping {symbol} - already have position")
                 continue
             
@@ -386,7 +622,10 @@ class StrategyEngine:
     
     async def _monitor_exits(self) -> None:
         """Monitor exit conditions for active positions."""
-        for symbol, position in list(self.active_positions.items()):
+        # Get current positions from Alpaca
+        active_positions = await self.get_active_positions()
+        
+        for symbol, position in list(active_positions.items()):
             try:
                 # Get current market data
                 market_data = await self.market_data_provider.build_market_data(symbol)
@@ -458,8 +697,8 @@ class StrategyEngine:
             
             # Calculate position size
             risk_params = {
-                "size_per_trade": self.strategy_config.size_per_trade,
-                "max_bet_percent": self.strategy_config.max_bet_percent,
+                "size_per_trade": self.fund.size_per_trade,
+                "max_bet_percent": self.fund.max_bet_percent,
             }
             logger.info(
                 f"📊 Risk params: size_per_trade=${risk_params['size_per_trade']:.2f}, "
@@ -498,8 +737,8 @@ class StrategyEngine:
                     "message": f"Cannot buy {symbol}: need ${market_data.price:.2f} but only have ${position_size:.2f}",
                     "details": {
                         "fund_balance": fund_balance,
-                        "size_per_trade": self.strategy_config.size_per_trade,
-                        "max_bet_percent": self.strategy_config.max_bet_percent,
+                        "size_per_trade": self.fund.size_per_trade,
+                        "max_bet_percent": self.fund.max_bet_percent,
                         "calculated_position_size": position_size,
                         "share_price": market_data.price,
                         "quantity_calculated": position_size / market_data.price,
@@ -524,8 +763,8 @@ class StrategyEngine:
                 "message": f"Preparing to buy {quantity} shares of {symbol}",
                 "details": {
                     "fund_balance": fund_balance,
-                    "size_per_trade": self.strategy_config.size_per_trade,
-                    "max_bet_percent": self.strategy_config.max_bet_percent,
+                    "size_per_trade": self.fund.size_per_trade,
+                    "max_bet_percent": self.fund.max_bet_percent,
                     "calculated_position_size": position_size,
                     "share_price": market_data.price,
                     "quantity": quantity,
@@ -533,49 +772,70 @@ class StrategyEngine:
                 }
             })
             
+            # Create order record BEFORE submitting to Alpaca
+            order_id = str(uuid.uuid4())
+            submitted_at = datetime.utcnow()
+            
+            logger.info(f"📝 Creating order record: {symbol} buy {quantity} shares")
+            
+            # Create Order record in database
+            async with get_async_session() as session:
+                order_record = Order(
+                    id=order_id,
+                    alpaca_order_id="",  # Will be filled after Alpaca returns
+                    fund_id=self.fund_id,
+                    symbol=symbol,
+                    side="buy",
+                    quantity=quantity,
+                    order_type="market",
+                    status="pending",
+                    submitted_at=submitted_at,
+                )
+                session.add(order_record)
+                await session.commit()
+            
+            logger.info(f"📝 Order record created: {order_id}")
+            
             # Place order via Alpaca (quantity-based, whole shares)
-            order = await self.alpaca_service.place_market_order(
+            alpaca_order = await self.alpaca_service.place_market_order(
                 symbol=symbol,
                 qty=quantity,
                 side="buy",
                 time_in_force="day"
             )
             
-            # Create position context
-            position_id = str(uuid.uuid4())
+            # Update order record with Alpaca order ID
+            async with get_async_session() as session:
+                stmt = select(Order).where(Order.id == order_id)
+                result = await session.execute(stmt)
+                order_record = result.scalar_one()
+                order_record.alpaca_order_id = alpaca_order["id"]
+                await session.commit()
             
-            position = PositionContext(
-                position_id=position_id,
-                symbol=symbol,
-                entry_price=market_data.price,
-                entry_time=datetime.now(),
-                quantity=quantity,
-                current_price=market_data.price,
-                unrealized_pnl=0.0,
-                unrealized_pnl_percent=0.0,
-                high_water_mark=market_data.price,
-                strategy_state=signal.metadata or {},
+            logger.info(
+                f"📤 Order submitted to Alpaca: {symbol} buy {quantity} @ ${market_data.price:.2f} "
+                f"(order_id={order_id}, alpaca_id={alpaca_order['id']})"
             )
-            
-            # Save to database
-            await self._save_position(position)
-            
-            # Add to active positions
-            self.active_positions[symbol] = position
-            
-            logger.info(f"Position entered: {symbol}, quantity: {quantity:.2f}, size: ${position_size:.2f}")
+            logger.info(
+                f"⏳ Order awaiting fill confirmation from polling service "
+                f"(will create transaction when filled)"
+            )
             
             # Broadcast trading event
             await _broadcast_trading_event({
                 "fund_id": str(self.fund_id),
                 "fund_name": self.fund.name,
-                "event_type": "entry",
+                "event_type": "order_submitted",
                 "symbol": symbol,
+                "side": "buy",
                 "quantity": quantity,
                 "price": market_data.price,
                 "position_size": position_size,
+                "order_id": order_id,
+                "alpaca_order_id": alpaca_order["id"],
                 "timestamp": _get_utc_timestamp(),
                 "reason": signal.reason,
+                "message": f"Buy order submitted: {quantity} shares of {symbol} @ ${market_data.price:.2f}",
             })
         
         except Exception as e:
@@ -611,37 +871,74 @@ class StrategyEngine:
             # Cancel any pending buy orders for this symbol to avoid wash trade detection
             await self._cancel_pending_orders(position.symbol)
             
+            # Create order record BEFORE submitting to Alpaca
+            order_id = str(uuid.uuid4())
+            submitted_at = datetime.utcnow()
+            
+            logger.info(f"📝 Creating sell order record: {position.symbol} sell {position.quantity} shares")
+            
+            # Create Order record in database
+            async with get_async_session() as session:
+                order_record = Order(
+                    id=order_id,
+                    alpaca_order_id="",  # Will be filled after Alpaca returns
+                    fund_id=self.fund_id,
+                    symbol=position.symbol,
+                    side="sell",
+                    quantity=position.quantity,
+                    order_type="market",
+                    status="pending",
+                    submitted_at=submitted_at,
+                )
+                session.add(order_record)
+                await session.commit()
+            
+            logger.info(f"📝 Sell order record created: {order_id}")
+            
             # Place sell order via Alpaca
-            order = await self.alpaca_service.place_market_order(
+            alpaca_order = await self.alpaca_service.place_market_order(
                 symbol=position.symbol,
                 qty=position.quantity,
                 side="sell",
-                time_in_force="day"  # Required for fractional shares
+                time_in_force="day"
             )
+            
+            # Update order record with Alpaca order ID
+            async with get_async_session() as session:
+                stmt = select(Order).where(Order.id == order_id)
+                result = await session.execute(stmt)
+                order_record = result.scalar_one()
+                order_record.alpaca_order_id = alpaca_order["id"]
+                await session.commit()
             
             # Calculate P&L
             realized_pnl = position.unrealized_pnl
             
-            # Update database
-            await self._close_position(position, market_data.price, signal.reason, realized_pnl)
-            
-            # Remove from active positions
-            del self.active_positions[position.symbol]
-            
-            logger.info(f"Position exited: {position.symbol}, P&L: ${realized_pnl:.2f}")
+            logger.info(
+                f"📤 Sell order submitted to Alpaca: {position.symbol} sell {position.quantity} @ ${market_data.price:.2f} "
+                f"(order_id={order_id}, alpaca_id={alpaca_order['id']}, P&L: ${realized_pnl:.2f})"
+            )
+            logger.info(
+                f"⏳ Order awaiting fill confirmation from polling service "
+                f"(will create transaction when filled, position will be removed from Alpaca)"
+            )
             
             # Broadcast trading event
             await _broadcast_trading_event({
                 "fund_id": str(self.fund_id),
                 "fund_name": self.fund.name,
-                "event_type": "exit",
+                "event_type": "order_submitted",
                 "symbol": position.symbol,
+                "side": "sell",
                 "quantity": position.quantity,
                 "price": market_data.price,
+                "order_id": order_id,
+                "alpaca_order_id": alpaca_order["id"],
                 "pnl": realized_pnl,
                 "pnl_percent": position.unrealized_pnl_percent,
                 "timestamp": _get_utc_timestamp(),
                 "reason": signal.reason,
+                "message": f"Sell order submitted: {position.quantity} shares of {position.symbol} @ ${market_data.price:.2f}",
             })
         
         except Exception as e:
@@ -791,26 +1088,6 @@ class StrategyEngine:
                 "message": f"Failed to scale into {position.symbol}: {str(e)}",
             })
     
-    async def _save_position(self, position: PositionContext) -> None:
-        """Save new position to database."""
-        # TODO: Implement database save
-        pass
-    
-    async def _update_position(self, position: PositionContext) -> None:
-        """Update existing position in database."""
-        # TODO: Implement database update
-        pass
-    
-    async def _close_position(
-        self,
-        position: PositionContext,
-        exit_price: float,
-        exit_reason: str,
-        realized_pnl: float
-    ) -> None:
-        """Close position in database."""
-        # TODO: Implement database close
-        pass
     
     async def _cancel_pending_orders(self, symbol: str) -> None:
         """
@@ -897,7 +1174,7 @@ class StrategyEngine:
         candidates: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
         """Apply ScreeningCriteria filters if configured."""
-        if not self.strategy_config.screening_criteria_id:
+        if not self.fund.screening_criteria_id:
             return candidates
         
         try:
@@ -906,10 +1183,10 @@ class StrategyEngine:
             from app.models.strategies import ScreeningCriteria
             
             async with get_async_session() as session:
-                criteria = await session.get(ScreeningCriteria, self.strategy_config.screening_criteria_id)
+                criteria = await session.get(ScreeningCriteria, self.fund.screening_criteria_id)
                 
                 if not criteria:
-                    logger.warning(f"ScreeningCriteria {self.strategy_config.screening_criteria_id} not found")
+                    logger.warning(f"ScreeningCriteria {self.fund.screening_criteria_id} not found")
                     return candidates
                 
                 filtered = []

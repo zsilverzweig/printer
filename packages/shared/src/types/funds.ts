@@ -23,8 +23,8 @@ export type StrategyType = "math-based" | "ai-based" | "hybrid";
 /**
  * Trading Fund/Account
  *
- * Represents a trading account with its own balance, mode (sim/real),
- * and associated strategy configuration.
+ * Represents a trading account with balance, mode (sim/real), strategy configuration,
+ * risk parameters, position sizing, and trading windows.
  */
 export interface Fund {
   id: string;
@@ -33,6 +33,29 @@ export interface Fund {
   mode: FundMode;
   balance: number; // Current fund balance (also serves as AUM)
   status: FundStatus; // Trading status: active or paused
+
+  // Strategy configuration
+  strategyId?: string | null; // References ExecutionStrategy (e.g., "monkey_darts")
+  strategyConfig: Record<string, any>; // Plugin-specific params
+  screeningCriteriaId?: string | null; // References ScreeningCriteria
+
+  // Risk parameters (optional - null/undefined means no limit)
+  maxLossPercent?: number | null; // Max loss % per day
+  maxLossDollars?: number | null; // Max loss $ per day
+  maxGivebackPercent?: number | null; // Max loss from high water mark
+  maxOrderAgeSeconds?: number | null; // Cancel pending orders after this many seconds
+
+  // Position sizing
+  sizePerTrade: number; // Default position size (required)
+  minBetPercent?: number | null; // Min % of fund per trade
+  maxBetPercent?: number | null; // Max % of fund per trade
+  maxTotalExposure?: number | null; // Max total $ in positions
+
+  // Trading time windows
+  tradingStartTime?: string; // e.g., "09:30" (market open)
+  tradingEndTime?: string; // e.g., "16:00" (market close)
+  timezone?: string; // e.g., "America/New_York" (default: ET)
+
   createdAt: Date | string;
   updatedAt: Date | string;
 }
@@ -93,37 +116,27 @@ export interface ScreeningCriteria {
 export type Setup = ScreeningCriteria;
 
 /**
- * Trading Strategy Configuration
- *
- * Complete strategy for a fund, linking:
- * - ExecutionStrategy (code plugin like "bull_flag")
- * - ScreeningCriteria (reusable screening config)
- * - Risk parameters, position sizing, and execution configuration
- *
- * Note: Risk parameters are optional. When null/undefined, those risk checks are disabled.
+ * @deprecated Strategy configuration has been moved to the Fund model.
+ * Use Fund interface instead. This is kept for backward compatibility only.
  */
 export interface Strategy {
   id: string;
   fundId: string;
-  // References to execution components
-  executionStrategyId: string; // References ExecutionStrategy (e.g., "bull_flag")
-  screeningCriteriaId?: string; // References ScreeningCriteria
-  // Risk parameters (optional - null/undefined means no limit)
-  maxLossPercent?: number | null; // Max loss % per day
-  maxLossDollars?: number | null; // Max loss $ per day
-  maxGivebackPercent?: number | null; // Max loss from high water mark
-  // Position sizing
-  sizePerTrade: number; // Default position size (required)
-  minBetPercent?: number | null; // Min % of fund per trade
-  maxBetPercent?: number | null; // Max % of fund per trade
-  maxTotalExposure?: number | null; // Max total $ in positions
-  // Trading time windows
-  tradingStartTime?: string; // e.g., "09:30" (market open)
-  tradingEndTime?: string; // e.g., "16:00" (market close)
-  timezone?: string; // e.g., "America/New_York" (default: ET)
-  tradingDays?: string[]; // e.g., ["monday", "tuesday", "wednesday", "thursday", "friday"]
-  // Strategy-specific configuration
-  executionConfig: Record<string, any>; // Plugin-specific params
+  executionStrategyId: string;
+  screeningCriteriaId?: string;
+  maxLossPercent?: number | null;
+  maxLossDollars?: number | null;
+  maxGivebackPercent?: number | null;
+  maxOrderAgeSeconds?: number | null;
+  sizePerTrade: number;
+  minBetPercent?: number | null;
+  maxBetPercent?: number | null;
+  maxTotalExposure?: number | null;
+  tradingStartTime?: string;
+  tradingEndTime?: string;
+  timezone?: string;
+  tradingDays?: string[];
+  executionConfig: Record<string, any>;
   createdAt: Date | string;
   updatedAt: Date | string;
 }
@@ -149,10 +162,10 @@ export interface FundTransfer {
 /**
  * Fund with Associated Data
  *
- * Extended fund view including related strategy, screening, and execution data.
+ * Extended fund view including related screening and execution data.
+ * @deprecated Fund now contains all configuration inline. Use Fund interface instead.
  */
 export interface FundWithStrategy extends Fund {
-  strategy?: Strategy;
   screeningCriteria?: ScreeningCriteria;
   executionStrategy?: ExecutionStrategy;
 }
@@ -166,14 +179,61 @@ export interface CreateFundInput {
   description?: string;
   mode: FundMode;
   initialBalance: number;
+
+  // Strategy configuration
+  strategyId?: string | null;
+  strategyConfig?: Record<string, any>;
+  screeningCriteriaId?: string | null;
+
+  // Risk parameters
+  maxLossPercent?: number | null;
+  maxLossDollars?: number | null;
+  maxGivebackPercent?: number | null;
+  maxOrderAgeSeconds?: number | null;
+
+  // Position sizing
+  sizePerTrade?: number;
+  minBetPercent?: number | null;
+  maxBetPercent?: number | null;
+  maxTotalExposure?: number | null;
+
+  // Trading time windows
+  tradingStartTime?: string;
+  tradingEndTime?: string;
+  timezone?: string;
 }
 
 export interface UpdateFundInput {
   name?: string;
   description?: string;
   balance?: number;
+
+  // Strategy configuration
+  strategyId?: string | null;
+  strategyConfig?: Record<string, any>;
+  screeningCriteriaId?: string | null;
+
+  // Risk parameters
+  maxLossPercent?: number | null;
+  maxLossDollars?: number | null;
+  maxGivebackPercent?: number | null;
+  maxOrderAgeSeconds?: number | null;
+
+  // Position sizing
+  sizePerTrade?: number;
+  minBetPercent?: number | null;
+  maxBetPercent?: number | null;
+  maxTotalExposure?: number | null;
+
+  // Trading time windows
+  tradingStartTime?: string;
+  tradingEndTime?: string;
+  timezone?: string;
 }
 
+/**
+ * @deprecated Use UpdateFundInput instead. Strategy configuration is now part of Fund.
+ */
 export interface CreateStrategyInput {
   fundId: string;
   executionStrategyId: string;
@@ -181,6 +241,7 @@ export interface CreateStrategyInput {
   maxLossPercent?: number | null;
   maxLossDollars?: number | null;
   maxGivebackPercent?: number | null;
+  maxOrderAgeSeconds?: number | null;
   sizePerTrade: number;
   minBetPercent?: number | null;
   maxBetPercent?: number | null;
@@ -192,6 +253,9 @@ export interface CreateStrategyInput {
   executionConfig: Record<string, any>;
 }
 
+/**
+ * @deprecated Use UpdateFundInput instead. Strategy configuration is now part of Fund.
+ */
 export interface UpdateStrategyInput
   extends Partial<Omit<CreateStrategyInput, "fundId">> {}
 

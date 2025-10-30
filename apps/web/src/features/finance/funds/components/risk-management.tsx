@@ -1,13 +1,13 @@
 /**
  * RiskManagement Component
  *
- * Focused tab for configuring risk parameters and position sizing
+ * Focused component for configuring risk parameters and position sizing
  * with validation and optional risk limits
  */
 
 "use client";
 
-import { Strategy } from "@printer/shared";
+import { Fund } from "@printer/shared";
 import { AlertCircle, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -22,12 +22,12 @@ import {
 import { Input } from "@/lib/components/ui/input";
 import { Label } from "@/lib/components/ui/label";
 
+import { fundService } from "../services/fund-service";
 import { useFundDetails } from "../hooks/use-fund-details";
-import { strategyService } from "../services/strategy-service";
 
 interface RiskManagementProps {
   fundId: string;
-  strategy: Strategy | null;
+  fund: Fund;
   onUpdate: () => void;
 }
 
@@ -39,15 +39,16 @@ interface ValidationWarning {
 
 export function RiskManagement({
   fundId,
-  strategy,
+  fund,
   onUpdate,
 }: RiskManagementProps) {
   const { details } = useFundDetails(fundId);
-  const fundBalance = details?.fund?.balance || 0;
+  const fundBalance = details?.fund?.balance || fund.balance || 0;
 
   const [maxLossPercent, setMaxLossPercent] = useState("");
   const [maxLossDollars, setMaxLossDollars] = useState("");
   const [maxGivebackPercent, setMaxGivebackPercent] = useState("");
+  const [maxOrderAgeSeconds, setMaxOrderAgeSeconds] = useState("");
   const [sizePerTrade, setSizePerTrade] = useState("");
   const [minBetPercent, setMinBetPercent] = useState("");
   const [maxBetPercent, setMaxBetPercent] = useState("");
@@ -58,38 +59,43 @@ export function RiskManagement({
   const [warnings, setWarnings] = useState<ValidationWarning[]>([]);
 
   useEffect(() => {
-    if (strategy) {
+    if (fund) {
       setMaxLossPercent(
-        strategy.maxLossPercent != null
-          ? strategy.maxLossPercent.toString()
+        fund.maxLossPercent != null
+          ? fund.maxLossPercent.toString()
           : ""
       );
       setMaxLossDollars(
-        strategy.maxLossDollars != null
-          ? strategy.maxLossDollars.toString()
+        fund.maxLossDollars != null
+          ? fund.maxLossDollars.toString()
           : ""
       );
       setMaxGivebackPercent(
-        strategy.maxGivebackPercent != null
-          ? strategy.maxGivebackPercent.toString()
+        fund.maxGivebackPercent != null
+          ? fund.maxGivebackPercent.toString()
           : ""
       );
+      setMaxOrderAgeSeconds(
+        fund.maxOrderAgeSeconds != null
+          ? fund.maxOrderAgeSeconds.toString()
+          : "60"
+      );
       setSizePerTrade(
-        strategy.sizePerTrade != null ? strategy.sizePerTrade.toString() : ""
+        fund.sizePerTrade != null ? fund.sizePerTrade.toString() : "1000"
       );
       setMinBetPercent(
-        strategy.minBetPercent != null ? strategy.minBetPercent.toString() : ""
+        fund.minBetPercent != null ? fund.minBetPercent.toString() : ""
       );
       setMaxBetPercent(
-        strategy.maxBetPercent != null ? strategy.maxBetPercent.toString() : ""
+        fund.maxBetPercent != null ? fund.maxBetPercent.toString() : ""
       );
       setMaxTotalExposure(
-        strategy.maxTotalExposure != null
-          ? strategy.maxTotalExposure.toString()
+        fund.maxTotalExposure != null
+          ? fund.maxTotalExposure.toString()
           : ""
       );
     }
-  }, [strategy]);
+  }, [fund]);
 
   // Validate inputs and generate warnings
   useEffect(() => {
@@ -194,26 +200,22 @@ export function RiskManagement({
       setError(null);
       setSuccess(false);
 
-      await strategyService.createOrUpdateStrategy({
-        fundId,
-        executionStrategyId: strategy?.executionStrategyId || "",
-        executionConfig: strategy?.executionConfig || {},
+      await fundService.updateFund(fundId, {
         // Send null if empty, otherwise parse the value
         maxLossPercent: maxLossPercent ? parseFloat(maxLossPercent) : null,
         maxLossDollars: maxLossDollars ? parseFloat(maxLossDollars) : null,
         maxGivebackPercent: maxGivebackPercent
           ? parseFloat(maxGivebackPercent)
           : null,
+        maxOrderAgeSeconds: maxOrderAgeSeconds
+          ? parseInt(maxOrderAgeSeconds)
+          : 60,
         sizePerTrade: parseFloat(sizePerTrade) || 1000,
         minBetPercent: minBetPercent ? parseFloat(minBetPercent) : null,
         maxBetPercent: maxBetPercent ? parseFloat(maxBetPercent) : null,
         maxTotalExposure: maxTotalExposure
           ? parseFloat(maxTotalExposure)
           : null,
-        tradingStartTime: strategy?.tradingStartTime || "",
-        tradingEndTime: strategy?.tradingEndTime || "",
-        timezone: strategy?.timezone || "America/New_York",
-        screeningCriteriaId: strategy?.screeningCriteriaId,
       });
 
       setSuccess(true);
@@ -265,7 +267,7 @@ export function RiskManagement({
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label htmlFor="maxLossPercent">Max Loss % Per Day</Label>
@@ -362,7 +364,37 @@ export function RiskManagement({
                 placeholder="30.0 (optional)"
               />
               <p className="text-xs text-muted-foreground">
-                Max loss from high water mark before stopping
+                Max loss from high water mark
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="maxOrderAgeSeconds">Max Order Age (sec)</Label>
+                {maxOrderAgeSeconds && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2"
+                    onClick={() => setMaxOrderAgeSeconds("")}
+                    disabled={isSaving}
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                )}
+              </div>
+              <Input
+                id="maxOrderAgeSeconds"
+                type="number"
+                step="10"
+                min="10"
+                value={maxOrderAgeSeconds}
+                onChange={(e) => setMaxOrderAgeSeconds(e.target.value)}
+                disabled={isSaving}
+                placeholder="60 (default)"
+              />
+              <p className="text-xs text-muted-foreground">
+                Cancel pending orders after this many seconds
               </p>
             </div>
           </div>

@@ -20,21 +20,16 @@ import {
 import { useFundTransfers } from "../hooks/use-fund-transfers";
 import { fundService } from "../services/fund-service";
 import { screeningCriteriaService } from "../services/screening-criteria-service";
-import { Fund, Strategy } from "../types";
+import { Fund } from "../types";
 
 import { FundTransferForm } from "./fund-transfer-form";
 
 interface FundOverviewProps {
   fund: Fund;
-  strategy: Strategy | null;
   onFundUpdate: () => void;
 }
 
-export function FundOverview({
-  fund,
-  strategy,
-  onFundUpdate,
-}: FundOverviewProps) {
+export function FundOverview({ fund, onFundUpdate }: FundOverviewProps) {
   const { createTransfer } = useFundTransfers(fund.id);
   const [isStarting, setIsStarting] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
@@ -95,7 +90,7 @@ export function FundOverview({
   };
 
   const handleRunScreener = async () => {
-    if (!strategy?.screeningCriteriaId) {
+    if (!fund.screeningCriteriaId) {
       setScreenerError("No screening criteria configured for this fund");
       return;
     }
@@ -104,7 +99,7 @@ export function FundOverview({
       setIsRunningScreener(true);
       setScreenerError(null);
       const results = await screeningCriteriaService.runScreener(
-        strategy.screeningCriteriaId
+        fund.screeningCriteriaId
       );
       setScreenerResults(results);
     } catch (err) {
@@ -206,7 +201,7 @@ export function FundOverview({
           <div className="flex items-center gap-2">
             <Button
               onClick={handleRunScreener}
-              disabled={!strategy?.screeningCriteriaId || isRunningScreener}
+              disabled={!fund.screeningCriteriaId || isRunningScreener}
               variant="outline"
             >
               <Filter className="h-4 w-4 mr-2" />
@@ -221,7 +216,7 @@ export function FundOverview({
             )}
           </div>
 
-          {!strategy?.screeningCriteriaId && (
+          {!fund.screeningCriteriaId && (
             <p className="text-sm text-muted-foreground">
               Configure screening criteria in the Screener tab to use this
               feature.

@@ -14,11 +14,26 @@ import type {
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 /**
- * Parse date strings from API responses
+ * Parse date strings and convert snake_case to camelCase from API responses
  */
 function parseFundDates(data: any): Fund {
   return {
     ...data,
+    // Convert snake_case to camelCase
+    strategyId: data.strategy_id ?? data.strategyId,
+    strategyConfig: data.strategy_config || data.strategyConfig || {},
+    screeningCriteriaId: data.screening_criteria_id ?? data.screeningCriteriaId,
+    maxLossPercent: data.max_loss_percent ?? data.maxLossPercent,
+    maxLossDollars: data.max_loss_dollars ?? data.maxLossDollars,
+    maxGivebackPercent: data.max_giveback_percent ?? data.maxGivebackPercent,
+    maxOrderAgeSeconds: data.max_order_age_seconds ?? data.maxOrderAgeSeconds,
+    sizePerTrade: data.size_per_trade ?? data.sizePerTrade ?? 1000.0,
+    minBetPercent: data.min_bet_percent ?? data.minBetPercent,
+    maxBetPercent: data.max_bet_percent ?? data.maxBetPercent,
+    maxTotalExposure: data.max_total_exposure ?? data.maxTotalExposure,
+    tradingStartTime: data.trading_start_time ?? data.tradingStartTime,
+    tradingEndTime: data.trading_end_time ?? data.tradingEndTime,
+    timezone: data.timezone,
     createdAt: new Date(data.created_at || data.createdAt),
     updatedAt: new Date(data.updated_at || data.updatedAt),
   };
@@ -66,6 +81,24 @@ export const fundService = {
         description: input.description,
         mode: input.mode,
         initial_balance: input.initialBalance,
+        // Strategy configuration
+        strategy_id: input.strategyId,
+        strategy_config: input.strategyConfig || {},
+        screening_criteria_id: input.screeningCriteriaId,
+        // Risk parameters
+        max_loss_percent: input.maxLossPercent,
+        max_loss_dollars: input.maxLossDollars,
+        max_giveback_percent: input.maxGivebackPercent,
+        max_order_age_seconds: input.maxOrderAgeSeconds,
+        // Position sizing
+        size_per_trade: input.sizePerTrade,
+        min_bet_percent: input.minBetPercent,
+        max_bet_percent: input.maxBetPercent,
+        max_total_exposure: input.maxTotalExposure,
+        // Trading time windows
+        trading_start_time: input.tradingStartTime,
+        trading_end_time: input.tradingEndTime,
+        timezone: input.timezone,
       }),
     });
 
@@ -82,9 +115,43 @@ export const fundService = {
    * Update an existing fund
    */
   async updateFund(id: string, input: UpdateFundInput): Promise<Fund> {
-    // Note: Update endpoint not yet implemented in backend
-    // This is a placeholder for future implementation
-    throw new Error("Update fund not yet implemented");
+    const response = await fetch(`${API_BASE}/api/funds/${id}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name: input.name,
+        description: input.description,
+        balance: input.balance,
+        // Strategy configuration
+        strategy_id: input.strategyId,
+        strategy_config: input.strategyConfig,
+        screening_criteria_id: input.screeningCriteriaId,
+        // Risk parameters
+        max_loss_percent: input.maxLossPercent,
+        max_loss_dollars: input.maxLossDollars,
+        max_giveback_percent: input.maxGivebackPercent,
+        max_order_age_seconds: input.maxOrderAgeSeconds,
+        // Position sizing
+        size_per_trade: input.sizePerTrade,
+        min_bet_percent: input.minBetPercent,
+        max_bet_percent: input.maxBetPercent,
+        max_total_exposure: input.maxTotalExposure,
+        // Trading time windows
+        trading_start_time: input.tradingStartTime,
+        trading_end_time: input.tradingEndTime,
+        timezone: input.timezone,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || "Failed to update fund");
+    }
+
+    const data = await response.json();
+    return parseFundDates(data);
   },
 
   /**

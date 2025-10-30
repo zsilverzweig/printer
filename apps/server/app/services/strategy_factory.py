@@ -8,7 +8,7 @@ safety checks and service dependencies.
 import logging
 from typing import Dict, Any
 
-from app.models.strategies import Fund, Strategy
+from app.models.strategies import Fund
 from app.services.alpaca_service import AlpacaService
 from app.services.market_data_provider import MarketDataProvider
 from app.services.strategy_engine import StrategyEngine
@@ -19,8 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 async def create_strategy_engine(
-    fund: Fund,
-    strategy: Strategy
+    fund: Fund
 ) -> StrategyEngine:
     """
     Factory function to create a StrategyEngine with all dependencies.
@@ -33,24 +32,27 @@ async def create_strategy_engine(
     5. Creates and returns the StrategyEngine
     
     Args:
-        fund: Fund object (with mode: "sim" or "real")
-        strategy: Strategy configuration from database
+        fund: Fund object with all configuration (strategy, risk params, position sizing)
         
     Returns:
         Configured StrategyEngine instance
         
     Raises:
-        ValueError: If fund mode doesn't match available credentials
+        ValueError: If fund mode doesn't match available credentials or strategy_id is missing
         RuntimeError: If strategy instantiation fails
     """
     logger.info(
         f"🏗️  Creating strategy engine for fund {fund.id} "
         f"(name={fund.name}, mode={fund.mode}, balance=${fund.balance:.2f})"
     )
+    
+    if not fund.strategy_id:
+        raise ValueError(f"Fund {fund.id} has no strategy_id configured")
+    
     logger.info(
-        f"🏗️  Strategy parameters: execution_strategy={strategy.execution_strategy_id}, "
-        f"size_per_trade=${strategy.size_per_trade:.2f}, "
-        f"max_bet_percent={strategy.max_bet_percent}"
+        f"🏗️  Strategy parameters: strategy_id={fund.strategy_id}, "
+        f"size_per_trade=${fund.size_per_trade:.2f}, "
+        f"max_bet_percent={fund.max_bet_percent}"
     )
     
     # Determine if this is paper trading based on fund mode
@@ -88,11 +90,11 @@ async def create_strategy_engine(
     # Instantiate ExecutionStrategy
     try:
         execution_strategy = get_strategy(
-            strategy.execution_strategy_id,
-            strategy.execution_config
+            fund.strategy_id,
+            fund.strategy_config
         )
         logger.info(
-            f"✓ Execution strategy '{strategy.execution_strategy_id}' instantiated"
+            f"✓ Execution strategy '{fund.strategy_id}' instantiated"
         )
     except Exception as e:
         logger.error(f"Failed to instantiate execution strategy: {e}")
@@ -102,7 +104,6 @@ async def create_strategy_engine(
     try:
         engine = StrategyEngine(
             fund=fund,
-            strategy_config=strategy,
             execution_strategy=execution_strategy,
             market_data_provider=market_data_provider,
             alpaca_service=alpaca_service,

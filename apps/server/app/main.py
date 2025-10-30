@@ -67,6 +67,17 @@ async def on_startup() -> None:
     set_screener_service(screener_service)
     logger.info("✓ Global ScreenerService initialized and running")
     
+    # Initialize order polling service for order status synchronization
+    from app.services.order_polling import OrderPollingService, set_polling_service
+    from app.services.alpaca_service import AlpacaService
+    
+    logger.info("Initializing OrderPollingService...")
+    alpaca_service = AlpacaService(paper_trading=True)  # Use paper trading for now
+    polling_service = OrderPollingService(alpaca_service, poll_interval=5.0)
+    await polling_service.start()
+    set_polling_service(polling_service)
+    logger.info("✓ OrderPollingService initialized and running (polling every 5s)")
+    
     # Log all registered routes
     for route in app.routes:
         logger.info(f"Registered route: {route.path} ({getattr(route, 'methods', 'WEBSOCKET' if 'WebSocket' in str(type(route)) else 'UNKNOWN')})")

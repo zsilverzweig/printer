@@ -1,12 +1,12 @@
 /**
  * StrategySelection Component
  *
- * Focused tab for selecting and configuring the execution strategy
+ * Component for selecting and configuring the execution strategy
  */
 
 "use client";
 
-import { ExecutionStrategy, Strategy } from "@printer/shared";
+import { ExecutionStrategy, Fund } from "@printer/shared";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/lib/components/ui/button";
@@ -17,6 +17,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/lib/components/ui/card";
+import { Input } from "@/lib/components/ui/input";
 import { Label } from "@/lib/components/ui/label";
 import {
   Select,
@@ -27,24 +28,27 @@ import {
 } from "@/lib/components/ui/select";
 
 import { executionStrategyService } from "../services/execution-strategy-service";
-import { strategyService } from "../services/strategy-service";
+import { fundService } from "../services/fund-service";
 
 interface StrategySelectionProps {
   fundId: string;
-  strategy: Strategy | null;
+  fund: Fund;
   onUpdate: () => void;
 }
 
 export function StrategySelection({
   fundId,
-  strategy,
+  fund,
   onUpdate,
 }: StrategySelectionProps) {
   const [executionStrategies, setExecutionStrategies] = useState<
     ExecutionStrategy[]
   >([]);
   const [executionStrategyId, setExecutionStrategyId] = useState(
-    strategy?.executionStrategyId || ""
+    fund?.strategyId || ""
+  );
+  const [executionConfig, setExecutionConfig] = useState<Record<string, any>>(
+    fund?.strategyConfig || {}
   );
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -66,10 +70,11 @@ export function StrategySelection({
   }, []);
 
   useEffect(() => {
-    if (strategy?.executionStrategyId) {
-      setExecutionStrategyId(strategy.executionStrategyId);
+    if (fund?.strategyId) {
+      setExecutionStrategyId(fund.strategyId);
+      setExecutionConfig(fund.strategyConfig || {});
     }
-  }, [strategy]);
+  }, [fund]);
 
   const selectedStrategy = executionStrategies.find(
     (s) => s.id === executionStrategyId
@@ -81,22 +86,9 @@ export function StrategySelection({
       setError(null);
       setSuccess(false);
 
-      await strategyService.createOrUpdateStrategy({
-        fundId,
-        executionStrategyId,
-        executionConfig: {}, // TODO: Dynamic config based on strategy schema
-        // Keep existing values or use defaults
-        maxLossPercent: strategy?.maxLossPercent || 0,
-        maxLossDollars: strategy?.maxLossDollars || 0,
-        maxGivebackPercent: strategy?.maxGivebackPercent || 0,
-        sizePerTrade: strategy?.sizePerTrade || 0,
-        minBetPercent: strategy?.minBetPercent || 0,
-        maxBetPercent: strategy?.maxBetPercent || 0,
-        maxTotalExposure: strategy?.maxTotalExposure || 0,
-        tradingStartTime: strategy?.tradingStartTime || "",
-        tradingEndTime: strategy?.tradingEndTime || "",
-        timezone: strategy?.timezone || "America/New_York",
-        screeningCriteriaId: strategy?.screeningCriteriaId,
+      await fundService.updateFund(fundId, {
+        strategyId: executionStrategyId,
+        strategyConfig: executionConfig,
       });
 
       setSuccess(true);
@@ -110,7 +102,10 @@ export function StrategySelection({
     }
   };
 
-  const hasChanges = executionStrategyId !== strategy?.executionStrategyId;
+  const hasChanges =
+    executionStrategyId !== fund?.strategyId ||
+    JSON.stringify(executionConfig) !==
+      JSON.stringify(fund?.strategyConfig || {});
 
   return (
     <div className="space-y-6">
@@ -172,10 +167,55 @@ export function StrategySelection({
             </div>
           )}
 
-          {/* TODO: Add dynamic config editor based on selectedStrategy.configSchema */}
-          {selectedStrategy?.configSchema && (
-            <div className="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">
-              Dynamic config editor coming soon
+          {/* Strategy-specific configuration */}
+          {selectedStrategy?.configSchema?.properties && (
+            <div className="space-y-4 pt-4 border-t">
+              <div>
+                <h4 className="text-sm font-medium mb-3">
+                  Strategy Configuration
+                </h4>
+                <div className="grid gap-4 md:grid-cols-2">
+                  {Object.entries(
+                    selectedStrategy.configSchema.properties as Record<
+                      string,
+                      any
+                    >
+                  ).map(([key, schema]) => (
+                    <div key={key} className="space-y-2">
+                      <Label htmlFor={key}>{schema.description || key}</Label>
+                      <Input
+                        id={key}
+                        type={schema.type === "integer" ? "number" : "text"}
+                        min={schema.minimum}
+                        max={schema.maximum}
+                        step={schema.type === "integer" ? 1 : undefined}
+                        value={executionConfig[key] ?? schema.default ?? ""}
+                        onChange={(e) => {
+                          const value =
+                            schema.type === "integer"
+                              ? parseInt(e.target.value) || schema.default
+                              : e.target.value;
+                          setExecutionConfig({
+                            ...executionConfig,
+                            [key]: value,
+                          });
+                        }}
+                        placeholder={
+                          schema.default
+                            ? `Default: ${schema.default}`
+                            : undefined
+                        }
+                        disabled={isSaving}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        {schema.minimum && schema.maximum
+                          ? `Range: ${schema.minimum}-${schema.maximum}`
+                          : ""}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
         </CardContent>

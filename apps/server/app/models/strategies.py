@@ -1,11 +1,11 @@
 """
-Strategy models for fund management and position tracking.
+Fund and trading models.
 
 Provides SQLAlchemy models for:
-- Fund: Trading account with balance and mode
+- Fund: Trading account with balance, mode, strategy configuration, and risk parameters
 - ScreeningCriteria: Reusable screening configurations
-- Strategy: Complete trading strategy for a fund
-- PositionContext: Active position state tracking
+- Order: Order tracking
+- Transaction: Transaction ledger
 """
 
 from datetime import datetime
@@ -25,17 +25,44 @@ class Fund(Base):
     """
     Trading fund/account.
     
-    Represents a trading account with its own balance, mode (sim/real),
-    and associated strategy configuration.
+    Represents a trading account with balance, mode (sim/real), strategy configuration,
+    risk parameters, position sizing, and trading windows.
     """
     __tablename__ = "funds"
     
+    # Basic fund info
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     mode: Mapped[str] = mapped_column(String(10), nullable=False)  # 'sim' or 'real'
     balance: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="paused")  # 'active' or 'paused'
+    
+    # Strategy configuration
+    strategy_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # e.g., "monkey_darts"
+    strategy_config: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    screening_criteria_id: Mapped[Optional[str]] = mapped_column(
+        String(36), 
+        ForeignKey("screening_criteria.id"), 
+        nullable=True
+    )
+    
+    # Risk parameters (nullable - None means no limit)
+    max_loss_percent: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
+    max_loss_dollars: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
+    max_giveback_percent: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
+    max_order_age_seconds: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, default=60)
+    
+    # Position sizing
+    size_per_trade: Mapped[float] = mapped_column(Float, nullable=False, default=1000.0)
+    min_bet_percent: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
+    max_bet_percent: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
+    max_total_exposure: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
+    
+    # Trading time windows
+    trading_start_time: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)  # e.g., "09:30"
+    trading_end_time: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)    # e.g., "16:00"
+    timezone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)            # e.g., "America/New_York"
     
     created_at: Mapped[datetime] = mapped_column(
         DateTime, 
@@ -80,100 +107,39 @@ class ScreeningCriteria(Base):
     )
 
 
-class Strategy(Base):
+class Order(Base):
     """
-    Complete trading strategy for a fund.
+    Track all orders submitted to Alpaca.
     
-    References:
-    - ExecutionStrategy (code plugin like "bull_flag")
-    - ScreeningCriteria (reusable screening config)
-    
-    Contains risk parameters, position sizing, and execution configuration.
+    Represents order lifecycle from submission through fill/cancel.
+    Alpaca is the source of truth - this table syncs via polling.
     """
-    __tablename__ = "strategies"
+    __tablename__ = "orders"
     
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    fund_id: Mapped[str] = mapped_column(String(36), ForeignKey("funds.id"), nullable=False)
+    alpaca_order_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
+    fund_id: Mapped[str] = mapped_column(String(36), ForeignKey("funds.id"), nullable=False, index=True)
     
-    # References to execution components
-    execution_strategy_id: Mapped[str] = mapped_column(String(50), nullable=False)  # e.g., "bull_flag"
-    screening_criteria_id: Mapped[Optional[str]] = mapped_column(
-        String(36), 
-        ForeignKey("screening_criteria.id"), 
-        nullable=True
-    )
-    
-    # Risk parameters (nullable - None means no limit)
-    max_loss_percent: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
-    max_loss_dollars: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
-    max_giveback_percent: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
-    
-    # Position sizing
-    size_per_trade: Mapped[float] = mapped_column(Float, nullable=False, default=1000.0)
-    min_bet_percent: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
-    max_bet_percent: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
-    max_total_exposure: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
-    
-    # Trading time windows
-    trading_start_time: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)  # e.g., "09:30"
-    trading_end_time: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)    # e.g., "16:00"
-    timezone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)            # e.g., "America/New_York"
-    
-    # Strategy-specific configuration (JSON)
-    # e.g., {"macd_threshold": 0.5, "pullback_ratio": 0.25, "profit_take_percent": 25}
-    execution_config: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
-    
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, 
-        nullable=False, 
-        default=datetime.utcnow
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, 
-        nullable=False, 
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow
-    )
-
-
-class PositionContext(Base):
-    """
-    Active position state tracking.
-    
-    Maintains state and history for an open trading position,
-    including strategy-specific tracking data.
-    """
-    __tablename__ = "position_contexts"
-    
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    fund_id: Mapped[str] = mapped_column(String(36), ForeignKey("funds.id"), nullable=False)
-    strategy_id: Mapped[str] = mapped_column(String(36), ForeignKey("strategies.id"), nullable=False)
-    
-    # Position details
-    symbol: Mapped[str] = mapped_column(String(10), nullable=False)
-    entry_price: Mapped[float] = mapped_column(Float, nullable=False)
+    # Order details
+    symbol: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
+    side: Mapped[str] = mapped_column(String(10), nullable=False)  # buy/sell
     quantity: Mapped[float] = mapped_column(Float, nullable=False)
-    entry_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    order_type: Mapped[str] = mapped_column(String(20), nullable=False)  # market/limit/stop
     
-    # Alpaca integration
-    position_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)  # Alpaca position ID
+    # Order status (synced from Alpaca)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending", index=True)
+    # Valid statuses: pending/filled/partially_filled/canceled/failed
     
-    # Exit tracking
-    exit_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    exit_time: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-    exit_reason: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    # Timing
+    submitted_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    filled_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     
-    # Performance
-    realized_pnl: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    high_water_mark: Mapped[float] = mapped_column(Float, nullable=False)
+    # Fill details (from Alpaca when filled)
+    filled_qty: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    filled_avg_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     
-    # Strategy-specific state (JSON)
-    # e.g., {"flag_high": 150.25, "flag_low": 148.50, "has_scaled_out": false}
-    strategy_state: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
-    
-    # Status tracking
-    status: Mapped[str] = mapped_column(String(20), nullable=False, default="open")
-    # Valid statuses: "open", "closed", "error"
+    # Error tracking
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     
     created_at: Mapped[datetime] = mapped_column(
         DateTime, 
@@ -185,6 +151,40 @@ class PositionContext(Base):
         nullable=False, 
         default=datetime.utcnow,
         onupdate=datetime.utcnow
+    )
+
+
+class Transaction(Base):
+    """
+    Ledger of all order fills (buy/sell executions).
+    
+    Created when orders are filled. Provides complete trade history
+    and maintains strategy-specific state per position.
+    """
+    __tablename__ = "transactions"
+    
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    order_id: Mapped[str] = mapped_column(String(36), ForeignKey("orders.id"), nullable=False, index=True)
+    alpaca_order_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
+    fund_id: Mapped[str] = mapped_column(String(36), ForeignKey("funds.id"), nullable=False, index=True)
+    
+    # Transaction details
+    symbol: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
+    side: Mapped[str] = mapped_column(String(10), nullable=False)  # buy/sell
+    quantity: Mapped[float] = mapped_column(Float, nullable=False)
+    price: Mapped[float] = mapped_column(Float, nullable=False)
+    total_value: Mapped[float] = mapped_column(Float, nullable=False)  # quantity * price
+    timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    
+    # Strategy tracking fields (for position management)
+    high_water_mark: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    strategy_state: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    # e.g., {"entry_reason": "breakout", "has_scaled_out": false, "scale_in_count": 0}
+    
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, 
+        nullable=False, 
+        default=datetime.utcnow
     )
 
 

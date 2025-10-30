@@ -1,7 +1,7 @@
 /**
  * ScreenerLink Component
  *
- * Focused tab for linking the fund to screening criteria
+ * Component for linking the fund to screening criteria
  */
 
 "use client";
@@ -10,13 +10,13 @@ import { Pencil, PlusCircle, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import {
+  type Fund,
   type ScreeningCriteria,
   type ScreeningCriteriaParams,
-  type Strategy,
 } from "@printer/shared";
 
+import { fundService } from "../services/fund-service";
 import { screeningCriteriaService } from "../services/screening-criteria-service";
-import { strategyService } from "../services/strategy-service";
 
 import { ScreeningCriteriaForm } from "./screening-criteria-form";
 
@@ -46,13 +46,13 @@ import {
 
 interface ScreenerLinkProps {
   fundId: string;
-  strategy: Strategy | null;
+  fund: Fund;
   onUpdate: () => void;
 }
 
 export function ScreenerLink({
   fundId,
-  strategy,
+  fund,
   onUpdate,
 }: ScreenerLinkProps) {
   const [screeningCriteriaId, setScreeningCriteriaId] =
@@ -88,14 +88,14 @@ export function ScreenerLink({
     fetchCriteria();
   }, []);
 
-  // Set initial value from strategy
+  // Set initial value from fund
   useEffect(() => {
-    if (strategy?.screeningCriteriaId) {
-      setScreeningCriteriaId(strategy.screeningCriteriaId);
+    if (fund?.screeningCriteriaId) {
+      setScreeningCriteriaId(fund.screeningCriteriaId);
     } else {
       setScreeningCriteriaId("none");
     }
-  }, [strategy]);
+  }, [fund]);
 
   // Load full criteria details when selection changes
   useEffect(() => {
@@ -115,20 +115,7 @@ export function ScreenerLink({
       setError(null);
       setSuccess(false);
 
-      await strategyService.createOrUpdateStrategy({
-        fundId,
-        executionStrategyId: strategy?.executionStrategyId || "",
-        executionConfig: strategy?.executionConfig || {},
-        maxLossPercent: strategy?.maxLossPercent || 0,
-        maxLossDollars: strategy?.maxLossDollars || 0,
-        maxGivebackPercent: strategy?.maxGivebackPercent || 0,
-        sizePerTrade: strategy?.sizePerTrade || 0,
-        minBetPercent: strategy?.minBetPercent || 0,
-        maxBetPercent: strategy?.maxBetPercent || 0,
-        maxTotalExposure: strategy?.maxTotalExposure || 0,
-        tradingStartTime: strategy?.tradingStartTime || "",
-        tradingEndTime: strategy?.tradingEndTime || "",
-        timezone: strategy?.timezone || "America/New_York",
+      await fundService.updateFund(fundId, {
         screeningCriteriaId:
           screeningCriteriaId === "none"
             ? undefined
