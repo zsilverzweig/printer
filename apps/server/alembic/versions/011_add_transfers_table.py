@@ -1,7 +1,7 @@
 """add_transfers_table
 
-Revision ID: c06a6e3520a1
-Revises: 009
+Revision ID: 011
+Revises: 010
 Create Date: 2025-10-30
 
 """
@@ -12,8 +12,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'c06a6e3520a1'
-down_revision: Union[str, None] = '009'
+revision: str = '011'
+down_revision: Union[str, None] = '010'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

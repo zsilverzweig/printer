@@ -410,6 +410,65 @@ class AlpacaService:
             logger.error(f"Failed to get quote for {symbol}: {e}")
             raise
     
+    async def get_orders(self, symbol: Optional[str] = None, status: str = "open", limit: int = 50) -> list[Dict[str, Any]]:
+        """
+        Get orders, optionally filtered by symbol and status.
+        
+        Args:
+            symbol: Optional symbol to filter orders
+            status: Order status - "open", "closed", or "all" (default: "open")
+            limit: Maximum number of orders to return (default: 50)
+            
+        Returns:
+            List of order dictionaries
+        """
+        if not self.client:
+            raise ValueError("Alpaca client not initialized. Check API credentials.")
+        
+        try:
+            from alpaca.trading.requests import GetOrdersRequest
+            from alpaca.trading.enums import QueryOrderStatus
+            
+            # Map status string to enum
+            status_map = {
+                "open": QueryOrderStatus.OPEN,
+                "closed": QueryOrderStatus.CLOSED,
+                "all": QueryOrderStatus.ALL,
+            }
+            status_enum = status_map.get(status.lower(), QueryOrderStatus.OPEN)
+            
+            # Build request
+            request = GetOrdersRequest(
+                status=status_enum,
+                symbols=[symbol] if symbol else None,
+                limit=limit
+            )
+            
+            orders = self.client.get_orders(filter=request)
+            logger.debug(f"Retrieved {len(orders)} {status} orders{f' for {symbol}' if symbol else ''}")
+            
+            # Convert to dictionaries
+            orders_data = []
+            for order in orders:
+                orders_data.append({
+                    "id": str(order.id),
+                    "symbol": order.symbol,
+                    "side": order.side.value,
+                    "qty": float(order.qty) if order.qty else None,
+                    "filled_qty": float(order.filled_qty) if order.filled_qty else 0,
+                    "filled_avg_price": float(order.filled_avg_price) if order.filled_avg_price else None,
+                    "status": order.status.value,
+                    "type": order.type.value,
+                    "submitted_at": order.submitted_at.isoformat() if order.submitted_at else None,
+                    "filled_at": order.filled_at.isoformat() if order.filled_at else None,
+                })
+            
+            return orders_data
+            
+        except Exception as e:
+            logger.error(f"Failed to get {status} orders{f' for {symbol}' if symbol else ''}: {e}")
+            raise
+    
     async def get_open_orders(self, symbol: Optional[str] = None) -> list:
         """
         Get all open orders, optionally filtered by symbol.

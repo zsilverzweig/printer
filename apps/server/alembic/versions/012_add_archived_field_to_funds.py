@@ -1,7 +1,7 @@
 """add_archived_field_to_funds
 
-Revision ID: 2b060460bb9a
-Revises: c06a6e3520a1
+Revision ID: 012
+Revises: 011
 Create Date: 2025-10-30 12:32:02.387001
 
 """
@@ -10,8 +10,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = '2b060460bb9a'
-down_revision = 'c06a6e3520a1'
+revision = '012'
+down_revision = '011'
 branch_labels = None
 depends_on = None
 

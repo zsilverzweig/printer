@@ -141,6 +141,9 @@ export function FundDetailView({ fundId }: FundDetailViewProps) {
         </TabsContent>
 
         <TabsContent value="configuration" className="space-y-6">
+          {/* Basic Info Section */}
+          <FundBasicInfoEditor fund={fund} onUpdate={refreshAll} />
+
           {/* Strategy Selection Section */}
           <div>
             <h2 className="text-xl font-semibold mb-4">

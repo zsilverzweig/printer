@@ -238,3 +238,123 @@ def mock_alpaca():
 def mock_execution_strategy():
     """Fixture providing mock execution strategy."""
     return MockExecutionStrategy()
+
+
+# New fixtures for enhanced testing infrastructure
+
+@pytest.fixture
+def fund_factory():
+    """
+    Factory fixture for creating test funds with configurable parameters.
+    
+    Returns a callable that creates Fund instances using test_builders.
+    
+    Example:
+        def test_something(fund_factory):
+            fund = fund_factory(balance=5000.0, max_bet_percent=10.0)
+            assert fund.balance == 5000.0
+    """
+    from tests.test_builders import build_fund
+    return build_fund
+
+
+@pytest.fixture
+def order_factory():
+    """
+    Factory fixture for creating test orders with configurable parameters.
+    
+    Returns a callable that creates Order instances using test_builders.
+    """
+    from tests.test_builders import build_order
+    return build_order
+
+
+@pytest.fixture
+def transaction_factory():
+    """
+    Factory fixture for creating test transactions with configurable parameters.
+    
+    Returns a callable that creates Transaction instances using test_builders.
+    """
+    from tests.test_builders import build_transaction
+    return build_transaction
+
+
+@pytest.fixture
+def position_factory():
+    """
+    Factory fixture for creating test position contexts.
+    
+    Returns a callable that creates PositionContext instances using test_builders.
+    """
+    from tests.test_builders import build_position_context
+    return build_position_context
+
+
+@pytest.fixture
+def market_data_factory():
+    """
+    Factory fixture for creating test market data.
+    
+    Returns a callable that creates MarketData instances using test_builders.
+    """
+    from tests.test_builders import build_market_data
+    return build_market_data
+
+
+@pytest_asyncio.fixture
+async def mock_strategy_engine(mock_market_data, mock_alpaca, mock_execution_strategy):
+    """
+    Pre-configured mock strategy engine for testing.
+    
+    Provides a StrategyEngine instance with mock services that can be
+    used in tests without needing real market data or Alpaca connections.
+    
+    Example:
+        @pytest.mark.asyncio
+        async def test_something(mock_strategy_engine, fund_factory):
+            fund = fund_factory(balance=10000.0)
+            engine = mock_strategy_engine(fund)
+            await engine.start()
+    """
+    from app.services.strategy_engine import StrategyEngine
+    
+    def create_engine(fund):
+        return StrategyEngine(
+            fund=fund,
+            execution_strategy=mock_execution_strategy,
+            market_data_provider=mock_market_data,
+            alpaca_service=mock_alpaca,
+        )
+    
+    return create_engine
+
+
+@pytest.fixture
+def frozen_time():
+    """
+    Fixture for time manipulation in tests.
+    
+    Allows tests to freeze or manipulate time for testing time-dependent logic
+    like trading hours, order timeouts, etc.
+    
+    Requires: freezegun package (add to requirements.txt if needed)
+    
+    Example:
+        def test_trading_hours(frozen_time):
+            with frozen_time("2024-01-15 10:00:00", tz_offset=-5):  # 10 AM ET
+                # Test trading logic
+                pass
+    """
+    try:
+        from freezegun import freeze_time
+        return freeze_time
+    except ImportError:
+        # If freezegun not installed, return a dummy context manager
+        from contextlib import contextmanager
+        
+        @contextmanager
+        def dummy_freeze_time(*args, **kwargs):
+            yield
+        
+        return dummy_freeze_time

@@ -111,6 +111,19 @@ function CloseOrphanedPositionButton({
       const result = await response.json();
       console.log("Position closed:", result);
 
+      // Show success message with details
+      if (result.price_source === "alpaca_order") {
+        console.log(
+          `✅ Found Alpaca order! Exit price: $${result.exit_price.toFixed(
+            2
+          )}, ` + `P&L: $${result.realized_pl.toFixed(2)}`
+        );
+      } else {
+        console.log(
+          `⚠️  Using breakeven price (no matching Alpaca order found)`
+        );
+      }
+
       // Close dialog and refresh positions
       setShowDialog(false);
       onSuccess();
@@ -157,9 +170,14 @@ function CloseOrphanedPositionButton({
                     position
                   </li>
                   <li>
-                    Uses the average entry price as the exit price (breakeven)
+                    Finds the matching Alpaca sell order to get the actual exit
+                    price
                   </li>
-                  <li>Returns the cost basis to your fund balance</li>
+                  <li>
+                    If no matching order found, uses the average entry price
+                    (breakeven)
+                  </li>
+                  <li>Returns the sale proceeds to your fund balance</li>
                   <li>Leaves an audit trail in your transaction history</li>
                 </ul>
               </div>

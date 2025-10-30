@@ -7,7 +7,6 @@ import {
   Building2,
   Database,
   FileText,
-  FolderOpen,
   Home,
   Newspaper,
   Settings,
@@ -15,9 +14,12 @@ import {
   Target,
   TrendingUp,
   Users,
-  Wallet,
 } from "lucide-react";
 
+import {
+  getColorClasses,
+  getIconByName,
+} from "@/features/finance/funds/config/icon-options";
 import { useFunds } from "@/features/finance/funds/hooks/use-funds";
 import { useUserRouting } from "@/lib/hooks/use-user-routing";
 import { useAuthContext } from "@/lib/providers/auth-provider";
@@ -48,12 +50,20 @@ export function MainAppSidebar() {
       titleHref: "/funds",
       items: fundsLoading
         ? []
-        : funds.map((fund) => ({
-            id: `fund-${fund.id}`,
-            title: fund.name,
-            href: `/funds/${fund.id}`,
-            icon: <Wallet className="h-4 w-4" />,
-          })),
+        : funds.map((fund) => {
+            const IconComponent = getIconByName(fund.icon);
+            const colorClasses = getColorClasses(fund.iconColor);
+            return {
+              id: `fund-${fund.id}`,
+              title: fund.name,
+              href: `/funds/${fund.id}`,
+              icon: (
+                <IconComponent
+                  className={`h-4 w-4 ${colorClasses.textClass}`}
+                />
+              ),
+            };
+          }),
     },
     {
       title: "Investment",

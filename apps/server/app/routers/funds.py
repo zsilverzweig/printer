@@ -38,6 +38,10 @@ class CreateFundInput(BaseModel):
     mode: str = "sim"  # "sim" or "real"
     initial_balance: Optional[float] = None  # Deprecated: Fund always starts with 0 balance
     
+    # UI customization
+    icon: Optional[str] = None
+    icon_color: Optional[str] = None
+    
     # Strategy configuration
     strategy_id: Optional[str] = None
     strategy_config: dict = {}
@@ -65,6 +69,10 @@ class UpdateFundInput(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     balance: Optional[float] = None
+    
+    # UI customization
+    icon: Optional[str] = None
+    icon_color: Optional[str] = None
     
     # Strategy configuration
     strategy_id: Optional[str] = None
@@ -96,6 +104,11 @@ class FundResponse(BaseModel):
     mode: str
     balance: float
     status: str
+    archived: bool
+    
+    # UI customization
+    icon: Optional[str]
+    icon_color: Optional[str]
     
     # Strategy configuration
     strategy_id: Optional[str]
@@ -185,6 +198,8 @@ def serialize_fund(fund: Fund) -> dict:
         "balance": fund.balance,
         "status": fund.status,
         "archived": getattr(fund, "archived", False),  # Default to False if field doesn't exist yet
+        "icon": getattr(fund, "icon", None),  # Default to None if field doesn't exist yet
+        "icon_color": getattr(fund, "icon_color", None),  # Default to None if field doesn't exist yet
         "strategy_id": fund.strategy_id,
         "strategy_config": fund.strategy_config,
         "screening_criteria_id": fund.screening_criteria_id,
@@ -218,6 +233,8 @@ async def create_fund(fund_data: CreateFundInput) -> dict:
                 mode=fund_data.mode,
                 balance=0.0,  # Start with 0 cash, user must deposit
                 status="paused",
+                icon=fund_data.icon,
+                icon_color=fund_data.icon_color,
                 strategy_id=fund_data.strategy_id,
                 strategy_config=fund_data.strategy_config,
                 screening_criteria_id=fund_data.screening_criteria_id,
@@ -322,6 +339,12 @@ async def update_fund(fund_id: str, update_data: UpdateFundInput) -> dict:
             if update_data.balance is not None:
                 fund.balance = update_data.balance
                 logger.info(f"Updated fund {fund_id} balance to ${fund.balance:.2f}")
+            
+            # UI customization
+            if update_data.icon is not None:
+                fund.icon = update_data.icon
+            if update_data.icon_color is not None:
+                fund.icon_color = update_data.icon_color
             
             # Strategy configuration
             if update_data.strategy_id is not None:
@@ -1257,6 +1280,8 @@ async def close_orphaned_position(fund_id: str, symbol: str) -> dict:
                 raise HTTPException(status_code=404, detail="Fund not found")
             
             # Calculate current position from transactions
+            from sqlalchemy import select, and_
+            
             stmt = select(
                 Transaction.side,
                 Transaction.quantity,

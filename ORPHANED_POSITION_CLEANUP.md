@@ -51,11 +51,20 @@ The cleanup feature:
   "symbol": "AAPL",
   "quantity_closed": 10.5,
   "avg_entry_price": 150.25,
-  "proceeds": 1577.63,
-  "new_balance": 12577.63,
-  "transaction_id": "txn-456"
+  "exit_price": 155.5,
+  "realized_pl": 55.13,
+  "proceeds": 1632.75,
+  "new_balance": 12632.75,
+  "transaction_id": "txn-456",
+  "matched_alpaca_order_id": "alpaca-order-789",
+  "price_source": "alpaca_order"
 }
 ```
+
+**Note:** The `price_source` field indicates:
+
+- `"alpaca_order"` - Matching sell order found in Alpaca (records actual P&L)
+- `"breakeven"` - No matching order found (uses entry price, zero P&L)
 
 ## Frontend Implementation
 
@@ -94,17 +103,25 @@ The cleanup creates a "synthetic" sell transaction with these characteristics:
 
 - **Side:** `sell`
 - **Quantity:** Net quantity from all transactions (buys - sells)
-- **Price:** Average entry price from buy transactions
-- **Result:** Breakeven exit (no P&L impact)
-- **Tagging:** `strategy_state` contains `{"source": "orphaned_cleanup", "reason": "..."}`
+- **Price Discovery:**
+  1. First attempts to find the matching Alpaca sell order by symbol and quantity
+  2. If found, uses the actual filled price from Alpaca (records real P&L)
+  3. If not found, falls back to average entry price (breakeven, no P&L)
+- **Tagging:** `strategy_state` contains:
+  - `"source": "orphaned_cleanup"`
+  - `"price_source": "alpaca_order"` or `"breakeven"`
+  - `"matched_alpaca_order": order_id` (if found)
+  - `"realized_pl": actual_pl_amount`
 
 ### Balance Impact
 
 When a position is closed:
 
-1. Sale proceeds = quantity × average_entry_price
-2. Fund balance increases by sale proceeds
-3. Net effect: Returns the original cost basis to available cash
+1. System attempts to find the matching Alpaca sell order by quantity
+2. If found: Sale proceeds = quantity × alpaca_filled_price (records actual P&L)
+3. If not found: Sale proceeds = quantity × average_entry_price (breakeven)
+4. Fund balance increases by sale proceeds
+5. Net effect: Returns the sale proceeds (cost basis ± P&L) to available cash
 
 ### Audit Trail
 
@@ -127,7 +144,7 @@ All cleanup actions are fully traceable:
 
 **Problem:** Sell order executed in Alpaca but webhook/polling failed
 **Result:** Alpaca shows closed, database shows open
-**Solution:** Click "Close Out" to reconcile the mismatch
+**Solution:** Click "Close Out" - system finds the Alpaca order and records actual P&L
 
 ### Scenario 3: Fund Reset/Recreation
 
@@ -139,9 +156,10 @@ All cleanup actions are fully traceable:
 
 1. **Manual Action Required:** Positions are never auto-closed
 2. **Alpaca Verification:** Checks that position doesn't exist in Alpaca before closing
-3. **Breakeven Pricing:** Uses entry price to avoid incorrect P&L calculations
-4. **Audit Trail:** All actions are logged and traceable
-5. **Reversibility:** While not directly reversible, all data is preserved in transaction history
+3. **Price Discovery:** Attempts to find actual Alpaca sell order for accurate P&L
+4. **Fallback Pricing:** Uses entry price (breakeven) only if Alpaca order not found
+5. **Audit Trail:** All actions are logged with price source indicator
+6. **Reversibility:** While not directly reversible, all data is preserved in transaction history
 
 ## Testing
 
@@ -180,11 +198,12 @@ To test this feature:
 Potential improvements for future versions:
 
 1. **Batch Cleanup:** Close multiple orphaned positions at once
-2. **Price Discovery:** Fetch actual market price instead of using entry price
-3. **P&L Calculation:** Calculate actual P&L if we can determine the real exit price
+2. **Improved Matching:** Use order timestamps and other metadata for better matching
+3. **Partial Position Matching:** Handle cases where only part of a position was sold
 4. **Automatic Detection:** Periodic background job to detect orphaned positions
 5. **Email Alerts:** Notify users when orphaned positions are detected
 6. **History View:** Dedicated view for all cleanup actions
+7. **Manual Price Override:** Allow user to manually specify exit price if needed
 
 ## Related Files
 

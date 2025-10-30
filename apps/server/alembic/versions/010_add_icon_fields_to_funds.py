@@ -1,7 +1,7 @@
 """add icon fields to funds
 
-Revision ID: 010_add_icon_fields_to_funds
-Revises: 009_flatten_strategy_into_fund
+Revision ID: 010
+Revises: 009
 Create Date: 2025-10-30
 
 """
@@ -10,8 +10,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = '010_add_icon_fields_to_funds'
-down_revision = '009_flatten_strategy_into_fund'
+revision = '010'
+down_revision = '009'
 branch_labels = None
 depends_on = None
 
