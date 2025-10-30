@@ -768,9 +768,37 @@ class StrategyEngine:
                 return
             
             actual_cost = quantity * market_data.price
+            
+            # CRITICAL: Validate fund has sufficient balance for this order
+            if actual_cost > fund_balance:
+                logger.warning(
+                    f"❌ INSUFFICIENT BALANCE: Cannot buy {symbol}: "
+                    f"Order cost ${actual_cost:.2f} exceeds fund balance ${fund_balance:.2f} "
+                    f"(shortfall: ${actual_cost - fund_balance:.2f})"
+                )
+                
+                # Broadcast insufficient balance event
+                await _broadcast_trading_event({
+                    "fund_id": str(self.fund_id),
+                    "fund_name": self.fund.name,
+                    "event_type": "insufficient_balance",
+                    "timestamp": _get_utc_timestamp(),
+                    "symbol": symbol,
+                    "reason": "Insufficient fund balance",
+                    "message": f"Cannot buy {quantity} shares of {symbol}: need ${actual_cost:.2f} but only have ${fund_balance:.2f}",
+                    "details": {
+                        "fund_balance": fund_balance,
+                        "order_cost": actual_cost,
+                        "shortfall": actual_cost - fund_balance,
+                        "quantity": quantity,
+                        "share_price": market_data.price,
+                    }
+                })
+                return
+            
             logger.info(
                 f"✅ Executing buy: {quantity} shares of {symbol} @ ${market_data.price:.2f} "
-                f"(cost: ${actual_cost:.2f}, target: ${position_size:.2f})"
+                f"(cost: ${actual_cost:.2f}, target: ${position_size:.2f}, balance: ${fund_balance:.2f})"
             )
             
             # Broadcast pre-trade diagnostic info
