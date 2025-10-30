@@ -8,7 +8,7 @@
 
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { Button } from "@/lib/components/ui/button";
 import {
@@ -23,6 +23,7 @@ import { useFundLedger } from "../hooks/use-fund-ledger";
 import { setupService } from "../services/setup-service";
 import { CreateSetupInput } from "../types";
 
+import { FundBasicInfoEditor } from "./fund-basic-info-editor";
 import { FundLedger } from "./fund-ledger";
 import { FundOrders } from "./fund-orders";
 import { FundOverview } from "./fund-overview";
@@ -45,10 +46,26 @@ export function FundDetailView({ fundId }: FundDetailViewProps) {
     transactions,
     transfers,
     loading: ledgerLoading,
+    refresh: refreshLedger,
   } = useFundLedger(fundId);
   const [selectedSetupId, setSelectedSetupId] = useState<string | null>(null);
   const [showSetupEditor, setShowSetupEditor] = useState(false);
   const [activeTab, setActiveTab] = useState("overview");
+
+  // Combined refresh function for fund data and ledger
+  const refreshAll = useCallback(async () => {
+    await Promise.all([refresh(), refreshLedger()]);
+  }, [refresh, refreshLedger]);
+
+  // Auto-refresh every 30 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      refreshAll();
+    }, 30000); // 30 seconds
+
+    // Cleanup interval on unmount
+    return () => clearInterval(interval);
+  }, [refreshAll]);
 
   if (loading) {
     return (
@@ -119,7 +136,7 @@ export function FundDetailView({ fundId }: FundDetailViewProps) {
             orders={orders}
             transactions={transactions}
             transfers={transfers}
-            onFundUpdate={refresh}
+            onFundUpdate={refreshAll}
           />
         </TabsContent>
 
@@ -132,20 +149,24 @@ export function FundDetailView({ fundId }: FundDetailViewProps) {
             <StrategySelection
               fundId={fund.id}
               fund={fund}
-              onUpdate={refresh}
+              onUpdate={refreshAll}
             />
           </div>
 
           {/* Risk Management Section */}
           <div className="pt-6 border-t">
             <h2 className="text-xl font-semibold mb-4">Risk Management</h2>
-            <RiskManagement fundId={fund.id} fund={fund} onUpdate={refresh} />
+            <RiskManagement
+              fundId={fund.id}
+              fund={fund}
+              onUpdate={refreshAll}
+            />
           </div>
 
           {/* Time Windows Section */}
           <div className="pt-6 border-t">
             <h2 className="text-xl font-semibold mb-4">Trading Time Windows</h2>
-            <TimeWindows fundId={fund.id} fund={fund} onUpdate={refresh} />
+            <TimeWindows fundId={fund.id} fund={fund} onUpdate={refreshAll} />
           </div>
         </TabsContent>
 
@@ -162,7 +183,7 @@ export function FundDetailView({ fundId }: FundDetailViewProps) {
         </TabsContent>
 
         <TabsContent value="screener" className="space-y-6">
-          <ScreenerLink fundId={fund.id} fund={fund} onUpdate={refresh} />
+          <ScreenerLink fundId={fund.id} fund={fund} onUpdate={refreshAll} />
         </TabsContent>
 
         <TabsContent value="ledger" className="space-y-6">

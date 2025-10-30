@@ -78,6 +78,11 @@ async def on_startup() -> None:
     set_polling_service(polling_service)
     logger.info("✓ OrderPollingService initialized and running (polling every 5s)")
     
+    # Auto-start funds that were active before server restart
+    from app.services.fund_autostart import auto_start_active_funds
+    logger.info("Checking for active funds to auto-start...")
+    await auto_start_active_funds()
+    
     # Log all registered routes
     for route in app.routes:
         logger.info(f"Registered route: {route.path} ({getattr(route, 'methods', 'WEBSOCKET' if 'WebSocket' in str(type(route)) else 'UNKNOWN')})")

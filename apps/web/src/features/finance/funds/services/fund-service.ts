@@ -230,6 +230,61 @@ export const fundService = {
   },
 
   /**
+   * Archive a fund (hide from main list)
+   * Fund must be stopped (not trading) to archive
+   */
+  async archiveFund(fundId: string): Promise<{
+    success: boolean;
+    fundId: string;
+    fundName: string;
+    archived: boolean;
+  }> {
+    const response = await fetch(`${API_BASE}/api/funds/${fundId}/archive`, {
+      method: "POST",
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || "Failed to archive fund");
+    }
+
+    const data = await response.json();
+    return {
+      success: data.success,
+      fundId: data.fund_id,
+      fundName: data.fund_name,
+      archived: data.archived,
+    };
+  },
+
+  /**
+   * Unarchive a fund (show in main list)
+   */
+  async unarchiveFund(fundId: string): Promise<{
+    success: boolean;
+    fundId: string;
+    fundName: string;
+    archived: boolean;
+  }> {
+    const response = await fetch(`${API_BASE}/api/funds/${fundId}/unarchive`, {
+      method: "POST",
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || "Failed to unarchive fund");
+    }
+
+    const data = await response.json();
+    return {
+      success: data.success,
+      fundId: data.fund_id,
+      fundName: data.fund_name,
+      archived: data.archived,
+    };
+  },
+
+  /**
    * Reset a fund to zero balance by clearing all history
    * Fund must be stopped (not trading) to reset
    */

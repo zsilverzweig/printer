@@ -247,6 +247,21 @@ class OrderPollingService:
             
             session.add(transaction)
             
+            # Update fund balance (cash position)
+            # Buy: cash decreases, Sell: cash increases
+            from app.models.strategies import Fund
+            fund = await session.get(Fund, order.fund_id)
+            if fund:
+                old_balance = fund.balance
+                if order.side == "buy":
+                    fund.balance -= transaction.total_value
+                else:  # sell
+                    fund.balance += transaction.total_value
+                logger.info(
+                    f"💰 Fund balance updated: ${old_balance:.2f} → ${fund.balance:.2f} "
+                    f"(after {order.side} ${transaction.total_value:.2f})"
+                )
+            
             logger.info(
                 f"💰 Transaction created: {order.symbol} {order.side} "
                 f"{filled_qty} @ ${filled_price:.2f} = ${transaction.total_value:.2f}"

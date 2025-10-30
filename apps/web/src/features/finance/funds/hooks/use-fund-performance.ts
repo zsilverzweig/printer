@@ -1,11 +1,12 @@
 /**
  * Hook to calculate fund performance metrics
  *
- * Calculates balance and performance from ledger data
+ * Calculates balance and performance from ledger data including positions
  */
 
 import { useMemo } from "react";
 import { FundTransaction, FundTransfer } from "../types";
+import { FundPosition, PositionsSummary } from "./use-fund-ledger";
 import {
   calculateFundBalance,
   calculatePerformanceMetrics,
@@ -20,16 +21,18 @@ export interface UseFundPerformanceReturn {
 
 export function useFundPerformance(
   transfers: FundTransfer[],
-  transactions: FundTransaction[]
+  transactions: FundTransaction[],
+  positions: FundPosition[],
+  positionsSummary: PositionsSummary
 ): UseFundPerformanceReturn {
   const balance = useMemo(
-    () => calculateFundBalance(transfers, transactions),
-    [transfers, transactions]
+    () => calculateFundBalance(transfers, transactions, positionsSummary),
+    [transfers, transactions, positionsSummary]
   );
 
   const performance = useMemo(
-    () => calculatePerformanceMetrics(transfers, transactions),
-    [transfers, transactions]
+    () => calculatePerformanceMetrics(transfers, transactions, positionsSummary),
+    [transfers, transactions, positionsSummary]
   );
 
   return {

@@ -10,6 +10,7 @@ Provides endpoints for creating, managing, and controlling trading funds:
 
 import logging
 import uuid
+from datetime import datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException
@@ -35,7 +36,7 @@ class CreateFundInput(BaseModel):
     name: str
     description: Optional[str] = None
     mode: str = "sim"  # "sim" or "real"
-    initial_balance: float = 10000.0
+    initial_balance: Optional[float] = None  # Deprecated: Fund always starts with 0 balance
     
     # Strategy configuration
     strategy_id: Optional[str] = None
@@ -183,6 +184,7 @@ def serialize_fund(fund: Fund) -> dict:
         "mode": fund.mode,
         "balance": fund.balance,
         "status": fund.status,
+        "archived": getattr(fund, "archived", False),  # Default to False if field doesn't exist yet
         "strategy_id": fund.strategy_id,
         "strategy_config": fund.strategy_config,
         "screening_criteria_id": fund.screening_criteria_id,
@@ -197,8 +199,8 @@ def serialize_fund(fund: Fund) -> dict:
         "trading_start_time": fund.trading_start_time,
         "trading_end_time": fund.trading_end_time,
         "timezone": fund.timezone,
-        "created_at": fund.created_at.isoformat(),
-        "updated_at": fund.updated_at.isoformat(),
+        "created_at": fund.created_at.isoformat() + "Z",  # Add Z to indicate UTC
+        "updated_at": fund.updated_at.isoformat() + "Z",  # Add Z to indicate UTC
     }
 
 
@@ -214,7 +216,7 @@ async def create_fund(fund_data: CreateFundInput) -> dict:
                 name=fund_data.name,
                 description=fund_data.description,
                 mode=fund_data.mode,
-                balance=fund_data.initial_balance,
+                balance=0.0,  # Start with 0 cash, user must deposit
                 status="paused",
                 strategy_id=fund_data.strategy_id,
                 strategy_config=fund_data.strategy_config,
@@ -244,12 +246,28 @@ async def create_fund(fund_data: CreateFundInput) -> dict:
 
 
 @router.get("/funds", response_model=List[FundResponse])
-async def list_funds() -> List[dict]:
-    """List all funds."""
+async def list_funds(include_archived: bool = False) -> List[dict]:
+    """
+    List all funds.
+    
+    Args:
+        include_archived: If True, include archived funds. Default False.
+    """
     try:
         async with get_async_session() as session:
             from sqlalchemy import select
-            result = await session.execute(select(Fund))
+            stmt = select(Fund)
+            
+            # Filter out archived funds by default
+            if not include_archived:
+                # Use getattr to handle case where column doesn't exist yet
+                try:
+                    stmt = stmt.where(Fund.archived == False)
+                except Exception:
+                    # If archived column doesn't exist yet, just return all funds
+                    pass
+            
+            result = await session.execute(stmt)
             funds = result.scalars().all()
             return [serialize_fund(fund) for fund in funds]
             
@@ -409,7 +427,7 @@ async def start_trading(fund_id: str) -> dict:
                 "fund_id": str(fund_id),
                 "fund_name": fund.name,
                 "event_type": "startup",
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat() + "Z",  # Add Z to indicate UTC
                 "message": f"Trading engine started for {fund.name}",
                 "details": {
                     "balance": fund.balance,
@@ -501,7 +519,7 @@ async def get_fund_status(fund_id: str) -> dict:
                     "quantity": position.quantity,
                     "pnl": position.unrealized_pnl,
                     "pnl_percent": position.unrealized_pnl_percent,
-                    "entry_time": position.entry_time.isoformat(),
+                    "entry_time": position.entry_time.isoformat() + "Z",  # Add Z to indicate UTC
                 })
             
             return {
@@ -574,8 +592,8 @@ async def get_fund_orders(fund_id: str, limit: int = 100) -> List[dict]:
                     "quantity": order.quantity,
                     "status": order.status,
                     "order_type": order.order_type,
-                    "submitted_at": order.submitted_at.isoformat(),
-                    "filled_at": order.filled_at.isoformat() if order.filled_at else None,
+                    "submitted_at": order.submitted_at.isoformat() + "Z",  # Add Z to indicate UTC
+                    "filled_at": order.filled_at.isoformat() + "Z" if order.filled_at else None,  # Add Z to indicate UTC
                     "filled_qty": order.filled_qty,
                     "filled_avg_price": order.filled_avg_price,
                     "alpaca_order_id": order.alpaca_order_id,
@@ -610,12 +628,138 @@ async def get_fund_transactions(fund_id: str, limit: int = 100) -> List[dict]:
                     "quantity": txn.quantity,
                     "price": txn.price,
                     "total_value": txn.total_value,
-                    "timestamp": txn.timestamp.isoformat(),
+                    "timestamp": txn.timestamp.isoformat() + "Z",  # Add Z to indicate UTC
                 }
                 for txn in transactions
             ]
     except Exception as e:
         logger.error(f"Error getting transactions for fund {fund_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/funds/{fund_id}/positions/summary")
+async def get_fund_positions_summary(fund_id: str) -> dict:
+    """
+    Get current positions summary with market values and unrealized P&L.
+    Works even when fund is not running by calculating from transaction history
+    and fetching current prices.
+    """
+    try:
+        from sqlalchemy import select
+        
+        async with get_async_session() as session:
+            # Get fund
+            fund = await session.get(Fund, fund_id)
+            if not fund:
+                raise HTTPException(status_code=404, detail="Fund not found")
+            
+            # Calculate positions from transaction history
+            stmt = select(
+                Transaction.symbol,
+                Transaction.side,
+                Transaction.quantity,
+                Transaction.price,
+                Transaction.total_value
+            ).where(
+                Transaction.fund_id == fund_id
+            ).order_by(Transaction.timestamp.asc())
+            
+            result = await session.execute(stmt)
+            transactions = result.all()
+            
+            # Calculate net positions with cost basis
+            position_tracker = {}
+            for symbol, side, quantity, price, total_value in transactions:
+                if symbol not in position_tracker:
+                    position_tracker[symbol] = {
+                        "quantity": 0.0,
+                        "total_cost": 0.0,
+                    }
+                
+                if side == "buy":
+                    position_tracker[symbol]["quantity"] += quantity
+                    position_tracker[symbol]["total_cost"] += total_value
+                else:  # sell
+                    # FIFO: reduce quantity and proportional cost
+                    if position_tracker[symbol]["quantity"] > 0:
+                        avg_cost_per_share = position_tracker[symbol]["total_cost"] / position_tracker[symbol]["quantity"]
+                        position_tracker[symbol]["quantity"] -= quantity
+                        position_tracker[symbol]["total_cost"] -= (quantity * avg_cost_per_share)
+            
+            # Filter to only positive positions and calculate metrics
+            current_positions = []
+            for symbol, data in position_tracker.items():
+                if data["quantity"] > 0.001:
+                    avg_entry_price = data["total_cost"] / data["quantity"] if data["quantity"] > 0 else 0
+                    current_positions.append({
+                        "symbol": symbol,
+                        "quantity": data["quantity"],
+                        "avg_entry_price": avg_entry_price,
+                        "cost_basis": data["total_cost"],
+                    })
+            
+            # Fetch current market prices
+            from app.services.market_data_provider import MarketDataProvider
+            market_provider = MarketDataProvider()
+            
+            positions_with_prices = []
+            total_market_value = 0.0
+            total_unrealized_pl = 0.0
+            
+            for position in current_positions:
+                try:
+                    # Get current price
+                    current_price = await market_provider.get_current_price(position["symbol"])
+                    market_value = position["quantity"] * current_price
+                    unrealized_pl = market_value - position["cost_basis"]
+                    unrealized_plpc = (unrealized_pl / position["cost_basis"] * 100) if position["cost_basis"] > 0 else 0
+                    
+                    positions_with_prices.append({
+                        "symbol": position["symbol"],
+                        "quantity": position["quantity"],
+                        "avg_entry_price": position["avg_entry_price"],
+                        "current_price": current_price,
+                        "cost_basis": position["cost_basis"],
+                        "market_value": market_value,
+                        "unrealized_pl": unrealized_pl,
+                        "unrealized_plpc": unrealized_plpc,
+                    })
+                    
+                    total_market_value += market_value
+                    total_unrealized_pl += unrealized_pl
+                except Exception as e:
+                    logger.warning(f"Could not fetch price for {position['symbol']}: {e}")
+                    # Fallback: Use cost basis as market value when price unavailable
+                    # This is better than showing $0 - at least shows position exists
+                    positions_with_prices.append({
+                        "symbol": position["symbol"],
+                        "quantity": position["quantity"],
+                        "avg_entry_price": position["avg_entry_price"],
+                        "current_price": None,
+                        "cost_basis": position["cost_basis"],
+                        "market_value": position["cost_basis"],  # Use cost basis as fallback
+                        "unrealized_pl": 0.0,  # Unknown, assume breakeven
+                        "unrealized_plpc": 0.0,
+                    })
+                    
+                    # Add to totals using cost basis
+                    total_market_value += position["cost_basis"]
+                    # Don't add to unrealized_pl since we don't know the real value
+            
+            return {
+                "fund_id": fund_id,
+                "positions": positions_with_prices,
+                "summary": {
+                    "position_count": len(positions_with_prices),
+                    "total_market_value": total_market_value,
+                    "total_unrealized_pl": total_unrealized_pl,
+                },
+            }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting positions summary for fund {fund_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -869,7 +1013,7 @@ async def get_fund_transfers(fund_id: str, limit: int = 100) -> List[dict]:
                     "amount": transfer.amount,
                     "transfer_type": transfer.transfer_type,
                     "notes": transfer.notes,
-                    "timestamp": transfer.timestamp.isoformat(),
+                    "timestamp": transfer.timestamp.isoformat() + "Z",  # Add Z to indicate UTC
                 }
                 for transfer in transfers
             ]
@@ -943,7 +1087,7 @@ async def create_transfer(fund_id: str, transfer_input: CreateTransferInput) -> 
                 "amount": transfer.amount,
                 "transfer_type": transfer.transfer_type,
                 "notes": transfer.notes,
-                "timestamp": transfer.timestamp.isoformat(),
+                "timestamp": transfer.timestamp.isoformat() + "Z",  # Add Z to indicate UTC
                 "new_balance": fund.balance,
             }
     
@@ -951,6 +1095,345 @@ async def create_transfer(fund_id: str, transfer_input: CreateTransferInput) -> 
         raise
     except Exception as e:
         logger.error(f"Error creating transfer for fund {fund_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/funds/{fund_id}/archive")
+async def archive_fund(fund_id: str) -> dict:
+    """
+    Archive a fund (hide from main list).
+    Fund must be stopped (not trading) to archive.
+    """
+    try:
+        # Check if fund is actively trading
+        engine = get_engine(fund_id)
+        if engine:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot archive fund while it is actively trading. Stop the fund first."
+            )
+        
+        async with get_async_session() as session:
+            fund = await session.get(Fund, fund_id)
+            if not fund:
+                raise HTTPException(status_code=404, detail="Fund not found")
+            
+            # Archive the fund
+            fund.archived = True
+            await session.commit()
+            
+            logger.info(f"📦 Archived fund {fund_id} ({fund.name})")
+            
+            return {
+                "success": True,
+                "fund_id": fund_id,
+                "fund_name": fund.name,
+                "archived": True,
+            }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error archiving fund {fund_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/funds/{fund_id}/unarchive")
+async def unarchive_fund(fund_id: str) -> dict:
+    """
+    Unarchive a fund (show in main list again).
+    """
+    try:
+        async with get_async_session() as session:
+            fund = await session.get(Fund, fund_id)
+            if not fund:
+                raise HTTPException(status_code=404, detail="Fund not found")
+            
+            # Unarchive the fund
+            fund.archived = False
+            await session.commit()
+            
+            logger.info(f"📂 Unarchived fund {fund_id} ({fund.name})")
+            
+            return {
+                "success": True,
+                "fund_id": fund_id,
+                "fund_name": fund.name,
+                "archived": False,
+            }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error unarchiving fund {fund_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/funds/{fund_id}/reconcile")
+async def reconcile_fund_balance(fund_id: str) -> dict:
+    """
+    Check if fund balance matches ledger calculation.
+    For diagnostics - not a source of truth due to timing issues.
+    
+    Calculates what balance SHOULD be based on:
+    - Transfers (deposits/withdrawals)
+    - Transactions (buys/sells that have filled)
+    """
+    try:
+        async with get_async_session() as session:
+            from sqlalchemy import select
+            
+            # Get fund
+            fund = await session.get(Fund, fund_id)
+            if not fund:
+                raise HTTPException(status_code=404, detail="Fund not found")
+            
+            # Get all transfers
+            stmt = select(Transfer).where(Transfer.fund_id == fund_id)
+            result = await session.execute(stmt)
+            transfers = result.scalars().all()
+            
+            # Get all transactions
+            stmt = select(Transaction).where(Transaction.fund_id == fund_id)
+            result = await session.execute(stmt)
+            transactions = result.scalars().all()
+            
+            # Calculate ledger balance
+            # Cash = Deposits - Withdrawals - Buys + Sells
+            total_deposits = sum(t.amount for t in transfers if t.transfer_type == "deposit")
+            total_withdrawals = sum(t.amount for t in transfers if t.transfer_type == "withdrawal")
+            total_buys = sum(t.total_value for t in transactions if t.side == "buy")
+            total_sells = sum(t.total_value for t in transactions if t.side == "sell")
+            
+            ledger_balance = total_deposits - total_withdrawals - total_buys + total_sells
+            
+            # Calculate discrepancy
+            discrepancy = fund.balance - ledger_balance
+            is_synced = abs(discrepancy) < 0.01
+            
+            logger.info(
+                f"🔍 Reconciliation for fund {fund_id}: "
+                f"current=${fund.balance:.2f}, ledger=${ledger_balance:.2f}, "
+                f"discrepancy=${discrepancy:.2f}, synced={is_synced}"
+            )
+            
+            return {
+                "fund_id": fund_id,
+                "fund_name": fund.name,
+                "current_balance": fund.balance,
+                "ledger_balance": ledger_balance,
+                "discrepancy": discrepancy,
+                "is_synced": is_synced,
+                "breakdown": {
+                    "deposits": total_deposits,
+                    "withdrawals": total_withdrawals,
+                    "buys": total_buys,
+                    "sells": total_sells,
+                },
+                "warning": "Ledger calculation is for diagnostics only - timing issues may cause temporary discrepancies"
+            }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error reconciling fund {fund_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/funds/{fund_id}/positions/{symbol}/close-orphaned")
+async def close_orphaned_position(fund_id: str, symbol: str) -> dict:
+    """
+    Close out an orphaned position that exists in the database but not in Alpaca.
+    
+    This creates a matching sell transaction to zero out the position in the database.
+    This is useful when a position was sold in Alpaca but the sync failed or 
+    the position was manually closed outside of the trading system.
+    """
+    try:
+        async with get_async_session() as session:
+            # Get fund
+            fund = await session.get(Fund, fund_id)
+            if not fund:
+                raise HTTPException(status_code=404, detail="Fund not found")
+            
+            # Calculate current position from transactions
+            stmt = select(
+                Transaction.side,
+                Transaction.quantity,
+                Transaction.price
+            ).where(
+                and_(
+                    Transaction.fund_id == fund_id,
+                    Transaction.symbol == symbol
+                )
+            ).order_by(Transaction.timestamp.asc())
+            
+            result = await session.execute(stmt)
+            transactions = result.all()
+            
+            if not transactions:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"No transactions found for {symbol}"
+                )
+            
+            # Calculate net position and cost basis
+            net_quantity = 0.0
+            total_cost = 0.0
+            
+            for side, quantity, price in transactions:
+                if side == "buy":
+                    net_quantity += quantity
+                    total_cost += (quantity * price)
+                else:  # sell
+                    if net_quantity > 0:
+                        avg_cost = total_cost / net_quantity
+                        net_quantity -= quantity
+                        total_cost -= (quantity * avg_cost)
+            
+            if net_quantity <= 0.001:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Position for {symbol} is already closed (quantity: {net_quantity})"
+                )
+            
+            # Verify position doesn't exist in Alpaca
+            engine = get_engine(fund_id)
+            if engine:
+                try:
+                    alpaca_positions = await engine.alpaca_service.get_positions()
+                    alpaca_symbols = {p["symbol"] for p in alpaca_positions}
+                    
+                    if symbol in alpaca_symbols:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Position {symbol} exists in Alpaca. Cannot close as orphaned."
+                        )
+                except Exception as e:
+                    logger.warning(f"Could not verify Alpaca positions: {e}")
+                    # Continue anyway if Alpaca check fails
+            
+            # Calculate average entry price
+            avg_entry_price = total_cost / net_quantity if net_quantity > 0 else 0.0
+            
+            # Try to find the actual Alpaca sell order to get the real exit price
+            exit_price = avg_entry_price  # Default to breakeven if we can't find the order
+            alpaca_sell_order_id = None
+            matched_order = None
+            
+            if engine:
+                try:
+                    # Get recent filled orders from Alpaca
+                    alpaca_orders = await engine.alpaca_service.get_orders(
+                        symbol=symbol,
+                        status="closed",  # Only look at closed/filled orders
+                        limit=50  # Look at last 50 orders
+                    )
+                    
+                    # Find sell orders that match our quantity (approximately)
+                    for order in alpaca_orders:
+                        if (order.get("side") == "sell" and 
+                            order.get("symbol") == symbol and
+                            order.get("filled_qty") and
+                            abs(float(order.get("filled_qty", 0)) - net_quantity) < 0.01):  # Match within 0.01 shares
+                            
+                            # Found a matching sell order!
+                            matched_order = order
+                            exit_price = float(order.get("filled_avg_price", avg_entry_price))
+                            alpaca_sell_order_id = order.get("id")
+                            logger.info(
+                                f"🔍 Found matching Alpaca sell order for {symbol}: "
+                                f"order_id={alpaca_sell_order_id}, "
+                                f"qty={order.get('filled_qty')}, "
+                                f"price=${exit_price:.2f}"
+                            )
+                            break
+                    
+                    if not matched_order:
+                        logger.warning(
+                            f"⚠️  Could not find matching Alpaca sell order for {symbol} "
+                            f"(quantity: {net_quantity}). Using breakeven price."
+                        )
+                except Exception as e:
+                    logger.warning(f"Could not fetch Alpaca orders for price discovery: {e}")
+                    # Continue with breakeven price
+            
+            # Calculate P&L
+            realized_pl = (exit_price - avg_entry_price) * net_quantity
+            
+            # Create closing transaction with actual exit price
+            closing_transaction = Transaction(
+                id=str(uuid.uuid4()),
+                order_id=str(uuid.uuid4()),  # Dummy order ID for orphaned cleanup
+                alpaca_order_id=alpaca_sell_order_id,  # Link to actual Alpaca order if found
+                fund_id=fund_id,
+                symbol=symbol,
+                side="sell",
+                quantity=net_quantity,
+                price=exit_price,  # Use actual exit price from Alpaca or entry price as fallback
+                total_value=net_quantity * exit_price,
+                timestamp=datetime.utcnow(),
+                high_water_mark=None,
+                strategy_state={
+                    "source": "orphaned_cleanup", 
+                    "reason": "Position closed due to Alpaca sync mismatch",
+                    "matched_alpaca_order": alpaca_sell_order_id if alpaca_sell_order_id else None,
+                    "price_source": "alpaca_order" if alpaca_sell_order_id else "breakeven",
+                    "realized_pl": realized_pl,
+                },
+            )
+            
+            # Create corresponding order record for audit trail
+            closing_order = Order(
+                id=closing_transaction.order_id,
+                alpaca_order_id="",  # Empty for orphaned cleanup
+                fund_id=fund_id,
+                symbol=symbol,
+                side="sell",
+                quantity=net_quantity,
+                order_type="manual_cleanup",
+                status="filled",
+                submitted_at=datetime.utcnow(),
+                filled_at=datetime.utcnow(),
+                filled_qty=net_quantity,
+                filled_avg_price=avg_entry_price,
+            )
+            
+            session.add(closing_order)
+            session.add(closing_transaction)
+            
+            # Update fund balance (add back the sale proceeds)
+            fund.balance += closing_transaction.total_value
+            
+            await session.commit()
+            
+            logger.info(
+                f"🔧 Closed orphaned position for fund {fund_id}: {symbol} "
+                f"- {net_quantity} shares @ ${exit_price:.2f} "
+                f"(entry: ${avg_entry_price:.2f}, P&L: ${realized_pl:+.2f}, "
+                f"proceeds: ${closing_transaction.total_value:.2f})"
+            )
+            
+            return {
+                "success": True,
+                "message": f"Closed orphaned position for {symbol}",
+                "fund_id": fund_id,
+                "symbol": symbol,
+                "quantity_closed": net_quantity,
+                "avg_entry_price": avg_entry_price,
+                "exit_price": exit_price,
+                "realized_pl": realized_pl,
+                "proceeds": closing_transaction.total_value,
+                "new_balance": fund.balance,
+                "transaction_id": closing_transaction.id,
+                "matched_alpaca_order_id": alpaca_sell_order_id,
+                "price_source": "alpaca_order" if alpaca_sell_order_id else "breakeven",
+            }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error closing orphaned position {symbol} for fund {fund_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 

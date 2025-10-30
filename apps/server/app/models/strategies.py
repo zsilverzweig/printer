@@ -37,6 +37,11 @@ class Fund(Base):
     mode: Mapped[str] = mapped_column(String(10), nullable=False)  # 'sim' or 'real'
     balance: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="paused")  # 'active' or 'paused'
+    archived: Mapped[bool] = mapped_column(nullable=False, default=False)  # Hide from main list
+    
+    # UI customization
+    icon: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # Lucide icon name
+    icon_color: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # Tailwind color class
     
     # Strategy configuration
     strategy_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # e.g., "monkey_darts"

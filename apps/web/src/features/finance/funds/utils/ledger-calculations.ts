@@ -7,14 +7,29 @@
 
 import { FundTransaction, FundTransfer } from "../types";
 
+export interface PositionsSummary {
+  positionCount: number;
+  totalMarketValue: number;
+  totalUnrealizedPl: number;
+}
+
 export interface FundBalanceCalculation {
-  currentBalance: number;
+  // Total Account Value (AUM - Assets Under Management)
+  aum: number; // cashBalance + positionValue
+  
+  // Components
+  cashBalance: number; // deposits - withdrawals - buys + sells
+  positionValue: number; // current market value of holdings
+  
+  // P&L Breakdown
+  realizedPnL: number; // sells - buys (profit from closed trades)
+  unrealizedPnL: number; // current position value - cost basis
+  
+  // Details
   totalDeposits: number;
   totalWithdrawals: number;
   totalBuys: number;
   totalSells: number;
-  realizedPnL: number;
-  netCash: number; // deposits - withdrawals - buys + sells
 }
 
 export interface PerformanceMetrics {
@@ -37,14 +52,16 @@ export interface PerformanceWindow {
 }
 
 /**
- * Calculate current fund balance from ledger
+ * Calculate current fund balance from ledger including positions
  *
  * Formula:
- * Balance = Total Deposits - Total Withdrawals - Total Buys + Total Sells
+ * Cash Balance = Total Deposits - Total Withdrawals - Total Buys + Total Sells
+ * AUM (Assets Under Management) = Cash Balance + Position Market Value
  */
 export function calculateFundBalance(
   transfers: FundTransfer[],
-  transactions: FundTransaction[]
+  transactions: FundTransaction[],
+  positionsSummary: PositionsSummary
 ): FundBalanceCalculation {
   // Sum all deposits
   const totalDeposits = transfers
@@ -66,23 +83,29 @@ export function calculateFundBalance(
     .filter((t) => t.side === "sell")
     .reduce((sum, t) => sum + t.totalValue, 0);
 
-  // Calculate realized P&L from trading
+  // Calculate realized P&L from closed trades only
   const realizedPnL = totalSells - totalBuys;
 
-  // Calculate net cash position
-  const netCash = totalDeposits - totalWithdrawals - totalBuys + totalSells;
+  // Calculate cash position
+  const cashBalance = totalDeposits - totalWithdrawals - totalBuys + totalSells;
 
-  // Current balance is net cash
-  const currentBalance = netCash;
+  // Get position values from summary (current market value)
+  const positionValue = positionsSummary.totalMarketValue;
+  const unrealizedPnL = positionsSummary.totalUnrealizedPl;
+
+  // Calculate AUM (Assets Under Management) = cash + current position values
+  const aum = cashBalance + positionValue;
 
   return {
-    currentBalance,
+    aum,
+    cashBalance,
+    positionValue,
+    realizedPnL,
+    unrealizedPnL,
     totalDeposits,
     totalWithdrawals,
     totalBuys,
     totalSells,
-    realizedPnL,
-    netCash,
   };
 }
 
@@ -91,7 +114,8 @@ export function calculateFundBalance(
  */
 export function calculatePerformanceMetrics(
   transfers: FundTransfer[],
-  transactions: FundTransaction[]
+  transactions: FundTransaction[],
+  positionsSummary: PositionsSummary
 ): PerformanceMetrics {
   const now = new Date();
 
@@ -100,30 +124,35 @@ export function calculatePerformanceMetrics(
     day: calculateWindowPerformance(
       transfers,
       transactions,
+      positionsSummary,
       getDateDaysAgo(1),
       now
     ),
     week: calculateWindowPerformance(
       transfers,
       transactions,
+      positionsSummary,
       getDateDaysAgo(7),
       now
     ),
     month: calculateWindowPerformance(
       transfers,
       transactions,
+      positionsSummary,
       getDateDaysAgo(30),
       now
     ),
     year: calculateWindowPerformance(
       transfers,
       transactions,
+      positionsSummary,
       getDateDaysAgo(365),
       now
     ),
     allTime: calculateWindowPerformance(
       transfers,
       transactions,
+      positionsSummary,
       new Date(0),
       now
     ),
@@ -136,6 +165,7 @@ export function calculatePerformanceMetrics(
 function calculateWindowPerformance(
   transfers: FundTransfer[],
   transactions: FundTransaction[],
+  positionsSummary: PositionsSummary,
   startDate: Date,
   endDate: Date
 ): PerformanceWindow {
@@ -161,30 +191,42 @@ function calculateWindowPerformance(
     return date < startDate;
   });
 
-  // Calculate start balance (balance at beginning of window)
-  const startBalance = calculateFundBalance(
+  // Calculate start AUM (at beginning of window, cash only since no historical position values)
+  const emptyPositions: PositionsSummary = {
+    positionCount: 0,
+    totalMarketValue: 0,
+    totalUnrealizedPl: 0,
+  };
+  
+  const startAUM = calculateFundBalance(
     beforeTransfers,
-    beforeTransactions
-  ).currentBalance;
+    beforeTransactions,
+    emptyPositions
+  ).cashBalance;
 
-  // Calculate end balance (balance at end of window = start balance + changes in window)
+  // Calculate end AUM including current positions at market value
+  const endAUM = calculateFundBalance(
+    [...beforeTransfers, ...windowTransfers],
+    [...beforeTransactions, ...windowTransactions],
+    positionsSummary
+  ).aum;
+
+  // Calculate window-specific metrics
   const windowBalance = calculateFundBalance(
     windowTransfers,
-    windowTransactions
+    windowTransactions,
+    emptyPositions
   );
-
-  // Account for net transfers in the window (deposits - withdrawals)
+  
+  // Net transfers in this window
   const netTransfers =
     windowBalance.totalDeposits - windowBalance.totalWithdrawals;
 
-  // P&L is the realized P&L from trading (excludes transfers)
-  const pnl = windowBalance.realizedPnL;
-
-  // End balance is start balance + pnl + net transfers
-  const endBalance = startBalance + pnl + netTransfers;
+  // P&L = Change in AUM - New Deposits
+  // This includes: realized gains from trades + current position values
+  const pnl = endAUM - startAUM - netTransfers;
 
   // Calculate total net deposits up to the end of the window
-  // This is the cumulative amount transferred into the fund
   const allTransfersUpToEnd = transfers.filter((t) => {
     const date = new Date(t.timestamp);
     return date <= endDate;
@@ -198,9 +240,11 @@ function calculateWindowPerformance(
       .filter((t) => t.transferType === "withdrawal")
       .reduce((sum, t) => sum + t.amount, 0);
 
-  // Calculate return % based on net deposits (amount invested)
-  // If no money has been deposited, return 0%
+  // Calculate return % based on total invested capital
   const pnlPercent = totalNetDeposits > 0 ? (pnl / totalNetDeposits) * 100 : 0;
+  
+  // End balance for display
+  const endBalance = endAUM;
 
   // Count trades
   const buys = windowTransactions.filter((t) => t.side === "buy");
@@ -213,8 +257,8 @@ function calculateWindowPerformance(
   const winRate = totalTrades > 0 ? (winningTrades / totalTrades) * 100 : 0;
 
   return {
-    startBalance,
-    endBalance,
+    startBalance: startAUM,
+    endBalance: endAUM,
     pnl,
     pnlPercent,
     trades: sells.length, // Count completed round trips (sells)

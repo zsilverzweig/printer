@@ -4,9 +4,17 @@
  * Displays fund performance metrics across different time windows
  */
 
-import { Activity, DollarSign, TrendingDown, TrendingUp } from "lucide-react";
+import {
+  Activity,
+  ArrowDownUp,
+  DollarSign,
+  TrendingDown,
+  TrendingUp,
+} from "lucide-react";
+import { useState } from "react";
 
 import { Badge } from "@/lib/components/ui/badge";
+import { Button } from "@/lib/components/ui/button";
 import {
   Card,
   CardContent,
@@ -14,7 +22,16 @@ import {
   CardHeader,
   CardTitle,
 } from "@/lib/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/lib/components/ui/dialog";
 
+import { useFundTransfers } from "../hooks/use-fund-transfers";
 import {
   FundBalanceCalculation,
   PerformanceMetrics,
@@ -22,15 +39,39 @@ import {
   formatPercent,
 } from "../utils/ledger-calculations";
 
+import { FundTransferForm } from "./fund-transfer-form";
+
 interface FundPerformanceCardProps {
+  fundId: string;
   balance: FundBalanceCalculation;
   performance: PerformanceMetrics;
+  onUpdate: () => void;
 }
 
 export function FundPerformanceCard({
+  fundId,
   balance,
   performance,
+  onUpdate,
 }: FundPerformanceCardProps) {
+  const { createTransfer } = useFundTransfers(fundId);
+  const [showTransferDialog, setShowTransferDialog] = useState(false);
+
+  const handleTransfer = async (
+    amount: number,
+    type: "deposit" | "withdrawal",
+    notes?: string
+  ) => {
+    await createTransfer({
+      fundId,
+      amount,
+      transferType: type,
+      notes,
+    });
+
+    setShowTransferDialog(false);
+    onUpdate();
+  };
   const renderPerformanceRow = (
     label: string,
     window: { pnl: number; pnlPercent: number; trades: number; winRate: number }
@@ -80,24 +121,64 @@ export function FundPerformanceCard({
       {/* Balance Summary */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <DollarSign className="h-5 w-5" />
-            Current Balance
-          </CardTitle>
-          <CardDescription>Calculated from ledger</CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <DollarSign className="h-5 w-5" />
+                Assets Under Management
+              </CardTitle>
+              <CardDescription>Total account value</CardDescription>
+            </div>
+            <Dialog
+              open={showTransferDialog}
+              onOpenChange={setShowTransferDialog}
+            >
+              <DialogTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <ArrowDownUp className="h-4 w-4 mr-2" />
+                  Transfer
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Fund Transfer</DialogTitle>
+                  <DialogDescription>
+                    Deposit or withdraw funds from this account
+                  </DialogDescription>
+                </DialogHeader>
+                <FundTransferForm
+                  fundId={fundId}
+                  currentBalance={balance.aum}
+                  onTransfer={handleTransfer}
+                />
+              </DialogContent>
+            </Dialog>
+          </div>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
             <div>
               <div className="text-3xl font-bold">
-                {formatCurrency(balance.currentBalance)}
+                {formatCurrency(balance.aum)}
               </div>
               <div className="text-sm text-muted-foreground mt-1">
-                Net cash position
+                Cash + Positions (at market price)
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4 pt-4 border-t">
+              <div>
+                <div className="text-xs text-muted-foreground">Cash</div>
+                <div className="text-sm font-semibold">
+                  {formatCurrency(balance.cashBalance)}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Positions</div>
+                <div className="text-sm font-semibold">
+                  {formatCurrency(balance.positionValue)}
+                </div>
+              </div>
               <div>
                 <div className="text-xs text-muted-foreground">Deposits</div>
                 <div className="text-sm font-semibold text-green-600">
@@ -110,30 +191,33 @@ export function FundPerformanceCard({
                   -{formatCurrency(balance.totalWithdrawals)}
                 </div>
               </div>
-              <div>
-                <div className="text-xs text-muted-foreground">Buys</div>
-                <div className="text-sm font-semibold text-red-600">
-                  -{formatCurrency(balance.totalBuys)}
-                </div>
-              </div>
-              <div>
-                <div className="text-xs text-muted-foreground">Sells</div>
-                <div className="text-sm font-semibold text-green-600">
-                  +{formatCurrency(balance.totalSells)}
-                </div>
-              </div>
             </div>
 
-            <div className="pt-4 border-t">
+            <div className="pt-4 border-t space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium">Realized P&L</span>
                 <span
-                  className={`text-lg font-bold ${
+                  className={`text-sm font-bold ${
                     balance.realizedPnL >= 0 ? "text-green-600" : "text-red-600"
                   }`}
                 >
                   {balance.realizedPnL >= 0 ? "+" : ""}
                   {formatCurrency(balance.realizedPnL)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">
+                  Unrealized P&L
+                </span>
+                <span
+                  className={`text-sm ${
+                    balance.unrealizedPnL >= 0
+                      ? "text-green-600"
+                      : "text-red-600"
+                  }`}
+                >
+                  {balance.unrealizedPnL >= 0 ? "+" : ""}
+                  {formatCurrency(balance.unrealizedPnL)}
                 </span>
               </div>
             </div>

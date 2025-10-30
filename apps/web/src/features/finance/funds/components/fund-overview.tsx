@@ -4,8 +4,8 @@
  * Overview tab showing fund stats, status, and transfer form.
  */
 
-import { AlertTriangle, Filter, Play, Square, Trash2 } from "lucide-react";
-import Link from "next/link";
+import { AlertTriangle, Archive, Play, Square, Trash2 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import {
@@ -28,14 +28,12 @@ import {
   CardTitle,
 } from "@/lib/components/ui/card";
 
+import { useFundLedger } from "../hooks/use-fund-ledger";
 import { useFundPerformance } from "../hooks/use-fund-performance";
-import { useFundTransfers } from "../hooks/use-fund-transfers";
 import { fundService } from "../services/fund-service";
-import { screeningCriteriaService } from "../services/screening-criteria-service";
 import { Fund, FundOrder, FundTransaction, FundTransfer } from "../types";
 
 import { FundPerformanceCard } from "./fund-performance-card";
-import { FundTransferForm } from "./fund-transfer-form";
 
 interface FundOverviewProps {
   fund: Fund;
@@ -52,43 +50,26 @@ export function FundOverview({
   transfers,
   onFundUpdate,
 }: FundOverviewProps) {
-  const { createTransfer } = useFundTransfers(fund.id);
-  const { balance, performance } = useFundPerformance(transfers, transactions);
+  // Get positions from ledger hook
+  const { positions, positionsSummary } = useFundLedger(fund.id);
+  const { balance, performance } = useFundPerformance(
+    transfers,
+    transactions,
+    positions,
+    positionsSummary
+  );
+  const router = useRouter();
   const [isStarting, setIsStarting] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
+  const [isArchiving, setIsArchiving] = useState(false);
   const [showResetDialog, setShowResetDialog] = useState(false);
-  const [isRunningScreener, setIsRunningScreener] = useState(false);
-  const [screenerResults, setScreenerResults] = useState<{
-    tickerCount: number;
-    tickers: string[];
-  } | null>(null);
-  const [screenerError, setScreenerError] = useState<string | null>(null);
+  const [showArchiveDialog, setShowArchiveDialog] = useState(false);
 
   const modeColor = fund.mode === "sim" ? "bg-blue-500" : "bg-green-500";
   const modeLabel = fund.mode === "sim" ? "SIM" : "REAL";
   const statusColor = fund.status === "active" ? "bg-green-500" : "bg-gray-500";
   const statusLabel = fund.status === "active" ? "Active" : "Paused";
-
-  const handleTransfer = async (
-    amount: number,
-    type: "deposit" | "withdrawal",
-    notes?: string
-  ) => {
-    await createTransfer({
-      fundId: fund.id,
-      amount,
-      transferType: type,
-      notes,
-    });
-
-    // Update the fund balance
-    const newBalance =
-      type === "deposit" ? fund.balance + amount : fund.balance - amount;
-
-    await fundService.updateFund(fund.id, { balance: newBalance });
-    onFundUpdate();
-  };
 
   const handleStartTrading = async () => {
     try {
@@ -114,29 +95,6 @@ export function FundOverview({
     }
   };
 
-  const handleRunScreener = async () => {
-    if (!fund.screeningCriteriaId) {
-      setScreenerError("No screening criteria configured for this fund");
-      return;
-    }
-
-    try {
-      setIsRunningScreener(true);
-      setScreenerError(null);
-      const results = await screeningCriteriaService.runScreener(
-        fund.screeningCriteriaId
-      );
-      setScreenerResults(results);
-    } catch (err) {
-      console.error("Error running screener:", err);
-      setScreenerError(
-        err instanceof Error ? err.message : "Failed to run screener"
-      );
-    } finally {
-      setIsRunningScreener(false);
-    }
-  };
-
   const handleResetFund = async () => {
     try {
       setIsResetting(true);
@@ -156,13 +114,37 @@ export function FundOverview({
     }
   };
 
+  const handleArchiveFund = async () => {
+    try {
+      setIsArchiving(true);
+      const result = await fundService.archiveFund(fund.id);
+      console.log("Fund archived:", result);
+      setShowArchiveDialog(false);
+      // Navigate back to funds list
+      router.push("/funds");
+    } catch (err) {
+      console.error("Error archiving fund:", err);
+      alert(
+        err instanceof Error
+          ? err.message
+          : "Failed to archive fund. Make sure the fund is stopped first."
+      );
+      setIsArchiving(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Performance Metrics */}
-      <FundPerformanceCard balance={balance} performance={performance} />
+      <FundPerformanceCard
+        fundId={fund.id}
+        balance={balance}
+        performance={performance}
+        onUpdate={onFundUpdate}
+      />
 
       {/* Fund Stats */}
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
@@ -182,23 +164,6 @@ export function FundOverview({
           </CardHeader>
           <CardContent>
             <Badge className={`${statusColor} text-white`}>{statusLabel}</Badge>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Current Balance
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              $
-              {fund.balance.toLocaleString("en-US", {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              })}
-            </div>
           </CardContent>
         </Card>
 
@@ -285,81 +250,48 @@ export function FundOverview({
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
+
+          {/* Archive Fund Button with Confirmation Dialog */}
+          <AlertDialog
+            open={showArchiveDialog}
+            onOpenChange={setShowArchiveDialog}
+          >
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="outline"
+                disabled={fund.status === "active" || isArchiving}
+              >
+                <Archive className="h-4 w-4 mr-2" />
+                {isArchiving ? "Archiving..." : "Archive Fund"}
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle className="flex items-center gap-2">
+                  <Archive className="h-5 w-5" />
+                  Archive This Fund?
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will hide the fund from the main funds list. The fund and
+                  all its data will be preserved and can be unarchived later if
+                  needed.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={isArchiving}>
+                  Cancel
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={handleArchiveFund}
+                  disabled={isArchiving}
+                >
+                  {isArchiving ? "Archiving..." : "Archive Fund"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </CardContent>
       </Card>
-
-      {/* Screener */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Screener</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center gap-2">
-            <Button
-              onClick={handleRunScreener}
-              disabled={!fund.screeningCriteriaId || isRunningScreener}
-              variant="outline"
-            >
-              <Filter className="h-4 w-4 mr-2" />
-              {isRunningScreener ? "Running..." : "Run Screener"}
-            </Button>
-            {screenerResults && (
-              <div className="flex items-center gap-2">
-                <Badge variant="secondary" className="text-lg px-3 py-1">
-                  {screenerResults.tickerCount} tickers
-                </Badge>
-              </div>
-            )}
-          </div>
-
-          {!fund.screeningCriteriaId && (
-            <p className="text-sm text-muted-foreground">
-              Configure screening criteria in the Screener tab to use this
-              feature.
-            </p>
-          )}
-
-          {screenerError && (
-            <div className="rounded-lg bg-red-50 dark:bg-red-950/30 p-3 text-sm text-red-800 dark:text-red-200">
-              {screenerError}
-            </div>
-          )}
-
-          {screenerResults && screenerResults.tickerCount > 0 && (
-            <div className="rounded-lg border p-3">
-              <p className="text-sm font-medium mb-2">Matching Tickers:</p>
-              <div className="flex flex-wrap gap-1">
-                {screenerResults.tickers.slice(0, 20).map((ticker) => (
-                  <Link
-                    key={ticker}
-                    href={`/?ticker=${ticker}`}
-                    className="inline-block"
-                  >
-                    <Badge
-                      variant="outline"
-                      className="text-xs cursor-pointer hover:bg-accent hover:text-accent-foreground transition-colors"
-                    >
-                      {ticker}
-                    </Badge>
-                  </Link>
-                ))}
-                {screenerResults.tickerCount > 20 && (
-                  <Badge variant="outline" className="text-xs">
-                    +{screenerResults.tickerCount - 20} more
-                  </Badge>
-                )}
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Transfer Form */}
-      <FundTransferForm
-        fundId={fund.id}
-        currentBalance={fund.balance}
-        onTransfer={handleTransfer}
-      />
     </div>
   );
 }

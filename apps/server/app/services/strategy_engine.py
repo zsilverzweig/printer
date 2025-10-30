@@ -769,12 +769,30 @@ class StrategyEngine:
             
             actual_cost = quantity * market_data.price
             
-            # CRITICAL: Validate fund has sufficient balance for this order
-            if actual_cost > fund_balance:
+            # Get pending buy orders to calculate reserved funds
+            pending_orders = await self.get_pending_orders()
+            pending_buy_cost = sum(
+                o.quantity * market_data.price  # Use current price as estimate
+                for o in pending_orders 
+                if o.side == "buy"
+            )
+            
+            # Calculate available balance (total balance - pending orders)
+            available_balance = fund_balance - pending_buy_cost
+            
+            logger.info(
+                f"💵 Balance check: total=${fund_balance:.2f}, "
+                f"pending_orders=${pending_buy_cost:.2f}, "
+                f"available=${available_balance:.2f}, "
+                f"needed=${actual_cost:.2f}"
+            )
+            
+            # CRITICAL: Validate fund has sufficient available balance for this order
+            if actual_cost > available_balance:
                 logger.warning(
                     f"❌ INSUFFICIENT BALANCE: Cannot buy {symbol}: "
-                    f"Order cost ${actual_cost:.2f} exceeds fund balance ${fund_balance:.2f} "
-                    f"(shortfall: ${actual_cost - fund_balance:.2f})"
+                    f"Order cost ${actual_cost:.2f} exceeds available balance ${available_balance:.2f} "
+                    f"(total: ${fund_balance:.2f}, reserved: ${pending_buy_cost:.2f})"
                 )
                 
                 # Broadcast insufficient balance event
@@ -784,12 +802,14 @@ class StrategyEngine:
                     "event_type": "insufficient_balance",
                     "timestamp": _get_utc_timestamp(),
                     "symbol": symbol,
-                    "reason": "Insufficient fund balance",
-                    "message": f"Cannot buy {quantity} shares of {symbol}: need ${actual_cost:.2f} but only have ${fund_balance:.2f}",
+                    "reason": "Insufficient available balance",
+                    "message": f"Cannot buy {quantity} shares of {symbol}: need ${actual_cost:.2f} but only have ${available_balance:.2f} available",
                     "details": {
                         "fund_balance": fund_balance,
+                        "pending_orders": pending_buy_cost,
+                        "available_balance": available_balance,
                         "order_cost": actual_cost,
-                        "shortfall": actual_cost - fund_balance,
+                        "shortfall": actual_cost - available_balance,
                         "quantity": quantity,
                         "share_price": market_data.price,
                     }

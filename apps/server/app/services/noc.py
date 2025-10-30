@@ -70,11 +70,6 @@ class NocService:
                 "data": jsonable_encoder(payload),
                 "timestamp": int(time.time() * 1000)
             })
-            self.logger.info(
-                "Broadcasting NOC payload to %s subscribers; stocks=%s",
-                len(self.subscribers),
-                len(payload)
-            )
             
             # Broadcast to subscribers with error handling and cleanup
             dead_connections = []

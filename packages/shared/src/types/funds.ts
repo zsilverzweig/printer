@@ -33,6 +33,11 @@ export interface Fund {
   mode: FundMode;
   balance: number; // Current fund balance (also serves as AUM)
   status: FundStatus; // Trading status: active or paused
+  archived?: boolean; // Hidden from main list
+
+  // UI customization
+  icon?: string; // Lucide icon name (e.g., "Wallet", "TrendingUp")
+  iconColor?: string; // Tailwind color class (e.g., "blue", "green", "purple")
 
   // Strategy configuration
   strategyId?: string | null; // References ExecutionStrategy (e.g., "monkey_darts")
@@ -180,6 +185,10 @@ export interface CreateFundInput {
   mode: FundMode;
   initialBalance: number;
 
+  // UI customization
+  icon?: string;
+  iconColor?: string;
+
   // Strategy configuration
   strategyId?: string | null;
   strategyConfig?: Record<string, any>;
@@ -207,6 +216,10 @@ export interface UpdateFundInput {
   name?: string;
   description?: string;
   balance?: number;
+
+  // UI customization
+  icon?: string;
+  iconColor?: string;
 
   // Strategy configuration
   strategyId?: string | null;

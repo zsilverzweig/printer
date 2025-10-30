@@ -25,7 +25,6 @@ def fetch_snapshot_all(api_key: str) -> List[dict]:
     base = "https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/tickers"
     query = urllib.parse.urlencode({"apiKey": api_key, "limit": 50000})
     url = base + "?" + query
-    logger.info("GET %s", url)
     
     try:
         with urllib.request.urlopen(url) as resp:

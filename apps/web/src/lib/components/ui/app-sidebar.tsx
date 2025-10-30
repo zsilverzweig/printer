@@ -32,6 +32,7 @@ export interface SidebarItem {
 
 export interface SidebarSection {
   title: string;
+  titleHref?: string; // Optional link for the section title
   items: SidebarItem[];
 }
 
@@ -99,7 +100,13 @@ export function AppSidebar({
         {children}
         {sections.map((section) => (
           <SidebarGroup key={section.title}>
-            <SidebarGroupLabel>{section.title}</SidebarGroupLabel>
+            <SidebarGroupLabel asChild={!!section.titleHref}>
+              {section.titleHref ? (
+                <Link href={section.titleHref}>{section.title}</Link>
+              ) : (
+                section.title
+              )}
+            </SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
                 {section.items.map((item) => {

@@ -6,11 +6,36 @@
 
 "use client";
 
-import { useState, useEffect } from "react";
-import { AlertTriangle, CheckCircle, RefreshCw, XCircle } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle,
+  RefreshCw,
+  Trash2,
+  XCircle,
+} from "lucide-react";
+import { useEffect, useState } from "react";
 
+import { Alert, AlertDescription, AlertTitle } from "@/lib/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/lib/components/ui/alert-dialog";
+import { Badge } from "@/lib/components/ui/badge";
 import { Button } from "@/lib/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/lib/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/lib/components/ui/card";
 import {
   Table,
   TableBody,
@@ -19,8 +44,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/lib/components/ui/table";
-import { Badge } from "@/lib/components/ui/badge";
-import { Alert, AlertDescription, AlertTitle } from "@/lib/components/ui/alert";
 
 interface AlpacaPosition {
   symbol: string;
@@ -55,6 +78,129 @@ interface FundPositionsProps {
   fundId: string;
 }
 
+interface CloseOrphanedPositionButtonProps {
+  fundId: string;
+  symbol: string;
+  onSuccess: () => void;
+}
+
+function CloseOrphanedPositionButton({
+  fundId,
+  symbol,
+  onSuccess,
+}: CloseOrphanedPositionButtonProps) {
+  const [isClosing, setIsClosing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [showDialog, setShowDialog] = useState(false);
+
+  const handleClose = async () => {
+    try {
+      setIsClosing(true);
+      setError(null);
+
+      const response = await fetch(
+        `http://localhost:8000/api/funds/${fundId}/positions/${symbol}/close-orphaned`,
+        { method: "POST" }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || "Failed to close position");
+      }
+
+      const result = await response.json();
+      console.log("Position closed:", result);
+
+      // Close dialog and refresh positions
+      setShowDialog(false);
+      onSuccess();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to close position");
+      console.error("Error closing position:", err);
+    } finally {
+      setIsClosing(false);
+    }
+  };
+
+  return (
+    <>
+      <AlertDialog open={showDialog} onOpenChange={setShowDialog}>
+        <AlertDialogTrigger asChild>
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-orange-300 text-orange-600 hover:bg-orange-50 hover:text-orange-700 dark:border-orange-800 dark:text-orange-400 dark:hover:bg-orange-950/30"
+          >
+            <Trash2 className="h-3 w-3 mr-1" />
+            Close Out
+          </Button>
+        </AlertDialogTrigger>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-orange-600" />
+              Close Orphaned Position?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-3">
+              <p>
+                This will create a closing transaction for{" "}
+                <strong>{symbol}</strong> to zero out the position in the
+                database.
+              </p>
+              <div className="rounded-md bg-orange-50 dark:bg-orange-950/30 p-3 text-sm space-y-2">
+                <p className="font-semibold text-orange-900 dark:text-orange-200">
+                  What this does:
+                </p>
+                <ul className="list-disc list-inside space-y-1 text-orange-800 dark:text-orange-300">
+                  <li>
+                    Creates a matching sell transaction to close the database
+                    position
+                  </li>
+                  <li>
+                    Uses the average entry price as the exit price (breakeven)
+                  </li>
+                  <li>Returns the cost basis to your fund balance</li>
+                  <li>Leaves an audit trail in your transaction history</li>
+                </ul>
+              </div>
+              <div className="rounded-md bg-blue-50 dark:bg-blue-950/30 p-3 text-sm">
+                <p className="font-semibold text-blue-900 dark:text-blue-200 mb-1">
+                  Why use this?
+                </p>
+                <p className="text-blue-800 dark:text-blue-300">
+                  This position exists in your database but not in Alpaca. This
+                  usually happens when a position was sold in Alpaca but the
+                  sync failed, or it was manually closed outside the trading
+                  system.
+                </p>
+              </div>
+              {error && (
+                <div className="rounded-md bg-red-50 dark:bg-red-950/30 p-3 text-sm text-red-800 dark:text-red-300">
+                  <p className="font-semibold mb-1">Error:</p>
+                  <p>{error}</p>
+                </div>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isClosing}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                handleClose();
+              }}
+              disabled={isClosing}
+              className="bg-orange-600 hover:bg-orange-700 text-white"
+            >
+              {isClosing ? "Closing..." : "Close Position"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}
+
 export function FundPositions({ fundId }: FundPositionsProps) {
   const [data, setData] = useState<PositionsData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -63,13 +209,17 @@ export function FundPositions({ fundId }: FundPositionsProps) {
   const fetchPositions = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`http://localhost:8000/api/funds/${fundId}/positions`);
+      const response = await fetch(
+        `http://localhost:8000/api/funds/${fundId}/positions`
+      );
       if (!response.ok) throw new Error("Failed to fetch positions");
       const result: PositionsData = await response.json();
       setData(result);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to fetch positions");
+      setError(
+        err instanceof Error ? err.message : "Failed to fetch positions"
+      );
     } finally {
       setLoading(false);
     }
@@ -131,19 +281,29 @@ export function FundPositions({ fundId }: FundPositionsProps) {
             <div className="space-y-2 mt-2">
               {data.sync_issues.in_alpaca_not_db.length > 0 && (
                 <div>
-                  <p className="font-semibold">In Alpaca but not in Database:</p>
-                  <p className="text-sm">{data.sync_issues.in_alpaca_not_db.join(", ")}</p>
+                  <p className="font-semibold">
+                    In Alpaca but not in Database:
+                  </p>
+                  <p className="text-sm">
+                    {data.sync_issues.in_alpaca_not_db.join(", ")}
+                  </p>
                   <p className="text-xs text-muted-foreground mt-1">
-                    These positions exist in Alpaca but have no transaction history. They may belong to a different fund.
+                    These positions exist in Alpaca but have no transaction
+                    history. They may belong to a different fund.
                   </p>
                 </div>
               )}
               {data.sync_issues.in_db_not_alpaca.length > 0 && (
                 <div className="mt-2">
-                  <p className="font-semibold">In Database but not in Alpaca:</p>
-                  <p className="text-sm">{data.sync_issues.in_db_not_alpaca.join(", ")}</p>
+                  <p className="font-semibold">
+                    In Database but not in Alpaca:
+                  </p>
+                  <p className="text-sm">
+                    {data.sync_issues.in_db_not_alpaca.join(", ")}
+                  </p>
                   <p className="text-xs text-muted-foreground mt-1">
-                    These positions show as open in the database but don't exist in Alpaca. This indicates a sync problem.
+                    These positions show as open in the database but don't exist
+                    in Alpaca. This indicates a sync problem.
                   </p>
                 </div>
               )}
@@ -162,7 +322,9 @@ export function FundPositions({ fundId }: FundPositionsProps) {
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-2">
                 <span className="text-sm text-muted-foreground">Mode:</span>
-                <Badge variant={data.fund_mode === "sim" ? "secondary" : "default"}>
+                <Badge
+                  variant={data.fund_mode === "sim" ? "secondary" : "default"}
+                >
                   {data.fund_mode.toUpperCase()}
                 </Badge>
               </div>
@@ -186,7 +348,8 @@ export function FundPositions({ fundId }: FundPositionsProps) {
         <CardHeader>
           <CardTitle>Alpaca Positions</CardTitle>
           <CardDescription>
-            Current positions from Alpaca {data.fund_mode === "sim" ? "(Paper Trading)" : "(Live Trading)"}
+            Current positions from Alpaca{" "}
+            {data.fund_mode === "sim" ? "(Paper Trading)" : "(Live Trading)"}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -216,8 +379,12 @@ export function FundPositions({ fundId }: FundPositionsProps) {
                     );
                     return (
                       <TableRow key={position.symbol}>
-                        <TableCell className="font-medium">{position.symbol}</TableCell>
-                        <TableCell className="text-right">{position.qty}</TableCell>
+                        <TableCell className="font-medium">
+                          {position.symbol}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {position.qty}
+                        </TableCell>
                         <TableCell className="text-right">
                           {formatCurrency(position.avg_entry_price)}
                         </TableCell>
@@ -229,14 +396,18 @@ export function FundPositions({ fundId }: FundPositionsProps) {
                         </TableCell>
                         <TableCell
                           className={`text-right font-medium ${
-                            position.unrealized_pl >= 0 ? "text-green-600" : "text-red-600"
+                            position.unrealized_pl >= 0
+                              ? "text-green-600"
+                              : "text-red-600"
                           }`}
                         >
                           {formatCurrency(position.unrealized_pl)}
                         </TableCell>
                         <TableCell
                           className={`text-right font-medium ${
-                            position.unrealized_plpc >= 0 ? "text-green-600" : "text-red-600"
+                            position.unrealized_plpc >= 0
+                              ? "text-green-600"
+                              : "text-red-600"
                           }`}
                         >
                           {formatPercent(position.unrealized_plpc)}
@@ -285,6 +456,7 @@ export function FundPositions({ fundId }: FundPositionsProps) {
                     <TableHead>Symbol</TableHead>
                     <TableHead className="text-right">Quantity</TableHead>
                     <TableHead>Sync</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -294,8 +466,12 @@ export function FundPositions({ fundId }: FundPositionsProps) {
                     );
                     return (
                       <TableRow key={position.symbol}>
-                        <TableCell className="font-medium">{position.symbol}</TableCell>
-                        <TableCell className="text-right">{position.qty}</TableCell>
+                        <TableCell className="font-medium">
+                          {position.symbol}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {position.qty}
+                        </TableCell>
                         <TableCell>
                           {inAlpaca ? (
                             <div className="flex items-center gap-1 text-green-600">
@@ -307,6 +483,15 @@ export function FundPositions({ fundId }: FundPositionsProps) {
                               <XCircle className="h-4 w-4" />
                               <span className="text-xs">Not in Alpaca</span>
                             </div>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {!inAlpaca && (
+                            <CloseOrphanedPositionButton
+                              fundId={fundId}
+                              symbol={position.symbol}
+                              onSuccess={fetchPositions}
+                            />
                           )}
                         </TableCell>
                       </TableRow>
@@ -321,4 +506,3 @@ export function FundPositions({ fundId }: FundPositionsProps) {
     </div>
   );
 }
-

@@ -45,22 +45,15 @@ export function MainAppSidebar() {
     },
     {
       title: "Funds",
-      items: [
-        {
-          id: "funds-overview",
-          title: "All Funds",
-          href: "/funds",
-          icon: <FolderOpen className="h-4 w-4" />,
-        },
-        ...(fundsLoading
-          ? []
-          : funds.map((fund) => ({
-              id: `fund-${fund.id}`,
-              title: fund.name,
-              href: `/funds/${fund.id}`,
-              icon: <Wallet className="h-4 w-4" />,
-            }))),
-      ],
+      titleHref: "/funds",
+      items: fundsLoading
+        ? []
+        : funds.map((fund) => ({
+            id: `fund-${fund.id}`,
+            title: fund.name,
+            href: `/funds/${fund.id}`,
+            icon: <Wallet className="h-4 w-4" />,
+          })),
     },
     {
       title: "Investment",

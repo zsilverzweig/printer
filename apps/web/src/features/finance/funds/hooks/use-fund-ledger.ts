@@ -1,16 +1,36 @@
 /**
  * Hook to fetch complete fund ledger data
- * 
+ *
  * Fetches orders, transactions, and transfers for a fund
  */
 
 import { useCallback, useEffect, useState } from "react";
+
 import { FundOrder, FundTransaction, FundTransfer } from "../types";
+
+export interface FundPosition {
+  symbol: string;
+  quantity: number;
+  avgEntryPrice: number;
+  currentPrice: number | null;
+  costBasis: number;
+  marketValue: number | null;
+  unrealizedPl: number | null;
+  unrealizedPlpc: number | null;
+}
+
+export interface PositionsSummary {
+  positionCount: number;
+  totalMarketValue: number;
+  totalUnrealizedPl: number;
+}
 
 export interface UseFundLedgerReturn {
   orders: FundOrder[];
   transactions: FundTransaction[];
   transfers: FundTransfer[];
+  positions: FundPosition[];
+  positionsSummary: PositionsSummary;
   loading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
@@ -20,6 +40,12 @@ export function useFundLedger(fundId: string): UseFundLedgerReturn {
   const [orders, setOrders] = useState<FundOrder[]>([]);
   const [transactions, setTransactions] = useState<FundTransaction[]>([]);
   const [transfers, setTransfers] = useState<FundTransfer[]>([]);
+  const [positions, setPositions] = useState<FundPosition[]>([]);
+  const [positionsSummary, setPositionsSummary] = useState<PositionsSummary>({
+    positionCount: 0,
+    totalMarketValue: 0,
+    totalUnrealizedPl: 0,
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -32,11 +58,12 @@ export function useFundLedger(fundId: string): UseFundLedgerReturn {
       setLoading(true);
       setError(null);
 
-      // Fetch all three types in parallel
-      const [ordersRes, transactionsRes, transfersRes] = await Promise.all([
+      // Fetch all four types in parallel
+      const [ordersRes, transactionsRes, transfersRes, positionsRes] = await Promise.all([
         fetch(`http://localhost:8000/api/funds/${fundId}/orders`),
         fetch(`http://localhost:8000/api/funds/${fundId}/transactions`),
         fetch(`http://localhost:8000/api/funds/${fundId}/transfers`),
+        fetch(`http://localhost:8000/api/funds/${fundId}/positions/summary`),
       ]);
 
       if (!ordersRes.ok) {
@@ -48,10 +75,14 @@ export function useFundLedger(fundId: string): UseFundLedgerReturn {
       if (!transfersRes.ok) {
         throw new Error("Failed to fetch transfers");
       }
+      if (!positionsRes.ok) {
+        throw new Error("Failed to fetch positions");
+      }
 
       const ordersData = await ordersRes.json();
       const transactionsData = await transactionsRes.json();
       const transfersData = await transfersRes.json();
+      const positionsData = await positionsRes.json();
 
       // Transform snake_case to camelCase
       const transformedOrders = ordersData.map((order: any) => ({
@@ -87,13 +118,31 @@ export function useFundLedger(fundId: string): UseFundLedgerReturn {
         notes: transfer.notes,
       }));
 
+      const transformedPositions = positionsData.positions.map((pos: any) => ({
+        symbol: pos.symbol,
+        quantity: pos.quantity,
+        avgEntryPrice: pos.avg_entry_price,
+        currentPrice: pos.current_price,
+        costBasis: pos.cost_basis,
+        marketValue: pos.market_value,
+        unrealizedPl: pos.unrealized_pl,
+        unrealizedPlpc: pos.unrealized_plpc,
+      }));
+
       setOrders(transformedOrders);
       setTransactions(transformedTransactions);
       setTransfers(transformedTransfers);
+      setPositions(transformedPositions);
+      setPositionsSummary({
+        positionCount: positionsData.summary.position_count,
+        totalMarketValue: positionsData.summary.total_market_value,
+        totalUnrealizedPl: positionsData.summary.total_unrealized_pl,
+      });
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Failed to fetch ledger data";
       setError(message);
+      // eslint-disable-next-line no-console
       console.error("Error fetching ledger data:", err);
     } finally {
       setLoading(false);
@@ -108,9 +157,10 @@ export function useFundLedger(fundId: string): UseFundLedgerReturn {
     orders,
     transactions,
     transfers,
+    positions,
+    positionsSummary,
     loading,
     error,
     refresh: fetchLedgerData,
   };
 }
-
