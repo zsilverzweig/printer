@@ -1,23 +1,19 @@
 /**
  * FundLedger Component
  *
- * Displays the complete ledger for a fund including:
+ * Displays the complete ledger for a fund - a chronological list of money moves:
  * - Transfers (deposits/withdrawals)
- * - Orders (pending, filled, cancelled)
- * - Transactions (completed trades with P&L)
+ * - Transactions (completed trades with cash impact)
  */
 
 import {
   ArrowDownCircle,
   ArrowUpCircle,
-  Clock,
   TrendingDown,
   TrendingUp,
-  X,
-  CheckCircle,
-  Loader2,
 } from "lucide-react";
 
+import { Badge } from "@/lib/components/ui/badge";
 import {
   Card,
   CardContent,
@@ -25,7 +21,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/lib/components/ui/card";
-import { Badge } from "@/lib/components/ui/badge";
 import {
   Tabs,
   TabsContent,
@@ -33,10 +28,9 @@ import {
   TabsTrigger,
 } from "@/lib/components/ui/tabs";
 
-import { FundOrder, FundTransaction, FundTransfer } from "../types";
+import { FundTransaction, FundTransfer } from "../types";
 
 interface FundLedgerProps {
-  orders: FundOrder[];
   transactions: FundTransaction[];
   transfers: FundTransfer[];
   loading: boolean;
@@ -44,13 +38,12 @@ interface FundLedgerProps {
 
 type LedgerItem = {
   id: string;
-  type: "transfer" | "order" | "transaction";
+  type: "transfer" | "transaction";
   timestamp: Date;
-  data: FundTransfer | FundOrder | FundTransaction;
+  data: FundTransfer | FundTransaction;
 };
 
 export function FundLedger({
-  orders,
   transactions,
   transfers,
   loading,
@@ -73,19 +66,13 @@ export function FundLedger({
     );
   }
 
-  // Combine all items into a single timeline
+  // Combine transfers and transactions into a single timeline
   const allItems: LedgerItem[] = [
     ...transfers.map((t) => ({
       id: t.id,
       type: "transfer" as const,
       timestamp: new Date(t.timestamp),
       data: t,
-    })),
-    ...orders.map((o) => ({
-      id: o.id,
-      type: "order" as const,
-      timestamp: new Date(o.submittedAt),
-      data: o,
     })),
     ...transactions.map((t) => ({
       id: t.id,
@@ -94,39 +81,6 @@ export function FundLedger({
       data: t,
     })),
   ].sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
-
-  const getOrderStatusBadge = (status: string) => {
-    switch (status.toLowerCase()) {
-      case "filled":
-        return (
-          <Badge variant="default" className="text-xs">
-            <CheckCircle className="h-3 w-3 mr-1" />
-            Filled
-          </Badge>
-        );
-      case "pending":
-        return (
-          <Badge variant="secondary" className="text-xs">
-            <Clock className="h-3 w-3 mr-1" />
-            Pending
-          </Badge>
-        );
-      case "canceled":
-      case "failed":
-        return (
-          <Badge variant="destructive" className="text-xs">
-            <X className="h-3 w-3 mr-1" />
-            {status}
-          </Badge>
-        );
-      default:
-        return (
-          <Badge variant="outline" className="text-xs">
-            {status}
-          </Badge>
-        );
-    }
-  };
 
   const renderLedgerItem = (item: LedgerItem) => {
     if (item.type === "transfer") {
@@ -173,55 +127,6 @@ export function FundLedger({
       );
     }
 
-    if (item.type === "order") {
-      const order = item.data as FundOrder;
-      const isBuy = order.side === "buy";
-      return (
-        <div
-          key={item.id}
-          className="flex items-center justify-between p-4 rounded-lg border bg-card"
-        >
-          <div className="flex items-center gap-3">
-            <Loader2 className="h-5 w-5 text-blue-600" />
-            <div>
-              <div className="flex items-center gap-2">
-                <p className="font-medium">
-                  {order.symbol} - {order.orderType.toUpperCase()}
-                </p>
-                {getOrderStatusBadge(order.status)}
-                <Badge
-                  variant={isBuy ? "default" : "secondary"}
-                  className="text-xs"
-                >
-                  {isBuy ? "BUY" : "SELL"}
-                </Badge>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                {order.quantity} shares
-                {order.filledQty && order.filledAvgPrice && (
-                  <span>
-                    {" "}
-                    • Filled @ ${order.filledAvgPrice.toFixed(2)} = $
-                    {(order.filledQty * order.filledAvgPrice).toFixed(2)}
-                  </span>
-                )}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {item.timestamp.toLocaleString()}
-              </p>
-            </div>
-          </div>
-          {order.filledQty && order.filledAvgPrice && (
-            <div className="text-right">
-              <div className="font-semibold text-lg">
-                ${(order.filledQty * order.filledAvgPrice).toFixed(2)}
-              </div>
-            </div>
-          )}
-        </div>
-      );
-    }
-
     if (item.type === "transaction") {
       const txn = item.data as FundTransaction;
       const isBuy = txn.side === "buy";
@@ -229,7 +134,9 @@ export function FundLedger({
         <div
           key={item.id}
           className={`flex items-center justify-between p-4 rounded-lg border ${
-            isBuy ? "bg-green-50 dark:bg-green-950/20" : "bg-red-50 dark:bg-red-950/20"
+            isBuy
+              ? "bg-green-50 dark:bg-green-950/20"
+              : "bg-red-50 dark:bg-red-950/20"
           }`}
         >
           <div className="flex items-center gap-3">
@@ -278,21 +185,18 @@ export function FundLedger({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Complete Ledger</CardTitle>
+        <CardTitle>Ledger</CardTitle>
         <CardDescription>
-          All transfers, orders, and transactions
+          Complete history of money movements - transfers and trades
         </CardDescription>
       </CardHeader>
       <CardContent>
         <Tabs defaultValue="all" className="w-full">
-          <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="all">
-              All ({allItems.length})
-            </TabsTrigger>
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="all">All ({allItems.length})</TabsTrigger>
             <TabsTrigger value="transfers">
               Transfers ({transfers.length})
             </TabsTrigger>
-            <TabsTrigger value="orders">Orders ({orders.length})</TabsTrigger>
             <TabsTrigger value="transactions">
               Trades ({transactions.length})
             </TabsTrigger>
@@ -320,24 +224,6 @@ export function FundLedger({
                   type: "transfer" as const,
                   timestamp: new Date(t.timestamp),
                   data: t,
-                }))
-                .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
-                .map(renderLedgerItem)
-            )}
-          </TabsContent>
-
-          <TabsContent value="orders" className="space-y-3">
-            {orders.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                No orders yet
-              </div>
-            ) : (
-              orders
-                .map((o) => ({
-                  id: o.id,
-                  type: "order" as const,
-                  timestamp: new Date(o.submittedAt),
-                  data: o,
                 }))
                 .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
                 .map(renderLedgerItem)

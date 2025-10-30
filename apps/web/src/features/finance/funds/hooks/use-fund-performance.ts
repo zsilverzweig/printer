@@ -5,13 +5,13 @@
  */
 
 import { useMemo } from "react";
+import { FundTransaction, FundTransfer } from "../types";
 import {
   calculateFundBalance,
   calculatePerformanceMetrics,
   FundBalanceCalculation,
   PerformanceMetrics,
 } from "../utils/ledger-calculations";
-import { FundTransaction, FundTransfer } from "../types";
 
 export interface UseFundPerformanceReturn {
   balance: FundBalanceCalculation;
@@ -37,4 +37,3 @@ export function useFundPerformance(
     performance,
   };
 }
-

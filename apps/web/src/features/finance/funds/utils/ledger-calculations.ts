@@ -1,10 +1,11 @@
 /**
  * Ledger Calculation Utilities
  *
- * Calculate fund balances and performance metrics from ledger data
+ * Calculate fund balances and performance metrics from ledger data.
+ * The ledger tracks actual money movements: transfers and trades.
  */
 
-import { FundOrder, FundTransaction, FundTransfer } from "../types";
+import { FundTransaction, FundTransfer } from "../types";
 
 export interface FundBalanceCalculation {
   currentBalance: number;
@@ -96,7 +97,12 @@ export function calculatePerformanceMetrics(
 
   // Calculate performance for each window
   return {
-    day: calculateWindowPerformance(transfers, transactions, getDateDaysAgo(1), now),
+    day: calculateWindowPerformance(
+      transfers,
+      transactions,
+      getDateDaysAgo(1),
+      now
+    ),
     week: calculateWindowPerformance(
       transfers,
       transactions,
@@ -171,15 +177,30 @@ function calculateWindowPerformance(
   const netTransfers =
     windowBalance.totalDeposits - windowBalance.totalWithdrawals;
 
-  // P&L is the change in balance minus net transfers
+  // P&L is the realized P&L from trading (excludes transfers)
   const pnl = windowBalance.realizedPnL;
 
   // End balance is start balance + pnl + net transfers
   const endBalance = startBalance + pnl + netTransfers;
 
-  // Calculate return % based on start balance (excluding new deposits)
-  const pnlPercent =
-    startBalance > 0 ? (pnl / startBalance) * 100 : netTransfers > 0 ? 0 : 0;
+  // Calculate total net deposits up to the end of the window
+  // This is the cumulative amount transferred into the fund
+  const allTransfersUpToEnd = transfers.filter((t) => {
+    const date = new Date(t.timestamp);
+    return date <= endDate;
+  });
+
+  const totalNetDeposits =
+    allTransfersUpToEnd
+      .filter((t) => t.transferType === "deposit")
+      .reduce((sum, t) => sum + t.amount, 0) -
+    allTransfersUpToEnd
+      .filter((t) => t.transferType === "withdrawal")
+      .reduce((sum, t) => sum + t.amount, 0);
+
+  // Calculate return % based on net deposits (amount invested)
+  // If no money has been deposited, return 0%
+  const pnlPercent = totalNetDeposits > 0 ? (pnl / totalNetDeposits) * 100 : 0;
 
   // Count trades
   const buys = windowTransactions.filter((t) => t.side === "buy");
@@ -274,4 +295,3 @@ export function formatPercent(value: number): string {
   const sign = value >= 0 ? "+" : "";
   return `${sign}${value.toFixed(2)}%`;
 }
-

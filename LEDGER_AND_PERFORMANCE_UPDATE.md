@@ -14,11 +14,13 @@ Successfully implemented comprehensive ledger tracking and performance metrics f
 ## What Was Added
 
 ### 📊 Database Models (Already Existed)
+
 - **Orders Table**: Tracks all order submissions with status updates
 - **Transactions Table**: Records completed trades (filled orders)
 - **Transfers Table**: Logs deposits/withdrawals to funds
 
 ### 🔧 Backend Services
+
 - **Order Polling Service**: Syncs order status from Alpaca → Database
 - **Transaction Creation**: Automatically creates transaction records when orders fill
 - **API Endpoints**:
@@ -29,7 +31,9 @@ Successfully implemented comprehensive ledger tracking and performance metrics f
 ### 🎨 Frontend Components
 
 #### New Components
+
 1. **FundLedger** (`fund-ledger.tsx`)
+
    - Displays all ledger items in unified timeline
    - Tabs for filtering: All | Transfers | Orders | Trades
    - Color-coded by transaction type
@@ -42,10 +46,12 @@ Successfully implemented comprehensive ledger tracking and performance metrics f
    - Win rate and trade statistics per period
 
 #### New Hooks
+
 1. **useFundLedger** - Fetches orders, transactions, and transfers
 2. **useFundPerformance** - Calculates balance and performance metrics
 
 #### New Utilities
+
 - **ledger-calculations.ts**:
   - `calculateFundBalance()` - Derives balance from ledger
   - `calculatePerformanceMetrics()` - Computes P&L, ROI%, win rates
@@ -53,7 +59,9 @@ Successfully implemented comprehensive ledger tracking and performance metrics f
   - Trade matching logic (FIFO basis for calculating wins/losses)
 
 ### 📦 Shared Types
+
 Added to `@printer/shared`:
+
 - `FundOrder` - Order record with status, timestamps, fill details
 - `FundTransaction` - Completed trade with price, quantity, total value
 
@@ -62,16 +70,19 @@ Added to `@printer/shared`:
 ## How It Works
 
 ### Balance Calculation
+
 ```
-Current Balance = 
-  Total Deposits 
-  - Total Withdrawals 
+Current Balance =
+  Total Deposits
+  - Total Withdrawals
   - Total Buys (cash out)
   + Total Sells (cash in)
 ```
 
 ### Performance Calculation
+
 For each time window:
+
 1. Calculate starting balance (before window)
 2. Filter transactions within window
 3. Calculate P&L = Total Sells - Total Buys
@@ -80,6 +91,7 @@ For each time window:
 6. Calculate win rate = Winning Trades / Total Trades
 
 ### Order → Transaction Flow
+
 1. Strategy engine creates `Order` record in database
 2. Order submitted to Alpaca via API
 3. Order record updated with Alpaca order ID
@@ -94,6 +106,7 @@ For each time window:
 ## What You'll See
 
 ### Fund Overview Tab
+
 - **Performance Cards**:
   - Current Balance (from ledger calculation)
   - Breakdown: Deposits, Withdrawals, Buys, Sells, Realized P&L
@@ -101,6 +114,7 @@ For each time window:
   - Win rate and trade count per window
 
 ### Ledger Tab
+
 - **Unified Timeline** with tabs:
   - **All**: Combined view of everything
   - **Transfers**: Deposits and withdrawals
@@ -108,6 +122,7 @@ For each time window:
   - **Trades**: Completed transactions (filled orders)
 
 Each entry shows:
+
 - Icon indicating type (deposit ↓, withdrawal ↑, buy ↗, sell ↘)
 - Status badges for orders
 - Timestamps
@@ -131,18 +146,22 @@ To test the new features:
 ## Files Modified/Created
 
 ### Backend (Python)
+
 - `apps/server/app/services/order_polling.py` - Already saving orders & transactions ✓
 - `apps/server/app/services/strategy_engine.py` - Already creating orders ✓
 - `apps/server/app/routers/funds.py` - Endpoints already exist ✓
 
 ### Frontend (TypeScript/React)
+
 **New Files:**
+
 - `apps/web/src/features/finance/funds/hooks/use-fund-ledger.ts`
 - `apps/web/src/features/finance/funds/hooks/use-fund-performance.ts`
 - `apps/web/src/features/finance/funds/utils/ledger-calculations.ts`
 - `apps/web/src/features/finance/funds/components/fund-performance-card.tsx`
 
 **Modified Files:**
+
 - `packages/shared/src/types/funds.ts` - Added FundOrder & FundTransaction types
 - `packages/shared/src/index.ts` - Exported new types
 - `apps/web/src/features/finance/funds/types/index.ts` - Re-exported new types
@@ -156,6 +175,7 @@ To test the new features:
 ## Next Steps
 
 Potential enhancements:
+
 1. Add unrealized P&L from open positions (fetch current prices)
 2. Export ledger to CSV
 3. Charts for performance over time
@@ -172,4 +192,3 @@ Potential enhancements:
 - ✅ Performance metrics calculated client-side (no backend changes needed)
 - ✅ All calculations happen in real-time as ledger data loads
 - ✅ No migration needed - existing database schema already supports this
-

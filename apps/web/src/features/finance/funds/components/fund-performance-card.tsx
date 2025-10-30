@@ -4,8 +4,9 @@
  * Displays fund performance metrics across different time windows
  */
 
-import { TrendingDown, TrendingUp, DollarSign, Activity } from "lucide-react";
+import { Activity, DollarSign, TrendingDown, TrendingUp } from "lucide-react";
 
+import { Badge } from "@/lib/components/ui/badge";
 import {
   Card,
   CardContent,
@@ -13,7 +14,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/lib/components/ui/card";
-import { Badge } from "@/lib/components/ui/badge";
 
 import {
   FundBalanceCalculation,
@@ -163,4 +163,3 @@ export function FundPerformanceCard({
     </div>
   );
 }
-

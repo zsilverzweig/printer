@@ -126,6 +126,15 @@ class OrderPollingService:
             order: Order record to sync
         """
         try:
+            # Skip orders with missing alpaca_order_id (orphaned records)
+            if not order.alpaca_order_id or order.alpaca_order_id.strip() == "":
+                logger.warning(
+                    f"⚠️  Order {order.id} has no alpaca_order_id, marking as failed"
+                )
+                order.status = "failed"
+                order.error_message = "Missing Alpaca order ID (orphaned record)"
+                return
+            
             # Get order status from Alpaca
             alpaca_order = self.alpaca_service.client.get_order_by_id(order.alpaca_order_id)
             

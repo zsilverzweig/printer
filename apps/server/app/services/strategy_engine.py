@@ -335,21 +335,15 @@ class StrategyEngine:
     
     async def get_active_positions(self) -> Dict[str, PositionContext]:
         """
-        Get current active positions.
+        Get current active positions from cache.
         
-        Returns cached positions if recently refreshed, otherwise
-        queries Alpaca for current state.
+        Note: Cache is explicitly refreshed at strategic points (e.g., start of 
+        candidate selection) rather than time-based to ensure consistent state
+        during a monitoring cycle.
         
         Returns:
             Dictionary mapping symbol to PositionContext
         """
-        # Refresh if cache is stale (older than 10 seconds)
-        if (
-            not self._last_position_refresh
-            or (datetime.utcnow() - self._last_position_refresh).total_seconds() > 10
-        ):
-            await self._refresh_positions_from_alpaca()
-        
         return self._position_cache
     
     async def get_pending_orders(self) -> List[Order]:
@@ -481,6 +475,10 @@ class StrategyEngine:
                 logger.debug(f"🔍 Applying screening criteria: {self.fund.screening_criteria_id}")
                 screener_results = await self._apply_screening_filters(screener_results)
                 logger.debug(f"🔍 After filtering: {len(screener_results)} candidates")
+            
+            # CRITICAL: Force position refresh BEFORE asking strategy to select
+            # This ensures we have up-to-date position counts after order fills
+            await self._refresh_positions_from_alpaca()
             
             # Ask strategy which symbols to monitor
             # Pass active position count AND pending order count so strategy can make informed decision
@@ -641,7 +639,10 @@ class StrategyEngine:
     
     async def _monitor_exits(self) -> None:
         """Monitor exit conditions for active positions."""
-        # Get current positions from Alpaca
+        # Refresh positions to get latest state before checking exits
+        await self._refresh_positions_from_alpaca()
+        
+        # Get current positions from cache
         active_positions = await self.get_active_positions()
         
         for symbol, position in list(active_positions.items()):

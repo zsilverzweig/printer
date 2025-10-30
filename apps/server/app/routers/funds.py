@@ -15,7 +15,7 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from app.models.strategies import Fund, ScreeningCriteria, Order, Transaction
+from app.models.strategies import Fund, ScreeningCriteria, Order, Transaction, Transfer
 from app.services.database import get_async_session
 from app.services.engine_registry import (
     register_engine,
@@ -616,5 +616,436 @@ async def get_fund_transactions(fund_id: str, limit: int = 100) -> List[dict]:
             ]
     except Exception as e:
         logger.error(f"Error getting transactions for fund {fund_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/funds/{fund_id}/positions")
+async def get_fund_positions(fund_id: str) -> dict:
+    """
+    Get current positions for a fund.
+    Includes validation against Alpaca to detect sync issues.
+    """
+    try:
+        # Get fund to determine mode
+        async with get_async_session() as session:
+            fund = await session.get(Fund, fund_id)
+            if not fund:
+                raise HTTPException(status_code=404, detail="Fund not found")
+        
+        # Get engine if running
+        engine = get_engine(fund_id)
+        
+        # Get positions from Alpaca
+        alpaca_positions = []
+        alpaca_service = None
+        if engine:
+            alpaca_service = engine.alpaca_service
+            try:
+                alpaca_positions_raw = await alpaca_service.get_positions()
+                alpaca_positions = [
+                    {
+                        "symbol": p["symbol"],
+                        "qty": p["qty"],
+                        "avg_entry_price": p["avg_entry_price"],
+                        "current_price": p["current_price"],
+                        "market_value": p["market_value"],
+                        "unrealized_pl": p["unrealized_pl"],
+                        "unrealized_plpc": p["unrealized_plpc"],
+                    }
+                    for p in alpaca_positions_raw
+                ]
+            except Exception as e:
+                logger.error(f"Error getting Alpaca positions: {e}")
+        
+        # Get positions from our database (via transactions)
+        from sqlalchemy import select, and_
+        async with get_async_session() as session:
+            stmt = select(
+                Transaction.symbol,
+                Transaction.side,
+                Transaction.quantity
+            ).where(
+                Transaction.fund_id == fund_id
+            ).order_by(Transaction.timestamp.asc())
+            
+            result = await session.execute(stmt)
+            transactions = result.all()
+            
+            # Calculate net positions
+            position_tracker = {}
+            for symbol, side, quantity in transactions:
+                if symbol not in position_tracker:
+                    position_tracker[symbol] = 0
+                
+                if side == "buy":
+                    position_tracker[symbol] += quantity
+                else:  # sell
+                    position_tracker[symbol] -= quantity
+            
+            # Filter to only positive positions
+            db_positions = [
+                {
+                    "symbol": symbol,
+                    "qty": qty,
+                    "source": "database"
+                }
+                for symbol, qty in position_tracker.items()
+                if qty > 0.001
+            ]
+        
+        # Compare and detect sync issues
+        alpaca_symbols = {p["symbol"] for p in alpaca_positions}
+        db_symbols = {p["symbol"] for p in db_positions}
+        
+        sync_issues = {
+            "in_alpaca_not_db": list(alpaca_symbols - db_symbols),
+            "in_db_not_alpaca": list(db_symbols - alpaca_symbols),
+        }
+        
+        return {
+            "fund_id": fund_id,
+            "fund_mode": fund.mode,
+            "is_running": engine is not None,
+            "alpaca_positions": alpaca_positions,
+            "database_positions": db_positions,
+            "sync_issues": sync_issues,
+            "has_sync_issues": bool(sync_issues["in_alpaca_not_db"] or sync_issues["in_db_not_alpaca"]),
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting positions for fund {fund_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/funds/{fund_id}/orders/{order_id}/validate")
+async def validate_order(fund_id: str, order_id: str) -> dict:
+    """
+    Validate an order against Alpaca to check if it's synced.
+    """
+    try:
+        async with get_async_session() as session:
+            # Get order
+            order = await session.get(Order, order_id)
+            if not order:
+                raise HTTPException(status_code=404, detail="Order not found")
+            
+            if order.fund_id != fund_id:
+                raise HTTPException(status_code=403, detail="Order does not belong to this fund")
+            
+            # Get fund to determine mode
+            fund = await session.get(Fund, fund_id)
+            if not fund:
+                raise HTTPException(status_code=404, detail="Fund not found")
+            
+            # Check if we can validate (need Alpaca order ID)
+            if not order.alpaca_order_id or order.alpaca_order_id.strip() == "":
+                return {
+                    "order_id": order_id,
+                    "is_synced": False,
+                    "is_orphaned": True,
+                    "reason": "Missing Alpaca order ID",
+                }
+            
+            # Get engine to access Alpaca service
+            engine = get_engine(fund_id)
+            if not engine:
+                return {
+                    "order_id": order_id,
+                    "is_synced": None,
+                    "reason": "Fund is not running, cannot validate",
+                }
+            
+            # Query Alpaca
+            try:
+                alpaca_order = engine.alpaca_service.client.get_order_by_id(order.alpaca_order_id)
+                
+                return {
+                    "order_id": order_id,
+                    "is_synced": True,
+                    "is_orphaned": False,
+                    "alpaca_status": str(alpaca_order.status.value),
+                    "db_status": order.status,
+                    "status_matches": str(alpaca_order.status.value).lower() == order.status.lower(),
+                }
+            
+            except Exception as e:
+                if "not found" in str(e).lower() or "404" in str(e):
+                    return {
+                        "order_id": order_id,
+                        "is_synced": False,
+                        "is_orphaned": True,
+                        "reason": "Order not found in Alpaca",
+                    }
+                raise
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error validating order {order_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/funds/{fund_id}/orders/{order_id}")
+async def delete_order(fund_id: str, order_id: str) -> dict:
+    """
+    Delete an order record from the database.
+    Use this to clean up orphaned orders that are not synced with Alpaca.
+    """
+    try:
+        async with get_async_session() as session:
+            # Get order
+            order = await session.get(Order, order_id)
+            if not order:
+                raise HTTPException(status_code=404, detail="Order not found")
+            
+            if order.fund_id != fund_id:
+                raise HTTPException(status_code=403, detail="Order does not belong to this fund")
+            
+            # Only allow deletion of failed/canceled orders or orphaned orders
+            if order.status not in ["failed", "canceled"] and order.alpaca_order_id:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Can only delete failed, canceled, or orphaned orders"
+                )
+            
+            symbol = order.symbol
+            side = order.side
+            
+            await session.delete(order)
+            await session.commit()
+            
+            logger.info(f"🗑️  Deleted order {order_id}: {symbol} {side}")
+            
+            return {
+                "success": True,
+                "message": f"Deleted order {symbol} {side}",
+                "order_id": order_id,
+            }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting order {order_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Pydantic models for transfers
+class TransferResponse(BaseModel):
+    id: str
+    fund_id: str
+    amount: float
+    transfer_type: str
+    notes: Optional[str]
+    timestamp: str
+
+
+class CreateTransferInput(BaseModel):
+    amount: float
+    transfer_type: str  # deposit/withdrawal
+    notes: Optional[str] = None
+
+
+@router.get("/funds/{fund_id}/transfers")
+async def get_fund_transfers(fund_id: str, limit: int = 100) -> List[dict]:
+    """Get transfer history for a fund."""
+    try:
+        async with get_async_session() as session:
+            from sqlalchemy import select
+            stmt = (
+                select(Transfer)
+                .where(Transfer.fund_id == fund_id)
+                .order_by(Transfer.timestamp.desc())
+                .limit(limit)
+            )
+            result = await session.execute(stmt)
+            transfers = result.scalars().all()
+            
+            return [
+                {
+                    "id": transfer.id,
+                    "fund_id": transfer.fund_id,
+                    "amount": transfer.amount,
+                    "transfer_type": transfer.transfer_type,
+                    "notes": transfer.notes,
+                    "timestamp": transfer.timestamp.isoformat(),
+                }
+                for transfer in transfers
+            ]
+    except Exception as e:
+        logger.error(f"Error getting transfers for fund {fund_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/funds/{fund_id}/transfers")
+async def create_transfer(fund_id: str, transfer_input: CreateTransferInput) -> dict:
+    """
+    Create a new transfer (deposit or withdrawal).
+    This will also update the fund balance.
+    """
+    try:
+        async with get_async_session() as session:
+            # Get fund
+            fund = await session.get(Fund, fund_id)
+            if not fund:
+                raise HTTPException(status_code=404, detail="Fund not found")
+            
+            # Validate transfer
+            if transfer_input.amount <= 0:
+                raise HTTPException(status_code=400, detail="Amount must be positive")
+            
+            if transfer_input.transfer_type not in ["deposit", "withdrawal"]:
+                raise HTTPException(
+                    status_code=400,
+                    detail="transfer_type must be 'deposit' or 'withdrawal'"
+                )
+            
+            # For withdrawals, check if fund has sufficient balance
+            if transfer_input.transfer_type == "withdrawal":
+                if transfer_input.amount > fund.balance:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Insufficient balance. Fund has ${fund.balance:.2f}, withdrawal requested: ${transfer_input.amount:.2f}"
+                    )
+            
+            # Create transfer record
+            transfer_id = str(uuid.uuid4())
+            transfer = Transfer(
+                id=transfer_id,
+                fund_id=fund_id,
+                amount=transfer_input.amount,
+                transfer_type=transfer_input.transfer_type,
+                notes=transfer_input.notes,
+                timestamp=datetime.utcnow(),
+            )
+            session.add(transfer)
+            
+            # Update fund balance
+            if transfer_input.transfer_type == "deposit":
+                fund.balance += transfer_input.amount
+                logger.info(
+                    f"💰 Deposit: ${transfer_input.amount:.2f} → Fund {fund_id} "
+                    f"(new balance: ${fund.balance:.2f})"
+                )
+            else:  # withdrawal
+                fund.balance -= transfer_input.amount
+                logger.info(
+                    f"💸 Withdrawal: ${transfer_input.amount:.2f} ← Fund {fund_id} "
+                    f"(new balance: ${fund.balance:.2f})"
+                )
+            
+            await session.commit()
+            
+            return {
+                "id": transfer.id,
+                "fund_id": transfer.fund_id,
+                "amount": transfer.amount,
+                "transfer_type": transfer.transfer_type,
+                "notes": transfer.notes,
+                "timestamp": transfer.timestamp.isoformat(),
+                "new_balance": fund.balance,
+            }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating transfer for fund {fund_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/funds/{fund_id}/reset")
+async def reset_fund(fund_id: str) -> dict:
+    """
+    Reset a fund to zero balance by clearing all history.
+    
+    This will:
+    - Delete all orders
+    - Delete all transactions
+    - Delete all transfers
+    - Set balance to 0
+    
+    Fund must be stopped (not actively trading) to reset.
+    """
+    try:
+        # Check if fund is actively trading
+        engine = get_engine(fund_id)
+        if engine:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot reset fund while it is actively trading. Stop the fund first."
+            )
+        
+        async with get_async_session() as session:
+            # Get fund
+            fund = await session.get(Fund, fund_id)
+            if not fund:
+                raise HTTPException(status_code=404, detail="Fund not found")
+            
+            # Delete all related records
+            from sqlalchemy import select, delete, func
+            
+            # Count records before deletion
+            orders_count = await session.scalar(
+                select(func.count()).select_from(Order).where(Order.fund_id == fund_id)
+            ) or 0
+            transactions_count = await session.scalar(
+                select(func.count()).select_from(Transaction).where(Transaction.fund_id == fund_id)
+            ) or 0
+            transfers_count = await session.scalar(
+                select(func.count()).select_from(Transfer).where(Transfer.fund_id == fund_id)
+            ) or 0
+            
+            logger.info(
+                f"🔄 RESET REQUEST for fund {fund_id} ({fund.name}): "
+                f"{orders_count} orders, {transactions_count} transactions, "
+                f"{transfers_count} transfers, current balance: ${fund.balance:.2f}"
+            )
+            
+            # Delete in correct order due to foreign key constraints
+            # 1. Delete transactions first (they reference orders)
+            await session.execute(
+                delete(Transaction).where(Transaction.fund_id == fund_id)
+            )
+            
+            # 2. Delete orders (no longer referenced by transactions)
+            await session.execute(
+                delete(Order).where(Order.fund_id == fund_id)
+            )
+            
+            # 3. Delete transfers (independent)
+            await session.execute(
+                delete(Transfer).where(Transfer.fund_id == fund_id)
+            )
+            
+            # Reset balance
+            old_balance = fund.balance
+            fund.balance = 0.0
+            
+            await session.commit()
+            
+            logger.info(
+                f"✅ Fund {fund_id} ({fund.name}) reset complete: "
+                f"Deleted {orders_count} orders, {transactions_count} transactions, "
+                f"{transfers_count} transfers. Balance: ${old_balance:.2f} → $0.00"
+            )
+            
+            return {
+                "success": True,
+                "fund_id": fund_id,
+                "fund_name": fund.name,
+                "deleted": {
+                    "orders": orders_count,
+                    "transactions": transactions_count,
+                    "transfers": transfers_count,
+                },
+                "old_balance": old_balance,
+                "new_balance": 0.0,
+            }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error resetting fund {fund_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 

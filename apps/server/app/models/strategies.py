@@ -188,3 +188,27 @@ class Transaction(Base):
     )
 
 
+class Transfer(Base):
+    """
+    Fund transfers (deposits/withdrawals).
+    
+    Tracks capital additions and withdrawals from funds.
+    """
+    __tablename__ = "transfers"
+    
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    fund_id: Mapped[str] = mapped_column(String(36), ForeignKey("funds.id"), nullable=False, index=True)
+    
+    # Transfer details
+    amount: Mapped[float] = mapped_column(Float, nullable=False)
+    transfer_type: Mapped[str] = mapped_column(String(20), nullable=False)  # deposit/withdrawal
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True, default=datetime.utcnow)
+    
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, 
+        nullable=False, 
+        default=datetime.utcnow
+    )
+
+

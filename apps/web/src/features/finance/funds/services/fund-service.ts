@@ -228,4 +228,44 @@ export const fundService = {
     const data = await response.json();
     return data.funds || [];
   },
+
+  /**
+   * Reset a fund to zero balance by clearing all history
+   * Fund must be stopped (not trading) to reset
+   */
+  async resetFund(fundId: string): Promise<{
+    success: boolean;
+    fundId: string;
+    fundName: string;
+    deleted: {
+      orders: number;
+      transactions: number;
+      transfers: number;
+    };
+    oldBalance: number;
+    newBalance: number;
+  }> {
+    const response = await fetch(`${API_BASE}/api/funds/${fundId}/reset`, {
+      method: "POST",
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || "Failed to reset fund");
+    }
+
+    const data = await response.json();
+    return {
+      success: data.success,
+      fundId: data.fund_id,
+      fundName: data.fund_name,
+      deleted: {
+        orders: data.deleted.orders,
+        transactions: data.deleted.transactions,
+        transfers: data.deleted.transfers,
+      },
+      oldBalance: data.old_balance,
+      newBalance: data.new_balance,
+    };
+  },
 };

@@ -24,7 +24,9 @@ import { setupService } from "../services/setup-service";
 import { CreateSetupInput } from "../types";
 
 import { FundLedger } from "./fund-ledger";
+import { FundOrders } from "./fund-orders";
 import { FundOverview } from "./fund-overview";
+import { FundPositions } from "./fund-positions";
 import { RiskManagement } from "./risk-management";
 import { ScreenerLink } from "./screener-link";
 import { SetupEditor } from "./setup-editor";
@@ -101,10 +103,12 @@ export function FundDetailView({ fundId }: FundDetailViewProps) {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-2 md:grid-cols-5 gap-1">
+        <TabsList className="grid w-full grid-cols-2 md:grid-cols-7 gap-1">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="configuration">Configuration</TabsTrigger>
           <TabsTrigger value="activity">Activity</TabsTrigger>
+          <TabsTrigger value="positions">Positions</TabsTrigger>
+          <TabsTrigger value="orders">Orders</TabsTrigger>
           <TabsTrigger value="screener">Screener</TabsTrigger>
           <TabsTrigger value="ledger">Ledger</TabsTrigger>
         </TabsList>
@@ -149,13 +153,20 @@ export function FundDetailView({ fundId }: FundDetailViewProps) {
           <TradingActivityFeed fundId={fundId} />
         </TabsContent>
 
+        <TabsContent value="positions" className="space-y-6">
+          <FundPositions fundId={fundId} />
+        </TabsContent>
+
+        <TabsContent value="orders" className="space-y-6">
+          <FundOrders fundId={fundId} />
+        </TabsContent>
+
         <TabsContent value="screener" className="space-y-6">
           <ScreenerLink fundId={fund.id} fund={fund} onUpdate={refresh} />
         </TabsContent>
 
         <TabsContent value="ledger" className="space-y-6">
           <FundLedger
-            orders={orders}
             transactions={transactions}
             transfers={transfers}
             loading={ledgerLoading}
