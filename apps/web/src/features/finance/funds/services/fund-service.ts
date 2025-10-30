@@ -204,6 +204,55 @@ export const fundService = {
   },
 
   /**
+   * Emergency stop: Cancel all orders, liquidate all positions, and pause the fund
+   */
+  async stopAndLiquidate(fundId: string): Promise<{
+    success: boolean;
+    fundId: string;
+    fundName: string;
+    fundStatus: string;
+    cancelledOrders: Array<{
+      symbol: string;
+      side: string;
+      quantity: number;
+      orderId: string;
+      alpacaOrderId: string;
+    }>;
+    liquidatedPositions: Array<{
+      symbol: string;
+      quantity: number;
+      orderId: string;
+      alpacaOrderId: string;
+    }>;
+    errors: string[];
+    message: string;
+  }> {
+    const response = await fetch(
+      `${API_BASE}/api/funds/${fundId}/stop-and-liquidate`,
+      {
+        method: "POST",
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || "Failed to stop and liquidate");
+    }
+
+    const data = await response.json();
+    return {
+      success: data.success,
+      fundId: data.fund_id,
+      fundName: data.fund_name,
+      fundStatus: data.fund_status,
+      cancelledOrders: data.cancelled_orders || [],
+      liquidatedPositions: data.liquidated_positions || [],
+      errors: data.errors || [],
+      message: data.message,
+    };
+  },
+
+  /**
    * Get trading status and active positions for a fund
    */
   async getTradingStatus(fundId: string): Promise<FundTradingStatus> {

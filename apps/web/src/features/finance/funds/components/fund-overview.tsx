@@ -61,9 +61,11 @@ export function FundOverview({
   const router = useRouter();
   const [isStarting, setIsStarting] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
+  const [isLiquidating, setIsLiquidating] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
   const [isArchiving, setIsArchiving] = useState(false);
   const [showResetDialog, setShowResetDialog] = useState(false);
+  const [showLiquidateDialog, setShowLiquidateDialog] = useState(false);
   const [showArchiveDialog, setShowArchiveDialog] = useState(false);
 
   const modeColor = fund.mode === "sim" ? "bg-blue-500" : "bg-green-500";
@@ -92,6 +94,24 @@ export function FundOverview({
       console.error("Error stopping trading:", err);
     } finally {
       setIsStopping(false);
+    }
+  };
+
+  const handleStopAndLiquidate = async () => {
+    try {
+      setIsLiquidating(true);
+      await fundService.stopAndLiquidate(fund.id);
+      setShowLiquidateDialog(false);
+      onFundUpdate();
+    } catch (err) {
+      console.error("Error stopping and liquidating:", err);
+      alert(
+        err instanceof Error
+          ? err.message
+          : "Failed to stop and liquidate. Please try again."
+      );
+    } finally {
+      setIsLiquidating(false);
     }
   };
 
@@ -201,6 +221,61 @@ export function FundOverview({
             <Square className="h-4 w-4 mr-2" />
             {isStopping ? "Stopping..." : "Stop Trading"}
           </Button>
+
+          {/* Stop & Liquidate Button with Confirmation Dialog */}
+          <AlertDialog
+            open={showLiquidateDialog}
+            onOpenChange={setShowLiquidateDialog}
+          >
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="destructive"
+                disabled={fund.status === "paused" || isLiquidating}
+                className="bg-red-600 hover:bg-red-700"
+              >
+                <AlertTriangle className="h-4 w-4 mr-2" />
+                {isLiquidating ? "Liquidating..." : "Stop & Liquidate"}
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle className="flex items-center gap-2">
+                  <AlertTriangle className="h-5 w-5 text-red-600" />
+                  Emergency Stop & Liquidate?
+                </AlertDialogTitle>
+                <AlertDialogDescription className="space-y-2">
+                  <p>
+                    This will immediately stop trading and liquidate all
+                    positions:
+                  </p>
+                  <ul className="list-disc list-inside space-y-1 text-sm">
+                    <li>Cancel all pending orders</li>
+                    <li>Place market sell orders for all open positions</li>
+                    <li>Pause the fund</li>
+                  </ul>
+                  <p className="font-semibold text-red-600 dark:text-red-400 pt-2">
+                    This action will close all positions at market prices
+                    immediately!
+                  </p>
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={isLiquidating}>
+                  Cancel
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={(e) => {
+                    e.preventDefault();
+                    handleStopAndLiquidate();
+                  }}
+                  disabled={isLiquidating}
+                  className="bg-red-600 hover:bg-red-700"
+                >
+                  {isLiquidating ? "Liquidating..." : "Stop & Liquidate"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
 
           {/* Reset Fund Button with Confirmation Dialog */}
           <AlertDialog open={showResetDialog} onOpenChange={setShowResetDialog}>

@@ -870,39 +870,82 @@ class StrategyEngine:
             
             logger.info(f"📝 Creating order record: {symbol} buy {quantity} shares")
             
-            # Create Order record in database
-            async with get_async_session() as session:
-                order_record = Order(
-                    id=order_id,
-                    alpaca_order_id="",  # Will be filled after Alpaca returns
-                    fund_id=self.fund_id,
-                    symbol=symbol,
-                    side="buy",
-                    quantity=quantity,
-                    order_type="market",
-                    status="pending",
-                    submitted_at=submitted_at,
-                )
-                session.add(order_record)
-                await session.commit()
+            alpaca_order_id = None
+            order_creation_failed = False
             
-            logger.info(f"📝 Order record created: {order_id}")
-            
-            # Place order via Alpaca (quantity-based, whole shares)
-            alpaca_order = await self.alpaca_service.place_market_order(
-                symbol=symbol,
-                qty=quantity,
-                side="buy",
-                time_in_force="day"
-            )
-            
-            # Update order record with Alpaca order ID
-            async with get_async_session() as session:
-                stmt = select(Order).where(Order.id == order_id)
-                result = await session.execute(stmt)
-                order_record = result.scalar_one()
-                order_record.alpaca_order_id = alpaca_order["id"]
-                await session.commit()
+            try:
+                # Create Order record in database
+                async with get_async_session() as session:
+                    order_record = Order(
+                        id=order_id,
+                        alpaca_order_id="",  # Will be filled after Alpaca returns
+                        fund_id=self.fund_id,
+                        symbol=symbol,
+                        side="buy",
+                        quantity=quantity,
+                        order_type="market",
+                        status="pending",
+                        submitted_at=submitted_at,
+                    )
+                    session.add(order_record)
+                    await session.commit()
+                
+                logger.info(f"📝 Order record created in DB: {order_id}")
+                
+                # Place order via Alpaca (quantity-based, whole shares)
+                try:
+                    alpaca_order = await self.alpaca_service.place_market_order(
+                        symbol=symbol,
+                        qty=quantity,
+                        side="buy",
+                        time_in_force="day"
+                    )
+                    alpaca_order_id = alpaca_order["id"]
+                    logger.info(f"✅ Alpaca order placed: {alpaca_order_id}")
+                    
+                except Exception as alpaca_error:
+                    # Alpaca call failed - mark order as failed in DB
+                    logger.error(f"❌ Alpaca order placement failed: {alpaca_error}")
+                    async with get_async_session() as session:
+                        stmt = select(Order).where(Order.id == order_id)
+                        result = await session.execute(stmt)
+                        order_record = result.scalar_one()
+                        order_record.status = "failed"
+                        order_record.error_message = f"Alpaca API error: {str(alpaca_error)}"
+                        await session.commit()
+                    raise
+                
+                # Update order record with Alpaca order ID
+                try:
+                    async with get_async_session() as session:
+                        stmt = select(Order).where(Order.id == order_id)
+                        result = await session.execute(stmt)
+                        order_record = result.scalar_one()
+                        order_record.alpaca_order_id = alpaca_order_id
+                        await session.commit()
+                    logger.info(f"✅ Order record updated with Alpaca ID: {alpaca_order_id}")
+                    
+                except Exception as db_error:
+                    # DB update failed but Alpaca order exists - CRITICAL
+                    # Cancel the Alpaca order to prevent orphaned position
+                    logger.error(
+                        f"❌ CRITICAL: DB update failed after Alpaca order placed! "
+                        f"Attempting to cancel Alpaca order {alpaca_order_id}: {db_error}"
+                    )
+                    try:
+                        await self.alpaca_service.cancel_order(alpaca_order_id)
+                        logger.warning(f"✅ Successfully cancelled orphaned Alpaca order: {alpaca_order_id}")
+                    except Exception as cancel_error:
+                        logger.error(
+                            f"❌ FAILED TO CANCEL ORPHANED ALPACA ORDER: {alpaca_order_id}! "
+                            f"Manual cleanup required. Cancel error: {cancel_error}"
+                        )
+                    raise
+                
+            except Exception as e:
+                order_creation_failed = True
+                logger.error(f"❌ Order creation failed for {symbol}: {e}")
+                raise
             
             logger.info(
                 f"📤 Order submitted to Alpaca: {symbol} buy {quantity} @ ${market_data.price:.2f} "
@@ -969,39 +1012,82 @@ class StrategyEngine:
             
             logger.info(f"📝 Creating sell order record: {position.symbol} sell {position.quantity} shares")
             
-            # Create Order record in database
-            async with get_async_session() as session:
-                order_record = Order(
-                    id=order_id,
-                    alpaca_order_id="",  # Will be filled after Alpaca returns
-                    fund_id=self.fund_id,
-                    symbol=position.symbol,
-                    side="sell",
-                    quantity=position.quantity,
-                    order_type="market",
-                    status="pending",
-                    submitted_at=submitted_at,
-                )
-                session.add(order_record)
-                await session.commit()
+            alpaca_order_id = None
+            order_creation_failed = False
             
-            logger.info(f"📝 Sell order record created: {order_id}")
-            
-            # Place sell order via Alpaca
-            alpaca_order = await self.alpaca_service.place_market_order(
-                symbol=position.symbol,
-                qty=position.quantity,
-                side="sell",
-                time_in_force="day"
-            )
-            
-            # Update order record with Alpaca order ID
-            async with get_async_session() as session:
-                stmt = select(Order).where(Order.id == order_id)
-                result = await session.execute(stmt)
-                order_record = result.scalar_one()
-                order_record.alpaca_order_id = alpaca_order["id"]
-                await session.commit()
+            try:
+                # Create Order record in database
+                async with get_async_session() as session:
+                    order_record = Order(
+                        id=order_id,
+                        alpaca_order_id="",  # Will be filled after Alpaca returns
+                        fund_id=self.fund_id,
+                        symbol=position.symbol,
+                        side="sell",
+                        quantity=position.quantity,
+                        order_type="market",
+                        status="pending",
+                        submitted_at=submitted_at,
+                    )
+                    session.add(order_record)
+                    await session.commit()
+                
+                logger.info(f"📝 Sell order record created in DB: {order_id}")
+                
+                # Place sell order via Alpaca
+                try:
+                    alpaca_order = await self.alpaca_service.place_market_order(
+                        symbol=position.symbol,
+                        qty=position.quantity,
+                        side="sell",
+                        time_in_force="day"
+                    )
+                    alpaca_order_id = alpaca_order["id"]
+                    logger.info(f"✅ Alpaca sell order placed: {alpaca_order_id}")
+                    
+                except Exception as alpaca_error:
+                    # Alpaca call failed - mark order as failed in DB
+                    logger.error(f"❌ Alpaca sell order placement failed: {alpaca_error}")
+                    async with get_async_session() as session:
+                        stmt = select(Order).where(Order.id == order_id)
+                        result = await session.execute(stmt)
+                        order_record = result.scalar_one()
+                        order_record.status = "failed"
+                        order_record.error_message = f"Alpaca API error: {str(alpaca_error)}"
+                        await session.commit()
+                    raise
+                
+                # Update order record with Alpaca order ID
+                try:
+                    async with get_async_session() as session:
+                        stmt = select(Order).where(Order.id == order_id)
+                        result = await session.execute(stmt)
+                        order_record = result.scalar_one()
+                        order_record.alpaca_order_id = alpaca_order_id
+                        await session.commit()
+                    logger.info(f"✅ Sell order record updated with Alpaca ID: {alpaca_order_id}")
+                    
+                except Exception as db_error:
+                    # DB update failed but Alpaca order exists - CRITICAL
+                    # Cancel the Alpaca order to prevent orphaned position
+                    logger.error(
+                        f"❌ CRITICAL: DB update failed after Alpaca sell order placed! "
+                        f"Attempting to cancel Alpaca order {alpaca_order_id}: {db_error}"
+                    )
+                    try:
+                        await self.alpaca_service.cancel_order(alpaca_order_id)
+                        logger.warning(f"✅ Successfully cancelled orphaned Alpaca sell order: {alpaca_order_id}")
+                    except Exception as cancel_error:
+                        logger.error(
+                            f"❌ FAILED TO CANCEL ORPHANED ALPACA SELL ORDER: {alpaca_order_id}! "
+                            f"Manual cleanup required. Cancel error: {cancel_error}"
+                        )
+                    raise
+                
+            except Exception as e:
+                order_creation_failed = True
+                logger.error(f"❌ Sell order creation failed for {position.symbol}: {e}")
+                raise
             
             # Calculate P&L
             realized_pnl = position.unrealized_pnl

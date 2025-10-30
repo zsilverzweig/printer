@@ -140,7 +140,9 @@ class OrderPollingService:
             alpaca_order = self.alpaca_service.client.get_order_by_id(order.alpaca_order_id)
             
             old_status = order.status
+            old_filled_qty = order.filled_qty or 0.0
             new_status = str(alpaca_order.status.value).lower()
+            new_filled_qty = float(alpaca_order.filled_qty) if alpaca_order.filled_qty else 0.0
             
             # Map Alpaca statuses to our statuses
             status_map = {
@@ -160,14 +162,21 @@ class OrderPollingService:
             
             mapped_status = status_map.get(new_status, new_status)
             
-            # Skip if status hasn't changed
-            if mapped_status == old_status:
+            # Skip if BOTH status AND filled quantity haven't changed
+            if mapped_status == old_status and abs(new_filled_qty - old_filled_qty) < 0.0001:
                 return
             
-            logger.info(
-                f"🔄 Order status update: {order.symbol} {order.side} "
-                f"{order.alpaca_order_id} -> {old_status} → {mapped_status}"
-            )
+            # Log status or quantity changes
+            if mapped_status != old_status:
+                logger.info(
+                    f"🔄 Order status update: {order.symbol} {order.side} "
+                    f"{order.alpaca_order_id} -> {old_status} → {mapped_status}"
+                )
+            elif abs(new_filled_qty - old_filled_qty) >= 0.0001:
+                logger.info(
+                    f"📊 Order quantity update: {order.symbol} {order.side} "
+                    f"{order.alpaca_order_id} -> filled: {old_filled_qty} → {new_filled_qty}"
+                )
             
             # Update order status
             order.status = mapped_status

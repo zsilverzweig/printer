@@ -10,11 +10,12 @@ Provides endpoints for creating, managing, and controlling trading funds:
 
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import select, and_
 
 from app.models.strategies import Fund, ScreeningCriteria, Order, Transaction, Transfer
 from app.services.database import get_async_session
@@ -471,6 +472,172 @@ async def start_trading(fund_id: str) -> dict:
         raise
     except Exception as e:
         logger.error(f"Error starting trading for fund {fund_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/funds/{fund_id}/stop-and-liquidate")
+async def stop_and_liquidate(fund_id: str) -> dict:
+    """
+    Emergency stop: Cancel all pending orders, liquidate all positions, and pause the fund.
+    
+    This is a safety feature for immediately exiting all positions.
+    """
+    try:
+        async with get_async_session() as session:
+            # Get the fund
+            fund = await session.get(Fund, fund_id)
+            if not fund:
+                raise HTTPException(status_code=404, detail="Fund not found")
+            
+            # Stop the strategy engine if running
+            engine = get_engine(fund_id)
+            if engine:
+                logger.info(f"🛑 Stopping strategy engine for fund {fund_id}")
+                await engine.stop()
+                unregister_engine(fund_id)
+            
+            # Update fund status to paused
+            fund.status = "paused"
+            await session.commit()
+            
+            logger.info(f"🛑 Fund {fund_id} ({fund.name}) stopped and liquidating")
+            
+            # Get Alpaca service
+            from app.services.alpaca_service import AlpacaService
+            alpaca_service = AlpacaService(paper_trading=(fund.mode == "sim"))
+            
+            cancelled_orders = []
+            liquidated_positions = []
+            errors = []
+            
+            # 1. Cancel all pending orders
+            try:
+                logger.info(f"🚫 Cancelling all pending orders for fund {fund_id}")
+                stmt = select(Order).where(
+                    and_(Order.fund_id == fund_id, Order.status == "pending")
+                )
+                result = await session.execute(stmt)
+                pending_orders = result.scalars().all()
+                
+                for order in pending_orders:
+                    try:
+                        if order.alpaca_order_id:
+                            await alpaca_service.cancel_order(order.alpaca_order_id)
+                            order.status = "canceled"
+                            cancelled_orders.append({
+                                "symbol": order.symbol,
+                                "side": order.side,
+                                "quantity": order.quantity,
+                                "order_id": order.id,
+                                "alpaca_order_id": order.alpaca_order_id
+                            })
+                            logger.info(f"✅ Cancelled order: {order.symbol} {order.side} {order.quantity}")
+                    except Exception as e:
+                        error_msg = f"Failed to cancel order {order.id}: {str(e)}"
+                        logger.error(error_msg)
+                        errors.append(error_msg)
+                
+                await session.commit()
+                logger.info(f"✅ Cancelled {len(cancelled_orders)} pending orders")
+                
+            except Exception as e:
+                error_msg = f"Error cancelling orders: {str(e)}"
+                logger.error(error_msg)
+                errors.append(error_msg)
+            
+            # 2. Liquidate all positions
+            try:
+                logger.info(f"💰 Liquidating all positions for fund {fund_id}")
+                
+                # Get positions from Alpaca (source of truth)
+                if alpaca_service.is_available():
+                    positions = await alpaca_service.get_positions()
+                    
+                    for position in positions:
+                        try:
+                            symbol = position["symbol"]
+                            quantity = float(position["qty"])
+                            
+                            logger.info(f"🔨 Liquidating {symbol}: {quantity} shares")
+                            
+                            # Place market sell order
+                            order_result = await alpaca_service.place_market_order(
+                                symbol=symbol,
+                                qty=quantity,
+                                side="sell",
+                                time_in_force="day"
+                            )
+                            
+                            # Create order record
+                            liquidation_order = Order(
+                                id=str(uuid.uuid4()),
+                                alpaca_order_id=order_result["id"],
+                                fund_id=fund_id,
+                                symbol=symbol,
+                                side="sell",
+                                quantity=quantity,
+                                order_type="market",
+                                status="pending",
+                                submitted_at=datetime.utcnow(),
+                            )
+                            session.add(liquidation_order)
+                            
+                            liquidated_positions.append({
+                                "symbol": symbol,
+                                "quantity": quantity,
+                                "order_id": liquidation_order.id,
+                                "alpaca_order_id": order_result["id"]
+                            })
+                            
+                            logger.info(f"✅ Liquidation order placed: {symbol} sell {quantity}")
+                            
+                        except Exception as e:
+                            error_msg = f"Failed to liquidate {position['symbol']}: {str(e)}"
+                            logger.error(error_msg)
+                            errors.append(error_msg)
+                    
+                    await session.commit()
+                    logger.info(f"✅ Placed liquidation orders for {len(liquidated_positions)} positions")
+                else:
+                    error_msg = "Alpaca service not available for liquidation"
+                    logger.error(error_msg)
+                    errors.append(error_msg)
+                    
+            except Exception as e:
+                error_msg = f"Error liquidating positions: {str(e)}"
+                logger.error(error_msg)
+                errors.append(error_msg)
+            
+            # Broadcast event
+            from app.routers.realtime import broadcast_trading_activity
+            await broadcast_trading_activity({
+                "fund_id": str(fund_id),
+                "fund_name": fund.name,
+                "event_type": "stop_and_liquidate",
+                "timestamp": datetime.now(timezone.utc).isoformat() + "Z",
+                "message": f"Emergency stop: {len(cancelled_orders)} orders cancelled, {len(liquidated_positions)} positions liquidating",
+                "details": {
+                    "cancelled_orders": len(cancelled_orders),
+                    "liquidated_positions": len(liquidated_positions),
+                    "errors": errors
+                }
+            })
+            
+            return {
+                "success": True,
+                "fund_id": fund_id,
+                "fund_name": fund.name,
+                "fund_status": "paused",
+                "cancelled_orders": cancelled_orders,
+                "liquidated_positions": liquidated_positions,
+                "errors": errors,
+                "message": f"Stopped trading, cancelled {len(cancelled_orders)} orders, liquidating {len(liquidated_positions)} positions"
+            }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in stop and liquidate for fund {fund_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
