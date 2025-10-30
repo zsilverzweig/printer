@@ -9,9 +9,9 @@ import asyncio
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import Optional, Set
+from typing import Optional, Set, Dict
 
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.strategies import Order, Transaction
@@ -51,8 +51,9 @@ class OrderPollingService:
         self.is_running = False
         self._polling_task: Optional[asyncio.Task] = None
         
-        # Track which orders we've already processed to avoid duplicate transactions
-        self._processed_fills: Set[str] = set()
+        # Track quantity already transacted per order (for incremental partial fills)
+        # Key: order.id, Value: total quantity transacted so far
+        self._transacted_quantities: Dict[str, float] = {}
     
     async def start(self) -> None:
         """Start the polling loop."""
@@ -191,15 +192,10 @@ class OrderPollingService:
                 "message": f"Order {order.symbol} {order.side} status: {old_status} → {mapped_status}",
             })
             
-            # If order is filled (fully or partially), create transaction record
-            # Partially filled orders also need transactions to track what was actually filled
-            if mapped_status in ["filled", "partially_filled"] and order.alpaca_order_id not in self._processed_fills:
-                await self._create_transaction(session, order, alpaca_order)
-                self._processed_fills.add(order.alpaca_order_id)
-                logger.info(
-                    f"✅ Created transaction for {mapped_status} order: "
-                    f"{order.symbol} {order.side} {order.filled_qty} shares"
-                )
+            # If order is filled (fully or partially), check if we need to create a transaction
+            # for the incremental fill amount
+            if mapped_status in ["filled", "partially_filled"]:
+                await self._handle_fill_transaction(session, order, alpaca_order)
         
         except Exception as e:
             # If order not found in Alpaca, mark as failed
@@ -212,14 +208,17 @@ class OrderPollingService:
             else:
                 raise
     
-    async def _create_transaction(
+    async def _handle_fill_transaction(
         self,
         session: AsyncSession,
         order: Order,
         alpaca_order
     ) -> None:
         """
-        Create a transaction record for a filled order.
+        Handle transaction creation for filled/partially filled orders.
+        
+        Only creates transactions for the incremental fill amount (delta).
+        Supports multiple transactions per order as it fills incrementally.
         
         Args:
             session: Database session
@@ -227,7 +226,64 @@ class OrderPollingService:
             alpaca_order: Alpaca order object with fill details
         """
         try:
-            filled_qty = float(alpaca_order.filled_qty) if alpaca_order.filled_qty else order.quantity
+            # Get current filled quantity from Alpaca
+            current_filled = float(alpaca_order.filled_qty) if alpaca_order.filled_qty else 0.0
+            
+            if current_filled <= 0:
+                return  # Nothing to transact
+            
+            # Get sum of quantities already transacted for this order from database
+            stmt = select(func.sum(Transaction.quantity)).where(
+                Transaction.order_id == order.id
+            )
+            result = await session.execute(stmt)
+            already_transacted = result.scalar() or 0.0
+            
+            # Calculate delta - only transact what's new
+            delta = current_filled - already_transacted
+            
+            # Use small epsilon for float comparison
+            if delta < 0.0001:
+                logger.debug(
+                    f"No new fills for {order.symbol} order {order.id[:8]}... "
+                    f"(already transacted: {already_transacted}, current filled: {current_filled})"
+                )
+                return
+            
+            # Create transaction for the incremental fill
+            logger.info(
+                f"📊 Incremental fill detected: {order.symbol} {order.side} "
+                f"previously transacted: {already_transacted}, "
+                f"now filled: {current_filled}, "
+                f"delta: {delta}"
+            )
+            
+            await self._create_transaction(session, order, alpaca_order, delta)
+            
+            # Update our in-memory cache
+            self._transacted_quantities[order.id] = current_filled
+            
+        except Exception as e:
+            logger.error(f"Error handling fill transaction for order {order.id}: {e}", exc_info=True)
+            raise
+    
+    async def _create_transaction(
+        self,
+        session: AsyncSession,
+        order: Order,
+        alpaca_order,
+        quantity_to_transact: float
+    ) -> None:
+        """
+        Create a transaction record for a specific quantity.
+        
+        Args:
+            session: Database session
+            order: Order that was filled
+            alpaca_order: Alpaca order object with fill details
+            quantity_to_transact: The specific quantity to record (delta for partial fills)
+        """
+        try:
             filled_price = float(alpaca_order.filled_avg_price) if alpaca_order.filled_avg_price else 0.0
             
             # Convert timezone-aware datetime to timezone-naive UTC for database
@@ -242,9 +298,9 @@ class OrderPollingService:
                 fund_id=order.fund_id,
                 symbol=order.symbol,
                 side=order.side,
-                quantity=filled_qty,
+                quantity=quantity_to_transact,  # Use the delta, not full filled_qty
                 price=filled_price,
-                total_value=filled_qty * filled_price,
+                total_value=quantity_to_transact * filled_price,
                 timestamp=transaction_timestamp,
                 high_water_mark=filled_price if order.side == "buy" else None,
                 strategy_state={},
@@ -269,7 +325,7 @@ class OrderPollingService:
             
             logger.info(
                 f"💰 Transaction created: {order.symbol} {order.side} "
-                f"{filled_qty} @ ${filled_price:.2f} = ${transaction.total_value:.2f}"
+                f"{quantity_to_transact} @ ${filled_price:.2f} = ${transaction.total_value:.2f}"
             )
             
             # Broadcast transaction event
@@ -279,12 +335,12 @@ class OrderPollingService:
                 "timestamp": transaction.timestamp.isoformat(),
                 "symbol": order.symbol,
                 "side": order.side,
-                "quantity": filled_qty,
+                "quantity": quantity_to_transact,
                 "price": filled_price,
                 "total_value": transaction.total_value,
                 "transaction_id": transaction.id,
                 "order_id": order.id,
-                "message": f"Transaction: {order.side} {filled_qty} {order.symbol} @ ${filled_price:.2f}",
+                "message": f"Transaction: {order.side} {quantity_to_transact} {order.symbol} @ ${filled_price:.2f}",
             })
         
         except Exception as e:
