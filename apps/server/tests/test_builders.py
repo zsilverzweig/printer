@@ -22,11 +22,15 @@ from app.strategies.base import PositionContext, MarketData
 def build_fund(
     fund_id: Optional[str] = None,
     name: str = "Test Fund",
+    description: Optional[str] = None,
     mode: str = "sim",
     balance: float = 10000.0,
     status: str = "active",
     strategy_id: str = "monkey_darts",
     strategy_config: Optional[Dict[str, Any]] = None,
+    # UI customization
+    icon: Optional[str] = None,
+    icon_color: Optional[str] = None,
     # Position sizing
     size_per_trade: float = 1000.0,
     min_bet_percent: Optional[float] = None,
@@ -47,7 +51,7 @@ def build_fund(
 ) -> Fund:
     """
     Build a Fund instance with configurable parameters.
-    
+
     Args:
         fund_id: Fund ID (generates UUID if not provided)
         name: Fund name
@@ -69,10 +73,10 @@ def build_fund(
         timezone: Timezone for trading windows (e.g., "America/New_York")
         screening_criteria_id: Optional screening criteria ID
         archived: Whether fund is archived
-        
+
     Returns:
         Fund instance
-        
+
     Example:
         >>> fund = build_fund(balance=5000.0, max_bet_percent=10.0)
         >>> assert fund.balance == 5000.0
@@ -81,11 +85,14 @@ def build_fund(
     return Fund(
         id=fund_id or str(uuid.uuid4()),
         name=name,
+        description=description,
         mode=mode,
         balance=balance,
         status=status,
         strategy_id=strategy_id,
         strategy_config=strategy_config or {},
+        icon=icon,
+        icon_color=icon_color,
         size_per_trade=size_per_trade,
         min_bet_percent=min_bet_percent,
         max_bet_percent=max_bet_percent,
@@ -119,7 +126,7 @@ def build_order(
 ) -> Order:
     """
     Build an Order instance with configurable parameters.
-    
+
     Args:
         order_id: Order ID (generates UUID if not provided)
         alpaca_order_id: Alpaca order ID (generates UUID if not provided)
@@ -134,10 +141,10 @@ def build_order(
         filled_qty: Filled quantity (None for pending orders)
         filled_avg_price: Average fill price (None for pending orders)
         error_message: Error message if failed
-        
+
     Returns:
         Order instance
-        
+
     Example:
         >>> order = build_order(symbol="TSLA", quantity=5, status="filled")
         >>> assert order.symbol == "TSLA"
@@ -175,7 +182,7 @@ def build_transaction(
 ) -> Transaction:
     """
     Build a Transaction instance with configurable parameters.
-    
+
     Args:
         transaction_id: Transaction ID (generates UUID if not provided)
         order_id: Order ID (generates UUID if not provided)
@@ -188,16 +195,16 @@ def build_transaction(
         timestamp: Transaction timestamp (defaults to now)
         high_water_mark: High water mark for position
         strategy_state: Strategy-specific state dict
-        
+
     Returns:
         Transaction instance
-        
+
     Example:
         >>> txn = build_transaction(symbol="GOOGL", quantity=3, price=2800.0)
         >>> assert txn.total_value == 8400.0
     """
     total_value = quantity * price
-    
+
     return Transaction(
         id=transaction_id or str(uuid.uuid4()),
         order_id=order_id or str(uuid.uuid4()),
@@ -229,7 +236,7 @@ def build_position_context(
 ) -> PositionContext:
     """
     Build a PositionContext instance with configurable parameters.
-    
+
     Args:
         position_id: Position ID (generates UUID if not provided)
         symbol: Stock symbol
@@ -242,24 +249,26 @@ def build_position_context(
         has_scaled_out: Whether position has been scaled out
         has_taken_profits: Whether profits have been taken
         scale_in_count: Number of scale-in operations
-        
+
     Returns:
         PositionContext instance
-        
+
     Example:
         >>> pos = build_position_context(symbol="NVDA", entry_price=500.0, current_price=520.0)
         >>> assert pos.unrealized_pnl == 200.0  # (520 - 500) * 10
     """
     if entry_time is None:
         entry_time = datetime.utcnow() - timedelta(minutes=10)
-    
+
     if high_water_mark is None:
         high_water_mark = max(entry_price, current_price)
-    
+
     # Calculate P&L
     unrealized_pnl = (current_price - entry_price) * quantity
-    unrealized_pnl_percent = ((current_price - entry_price) / entry_price) * 100 if entry_price > 0 else 0.0
-    
+    unrealized_pnl_percent = (
+        ((current_price - entry_price) / entry_price) * 100 if entry_price > 0 else 0.0
+    )
+
     return PositionContext(
         position_id=position_id or str(uuid.uuid4()),
         symbol=symbol,
@@ -294,7 +303,7 @@ def build_market_data(
 ) -> MarketData:
     """
     Build a MarketData instance with configurable parameters.
-    
+
     Args:
         symbol: Stock symbol
         price: Current price
@@ -309,10 +318,10 @@ def build_market_data(
         indicators: Technical indicators dict
         news: News sentiment dict
         float_data: Float/shares data dict
-        
+
     Returns:
         MarketData instance
-        
+
     Example:
         >>> data = build_market_data(symbol="TSLA", price=250.0)
         >>> assert data.symbol == "TSLA"
@@ -320,22 +329,22 @@ def build_market_data(
     """
     if timestamp is None:
         timestamp = datetime.utcnow()
-    
+
     if bid is None:
         bid = price - 0.01
-    
+
     if ask is None:
         ask = price + 0.01
-    
+
     if high is None:
         high = price * 1.02
-    
+
     if low is None:
         low = price * 0.98
-    
+
     if open_price is None:
         open_price = price * 0.99
-    
+
     return MarketData(
         symbol=symbol,
         price=price,
@@ -353,30 +362,21 @@ def build_market_data(
     )
 
 
-def build_stale_order(
-    fund_id: str,
-    age_seconds: int = 120,
-    **kwargs
-) -> Order:
+def build_stale_order(fund_id: str, age_seconds: int = 120, **kwargs) -> Order:
     """
     Build an order that's older than a certain age (for testing stale order cancellation).
-    
+
     Args:
         fund_id: Fund ID
         age_seconds: How old the order should be in seconds
         **kwargs: Additional order parameters
-        
+
     Returns:
         Order instance with old submitted_at timestamp
-        
+
     Example:
         >>> order = build_stale_order(fund_id="test-fund", age_seconds=300)
         >>> assert (datetime.utcnow() - order.submitted_at).total_seconds() >= 300
     """
     submitted_at = datetime.utcnow() - timedelta(seconds=age_seconds)
-    return build_order(
-        fund_id=fund_id,
-        submitted_at=submitted_at,
-        **kwargs
-    )
-
+    return build_order(fund_id=fund_id, submitted_at=submitted_at, **kwargs)

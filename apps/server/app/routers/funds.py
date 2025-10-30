@@ -1115,6 +1115,13 @@ async def create_transfer(fund_id: str, transfer_input: CreateTransferInput) -> 
             
             await session.commit()
             
+            # Refresh balance in running engine if fund is active
+            from app.services.engine_registry import get_engine
+            engine = get_engine(fund_id)
+            if engine:
+                await engine.refresh_fund_balance()
+                logger.info(f"✅ Refreshed balance in running engine for fund {fund_id}")
+            
             return {
                 "id": transfer.id,
                 "fund_id": transfer.fund_id,
@@ -1345,6 +1352,8 @@ async def close_orphaned_position(fund_id: str, symbol: str) -> dict:
                             status_code=400,
                             detail=f"Position {symbol} exists in Alpaca. Cannot close as orphaned."
                         )
+                except HTTPException:
+                    raise  # Re-raise HTTP exceptions
                 except Exception as e:
                     logger.warning(f"Could not verify Alpaca positions: {e}")
                     # Continue anyway if Alpaca check fails
@@ -1548,6 +1557,24 @@ async def reset_fund(fund_id: str) -> dict:
                 f"Deleted {orders_count} orders, {transactions_count} transactions, "
                 f"{transfers_count} transfers. Balance: ${old_balance:.2f} → $0.00"
             )
+            
+            # Broadcast reset event
+            from app.routers.realtime import broadcast_trading_activity
+            from datetime import datetime, timezone
+            await broadcast_trading_activity({
+                "fund_id": str(fund_id),
+                "fund_name": fund.name,
+                "event_type": "fund_reset",
+                "timestamp": datetime.now(timezone.utc).isoformat() + "Z",
+                "message": f"Fund {fund.name} has been reset",
+                "details": {
+                    "orders_deleted": orders_count,
+                    "transactions_deleted": transactions_count,
+                    "transfers_deleted": transfers_count,
+                    "old_balance": old_balance,
+                    "new_balance": 0.0,
+                }
+            })
             
             return {
                 "success": True,

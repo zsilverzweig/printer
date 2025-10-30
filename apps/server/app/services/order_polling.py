@@ -191,10 +191,15 @@ class OrderPollingService:
                 "message": f"Order {order.symbol} {order.side} status: {old_status} → {mapped_status}",
             })
             
-            # If order is filled, create transaction record
-            if mapped_status == "filled" and order.alpaca_order_id not in self._processed_fills:
+            # If order is filled (fully or partially), create transaction record
+            # Partially filled orders also need transactions to track what was actually filled
+            if mapped_status in ["filled", "partially_filled"] and order.alpaca_order_id not in self._processed_fills:
                 await self._create_transaction(session, order, alpaca_order)
                 self._processed_fills.add(order.alpaca_order_id)
+                logger.info(
+                    f"✅ Created transaction for {mapped_status} order: "
+                    f"{order.symbol} {order.side} {order.filled_qty} shares"
+                )
         
         except Exception as e:
             # If order not found in Alpaca, mark as failed

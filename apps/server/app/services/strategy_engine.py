@@ -123,6 +123,28 @@ class StrategyEngine:
         self._position_cache: Dict[str, PositionContext] = {}
         self._last_position_refresh: Optional[datetime] = None
     
+    async def refresh_fund_balance(self) -> None:
+        """
+        Refresh fund balance from database.
+        
+        Call this after transfers or other balance-changing operations
+        to ensure engine has up-to-date balance for trading decisions.
+        """
+        try:
+            async with get_async_session() as session:
+                fund = await session.get(Fund, self.fund_id)
+                if fund:
+                    old_balance = self.fund.balance
+                    self.fund.balance = fund.balance
+                    logger.info(
+                        f"💰 Refreshed balance for fund {self.fund_id}: "
+                        f"${old_balance:.2f} → ${fund.balance:.2f}"
+                    )
+                else:
+                    logger.warning(f"Could not refresh balance - fund {self.fund_id} not found")
+        except Exception as e:
+            logger.error(f"Error refreshing fund balance: {e}", exc_info=True)
+    
     async def start(self) -> None:
         """Start the strategy execution loop."""
         if self.is_running:
