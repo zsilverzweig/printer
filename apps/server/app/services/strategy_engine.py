@@ -606,7 +606,7 @@ class StrategyEngine:
         """
         # Check trading hours BEFORE monitoring
         if not self._is_trading_time():
-            logger.debug("🕐 Outside trading hours, skipping entry monitoring")
+            logger.info("🕐 Outside trading hours, skipping entry monitoring")
             return
         
         # Check risk limits BEFORE monitoring
@@ -840,9 +840,13 @@ class StrategyEngine:
                 })
                 return
             
+            # Determine order type from signal (before broadcasting)
+            order_type = signal.order_type if signal.order_type else "market"
+            limit_price = signal.limit_price if order_type == "limit" else None
+            
             logger.info(
                 f"✅ Executing buy: {quantity} shares of {symbol} @ ${market_data.price:.2f} "
-                f"(cost: ${actual_cost:.2f}, target: ${position_size:.2f}, balance: ${fund_balance:.2f})"
+                f"(cost: ${actual_cost:.2f}, target: ${position_size:.2f}, balance: ${fund_balance:.2f}, type: {order_type})"
             )
             
             # Broadcast pre-trade diagnostic info
@@ -861,6 +865,8 @@ class StrategyEngine:
                     "share_price": market_data.price,
                     "quantity": quantity,
                     "actual_cost": actual_cost,
+                    "order_type": order_type,
+                    "limit_price": limit_price,
                 }
             })
             
@@ -868,7 +874,9 @@ class StrategyEngine:
             order_id = str(uuid.uuid4())
             submitted_at = datetime.utcnow()
             
-            logger.info(f"📝 Creating order record: {symbol} buy {quantity} shares")
+            logger.info(f"📝 Creating order record: {symbol} buy {quantity} shares (type: {order_type})")
+            if limit_price:
+                logger.info(f"   Limit price: ${limit_price:.2f}")
             
             alpaca_order_id = None
             order_creation_failed = False
@@ -883,7 +891,7 @@ class StrategyEngine:
                         symbol=symbol,
                         side="buy",
                         quantity=quantity,
-                        order_type="market",
+                        order_type=order_type,
                         status="pending",
                         submitted_at=submitted_at,
                     )
@@ -894,12 +902,21 @@ class StrategyEngine:
                 
                 # Place order via Alpaca (quantity-based, whole shares)
                 try:
-                    alpaca_order = await self.alpaca_service.place_market_order(
-                        symbol=symbol,
-                        qty=quantity,
-                        side="buy",
-                        time_in_force="day"
-                    )
+                    if order_type == "limit" and limit_price:
+                        alpaca_order = await self.alpaca_service.place_limit_order(
+                            symbol=symbol,
+                            qty=quantity,
+                            limit_price=limit_price,
+                            side="buy",
+                            time_in_force="day"
+                        )
+                    else:
+                        alpaca_order = await self.alpaca_service.place_market_order(
+                            symbol=symbol,
+                            qty=quantity,
+                            side="buy",
+                            time_in_force="day"
+                        )
                     alpaca_order_id = alpaca_order["id"]
                     logger.info(f"✅ Alpaca order placed: {alpaca_order_id}")
                     
@@ -957,7 +974,7 @@ class StrategyEngine:
             )
             
             # Broadcast trading event
-            await _broadcast_trading_event({
+            order_details = {
                 "fund_id": str(self.fund_id),
                 "fund_name": self.fund.name,
                 "event_type": "order_submitted",
@@ -970,8 +987,12 @@ class StrategyEngine:
                 "alpaca_order_id": alpaca_order["id"],
                 "timestamp": _get_utc_timestamp(),
                 "reason": signal.reason,
-                "message": f"Buy order submitted: {quantity} shares of {symbol} @ ${market_data.price:.2f}",
-            })
+                "order_type": order_type,
+                "message": f"Buy order submitted: {quantity} shares of {symbol} @ ${market_data.price:.2f} ({order_type})",
+            }
+            if limit_price:
+                order_details["limit_price"] = limit_price
+            await _broadcast_trading_event(order_details)
         
         except Exception as e:
             logger.error(f"Error entering position for {symbol}: {e}", exc_info=True)
@@ -1116,7 +1137,8 @@ class StrategyEngine:
                 "pnl_percent": position.unrealized_pnl_percent,
                 "timestamp": _get_utc_timestamp(),
                 "reason": signal.reason,
-                "message": f"Sell order submitted: {position.quantity} shares of {position.symbol} @ ${market_data.price:.2f}",
+                "order_type": "market",  # Currently exits always use market orders
+                "message": f"Sell order submitted: {position.quantity} shares of {position.symbol} @ ${market_data.price:.2f} (market)",
             })
         
         except Exception as e:

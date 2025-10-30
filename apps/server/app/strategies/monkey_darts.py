@@ -3,7 +3,7 @@ Monkey Throwing Darts Strategy
 
 A simple random trading strategy for testing the execution engine:
 - Randomly select a stock from screener results
-- Buy immediately
+- Buy with limit order at current price
 - Hold for exactly 1 minute
 - Sell
 - Repeat
@@ -54,7 +54,8 @@ class MonkeyDartsStrategy(ExecutionStrategy):
     def description(self) -> str:
         return (
             "Random stock selection strategy for testing. "
-            "Randomly picks a stock, buys it, holds for 1 minute, then sells. "
+            "Randomly picks a stock, buys it with a limit order at current price, "
+            "holds for 1 minute, then sells. "
             "This is a simple test strategy to verify the execution engine works."
         )
     
@@ -141,8 +142,9 @@ class MonkeyDartsStrategy(ExecutionStrategy):
         Always enter! That's the monkey way.
         
         We're called with a symbol, so if we're being asked, we should enter.
+        Uses limit orders at the current price.
         """
-        logger.info(f"🐵 Monkey selecting: {symbol} @ {market_data.price}")
+        logger.info(f"🐵 Monkey selecting: {symbol} @ {market_data.price} (limit order)")
         
         return EntrySignal(
             should_enter=True,
@@ -151,6 +153,8 @@ class MonkeyDartsStrategy(ExecutionStrategy):
             take_profit=None,  # No take profit, we rely on time exit
             confidence=1.0,  # 100% confident in random selection!
             reason="random_dart_throw",
+            order_type="limit",  # Use limit orders
+            limit_price=market_data.price,  # Set limit at current price
             metadata={
                 "entry_time": datetime.now().isoformat(),
                 "hold_time_seconds": self.hold_time_seconds,

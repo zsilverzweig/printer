@@ -3,10 +3,10 @@ import type { ScreenedStockPreview } from "@/lib/types/market";
 // Re-export StockIndicators from shared package
 export type { StockIndicators } from "@printer/shared";
 
-export type WebSocketMessageType = 
-  | "noc_update" 
-  | "screener_update" 
-  | "market_data" 
+export type WebSocketMessageType =
+  | "noc_update"
+  | "screener_update"
+  | "market_data"
   | "connection_status"
   | "trading_activity";
 
@@ -38,6 +38,8 @@ export interface TradingActivityEvent {
   pnl_percent?: number;
   percent?: number;
   multiplier?: number;
+  order_type?: string; // "market" or "limit"
+  limit_price?: number; // Limit price for limit orders
 }
 
 export interface WebSocketContextValue {
@@ -46,13 +48,13 @@ export interface WebSocketContextValue {
   screenerData: ScreenedStockPreview[] | null;
   marketData: Map<string, unknown>;
   tradingActivity: TradingActivityEvent[];
-  
+
   // Connection state
   isConnected: boolean;
   connectionStatus: ConnectionStatus;
   lastUpdate: number | null;
   error: string | null;
-  
+
   // Market subscriptions
   subscribeToSymbol: (symbol: string) => void;
   unsubscribeFromSymbol: (symbol: string) => void;

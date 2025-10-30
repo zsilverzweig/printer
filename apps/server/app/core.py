@@ -46,25 +46,12 @@ async def startup_init() -> None:
 
 def get_client(pagination: bool = True) -> RESTClient:
     global rest_client, API_KEY
-    import logging
-    logger = logging.getLogger("app.core")
-    
-    logger.info(f"=== GET CLIENT REQUEST ===")
-    logger.info(f"Getting client - pagination: {pagination}")
-    logger.info(f"API_KEY present: {bool(API_KEY)}")
-    logger.info(f"API_KEY length: {len(API_KEY) if API_KEY else 0}")
-    logger.info(f"rest_client initialized: {rest_client is not None}")
     
     if pagination:
         assert rest_client is not None
-        logger.info("✅ Returning existing paginated client")
-        logger.info(f"Client type: {type(rest_client)}")
-        logger.info(f"Client has list_ticker_news: {hasattr(rest_client, 'list_ticker_news')}")
         return rest_client
     else:
-        logger.info("Creating new non-paginated client")
         new_client = RESTClient(api_key=API_KEY, pagination=False)
-        logger.info(f"✅ New client created: {type(new_client)}")
         return new_client
 
 

@@ -49,8 +49,6 @@ class MarketDataProvider:
         
         # Real-time subscription callbacks
         self._subscriptions: Dict[str, List[Callable]] = {}
-        
-        logger.info("MarketDataProvider initialized")
     
     async def get_realtime_quote(self, symbol: str) -> Dict[str, Any]:
         """

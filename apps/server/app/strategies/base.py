@@ -40,6 +40,8 @@ class EntrySignal:
     take_profit: Optional[float] = None
     confidence: float = 1.0
     reason: Optional[str] = None
+    order_type: str = "market"  # "market" or "limit"
+    limit_price: Optional[float] = None  # Used when order_type is "limit"
     metadata: Optional[Dict[str, Any]] = None  # Strategy-specific data
 
 

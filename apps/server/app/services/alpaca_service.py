@@ -7,7 +7,7 @@ import logging
 import os
 from typing import Dict, Any, Optional
 from alpaca.trading.client import TradingClient
-from alpaca.trading.requests import MarketOrderRequest
+from alpaca.trading.requests import MarketOrderRequest, LimitOrderRequest
 from alpaca.trading.enums import OrderSide, TimeInForce
 from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import StockLatestQuoteRequest
@@ -295,6 +295,134 @@ class AlpacaService:
             logger.error("=" * 80)
             logger.error(f"❌ ORDER FAILED")
             logger.error(f"   Symbol: {symbol}")
+            logger.error(f"   Error Type: {type(e).__name__}")
+            logger.error(f"   Error Message: {str(e)}")
+            logger.error("=" * 80)
+            raise
+    
+    async def place_limit_order(
+        self, 
+        symbol: str,
+        limit_price: float,
+        notional: float = None,
+        qty: float = None,
+        side: str = "buy",
+        time_in_force: str = "day"
+    ) -> Dict[str, Any]:
+        """
+        Place a limit order with either notional amount (dollar-based) or quantity.
+        
+        Args:
+            symbol: Stock ticker symbol
+            limit_price: Limit price for the order
+            notional: Dollar amount to trade (optional)
+            qty: Number of shares to trade (optional)
+            side: "buy" or "sell"
+            time_in_force: "day", "gtc", "ioc", "fok" (default: "day")
+            
+        Returns:
+            Dictionary with order details
+        """
+        logger.info("=" * 80)
+        logger.info(f"📝 LIMIT ORDER REQUEST RECEIVED")
+        logger.info(f"   Symbol: {symbol}")
+        logger.info(f"   Limit Price: ${limit_price:.2f}")
+        logger.info(f"   Notional: ${notional:.2f}" if notional else f"   Quantity: {qty}")
+        logger.info(f"   Side: {side.upper()}")
+        logger.info(f"   Time in Force: {time_in_force.upper()}")
+        logger.info("=" * 80)
+        
+        if not self.client:
+            logger.error("❌ Alpaca client not initialized")
+            raise ValueError("Alpaca client not initialized. Check API credentials.")
+        
+        if not notional and not qty:
+            logger.error("❌ Neither notional nor qty provided")
+            raise ValueError("Either notional or qty must be provided")
+        
+        try:
+            # Validate side
+            order_side = OrderSide.BUY if side.lower() == "buy" else OrderSide.SELL
+            logger.info(f"✓ Order side validated: {order_side.value}")
+            
+            # Convert time_in_force string to enum
+            tif_map = {
+                "day": TimeInForce.DAY,
+                "gtc": TimeInForce.GTC,
+                "ioc": TimeInForce.IOC,
+                "fok": TimeInForce.FOK,
+            }
+            time_in_force_enum = tif_map.get(time_in_force.lower(), TimeInForce.DAY)
+            logger.info(f"✓ Time in force: {time_in_force_enum.value}")
+            
+            # If notional is provided, calculate quantity based on limit price
+            if notional and not qty:
+                qty = int(notional / limit_price)
+                logger.info(f"💵 Calculated quantity from notional: {qty} shares @ ${limit_price:.2f}")
+                
+                if qty < 1:
+                    logger.error(f"❌ Insufficient funds: ${notional:.2f} < ${limit_price:.2f}")
+                    raise ValueError(
+                        f"Insufficient notional amount (${notional:.2f}) to buy at least 1 share at ${limit_price:.2f}"
+                    )
+            
+            # Use quantity-based limit order
+            logger.info(f"💰 Placing LIMIT order: {qty} shares of {symbol} @ ${limit_price:.2f}")
+            
+            order_request = LimitOrderRequest(
+                symbol=symbol,
+                qty=qty,
+                side=order_side,
+                time_in_force=time_in_force_enum,
+                limit_price=limit_price
+            )
+            logger.info(f"📤 Submitting limit order to Alpaca API...")
+            
+            order = self.client.submit_order(order_request)
+            logger.info(f"✅ Limit order accepted by Alpaca")
+            
+            order_data = {
+                "id": str(order.id),
+                "client_order_id": order.client_order_id,
+                "symbol": order.symbol,
+                "qty": float(order.qty) if order.qty else None,
+                "limit_price": float(order.limit_price) if order.limit_price else None,
+                "notional": notional,
+                "side": order.side.value,
+                "type": order.type.value,
+                "status": order.status.value,
+                "time_in_force": order.time_in_force.value,
+                "submitted_at": order.submitted_at.isoformat() if order.submitted_at else None,
+                "filled_at": order.filled_at.isoformat() if order.filled_at else None,
+                "filled_qty": float(order.filled_qty) if order.filled_qty else 0,
+                "filled_avg_price": float(order.filled_avg_price) if order.filled_avg_price else None,
+            }
+            
+            logger.info("=" * 80)
+            logger.info(f"✅ LIMIT ORDER RESPONSE FROM ALPACA")
+            logger.info(f"   Order ID: {order_data['id']}")
+            logger.info(f"   Client Order ID: {order_data['client_order_id']}")
+            logger.info(f"   Status: {order_data['status'].upper()}")
+            logger.info(f"   Symbol: {order_data['symbol']}")
+            logger.info(f"   Side: {order_data['side'].upper()}")
+            logger.info(f"   Type: {order_data['type'].upper()}")
+            logger.info(f"   Limit Price: ${order_data['limit_price']:.2f}" if order_data['limit_price'] else "   Limit Price: N/A")
+            logger.info(f"   Time in Force: {order_data['time_in_force'].upper()}")
+            logger.info(f"   Quantity: {order_data['qty'] if order_data['qty'] else 'N/A'}")
+            logger.info(f"   Notional: ${order_data['notional']:.2f}" if order_data['notional'] else "   Notional: N/A")
+            logger.info(f"   Filled Qty: {order_data['filled_qty']}")
+            logger.info(f"   Filled Avg Price: ${order_data['filled_avg_price']:.2f}" if order_data['filled_avg_price'] else "   Filled Avg Price: N/A")
+            logger.info(f"   Submitted At: {order_data['submitted_at']}")
+            logger.info(f"   Filled At: {order_data['filled_at'] if order_data['filled_at'] else 'Not filled yet'}")
+            logger.info("=" * 80)
+            
+            return order_data
+            
+        except Exception as e:
+            logger.error("=" * 80)
+            logger.error(f"❌ LIMIT ORDER FAILED")
+            logger.error(f"   Symbol: {symbol}")
+            logger.error(f"   Limit Price: ${limit_price:.2f}")
             logger.error(f"   Error Type: {type(e).__name__}")
             logger.error(f"   Error Message: {str(e)}")
             logger.error("=" * 80)

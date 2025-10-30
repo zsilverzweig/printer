@@ -184,6 +184,14 @@ export function TradingActivityFeed({
                           {(event as any).side.toUpperCase()}
                         </Badge>
                       )}
+                      {(event as any).order_type && (
+                        <Badge
+                          variant="outline"
+                          className="text-[10px] px-1.5 py-0.5 h-5"
+                        >
+                          {(event as any).order_type.toUpperCase()}
+                        </Badge>
+                      )}
                     </div>
 
                     {/* Trade Details - Horizontal Layout */}
@@ -204,6 +212,17 @@ export function TradingActivityFeed({
                           </span>
                           <span className="font-semibold text-purple-700 dark:text-purple-400">
                             {formatPrice(event.price)}
+                          </span>
+                        </div>
+                      )}
+
+                      {(event as any).limit_price && (
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <span className="text-xs text-muted-foreground">
+                            Limit:
+                          </span>
+                          <span className="font-semibold text-orange-700 dark:text-orange-400">
+                            {formatPrice((event as any).limit_price)}
                           </span>
                         </div>
                       )}
