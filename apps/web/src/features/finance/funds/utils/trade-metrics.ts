@@ -38,8 +38,8 @@ export function calculateTradeMetrics(
     };
   }
 
-  const sortedTransactions = [...transactions].sort((a, b) =>
-    new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+  const sortedTransactions = [...transactions].sort(
+    (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
   );
 
   const lots: Record<string, { quantity: number; price: number }[]> = {};
@@ -88,16 +88,14 @@ export function calculateTradeMetrics(
 
   const averageWin =
     winningTrades > 0
-      ? pnlValues
-          .filter((pnl) => pnl > 0)
-          .reduce((sum, pnl) => sum + pnl, 0) / winningTrades
+      ? pnlValues.filter((pnl) => pnl > 0).reduce((sum, pnl) => sum + pnl, 0) /
+        winningTrades
       : 0;
 
   const averageLoss =
     losingTrades > 0
-      ? pnlValues
-          .filter((pnl) => pnl < 0)
-          .reduce((sum, pnl) => sum + pnl, 0) / losingTrades
+      ? pnlValues.filter((pnl) => pnl < 0).reduce((sum, pnl) => sum + pnl, 0) /
+        losingTrades
       : 0;
 
   const standardDeviation = calculateStandardDeviation(pnlValues);

@@ -90,13 +90,17 @@ export function FundManagement() {
         </div>
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="w-full max-w-xs justify-start">
+      <Tabs
+        value={activeTab}
+        onValueChange={setActiveTab}
+        className="space-y-6"
+      >
+        <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="performance">Performance</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="overview" className="space-y-6 pt-4">
+        <TabsContent value="overview" className="space-y-6">
           {/* Alpaca Account Summary */}
           <AlpacaBalanceSummary />
 
@@ -116,7 +120,7 @@ export function FundManagement() {
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Total Balance
+                  Total Cash Balance
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -127,6 +131,9 @@ export function FundManagement() {
                     maximumFractionDigits: 2,
                   })}
                 </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  See individual fund cards for full AUM
+                </p>
               </CardContent>
             </Card>
 
@@ -163,7 +170,7 @@ export function FundManagement() {
           <FundList funds={funds} />
         </TabsContent>
 
-        <TabsContent value="performance" className="pt-4">
+        <TabsContent value="performance" className="space-y-6">
           <FundPerformanceOverview
             funds={funds}
             isActive={activeTab === "performance"}
