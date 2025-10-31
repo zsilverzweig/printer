@@ -7,9 +7,13 @@
 
 "use client";
 
-import { Fund } from "@printer/shared";
 import { AlertCircle, X } from "lucide-react";
 import { useEffect, useState } from "react";
+
+import { Fund } from "@printer/shared";
+
+import { useFundDetails } from "../hooks/use-fund-details";
+import { fundService } from "../services/fund-service";
 
 import { Button } from "@/lib/components/ui/button";
 import {
@@ -21,9 +25,6 @@ import {
 } from "@/lib/components/ui/card";
 import { Input } from "@/lib/components/ui/input";
 import { Label } from "@/lib/components/ui/label";
-
-import { useFundDetails } from "../hooks/use-fund-details";
-import { fundService } from "../services/fund-service";
 
 interface RiskManagementProps {
   fundId: string;

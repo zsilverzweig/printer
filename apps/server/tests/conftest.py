@@ -321,7 +321,7 @@ async def mock_strategy_engine(mock_market_data, mock_alpaca, mock_execution_str
             engine = mock_strategy_engine(fund)
             await engine.start()
     """
-    from app.services.strategy_engine import StrategyEngine
+    from app.services.strategies.strategy_engine import StrategyEngine
     
     def create_engine(fund):
         return StrategyEngine(

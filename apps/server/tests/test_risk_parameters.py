@@ -358,7 +358,7 @@ async def test_strategy_engine_checks_risk_limits_before_entry():
     
     This test will likely FAIL if risk checks are not in the entry flow.
     """
-    from app.services.strategy_engine import StrategyEngine
+    from app.services.strategies.strategy_engine import StrategyEngine
     
     fund = build_fund(
         balance=10000.0,

@@ -16,7 +16,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.strategies import ScreeningCriteria, Fund
-from app.services.database import get_async_session
+from app.services.core.database import get_async_session
 
 logger = logging.getLogger("app.screening_criteria")
 
@@ -46,7 +46,7 @@ async def run_screener_with_criteria(criteria_id: str) -> ScreenerRunResult:
     """
     try:
         # Get the global screener service
-        from app.services.screener import get_screener_service
+        from app.services.screener.screener import get_screener_service
         screener_service = get_screener_service()
         
         if not screener_service:
@@ -91,7 +91,7 @@ async def run_screener_with_criteria(criteria_id: str) -> ScreenerRunResult:
         limit = params.get("limit", 200)
         
         # Get the last snapshot and recompute with custom criteria
-        from app.services.screener_snapshot import fetch_snapshot_all
+        from app.services.screener.screener_snapshot import fetch_snapshot_all
         import app.core as core
         
         if not core.API_KEY:

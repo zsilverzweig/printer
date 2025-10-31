@@ -11,7 +11,7 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 
-from app.services.ticker_filter import (
+from app.services.screener.ticker_filter import (
     get_filtered_tickers,
     get_filter_metadata,
     FilterCriteria

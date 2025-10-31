@@ -18,14 +18,14 @@ from pydantic import BaseModel
 from sqlalchemy import select, and_
 
 from app.models.strategies import Fund, ScreeningCriteria, Order, Transaction, Transfer
-from app.services.database import get_async_session
-from app.services.engine_registry import (
+from app.services.core.database import get_async_session
+from app.services.strategies.engine_registry import (
     register_engine,
     get_engine,
     unregister_engine,
     list_running_funds
 )
-from app.services.strategy_factory import create_strategy_engine
+from app.services.strategies.strategy_factory import create_strategy_engine
 
 logger = logging.getLogger(__name__)
 
@@ -503,7 +503,7 @@ async def stop_and_liquidate(fund_id: str) -> dict:
             logger.info(f"🛑 Fund {fund_id} ({fund.name}) stopped and liquidating")
             
             # Get Alpaca service
-            from app.services.alpaca_service import AlpacaService
+            from app.services.trading.alpaca_service import AlpacaService
             alpaca_service = AlpacaService(paper_trading=(fund.mode == "sim"))
             
             cancelled_orders = []
@@ -889,7 +889,7 @@ async def get_fund_positions_summary(fund_id: str) -> dict:
                     })
             
             # Fetch current market prices
-            from app.services.market_data_provider import MarketDataProvider
+            from app.services.market.market_data_provider import MarketDataProvider
             market_provider = MarketDataProvider()
             
             positions_with_prices = []
@@ -973,7 +973,7 @@ async def get_fund_positions(fund_id: str) -> dict:
         alpaca_positions = []
         try:
             # Create Alpaca service based on fund mode
-            from app.services.alpaca_service import AlpacaService
+            from app.services.trading.alpaca_service import AlpacaService
             
             if engine:
                 # Use engine's alpaca service if available (already initialized)
@@ -1283,7 +1283,7 @@ async def create_transfer(fund_id: str, transfer_input: CreateTransferInput) -> 
             await session.commit()
             
             # Refresh balance in running engine if fund is active
-            from app.services.engine_registry import get_engine
+            from app.services.strategies.engine_registry import get_engine
             engine = get_engine(fund_id)
             if engine:
                 await engine.refresh_fund_balance()
@@ -1647,6 +1647,87 @@ async def close_orphaned_position(fund_id: str, symbol: str) -> dict:
     except Exception as e:
         logger.error(f"Error closing orphaned position {symbol} for fund {fund_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/funds/{fund_id}/reconcile-positions")
+async def reconcile_fund_positions(fund_id: str) -> dict:
+    """
+    Manually trigger full position reconciliation for a fund.
+    
+    Checks all positions against Alpaca's records and auto-corrects
+    discrepancies using the Activities API as the source of truth.
+    
+    This operation:
+    1. Compares DB positions (from transaction ledger) with Alpaca positions
+    2. Identifies discrepancies
+    3. Auto-corrects by querying Activities API for missing fills
+    4. Creates missing Transaction records
+    5. Logs all actions to strategy_engine_events
+    
+    Returns summary of reconciliation results including:
+    - Total positions checked
+    - Discrepancies found
+    - Corrections applied
+    - Detailed discrepancy info
+    """
+    try:
+        async with get_async_session() as session:
+            # Verify fund exists
+            stmt = select(Fund).where(Fund.id == fund_id)
+            result = await session.execute(stmt)
+            fund = result.scalar_one_or_none()
+            
+            if not fund:
+                raise HTTPException(status_code=404, detail=f"Fund {fund_id} not found")
+            
+            # Get Alpaca service from engine if running, otherwise create new one
+            from app.services.strategies.engine_registry import get_engine
+            from app.services.trading.alpaca_service import AlpacaService
+            from app.services.trading.activity_sync import ActivitySyncService
+            
+            engine = get_engine(fund_id)
+            if engine:
+                alpaca_service = engine.alpaca_service
+            else:
+                # Fund not running, create temporary Alpaca service
+                alpaca_service = AlpacaService(paper_trading=(fund.mode == "sim"))
+            
+            # Run reconciliation
+            activity_sync = ActivitySyncService(alpaca_service)
+            result = await activity_sync.reconcile_fund_positions(
+                session=session,
+                fund_id=fund_id,
+                lookback_hours=24
+            )
+            
+            logger.info(
+                f"Manual reconciliation completed for fund {fund_id[:8]}: "
+                f"{result['total_discrepancies']} discrepancies, "
+                f"{result.get('corrections_applied', 0)} corrections applied"
+            )
+            
+            return {
+                "success": True,
+                "fund_id": fund_id,
+                "fund_name": fund.name,
+                "status": result["status"],
+                "total_discrepancies": result["total_discrepancies"],
+                "corrections_applied": result.get("corrections_applied", 0),
+                "discrepancies": result["discrepancies"],
+                "message": (
+                    "All positions in sync" if result["status"] == "in_sync"
+                    else f"Found {result['total_discrepancies']} discrepancies, applied {result.get('corrections_applied', 0)} corrections"
+                )
+            }
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to reconcile positions for fund {fund_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Position reconciliation failed: {str(e)}"
+        )
 
 
 @router.post("/funds/{fund_id}/reset")

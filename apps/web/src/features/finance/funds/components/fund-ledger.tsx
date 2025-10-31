@@ -15,8 +15,17 @@ import {
   type ColumnDef,
   type SortingState,
 } from "@tanstack/react-table";
-import { ArrowDown, ArrowUp, ArrowUpDown, DollarSign } from "lucide-react";
+import {
+  Activity,
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  Copy,
+  DollarSign,
+  RefreshCw,
+} from "lucide-react";
 import { useMemo, useState } from "react";
+import { toast } from "sonner";
 
 import { Badge } from "@/lib/components/ui/badge";
 import { Button } from "@/lib/components/ui/button";
@@ -50,8 +59,10 @@ import {
 } from "@/lib/components/ui/tabs";
 
 import { FundTransaction, FundTransfer } from "../types";
+import { StrategyEngineEventsModal } from "./strategy-engine-events-modal";
 
 interface FundLedgerProps {
+  fundId: string;
   transactions: FundTransaction[];
   transfers: FundTransfer[];
   loading: boolean;
@@ -73,6 +84,7 @@ type LedgerRow = {
 };
 
 export function FundLedger({
+  fundId,
   transactions,
   transfers,
   loading,
@@ -82,6 +94,11 @@ export function FundLedger({
     { id: "timestamp", desc: true },
   ]);
   const [activeTab, setActiveTab] = useState("all");
+  const [eventsModalOpen, setEventsModalOpen] = useState(false);
+  const [eventsModalSymbol, setEventsModalSymbol] = useState<
+    string | undefined
+  >();
+  const [isReconciling, setIsReconciling] = useState(false);
 
   // Extract unique tickers from transactions
   const uniqueTickers = useMemo(() => {
@@ -245,6 +262,32 @@ export function FundLedger({
         ),
       },
       {
+        accessorKey: "id",
+        header: "ID",
+        cell: ({ row }) => {
+          const handleCopy = () => {
+            navigator.clipboard.writeText(row.original.id);
+            toast.success("Transaction ID copied to clipboard");
+          };
+
+          return (
+            <div className="flex items-center gap-1">
+              <span className="text-xs text-muted-foreground font-mono">
+                {row.original.id.slice(0, 8)}...
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleCopy}
+                className="h-6 w-6 p-0 hover:bg-muted"
+              >
+                <Copy className="h-3 w-3" />
+              </Button>
+            </div>
+          );
+        },
+      },
+      {
         accessorKey: "type",
         header: "Type",
         cell: ({ row }) => (
@@ -293,9 +336,7 @@ export function FundLedger({
         header: () => <div className="text-right">Quantity</div>,
         cell: ({ row }) => (
           <div className="text-right">
-            {row.original.quantity !== null
-              ? row.original.quantity
-              : "—"}
+            {row.original.quantity !== null ? row.original.quantity : "—"}
           </div>
         ),
       },
@@ -408,7 +449,9 @@ export function FundLedger({
                   >
                     {pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}
                   </span>
-                  {isWinner && <span className="text-xs text-green-600">✓</span>}
+                  {isWinner && (
+                    <span className="text-xs text-green-600">✓</span>
+                  )}
                 </div>
               ) : (
                 <span className="text-muted-foreground">—</span>
@@ -459,153 +502,238 @@ export function FundLedger({
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-start justify-between">
-          <div>
-            <CardTitle>Ledger</CardTitle>
-            <CardDescription>
-              Complete history of money movements - transfers and trades
-            </CardDescription>
-          </div>
-        </div>
+    <>
+      <Card>
+        <CardHeader>
+          <div className="flex items-start justify-between">
+            <div>
+              <CardTitle>Ledger</CardTitle>
+              <CardDescription>
+                Complete history of money movements - transfers and trades
+              </CardDescription>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={async () => {
+                  setIsReconciling(true);
+                  try {
+                    const response = await fetch(
+                      `/api/funds/${fundId}/reconcile-positions`,
+                      {
+                        method: "POST",
+                      }
+                    );
 
-        {/* Filter and Summary Section */}
-        <div className="flex flex-col sm:flex-row gap-4 mt-4 items-start sm:items-center justify-between">
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <label className="text-sm font-medium">Ticker:</label>
-            <Select value={selectedTicker} onValueChange={setSelectedTicker}>
-              <SelectTrigger className="w-[200px]">
-                <SelectValue placeholder="All tickers" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Tickers</SelectItem>
-                {uniqueTickers.map((ticker) => (
-                  <SelectItem key={ticker} value={ticker}>
-                    {ticker}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+                    if (!response.ok) {
+                      throw new Error("Reconciliation failed");
+                    }
 
-          {/* Cash Impact Sum */}
-          <div className="flex items-center gap-2 px-4 py-2 rounded-lg border bg-muted/50">
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
-            <div className="text-sm">
-              <span className="text-muted-foreground font-medium">
-                Net Cash Impact:{" "}
-              </span>
-              <span
-                className={`font-bold ${
-                  cashImpactSum >= 0 ? "text-green-600" : "text-red-600"
-                }`}
+                    const result = await response.json();
+
+                    if (result.status === "in_sync") {
+                      toast.success("✓ All positions in sync");
+                    } else {
+                      toast.success(
+                        `✓ Reconciliation complete: ${result.corrections_applied} corrections applied`,
+                        {
+                          description: `Found ${result.total_discrepancies} discrepancies`,
+                        }
+                      );
+
+                      // Open events modal filtered to position_sync
+                      setEventsModalSymbol(undefined);
+                      setEventsModalOpen(true);
+                    }
+                  } catch (error) {
+                    console.error("Reconciliation error:", error);
+                    toast.error("Reconciliation failed", {
+                      description:
+                        error instanceof Error
+                          ? error.message
+                          : "Unknown error",
+                    });
+                  } finally {
+                    setIsReconciling(false);
+                  }
+                }}
+                disabled={isReconciling}
               >
-                {cashImpactSum >= 0 ? "+" : ""}${cashImpactSum.toFixed(2)}
-              </span>
+                <RefreshCw
+                  className={`h-4 w-4 mr-2 ${
+                    isReconciling ? "animate-spin" : ""
+                  }`}
+                />
+                {isReconciling ? "Reconciling..." : "Reconcile Positions"}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setEventsModalSymbol(undefined);
+                  setEventsModalOpen(true);
+                }}
+              >
+                <Activity className="h-4 w-4 mr-2" />
+                Engine Events
+              </Button>
             </div>
           </div>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="all">All ({tableData.length})</TabsTrigger>
-            <TabsTrigger value="transfers">
-              Transfers ({transfers.length})
-            </TabsTrigger>
-            <TabsTrigger value="transactions">
-              Trades ({transactions.length})
-            </TabsTrigger>
-          </TabsList>
 
-          <TabsContent value={activeTab} className="space-y-4">
-            {filteredData.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                {activeTab === "all"
-                  ? "No ledger entries yet"
-                  : activeTab === "transfers"
-                  ? "No transfers yet"
-                  : selectedTicker === "all"
-                  ? "No transactions yet"
-                  : `No transactions for ${selectedTicker}`}
+          {/* Filter and Summary Section */}
+          <div className="flex flex-col sm:flex-row gap-4 mt-4 items-start sm:items-center justify-between">
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <label className="text-sm font-medium">Ticker:</label>
+              <Select value={selectedTicker} onValueChange={setSelectedTicker}>
+                <SelectTrigger className="w-[200px]">
+                  <SelectValue placeholder="All tickers" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Tickers</SelectItem>
+                  {uniqueTickers.map((ticker) => (
+                    <SelectItem key={ticker} value={ticker}>
+                      {ticker}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Cash Impact Sum */}
+            <div className="flex items-center gap-2 px-4 py-2 rounded-lg border bg-muted/50">
+              <DollarSign className="h-4 w-4 text-muted-foreground" />
+              <div className="text-sm">
+                <span className="text-muted-foreground font-medium">
+                  Net Cash Impact:{" "}
+                </span>
+                <span
+                  className={`font-bold ${
+                    cashImpactSum >= 0 ? "text-green-600" : "text-red-600"
+                  }`}
+                >
+                  {cashImpactSum >= 0 ? "+" : ""}${cashImpactSum.toFixed(2)}
+                </span>
               </div>
-            ) : (
-              <>
-                <div className="rounded-md border">
-                  <Table>
-                    <TableHeader>
-                      {table.getHeaderGroups().map((headerGroup) => (
-                        <TableRow key={headerGroup.id}>
-                          {headerGroup.headers.map((header) => (
-                            <TableHead key={header.id}>
-                              {header.isPlaceholder
-                                ? null
-                                : flexRender(
-                                    header.column.columnDef.header,
-                                    header.getContext()
-                                  )}
-                            </TableHead>
-                          ))}
-                        </TableRow>
-                      ))}
-                    </TableHeader>
-                    <TableBody>
-                      {table.getRowModel().rows.map((row) => (
-                        <TableRow key={row.id}>
-                          {row.getVisibleCells().map((cell) => (
-                            <TableCell key={cell.id}>
-                              {flexRender(
-                                cell.column.columnDef.cell,
-                                cell.getContext()
-                              )}
-                            </TableCell>
-                          ))}
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <Tabs
+            value={activeTab}
+            onValueChange={setActiveTab}
+            className="w-full"
+          >
+            <TabsList className="grid w-full grid-cols-3">
+              <TabsTrigger value="all">All ({tableData.length})</TabsTrigger>
+              <TabsTrigger value="transfers">
+                Transfers ({transfers.length})
+              </TabsTrigger>
+              <TabsTrigger value="transactions">
+                Trades ({transactions.length})
+              </TabsTrigger>
+            </TabsList>
 
-                {/* Pagination Controls */}
-                <div className="flex items-center justify-between">
-                  <div className="text-sm text-muted-foreground">
-                    Showing {table.getState().pagination.pageIndex * table.getState().pagination.pageSize + 1} to{" "}
-                    {Math.min(
-                      (table.getState().pagination.pageIndex + 1) *
-                        table.getState().pagination.pageSize,
-                      filteredData.length
-                    )}{" "}
-                    of {filteredData.length} entries
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => table.previousPage()}
-                      disabled={!table.getCanPreviousPage()}
-                    >
-                      Previous
-                    </Button>
-                    <div className="text-sm text-muted-foreground">
-                      Page {table.getState().pagination.pageIndex + 1} of{" "}
-                      {table.getPageCount()}
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => table.nextPage()}
-                      disabled={!table.getCanNextPage()}
-                    >
-                      Next
-                    </Button>
-                  </div>
+            <TabsContent value={activeTab} className="space-y-4">
+              {filteredData.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  {activeTab === "all"
+                    ? "No ledger entries yet"
+                    : activeTab === "transfers"
+                    ? "No transfers yet"
+                    : selectedTicker === "all"
+                    ? "No transactions yet"
+                    : `No transactions for ${selectedTicker}`}
                 </div>
-              </>
-            )}
-          </TabsContent>
-        </Tabs>
-      </CardContent>
-    </Card>
+              ) : (
+                <>
+                  <div className="rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        {table.getHeaderGroups().map((headerGroup) => (
+                          <TableRow key={headerGroup.id}>
+                            {headerGroup.headers.map((header) => (
+                              <TableHead key={header.id}>
+                                {header.isPlaceholder
+                                  ? null
+                                  : flexRender(
+                                      header.column.columnDef.header,
+                                      header.getContext()
+                                    )}
+                              </TableHead>
+                            ))}
+                          </TableRow>
+                        ))}
+                      </TableHeader>
+                      <TableBody>
+                        {table.getRowModel().rows.map((row) => (
+                          <TableRow key={row.id}>
+                            {row.getVisibleCells().map((cell) => (
+                              <TableCell key={cell.id}>
+                                {flexRender(
+                                  cell.column.columnDef.cell,
+                                  cell.getContext()
+                                )}
+                              </TableCell>
+                            ))}
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+
+                  {/* Pagination Controls */}
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm text-muted-foreground">
+                      Showing{" "}
+                      {table.getState().pagination.pageIndex *
+                        table.getState().pagination.pageSize +
+                        1}{" "}
+                      to{" "}
+                      {Math.min(
+                        (table.getState().pagination.pageIndex + 1) *
+                          table.getState().pagination.pageSize,
+                        filteredData.length
+                      )}{" "}
+                      of {filteredData.length} entries
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => table.previousPage()}
+                        disabled={!table.getCanPreviousPage()}
+                      >
+                        Previous
+                      </Button>
+                      <div className="text-sm text-muted-foreground">
+                        Page {table.getState().pagination.pageIndex + 1} of{" "}
+                        {table.getPageCount()}
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => table.nextPage()}
+                        disabled={!table.getCanNextPage()}
+                      >
+                        Next
+                      </Button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </TabsContent>
+          </Tabs>
+        </CardContent>
+      </Card>
+
+      {/* Strategy Engine Events Modal */}
+      <StrategyEngineEventsModal
+        fundId={fundId}
+        open={eventsModalOpen}
+        onOpenChange={setEventsModalOpen}
+        initialSymbol={eventsModalSymbol}
+      />
+    </>
   );
 }

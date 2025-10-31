@@ -21,9 +21,7 @@ Optional "displacement" filter is exposed via configuration but not required.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 from datetime import datetime, time, timedelta
-from statistics import median
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from zoneinfo import ZoneInfo
@@ -36,22 +34,17 @@ from app.strategies.base import (
     PositionContext,
     ScaleSignal,
 )
+from app.services.ai.technical_analysis import (
+    SwingPoint,
+    find_swing_points,
+    find_equal_levels,
+    median_true_range,
+    calculate_relative_volume,
+)
+from app.services.core.timing import is_within_trading_window
 
 
 logger = logging.getLogger(__name__)
-
-
-# Convenience dataclasses for clarity -----------------------------------------------------------
-
-
-@dataclass
-class SwingPoint:
-    """Represents a detected swing high or low."""
-
-    index: int
-    price: float
-    timestamp: datetime
-    bar: Dict[str, Any]
 
 
 # Strategy implementation -----------------------------------------------------------------------
@@ -544,21 +537,19 @@ class FailedEqualHighsBreakoutStrategy(ExecutionStrategy):
         return 0 <= seconds_to_close <= self.seconds_to_close_window
 
     def _in_trading_window(self, ts: datetime) -> bool:
+        """
+        Wrapper for timing utility.
+        
+        Uses shared is_within_trading_window function.
+        """
         if ts is None:
             return False
-
-        ts_et = ts
-        if ts_et.tzinfo is None:
-            ts_et = ts_et.replace(tzinfo=ZoneInfo("UTC"))
-        ts_et = ts_et.astimezone(self.EASTERN_TZ)
-
-        current_time = ts_et.time()
-
-        for start, end in self.SESSION_WINDOWS:
-            if start <= current_time <= end:
-                return True
-
-        return False
+        
+        return is_within_trading_window(
+            timestamp=ts,
+            windows=self.SESSION_WINDOWS,
+            timezone="America/New_York"
+        )
 
     def _ensure_five_minute_bars(self, bars: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         # Assumes incoming bars are already 5-minute bars; log if interval deviates significantly
@@ -589,51 +580,23 @@ class FailedEqualHighsBreakoutStrategy(ExecutionStrategy):
         )
 
     def _find_swing_points(self, bars: List[Dict[str, Any]], kind: str) -> List[SwingPoint]:
-        results: List[SwingPoint] = []
-
-        if len(bars) < 5:
-            return results
-
-        key = "high" if kind == "high" else "low"
-        compare = max if kind == "high" else min
-
-        for idx in range(2, len(bars) - 2):
-            center = bars[idx]
-            prices = [bars[idx - 2][key], bars[idx - 1][key], center[key], bars[idx + 1][key], bars[idx + 2][key]]
-            if center.get(key) is None:
-                continue
-
-            if center[key] == compare(prices):
-                results.append(
-                    SwingPoint(
-                        index=idx,
-                        price=center[key],
-                        timestamp=center["timestamp"],
-                        bar=center,
-                    )
-                )
-
-        return results
+        """
+        Wrapper for technical analysis utility.
+        
+        Uses shared find_swing_points function.
+        """
+        return find_swing_points(bars, kind=kind, lookback=2)
 
     def _find_equal_pair(
         self,
         swings: Sequence[SwingPoint],
     ) -> Optional[Tuple[SwingPoint, SwingPoint]]:
-        if len(swings) < 2:
-            return None
-
-        for i in range(len(swings) - 1, 0, -1):
-            a = swings[i]
-            for j in range(i - 1, -1, -1):
-                b = swings[j]
-                midpoint = (a.price + b.price) / 2
-                if midpoint == 0:
-                    continue
-
-                if abs(a.price - b.price) / midpoint <= self.equal_high_tolerance:
-                    return b, a
-
-        return None
+        """
+        Wrapper for technical analysis utility.
+        
+        Uses shared find_equal_levels function.
+        """
+        return find_equal_levels(list(swings), tolerance=self.equal_high_tolerance)
 
     def _compute_rvol(
         self,
@@ -670,9 +633,10 @@ class FailedEqualHighsBreakoutStrategy(ExecutionStrategy):
             details["reason"] = "avg_volume_missing"
             return None, details
 
-        try:
-            ratio = float(volume) / float(avg_volume)
-        except (TypeError, ZeroDivisionError):
+        # Use utility function for calculation
+        ratio = calculate_relative_volume(float(volume), float(avg_volume))
+        
+        if ratio == 0.0:
             details["reason"] = "avg_volume_invalid"
             return None, details
 
@@ -681,27 +645,12 @@ class FailedEqualHighsBreakoutStrategy(ExecutionStrategy):
         return ratio, details
 
     def _median_true_range(self, bars: List[Dict[str, Any]], period: int = 14) -> Optional[float]:
-        if len(bars) < period + 1:
-            return None
-
-        recent = bars[-(period + 1) :]
-        trs: List[float] = []
-
-        for i in range(1, len(recent)):
-            high = recent[i]["high"]
-            low = recent[i]["low"]
-            prev_close = recent[i - 1]["close"]
-
-            if high is None or low is None or prev_close is None:
-                continue
-
-            tr = max(high - low, abs(high - prev_close), abs(low - prev_close))
-            trs.append(tr)
-
-        if not trs:
-            return None
-
-        return median(trs)
+        """
+        Wrapper for technical analysis utility.
+        
+        Uses shared median_true_range function.
+        """
+        return median_true_range(bars, period=period)
 
     def _derive_runner_target(
         self,

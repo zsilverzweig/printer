@@ -16,15 +16,15 @@ export interface PositionsSummary {
 export interface FundBalanceCalculation {
   // Total Account Value (AUM - Assets Under Management)
   aum: number; // cashBalance + positionValue
-  
+
   // Components
   cashBalance: number; // deposits - withdrawals - buys + sells
   positionValue: number; // current market value of holdings
-  
+
   // P&L Breakdown
   realizedPnL: number; // sells - buys (profit from closed trades)
   unrealizedPnL: number; // current position value - cost basis
-  
+
   // Details
   totalDeposits: number;
   totalWithdrawals: number;
@@ -191,18 +191,22 @@ function calculateWindowPerformance(
     return date < startDate;
   });
 
-  // Calculate start AUM (at beginning of window, cash only since no historical position values)
-  const emptyPositions: PositionsSummary = {
+  // Calculate position cost basis at the start of the window
+  // This represents the value of positions held at the start date
+  const startPositionCostBasis = calculatePositionCostBasis(beforeTransactions);
+
+  const startPositions: PositionsSummary = {
     positionCount: 0,
-    totalMarketValue: 0,
+    totalMarketValue: startPositionCostBasis,
     totalUnrealizedPl: 0,
   };
-  
+
+  // Calculate start AUM (cash + cost basis of positions held at start)
   const startAUM = calculateFundBalance(
     beforeTransfers,
     beforeTransactions,
-    emptyPositions
-  ).cashBalance;
+    startPositions
+  ).aum;
 
   // Calculate end AUM including current positions at market value
   const endAUM = calculateFundBalance(
@@ -212,12 +216,18 @@ function calculateWindowPerformance(
   ).aum;
 
   // Calculate window-specific metrics
+  const emptyPositions: PositionsSummary = {
+    positionCount: 0,
+    totalMarketValue: 0,
+    totalUnrealizedPl: 0,
+  };
+
   const windowBalance = calculateFundBalance(
     windowTransfers,
     windowTransactions,
     emptyPositions
   );
-  
+
   // Net transfers in this window
   const netTransfers =
     windowBalance.totalDeposits - windowBalance.totalWithdrawals;
@@ -242,18 +252,15 @@ function calculateWindowPerformance(
 
   // Calculate return % based on total invested capital
   const pnlPercent = totalNetDeposits > 0 ? (pnl / totalNetDeposits) * 100 : 0;
-  
+
   // End balance for display
   const endBalance = endAUM;
 
-  // Count trades
-  const buys = windowTransactions.filter((t) => t.side === "buy");
-  const sells = windowTransactions.filter((t) => t.side === "sell");
+  // Count trades using proper FIFO lot matching
+  // This ensures we only count completed round-trip trades (buy -> sell)
+  const { winningTrades, losingTrades, totalTrades } =
+    calculateTradeResults(windowTransactions);
 
-  // Match buys with sells to calculate winning/losing trades
-  const { winningTrades, losingTrades } = calculateTradeResults(buys, sells);
-
-  const totalTrades = winningTrades + losingTrades;
   const winRate = totalTrades > 0 ? (winningTrades / totalTrades) * 100 : 0;
 
   return {
@@ -261,7 +268,7 @@ function calculateWindowPerformance(
     endBalance: endAUM,
     pnl,
     pnlPercent,
-    trades: sells.length, // Count completed round trips (sells)
+    trades: totalTrades, // Count only completed round-trip trades
     winningTrades,
     losingTrades,
     winRate,
@@ -269,46 +276,112 @@ function calculateWindowPerformance(
 }
 
 /**
- * Calculate winning and losing trades by matching buys and sells
+ * Calculate the total cost basis of open positions based on transaction history
+ * This gives us the amount invested in positions at a given point in time
  */
-function calculateTradeResults(
-  buys: FundTransaction[],
-  sells: FundTransaction[]
-): { winningTrades: number; losingTrades: number } {
-  let winningTrades = 0;
-  let losingTrades = 0;
+function calculatePositionCostBasis(transactions: FundTransaction[]): number {
+  // Track positions by symbol
+  const positions: Record<string, { quantity: number; costBasis: number }> = {};
 
-  // Group buys by symbol to calculate average cost basis
-  const costBasis: Record<string, { totalCost: number; totalQty: number }> = {};
-
-  buys.forEach((buy) => {
-    if (!costBasis[buy.symbol]) {
-      costBasis[buy.symbol] = { totalCost: 0, totalQty: 0 };
+  // Process all transactions chronologically (they should already be ordered)
+  transactions.forEach((txn) => {
+    if (!positions[txn.symbol]) {
+      positions[txn.symbol] = { quantity: 0, costBasis: 0 };
     }
-    costBasis[buy.symbol].totalCost += buy.totalValue;
-    costBasis[buy.symbol].totalQty += buy.quantity;
-  });
 
-  // Check each sell against cost basis
-  sells.forEach((sell) => {
-    const basis = costBasis[sell.symbol];
-    if (basis && basis.totalQty > 0) {
-      const avgCost = basis.totalCost / basis.totalQty;
-      const pnl = (sell.price - avgCost) * sell.quantity;
+    if (txn.side === "buy") {
+      // Add to position
+      positions[txn.symbol].costBasis += txn.totalValue;
+      positions[txn.symbol].quantity += txn.quantity;
+    } else if (txn.side === "sell") {
+      // Reduce position (FIFO)
+      const pos = positions[txn.symbol];
+      if (pos.quantity > 0) {
+        const avgCost = pos.costBasis / pos.quantity;
+        const soldCost = avgCost * txn.quantity;
 
-      if (pnl > 0) {
-        winningTrades++;
-      } else if (pnl < 0) {
-        losingTrades++;
+        pos.quantity -= txn.quantity;
+        pos.costBasis -= soldCost;
+
+        // Clean up if position is fully closed
+        if (pos.quantity <= 0) {
+          pos.quantity = 0;
+          pos.costBasis = 0;
+        }
       }
-
-      // Update cost basis (FIFO)
-      basis.totalQty -= sell.quantity;
-      basis.totalCost -= avgCost * sell.quantity;
     }
   });
 
-  return { winningTrades, losingTrades };
+  // Sum up total cost basis of all open positions
+  return Object.values(positions).reduce(
+    (total, pos) => total + pos.costBasis,
+    0
+  );
+}
+
+/**
+ * Calculate winning and losing trades using proper FIFO lot matching
+ * Only counts completed round-trip trades (buy -> sell)
+ */
+function calculateTradeResults(transactions: FundTransaction[]): {
+  winningTrades: number;
+  losingTrades: number;
+  totalTrades: number;
+} {
+  if (transactions.length === 0) {
+    return { winningTrades: 0, losingTrades: 0, totalTrades: 0 };
+  }
+
+  // Sort by timestamp to ensure chronological processing
+  const sortedTransactions = [...transactions].sort(
+    (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+  );
+
+  // Track lots by symbol using FIFO
+  const lots: Record<string, { quantity: number; price: number }[]> = {};
+  const tradeResults: number[] = [];
+
+  sortedTransactions.forEach((txn) => {
+    if (txn.side === "buy") {
+      // Add to lots
+      if (!lots[txn.symbol]) {
+        lots[txn.symbol] = [];
+      }
+      lots[txn.symbol].push({ quantity: txn.quantity, price: txn.price });
+      return;
+    }
+
+    // Process sell transactions using FIFO lots
+    const symbolLots = lots[txn.symbol] ?? (lots[txn.symbol] = []);
+    let remainingQuantity = txn.quantity;
+    let tradePnl = 0;
+    const initialQuantity = txn.quantity;
+
+    while (remainingQuantity > 0 && symbolLots.length > 0) {
+      const lot = symbolLots[0];
+      const matchedQuantity = Math.min(remainingQuantity, lot.quantity);
+      tradePnl += (txn.price - lot.price) * matchedQuantity;
+
+      lot.quantity -= matchedQuantity;
+      remainingQuantity -= matchedQuantity;
+
+      if (lot.quantity <= 0) {
+        symbolLots.shift();
+      }
+    }
+
+    // Only record trades that actually matched buy lots
+    const quantityMatched = initialQuantity - remainingQuantity;
+    if (quantityMatched > 0) {
+      tradeResults.push(tradePnl);
+    }
+  });
+
+  const winningTrades = tradeResults.filter((pnl) => pnl > 0).length;
+  const losingTrades = tradeResults.filter((pnl) => pnl < 0).length;
+  const totalTrades = tradeResults.length;
+
+  return { winningTrades, losingTrades, totalTrades };
 }
 
 /**

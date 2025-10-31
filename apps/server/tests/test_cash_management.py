@@ -18,7 +18,7 @@ from unittest.mock import Mock, patch, AsyncMock
 import pytest
 
 from app.models.strategies import Fund, Order
-from app.services.strategy_engine import StrategyEngine
+from app.services.strategies.strategy_engine import StrategyEngine
 from app.strategies.base import PositionContext, EntrySignal, MarketData
 
 

@@ -116,3 +116,37 @@ class AlpacaTradeEvent(Event):
         "polymorphic_identity": "alpaca_trade",
     }
 
+
+class StrategyEngineEvent(Event):
+    """
+    Event for strategy engine decisions and state changes.
+    
+    Provides comprehensive audit trail of all engine activities including:
+    - Position tracking (Alpaca vs ledger mismatches)
+    - Order decisions (entry/exit signals)
+    - Fill tracking (partial fills, lot details)
+    - Risk checks and validations
+    - Error conditions
+    
+    Fields:
+        fund_id: UUID of the fund
+        event_category: Category (e.g., 'position_sync', 'order_decision', 'fill_tracking', 'validation')
+        symbol: Stock symbol (if applicable)
+        event_data: JSON blob with detailed event data
+        severity: Severity level ('info', 'warning', 'error')
+        message: Human-readable message
+    """
+    __tablename__ = "strategy_engine_events"
+    
+    id: Mapped[int] = mapped_column(Integer, ForeignKey("events.id"), primary_key=True)
+    fund_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    event_category: Mapped[str] = mapped_column(String(50), nullable=False)
+    symbol: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+    event_data: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON string
+    severity: Mapped[str] = mapped_column(String(20), nullable=False, default="info")
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    
+    __mapper_args__ = {
+        "polymorphic_identity": "strategy_engine",
+    }
+

@@ -58,7 +58,7 @@ async def on_startup() -> None:
     logger.info("FastAPI application started, WebSocket endpoints registered")
     
     # Initialize global screener service for strategy engines
-    from app.services.screener import ScreenerService, set_screener_service
+    from app.services.screener.screener import ScreenerService, set_screener_service
     import app.core as core
     
     logger.info("Initializing global ScreenerService...")
@@ -68,8 +68,9 @@ async def on_startup() -> None:
     logger.info("✓ Global ScreenerService initialized and running")
     
     # Initialize order polling service for order status synchronization
-    from app.services.order_polling import OrderPollingService, set_polling_service
-    from app.services.alpaca_service import AlpacaService
+    from app.services.trading.order_polling import OrderPollingService, set_polling_service
+    from app.services.trading.alpaca_service import AlpacaService
+    from app.services.trading.reconciliation_service import ReconciliationService, set_reconciliation_service
     
     logger.info("Initializing OrderPollingService...")
     alpaca_service = AlpacaService(paper_trading=True)  # Use paper trading for now
@@ -78,8 +79,14 @@ async def on_startup() -> None:
     set_polling_service(polling_service)
     logger.info("✓ OrderPollingService initialized and running (polling every 5s)")
     
+    # Initialize reconciliation service for automatic position sync
+    logger.info("Initializing ReconciliationService...")
+    reconciliation_service = ReconciliationService(alpaca_service)
+    set_reconciliation_service(reconciliation_service)
+    logger.info("✓ ReconciliationService initialized (automatic position reconciliation enabled)")
+    
     # Auto-start funds that were active before server restart
-    from app.services.fund_autostart import auto_start_active_funds
+    from app.services.core.fund_autostart import auto_start_active_funds
     logger.info("Checking for active funds to auto-start...")
     await auto_start_active_funds()
     

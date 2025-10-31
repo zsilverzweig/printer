@@ -13,8 +13,8 @@ from polygon import WebSocketClient
 
 import app.core as core
 from app.core import rest_client
-from app.services.screener import ScreenerService
-from app.services.noc import NocService
+from app.services.screener.screener import ScreenerService
+from app.services.noc.noc import NocService
 
 
 router = APIRouter()

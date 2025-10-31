@@ -25,7 +25,10 @@ from app.strategies.base import (
     PositionContext,
     ScaleSignal,
 )
-from app.services.gpt_helper import get_gpt_helper
+from app.services.ai.gpt_helper import get_gpt_helper
+from app.services.core.validation import validate_entry_prices, validate_stop_update
+from app.services.market.market_formatting import format_candlesticks_table
+from app.services.news.news_service import NewsService
 
 logger = logging.getLogger(__name__)
 
@@ -49,37 +52,17 @@ class GPTTradeSignal(BaseModel):
         """
         import math
         
-        # Check current_price is valid
-        if not math.isfinite(current_price) or current_price <= 0:
-            return False, f"current_price is invalid: {current_price}"
-        
-        # Check for NaN or infinity
-        if not math.isfinite(self.entry_price):
-            return False, f"entry_price is not finite: {self.entry_price}"
-        if not math.isfinite(self.stop_loss):
-            return False, f"stop_loss is not finite: {self.stop_loss}"
+        # Check confidence is finite
         if not math.isfinite(self.confidence):
             return False, f"confidence is not finite: {self.confidence}"
         
-        # Check if entry price is too far from current price (>50% away)
-        price_diff_pct = abs(self.entry_price - current_price) / current_price * 100
-        if price_diff_pct > 50:
-            return False, f"entry_price ${self.entry_price:.2f} is {price_diff_pct:.1f}% away from current price ${current_price:.2f}"
-        
-        # Check if stop loss is above entry (for long positions)
-        if self.stop_loss >= self.entry_price:
-            return False, f"stop_loss ${self.stop_loss:.2f} must be below entry_price ${self.entry_price:.2f} for long positions"
-        
-        # Check if stop loss is too tight (<1% below entry)
-        stop_distance_pct = (self.entry_price - self.stop_loss) / self.entry_price * 100
-        if stop_distance_pct < 0.5:
-            return False, f"stop_loss too tight: only {stop_distance_pct:.2f}% below entry"
-        
-        # Check if stop loss is too wide (>20% below entry)
-        if stop_distance_pct > 20:
-            return False, f"stop_loss too wide: {stop_distance_pct:.2f}% below entry"
-        
-        return True, None
+        # Use validation utility for price/stop validation
+        return validate_entry_prices(
+            entry_price=self.entry_price,
+            stop_loss=self.stop_loss,
+            current_price=current_price,
+            side="long"
+        )
 
 
 class GPTStopUpdate(BaseModel):
@@ -104,29 +87,14 @@ class GPTStopUpdate(BaseModel):
         Returns:
             (is_valid, error_message)
         """
-        import math
-        
-        # Check for NaN or infinity
-        if not math.isfinite(self.new_stop_loss):
-            return False, f"new_stop_loss is not finite: {self.new_stop_loss}"
-        
-        # Never lower the stop
-        if self.new_stop_loss < current_stop:
-            return False, f"Cannot lower stop from ${current_stop:.2f} to ${self.new_stop_loss:.2f}"
-        
-        # Stop must be below current price
-        if self.new_stop_loss >= current_price:
-            return False, f"Stop ${self.new_stop_loss:.2f} must be below current price ${current_price:.2f}"
-        
-        # Stop shouldn't be absurdly high (>95% of current price)
-        if self.new_stop_loss > current_price * 0.95:
-            return False, f"Stop ${self.new_stop_loss:.2f} too close to current price ${current_price:.2f}"
-        
-        # Stop shouldn't be below entry price by more than 20%
-        if self.new_stop_loss < entry_price * 0.80:
-            return False, f"Stop ${self.new_stop_loss:.2f} too far below entry ${entry_price:.2f}"
-        
-        return True, None
+        # Use validation utility for stop update validation
+        return validate_stop_update(
+            new_stop=self.new_stop_loss,
+            current_stop=current_stop,
+            current_price=current_price,
+            entry_price=entry_price,
+            side="long"
+        )
 
 
 class GPTTradeThesis(BaseModel):
@@ -155,9 +123,8 @@ class GPTCandlestickStrategy(ExecutionStrategy):
         # Initialize GPT helper
         self.gpt_helper = get_gpt_helper(model="gpt-4o-mini")
         
-        # Track last evaluation times per symbol
-        self._last_evaluation: Dict[str, datetime] = {}
-        self._last_stop_update: Dict[str, datetime] = {}
+        # Initialize news service
+        self.news_service = NewsService()
         
         # Track monitored entry levels: symbol -> GPTTradeSignal
         self._monitored_levels: Dict[str, GPTTradeSignal] = {}
@@ -165,17 +132,11 @@ class GPTCandlestickStrategy(ExecutionStrategy):
         # Track last price seen for each symbol (to detect crossovers)
         self._last_price: Dict[str, float] = {}
         
-        # Cache for pre-fetched news (symbol -> (news_context, fetch_time))
-        self._news_cache: Dict[str, tuple[str, datetime]] = {}
-        
-        # Track ongoing news fetch tasks (symbol -> asyncio.Task)
-        self._news_fetch_tasks: Dict[str, Any] = {}
-        
         # Cache for trade theses (symbol -> GPTTradeThesis)
         self._thesis_cache: Dict[str, Optional[GPTTradeThesis]] = {}
         
-        # Track ongoing thesis generation tasks (symbol -> asyncio.Task)
-        self._thesis_tasks: Dict[str, Any] = {}
+        # Note: _interval_tracker, _task_manager from base class
+        # replaces _last_evaluation, _news_fetch_tasks, _thesis_tasks
     
     @property
     def id(self) -> str:
@@ -269,46 +230,34 @@ class GPTCandlestickStrategy(ExecutionStrategy):
         
         return symbols
     
-    def _cleanup_symbol_monitoring(self, symbol: str) -> None:
+    def cleanup_symbol(self, symbol: str) -> None:
         """
         Clean up all monitoring resources for a symbol.
+        
+        Override base class to add strategy-specific cleanup.
         
         Args:
             symbol: Stock symbol to clean up
         """
+        # Call base class cleanup
+        super().cleanup_symbol(symbol)
+        
         # Remove monitored level
-        if symbol in self._monitored_levels:
-            del self._monitored_levels[symbol]
+        self._monitored_levels.pop(symbol, None)
         
-        # Cancel and remove news fetch task if running
-        if symbol in self._news_fetch_tasks:
-            task = self._news_fetch_tasks[symbol]
-            if not task.done():
-                task.cancel()
-            del self._news_fetch_tasks[symbol]
-    
-    def _should_evaluate_now(self, symbol: str) -> bool:
-        """
-        Check if we should evaluate this symbol now based on 15-minute intervals.
+        # Remove last price tracking
+        self._last_price.pop(symbol, None)
         
-        Args:
-            symbol: Stock symbol
-            
-        Returns:
-            True if enough time has passed since last evaluation
-        """
-        now = datetime.now()
-        last_eval = self._last_evaluation.get(symbol)
+        # Remove thesis cache
+        self._thesis_cache.pop(symbol, None)
         
-        if last_eval is None:
-            return True
-        
-        time_since_eval = (now - last_eval).total_seconds() / 60
-        return time_since_eval >= self.evaluation_interval_minutes
+        # Note: Background tasks are managed by base class _task_manager
     
     def _should_update_stop(self, symbol: str) -> bool:
         """
         Check if we should update stop loss for this position.
+        
+        Uses base class interval tracker.
         
         Args:
             symbol: Stock symbol
@@ -316,14 +265,10 @@ class GPTCandlestickStrategy(ExecutionStrategy):
         Returns:
             True if enough time has passed since last stop update
         """
-        now = datetime.now()
-        last_update = self._last_stop_update.get(symbol)
-        
-        if last_update is None:
-            return True
-        
-        time_since_update = (now - last_update).total_seconds() / 60
-        return time_since_update >= self.update_stop_interval_minutes
+        return self._interval_tracker.should_execute(
+            f"stop_update_{symbol}",
+            self.update_stop_interval_minutes
+        )
     
     def _log_monitored_levels(self) -> None:
         """
@@ -352,6 +297,8 @@ class GPTCandlestickStrategy(ExecutionStrategy):
         """
         Format candlestick data for GPT prompt.
         
+        Uses shared utility function.
+        
         Args:
             bars: List of OHLCV bars
             timeframe: Timeframe description (e.g., "1hr", "15min")
@@ -359,28 +306,7 @@ class GPTCandlestickStrategy(ExecutionStrategy):
         Returns:
             Formatted string for GPT
         """
-        if not bars:
-            return f"No {timeframe} data available"
-        
-        formatted = [f"\n{timeframe} Candlesticks (most recent last):"]
-        formatted.append(f"{'Time':<20} {'Open':<10} {'High':<10} {'Low':<10} {'Close':<10} {'Volume':<12}")
-        formatted.append("-" * 72)
-        
-        for bar in bars[-20:]:  # Last 20 bars to keep prompt manageable
-            ts = bar.get('timestamp', 'N/A')
-            if isinstance(ts, datetime):
-                ts = ts.strftime('%Y-%m-%d %H:%M')
-            
-            formatted.append(
-                f"{str(ts):<20} "
-                f"{bar.get('open', 0):<10.2f} "
-                f"{bar.get('high', 0):<10.2f} "
-                f"{bar.get('low', 0):<10.2f} "
-                f"{bar.get('close', 0):<10.2f} "
-                f"{bar.get('volume', 0):<12,}"
-            )
-        
-        return "\n".join(formatted)
+        return format_candlesticks_table(bars, timeframe, max_bars=20)
     
     async def should_enter(self, symbol: str, market_data: MarketData) -> EntrySignal:
         """
@@ -397,10 +323,10 @@ class GPTCandlestickStrategy(ExecutionStrategy):
         self._last_price[symbol] = current_price
         
         # Phase 1: Evaluate and store new entry levels on interval boundaries
-        if self._should_evaluate_now(symbol):
+        if self.should_evaluate_on_interval(symbol, self.evaluation_interval_minutes):
             try:
                 # Mark evaluation time
-                self._last_evaluation[symbol] = datetime.now()
+                self.mark_evaluated(symbol)
                 
                 # Get 1hr candlestick data
                 bars_1h = await self._get_candlesticks(symbol, "1Hour", self.lookback_hours_1h * 60)
@@ -411,7 +337,7 @@ class GPTCandlestickStrategy(ExecutionStrategy):
                 if not bars_1h or not bars_15m:
                     logger.warning(f"Insufficient candlestick data for {symbol}")
                     # Clear monitored level if data unavailable
-                    self._cleanup_symbol_monitoring(symbol)
+                    self.cleanup_symbol(symbol)
                     return EntrySignal(should_enter=False, reason="insufficient_data")
                 
                 # Format data for GPT
@@ -471,7 +397,7 @@ If there is NO clear DAY TRADE setup, set entry_price and stop_loss to 0 and con
                 # Validate response
                 if response.entry_price <= 0 or response.stop_loss <= 0:
                     # Clear monitored level
-                    self._cleanup_symbol_monitoring(symbol)
+                    self.cleanup_symbol(symbol)
                     logger.warning(f"❌ GPT returned no setup for {symbol}")
                     return EntrySignal(
                         should_enter=False,
@@ -482,7 +408,7 @@ If there is NO clear DAY TRADE setup, set entry_price and stop_loss to 0 and con
                 # Validate prices are reasonable
                 is_valid, error_msg = response.validate_prices(current_price)
                 if not is_valid:
-                    self._cleanup_symbol_monitoring(symbol)
+                    self.cleanup_symbol(symbol)
                     logger.error(f"❌ GPT returned invalid prices for {symbol}: {error_msg}")
                     return EntrySignal(
                         should_enter=False,
@@ -496,7 +422,7 @@ If there is NO clear DAY TRADE setup, set entry_price and stop_loss to 0 and con
                 # Check confidence threshold
                 if response.confidence < self.min_confidence:
                     # Clear monitored level
-                    self._cleanup_symbol_monitoring(symbol)
+                    self.cleanup_symbol(symbol)
                     logger.info(
                         f"⚠️ GPT confidence too low for {symbol}: {response.confidence:.2f} < {self.min_confidence:.2f}"
                     )
@@ -519,7 +445,7 @@ If there is NO clear DAY TRADE setup, set entry_price and stop_loss to 0 and con
             except Exception as e:
                 logger.error(f"Error in GPT entry analysis for {symbol}: {e}", exc_info=True)
                 # Clear monitored level on error
-                self._cleanup_symbol_monitoring(symbol)
+                self.cleanup_symbol(symbol)
                 return EntrySignal(should_enter=False, reason="analysis_error")
         
         # Log all monitored levels (on every tick for all symbols being checked)
@@ -532,12 +458,10 @@ If there is NO clear DAY TRADE setup, set entry_price and stop_loss to 0 and con
             
             # Check if we're within 5% of entry price - pre-fetch news if so
             price_diff_percent = abs(current_price - entry_price) / entry_price * 100
-            if price_diff_percent <= 5.0 and symbol not in self._news_fetch_tasks:
+            if price_diff_percent <= 5.0 and not self._task_manager.is_running(f"news_fetch_{symbol}"):
                 # Start fetching news in background (don't wait)
                 logger.info(f"📡 Pre-fetching news for {symbol} (within 5% of entry)")
-                self._news_fetch_tasks[symbol] = asyncio.create_task(
-                    self._prefetch_news_background(symbol)
-                )
+                await self.news_service.prefetch_background(symbol, self._task_manager)
             
             # Check for price crossing entry level (price moved from below to above, or is already above)
             crossed = False
@@ -554,19 +478,21 @@ If there is NO clear DAY TRADE setup, set entry_price and stop_loss to 0 and con
                     f"crossed ${entry_price:.2f}. Placing MARKET order IMMEDIATELY."
                 )
                 
-                # Clean up monitoring (removes level and cancels news task)
-                self._cleanup_symbol_monitoring(symbol)
+                # Clean up monitoring (removes level and cancels background tasks)
+                self.cleanup_symbol(symbol)
                 
                 # Start thesis generation in background (DON'T WAIT!)
                 logger.info(f"⚙️ Starting background thesis generation for {symbol}")
-                self._thesis_tasks[symbol] = asyncio.create_task(
+                self._task_manager.start_task(
+                    f"thesis_{symbol}",
                     self._generate_thesis_background(
                         symbol=symbol,
                         entry_price=current_price,
                         stop_loss=signal.stop_loss,
                         original_reasoning=signal.reasoning,
                         market_data=market_data
-                    )
+                    ),
+                    replace_existing=True
                 )
                 
                 # Return entry signal with MARKET order IMMEDIATELY (no thesis yet)
@@ -622,7 +548,8 @@ If there is NO clear DAY TRADE setup, set entry_price and stop_loss to 0 and con
                     # Note: The actual strategy_state update happens in the engine
                     # We return the new stop in the metadata
                 
-                self._last_stop_update[position.symbol] = datetime.now()
+                # Mark stop update time
+                self._interval_tracker.mark_executed(f"stop_update_{position.symbol}")
             
             except Exception as e:
                 logger.error(f"Error updating stop loss for {position.symbol}: {e}")
@@ -826,7 +753,7 @@ Respond ONLY with a JSON object in this exact format:
         try:
             # Note: This will be called via the market data provider
             # injected by the strategy engine
-            from app.services.market_data_provider import MarketDataProvider
+            from app.services.market.market_data_provider import MarketDataProvider
             from app.core import get_client
             
             # Create provider instance
@@ -845,96 +772,8 @@ Respond ONLY with a JSON object in this exact format:
             logger.error(f"Error fetching candlesticks for {symbol}: {e}")
             return []
     
-    async def _fetch_news_context(self, symbol: str) -> str:
-        """
-        Fetch recent news and events for context.
-        
-        Args:
-            symbol: Stock symbol
-            
-        Returns:
-            Formatted news context string
-        """
-        try:
-            import httpx
-            import os
-            
-            api_url = os.getenv("API_URL", "http://localhost:8000")
-            
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.get(f"{api_url}/api/news/analyze/{symbol}?days=1")
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    key_events = data.get("key_events", [])
-                    news_summary = data.get("news_summary", "No recent news")
-                    
-                    if key_events:
-                        events_text = "\n".join([
-                            f"  • {event['name']}: {event['summary']}"
-                            for event in key_events[:3]  # Top 3 events
-                        ])
-                        return f"{news_summary}\n\nKey Events:\n{events_text}"
-                    else:
-                        return news_summary
-                else:
-                    logger.warning(f"Failed to fetch news for {symbol}: {response.status_code}")
-                    return "News data unavailable"
-        
-        except Exception as e:
-            logger.warning(f"Error fetching news for {symbol}: {e}")
-            return "News data unavailable"
-    
-    async def _prefetch_news_background(self, symbol: str) -> None:
-        """
-        Pre-fetch news in background when price approaches entry level.
-        Stores result in cache with timestamp.
-        
-        Args:
-            symbol: Stock symbol
-        """
-        try:
-            logger.debug(f"🔄 Background news fetch started for {symbol}")
-            news_context = await self._fetch_news_context(symbol)
-            
-            # Cache the result with timestamp
-            self._news_cache[symbol] = (news_context, datetime.now())
-            
-            logger.info(f"✅ News pre-fetched and cached for {symbol}")
-            
-        except Exception as e:
-            logger.warning(f"Background news fetch failed for {symbol}: {e}")
-            # Store error state so we don't keep retrying
-            self._news_cache[symbol] = ("News data unavailable", datetime.now())
-        
-        finally:
-            # Clean up task reference
-            if symbol in self._news_fetch_tasks:
-                del self._news_fetch_tasks[symbol]
-    
-    async def _get_cached_or_fetch_news(self, symbol: str) -> str:
-        """
-        Get news from cache if available and fresh (< 2 hours), otherwise fetch.
-        
-        Args:
-            symbol: Stock symbol
-            
-        Returns:
-            News context string
-        """
-        # Check cache
-        if symbol in self._news_cache:
-            news_context, fetch_time = self._news_cache[symbol]
-            age_seconds = (datetime.now() - fetch_time).total_seconds()
-            
-            # Use cached news if less than 2 hours old
-            if age_seconds < 7200:  # 2 hours
-                logger.debug(f"📋 Using cached news for {symbol} (age: {age_seconds/60:.0f} min)")
-                return news_context
-        
-        # Not cached or stale - fetch now
-        logger.debug(f"🔍 Fetching fresh news for {symbol}")
-        return await self._fetch_news_context(symbol)
+    # Note: News fetching now handled by NewsService
+    # Use: self.news_service.fetch_news_context(), prefetch_background(), get_cached_or_fetch()
     
     async def _generate_thesis_background(
         self,
@@ -946,6 +785,8 @@ Respond ONLY with a JSON object in this exact format:
     ) -> None:
         """
         Generate trade thesis in background and cache it.
+        
+        Note: Task tracking handled by base class _task_manager.
         
         Args:
             symbol: Stock symbol
@@ -978,10 +819,7 @@ Respond ONLY with a JSON object in this exact format:
             # Cache None so we don't keep trying
             self._thesis_cache[symbol] = None
         
-        finally:
-            # Clean up task reference
-            if symbol in self._thesis_tasks:
-                del self._thesis_tasks[symbol]
+        # Note: Task cleanup handled automatically by _task_manager
     
     async def _generate_trade_thesis(
         self,
@@ -1015,7 +853,7 @@ Respond ONLY with a JSON object in this exact format:
             data_15m = self._format_candlesticks(bars_15m, "15min")
             
             # Get news context (use cached if available, otherwise fetch)
-            news_context = await self._get_cached_or_fetch_news(symbol)
+            news_context = await self.news_service.get_cached_or_fetch(symbol)
             
             prompt = f"""You are a DAY TRADER who just entered a LONG position in {symbol}. This is INTRADAY TRADING - you will exit before market close.
 

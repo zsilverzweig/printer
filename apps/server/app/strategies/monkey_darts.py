@@ -36,7 +36,8 @@ class MonkeyDartsStrategy(ExecutionStrategy):
         super().__init__(config)
         
         # Configuration parameters with defaults
-        self.hold_time_seconds = config.get("hold_time_seconds", 60)  # 1 minute default
+        self.hold_time_seconds = config.get("hold_time_seconds", 45)  # 45 seconds for faster rotation
+        self.max_positions = config.get("max_positions", 5)  # Hold up to 5 positions
         self.random_seed = config.get("random_seed")  # Optional for reproducibility
         
         if self.random_seed:
@@ -54,9 +55,9 @@ class MonkeyDartsStrategy(ExecutionStrategy):
     def description(self) -> str:
         return (
             "Random stock selection strategy for testing. "
-            "Randomly picks a stock, buys it with a limit order at current price, "
-            "holds for 1 minute, then sells. "
-            "This is a simple test strategy to verify the execution engine works."
+            "Randomly picks stocks, buys them with limit orders at current price, "
+            f"holds up to {self.max_positions} positions for {self.hold_time_seconds} seconds each, then sells. "
+            "This generates high trading volume for paper trading testing."
         )
     
     @property
@@ -65,7 +66,7 @@ class MonkeyDartsStrategy(ExecutionStrategy):
     
     @property
     def expected_timeframe(self) -> str:
-        return "1 minute"
+        return f"{self.hold_time_seconds} seconds"
     
     @property
     def required_indicators(self) -> List[str]:
@@ -80,8 +81,15 @@ class MonkeyDartsStrategy(ExecutionStrategy):
                     "type": "integer",
                     "minimum": 30,
                     "maximum": 300,
-                    "default": 60,
+                    "default": 45,
                     "description": "How long to hold each position (seconds)",
+                },
+                "max_positions": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 10,
+                    "default": 5,
+                    "description": "Maximum number of concurrent positions",
                 },
                 "random_seed": {
                     "type": "integer",
@@ -97,28 +105,27 @@ class MonkeyDartsStrategy(ExecutionStrategy):
         active_order_count: int = 0
     ) -> List[str]:
         """
-        Random selection: pick ONE candidate if we have no active positions OR pending orders.
+        Random selection: pick stocks up to max_positions limit.
         
-        Monkey Darts only trades one position at a time, so:
-        - If we have an active position OR pending order, return empty list (wait for it to close)
-        - Otherwise, randomly pick one candidate from the list
+        Monkey Darts can hold multiple positions:
+        - Calculate how many more positions we can open
+        - Randomly select that many candidates
+        - Keep rotating through positions rapidly for high volume testing
         
         Note: All volume/price filtering should already be done by ScreeningCriteria.
         We accept any candidates that made it through the screener.
         """
+        total_active = active_position_count + active_order_count
+        
         logger.info(
             f"🐵 Monkey selection called: "
             f"candidates={len(candidates)}, active_positions={active_position_count}, "
-            f"pending_orders={active_order_count}"
+            f"pending_orders={active_order_count}, max_positions={self.max_positions}"
         )
         
-        # Only pick if we don't have an active position OR pending order
-        if active_position_count > 0:
-            logger.info(f"🐵 Monkey waiting (have {active_position_count} active position)")
-            return []
-        
-        if active_order_count > 0:
-            logger.info(f"🐵 Monkey waiting (have {active_order_count} pending order)")
+        # Check if we're at capacity
+        if total_active >= self.max_positions:
+            logger.info(f"🐵 Monkey at capacity ({total_active}/{self.max_positions})")
             return []
         
         # Need candidates to pick from
@@ -126,25 +133,28 @@ class MonkeyDartsStrategy(ExecutionStrategy):
             logger.info("🐵 Monkey has no candidates to choose from")
             return []
         
-        # Randomly pick one candidate
-        selected = random.choice(candidates)
-        symbol = selected.get("ticker")
+        # Calculate how many new positions we can open
+        slots_available = self.max_positions - total_active
+        num_to_pick = min(slots_available, len(candidates))
         
-        if not symbol:
-            logger.warning("🐵 Monkey selected candidate with no ticker")
-            return []
+        # Randomly pick multiple candidates
+        selected_candidates = random.sample(candidates, num_to_pick)
+        symbols = [c.get("ticker") for c in selected_candidates if c.get("ticker")]
         
-        logger.info(f"🐵 Monkey threw dart at: {symbol} (from {len(candidates)} candidates)")
-        return [symbol]
+        logger.info(
+            f"🐵 Monkey threw {num_to_pick} darts at: {symbols} "
+            f"(from {len(candidates)} candidates, {slots_available} slots available)"
+        )
+        return symbols
     
     async def should_enter(self, symbol: str, market_data: MarketData) -> EntrySignal:
         """
         Always enter! That's the monkey way.
         
         We're called with a symbol, so if we're being asked, we should enter.
-        Uses limit orders at the current price.
+        Uses market orders for immediate execution.
         """
-        logger.info(f"🐵 Monkey selecting: {symbol} @ {market_data.price} (limit order)")
+        logger.info(f"🐵 Monkey selecting: {symbol} @ ${market_data.price:.2f} (market order)")
         
         return EntrySignal(
             should_enter=True,
@@ -153,8 +163,7 @@ class MonkeyDartsStrategy(ExecutionStrategy):
             take_profit=None,  # No take profit, we rely on time exit
             confidence=1.0,  # 100% confident in random selection!
             reason="random_dart_throw",
-            order_type="limit",  # Use limit orders
-            limit_price=market_data.price,  # Set limit at current price
+            order_type="market",  # Use market orders for instant fills
             metadata={
                 "entry_time": datetime.now().isoformat(),
                 "hold_time_seconds": self.hold_time_seconds,
@@ -259,7 +268,7 @@ class MonkeyDartsStrategy(ExecutionStrategy):
                 logger.info("🐵 No max_bet_percent limit set")
         
         # If min_bet_percent is set and > 0, enforce minimum position size
-        # If position is below minimum, return 0 to reject the trade
+        # Use the minimum as a floor (not a rejection criterion)
         if min_bet_percent is not None and min_bet_percent > 0:
             min_position = fund_balance * (min_bet_percent / 100.0)
             logger.info(
@@ -267,11 +276,12 @@ class MonkeyDartsStrategy(ExecutionStrategy):
             )
             
             if position_size < min_position:
+                old_size = position_size
+                position_size = min_position
                 logger.info(
-                    f"🐵 Position size ${position_size:.2f} is below minimum ${min_position:.2f} - "
-                    f"rejecting trade (returning 0)"
+                    f"🐵 Position size INCREASED to minimum: "
+                    f"${old_size:.2f} → ${min_position:.2f}"
                 )
-                return 0.0
             else:
                 logger.info(f"🐵 Position size meets minimum requirement")
         else:

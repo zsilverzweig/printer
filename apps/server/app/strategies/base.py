@@ -113,6 +113,14 @@ class ExecutionStrategy(ABC):
             config: Strategy-specific configuration parameters
         """
         self.config = config
+        
+        # Common tracking infrastructure
+        from app.services.core.timing import IntervalTracker
+        from app.services.core.task_manager import BackgroundTaskManager
+        
+        self._interval_tracker = IntervalTracker()
+        self._task_manager = BackgroundTaskManager()
+        self._monitored_state: Dict[str, Any] = {}
     
     @property
     @abstractmethod
@@ -292,5 +300,61 @@ class ExecutionStrategy(ABC):
         """
         # Override in subclasses for custom validation
         return True
+    
+    def cleanup_symbol(self, symbol: str) -> None:
+        """
+        Clean up all monitoring resources for a symbol.
+        
+        Called when a symbol is no longer being monitored or after a position is closed.
+        Override to add strategy-specific cleanup.
+        
+        Args:
+            symbol: Symbol to clean up
+        """
+        self._monitored_state.pop(symbol, None)
+    
+    async def shutdown(self) -> None:
+        """
+        Clean shutdown of strategy resources.
+        
+        Called when strategy engine stops or strategy is replaced.
+        Cancels all background tasks and cleans up resources.
+        
+        Override to add additional cleanup, but make sure to call super().shutdown()
+        """
+        await self._task_manager.cancel_all()
+        self._monitored_state.clear()
+        self._interval_tracker.reset_all()
+    
+    def should_evaluate_on_interval(
+        self,
+        symbol: str,
+        interval_minutes: float
+    ) -> bool:
+        """
+        Check if evaluation interval has passed for a symbol.
+        
+        Convenience method using the built-in interval tracker.
+        
+        Args:
+            symbol: Symbol to check
+            interval_minutes: Required interval in minutes
+            
+        Returns:
+            True if enough time has passed or first evaluation
+        """
+        return self._interval_tracker.should_execute(
+            f"eval_{symbol}",
+            interval_minutes
+        )
+    
+    def mark_evaluated(self, symbol: str) -> None:
+        """
+        Mark symbol as evaluated now.
+        
+        Args:
+            symbol: Symbol that was evaluated
+        """
+        self._interval_tracker.mark_executed(f"eval_{symbol}")
 
 

@@ -64,7 +64,7 @@ async def test_stale_orders_are_cancelled(async_session, fund_factory, mock_mark
     
     This test will likely FAIL if stale order cancellation is not working.
     """
-    from app.services.strategy_engine import StrategyEngine
+    from app.services.strategies.strategy_engine import StrategyEngine
     
     fund = fund_factory(max_order_age_seconds=60)
     async_session.add(fund)
@@ -195,7 +195,7 @@ async def test_monkey_darts_doesnt_place_multiple_orders(async_session, fund_fac
     This test will likely FAIL if the bug exists.
     """
     from app.strategies.monkey_darts import MonkeyDartsStrategy
-    from app.services.strategy_engine import StrategyEngine
+    from app.services.strategies.strategy_engine import StrategyEngine
     
     fund = fund_factory(balance=10000.0, strategy_id="monkey_darts")
     async_session.add(fund)
@@ -254,7 +254,7 @@ async def test_multiple_pending_orders_all_counted(async_session, fund_factory, 
     
     Expected: If somehow we get 3 pending orders, all 3 should count.
     """
-    from app.services.strategy_engine import StrategyEngine
+    from app.services.strategies.strategy_engine import StrategyEngine
     
     fund = fund_factory(balance=10000.0)
     async_session.add(fund)
@@ -348,7 +348,7 @@ async def test_rapid_ticks_dont_create_duplicates(async_session, fund_factory, m
     This test will likely FAIL if pending orders aren't checked properly.
     """
     from app.strategies.monkey_darts import MonkeyDartsStrategy
-    from app.services.strategy_engine import StrategyEngine
+    from app.services.strategies.strategy_engine import StrategyEngine
     
     fund = fund_factory(balance=10000.0)
     async_session.add(fund)
@@ -401,7 +401,7 @@ async def test_filled_order_removes_from_pending(async_session, fund_factory, mo
     
     Expected: Only orders with status='pending' should be returned.
     """
-    from app.services.strategy_engine import StrategyEngine
+    from app.services.strategies.strategy_engine import StrategyEngine
     
     fund = fund_factory()
     async_session.add(fund)
@@ -450,7 +450,7 @@ async def test_cancelled_order_removes_from_pending(async_session, fund_factory,
     """
     Test that cancelled orders are no longer returned by get_pending_orders.
     """
-    from app.services.strategy_engine import StrategyEngine
+    from app.services.strategies.strategy_engine import StrategyEngine
     
     fund = fund_factory()
     async_session.add(fund)

@@ -6,10 +6,10 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select, func
 
-from app.services.ai_service import AIService
-from app.services.alpaca_service import alpaca_service, AlpacaService
-from app.services.event_service import event_service
-from app.services.database import get_async_session
+from app.services.ai.ai_service import AIService
+from app.services.trading.alpaca_service import alpaca_service, AlpacaService
+from app.services.events.event_service import event_service
+from app.services.core.database import get_async_session
 from app.models.strategies import Fund
 
 logger = logging.getLogger("app.routers.trading")

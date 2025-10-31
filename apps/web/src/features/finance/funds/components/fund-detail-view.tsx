@@ -191,6 +191,7 @@ export function FundDetailView({ fundId }: FundDetailViewProps) {
 
         <TabsContent value="ledger" className="space-y-6">
           <FundLedger
+            fundId={fund.id}
             transactions={transactions}
             transfers={transfers}
             loading={ledgerLoading}

@@ -13,12 +13,12 @@ from typing import Dict, Any
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 
-from app.services.asset_loader import (
+from app.services.market.asset_loader import (
     start_asset_loading_task,
     cancel_asset_loading_task,
     get_loading_status
 )
-from app.services.float_scraper import (
+from app.services.market.float_scraper import (
     start_float_scraping_task,
     cancel_float_scraping_task,
     get_float_scraping_status
@@ -190,7 +190,7 @@ async def get_asset_summary() -> Dict[str, Any]:
         HTTPException: If there's an error retrieving summary
     """
     try:
-        from app.services.database import get_async_session
+        from app.services.core.database import get_async_session
         from app.models.assets import TickerDetails
         from sqlalchemy import func, select
         

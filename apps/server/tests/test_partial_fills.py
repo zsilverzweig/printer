@@ -11,8 +11,8 @@ from datetime import datetime
 from unittest.mock import Mock, AsyncMock, patch
 
 from app.models.strategies import Order, Transaction, Fund
-from app.services.order_polling import OrderPollingService
-from app.services.alpaca_service import AlpacaService
+from app.services.trading.order_polling import OrderPollingService
+from app.services.trading.alpaca_service import AlpacaService
 from tests.test_builders import build_fund, build_order
 
 

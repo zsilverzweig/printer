@@ -4,8 +4,8 @@ from typing import Optional
 from fastapi import APIRouter, Query
 
 from app.lib.dependencies import PolygonClient, PolygonClientNoPagination
-from app.services import market as market_service
-from app.services import analytics as analytics_service
+from app.services.market import market as market_service
+from app.services.ai import analytics as analytics_service
 
 router = APIRouter()
 
@@ -78,7 +78,7 @@ async def get_ticker_details(
     First tries to load from PostgreSQL database (instant).
     Falls back to Polygon API if not in database.
     """
-    from app.services.database import get_async_session
+    from app.services.core.database import get_async_session
     from app.models.assets import TickerDetails
     from sqlalchemy import select
     

@@ -5,8 +5,9 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from sqlalchemy import select, desc
 
-from app.services.database import get_async_session
-from app.models.events import AITradeEvent, AlpacaTradeEvent
+from app.services.core.database import get_async_session
+from app.models.events import AITradeEvent, AlpacaTradeEvent, StrategyEngineEvent
+import json
 
 logger = logging.getLogger("app.routers.events")
 
@@ -45,6 +46,28 @@ def serialize_alpaca_trade_event(event: AlpacaTradeEvent) -> dict:
         "submitted_at": event.submitted_at.isoformat() if event.submitted_at else None,
         "filled_at": event.filled_at.isoformat() if event.filled_at else None,
         "error_message": event.error_message,
+    }
+
+
+def serialize_strategy_engine_event(event: StrategyEngineEvent) -> dict:
+    """Serialize strategy engine event to dictionary."""
+    event_data = None
+    if event.event_data:
+        try:
+            event_data = json.loads(event.event_data)
+        except:
+            event_data = event.event_data
+    
+    return {
+        "id": event.id,
+        "type": "strategy_engine",
+        "timestamp": event.timestamp.isoformat(),
+        "fund_id": event.fund_id,
+        "event_category": event.event_category,
+        "symbol": event.symbol,
+        "severity": event.severity,
+        "message": event.message,
+        "event_data": event_data,
     }
 
 
@@ -110,4 +133,64 @@ async def get_events(limit: int = 50, event_type: Optional[str] = None):
     except Exception as e:
         logger.error(f"Failed to fetch events: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to fetch events: {str(e)}")
+
+
+@router.get("/strategy-engine")
+async def get_strategy_engine_events(
+    fund_id: str,
+    symbol: Optional[str] = None,
+    category: Optional[str] = None,
+    severity: Optional[str] = None,
+    limit: int = 50
+):
+    """
+    Get strategy engine events for a fund with optional filters.
+    
+    Args:
+        fund_id: Fund UUID to filter events
+        symbol: Optional stock symbol filter
+        category: Optional event category filter (position_sync, fill_tracking, etc.)
+        severity: Optional severity filter (info, warning, error)
+        limit: Maximum number of events to return (default 50)
+    
+    Returns:
+        List of strategy engine events with details
+    """
+    try:
+        async with get_async_session() as session:
+            # Build query
+            stmt = select(StrategyEngineEvent).where(
+                StrategyEngineEvent.fund_id == fund_id
+            )
+            
+            # Apply optional filters
+            if symbol:
+                stmt = stmt.where(StrategyEngineEvent.symbol == symbol)
+            if category:
+                stmt = stmt.where(StrategyEngineEvent.event_category == category)
+            if severity:
+                stmt = stmt.where(StrategyEngineEvent.severity == severity)
+            
+            # Order by timestamp descending and limit
+            stmt = stmt.order_by(desc(StrategyEngineEvent.timestamp)).limit(limit)
+            
+            result = await session.execute(stmt)
+            events = result.scalars().all()
+            
+            events_list = [serialize_strategy_engine_event(event) for event in events]
+            
+            return {
+                "events": events_list,
+                "count": len(events_list),
+                "filters": {
+                    "fund_id": fund_id,
+                    "symbol": symbol,
+                    "category": category,
+                    "severity": severity,
+                }
+            }
+    
+    except Exception as e:
+        logger.error(f"Failed to fetch strategy engine events: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to fetch strategy engine events: {str(e)}")
 

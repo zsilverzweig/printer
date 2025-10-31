@@ -250,7 +250,7 @@ async def test_max_total_exposure_prevents_new_positions(fund_factory, position_
     assert total_exposure == 4500.0, f"Expected $4500 exposure, got ${total_exposure}"
     
     # Check if risk limits would allow trading
-    from app.services.strategy_engine import StrategyEngine
+    from app.services.strategies.strategy_engine import StrategyEngine
     
     # Mock the async_session and other dependencies
     mock_engine = type('MockEngine', (), {

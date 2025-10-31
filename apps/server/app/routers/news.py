@@ -6,8 +6,8 @@ from typing import Optional
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, HTTPException
 
-from app.services import market as market_service
-from app.services.ai_service import AIService, NewsAnalysisResponse
+from app.services.market import market as market_service
+from app.services.ai.ai_service import AIService, NewsAnalysisResponse
 
 logger = logging.getLogger("app.routers.news")
 

@@ -18,12 +18,12 @@ from unittest.mock import Mock, patch, AsyncMock
 import pytest
 
 from app.models.strategies import Fund, Order, Transaction
-from app.services.position_tracker import (
+from app.services.trading.position_tracker import (
     get_position_quantity_from_transactions,
     get_all_positions_from_transactions
 )
-from app.services.order_polling import OrderPollingService
-from app.services.strategy_engine import StrategyEngine
+from app.services.trading.order_polling import OrderPollingService
+from app.services.strategies.strategy_engine import StrategyEngine
 from app.strategies.base import PositionContext, ExitSignal, MarketData
 
 

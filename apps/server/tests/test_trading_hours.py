@@ -150,7 +150,7 @@ async def test_strategy_engine_respects_trading_hours():
     
     This tests the actual implementation in StrategyEngine.
     """
-    from app.services.strategy_engine import StrategyEngine
+    from app.services.strategies.strategy_engine import StrategyEngine
     
     fund = build_fund(
         trading_start_time="09:30",
@@ -339,7 +339,7 @@ async def test_monitor_entries_skips_outside_hours():
     
     This test will likely FAIL if trading hour checks are not in _monitor_entries.
     """
-    from app.services.strategy_engine import StrategyEngine
+    from app.services.strategies.strategy_engine import StrategyEngine
     
     fund = build_fund(
         trading_start_time="09:30",

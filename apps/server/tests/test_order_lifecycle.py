@@ -15,7 +15,7 @@ from unittest.mock import Mock, AsyncMock, patch
 import pytest
 
 from app.models.strategies import Fund, Order, Transaction
-from app.services.strategy_engine import StrategyEngine
+from app.services.strategies.strategy_engine import StrategyEngine
 
 
 @pytest.mark.asyncio

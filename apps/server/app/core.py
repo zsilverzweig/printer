@@ -38,7 +38,7 @@ async def startup_init() -> None:
     logger.info("Polygon client initialized successfully")
     
     # Initialize database
-    from app.services.database import init_db
+    from app.services.core.database import init_db
     logger.info("Initializing database...")
     await init_db()
     logger.info("Database initialized successfully")

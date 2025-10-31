@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, patch, Mock
 import pytest
 
 # Import StrategyEngine and related classes
-from app.services.strategy_engine import StrategyEngine
+from app.services.strategies.strategy_engine import StrategyEngine
 from app.strategies.base import (
     EntrySignal,
     ExitSignal,

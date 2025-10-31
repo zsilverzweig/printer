@@ -120,7 +120,7 @@ async def test_balance_check_before_alpaca_submission(fund_factory, mock_market_
     
     This test will likely FAIL if balance checks are missing.
     """
-    from app.services.strategy_engine import StrategyEngine
+    from app.services.strategies.strategy_engine import StrategyEngine
     from app.strategies.monkey_darts import MonkeyDartsStrategy
     from unittest.mock import AsyncMock
     
