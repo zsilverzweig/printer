@@ -369,8 +369,46 @@ class MarketDataProvider:
             # Get indicators
             indicators = await self.get_indicators(symbol, ["MACD", "RSI"])
             
-            # Build MarketData object
-            current_price = quote.get("price") or quote.get("ask", 0.0)
+            # Determine current price with robust fallback logic
+            current_price = 0.0
+            
+            # Try direct price (from Polygon last trade)
+            if quote.get("price"):
+                current_price = float(quote["price"])
+            # Try mid-price from bid/ask (from Alpaca quote)
+            elif quote.get("bid") and quote.get("ask"):
+                bid = float(quote["bid"])
+                ask = float(quote["ask"])
+                if bid > 0 and ask > 0:
+                    current_price = (bid + ask) / 2.0
+                elif ask > 0:
+                    current_price = ask
+                elif bid > 0:
+                    current_price = bid
+            # Try ask only
+            elif quote.get("ask"):
+                current_price = float(quote["ask"])
+            # Try bid only
+            elif quote.get("bid"):
+                current_price = float(quote["bid"])
+            # Try last bar close price as final fallback
+            elif bars and len(bars) > 0:
+                current_price = float(bars[-1].get("close", 0.0))
+                logger.warning(
+                    f"No real-time quote available for {symbol}, using last bar close: ${current_price:.2f}"
+                )
+            
+            # Validate we got a valid price
+            if current_price <= 0:
+                error_msg = (
+                    f"Failed to get valid price for {symbol}. "
+                    f"Quote data: bid={quote.get('bid')}, ask={quote.get('ask')}, price={quote.get('price')}, "
+                    f"bars={len(bars) if bars else 0}"
+                )
+                logger.error(error_msg)
+                raise ValueError(error_msg)
+            
+            logger.debug(f"Built market data for {symbol}: price=${current_price:.2f}")
             
             return MarketData(
                 symbol=symbol,
@@ -383,7 +421,7 @@ class MarketDataProvider:
             )
         
         except Exception as e:
-            logger.error(f"Error building market data for {symbol}: {e}")
+            logger.error(f"Error building market data for {symbol}: {e}", exc_info=True)
             raise
 
 

@@ -1,19 +1,25 @@
 /**
  * FundLedger Component
  *
- * Displays the complete ledger for a fund - a chronological list of money moves:
- * - Transfers (deposits/withdrawals)
- * - Transactions (completed trades with cash impact)
+ * Displays the complete ledger for a fund with sorting, filtering, and pagination.
+ * Uses TanStack Table for powerful table features.
  */
 
 import {
-  ArrowDownCircle,
-  ArrowUpCircle,
-  TrendingDown,
-  TrendingUp,
-} from "lucide-react";
+  flexRender,
+  getCoreRowModel,
+  getFilteredRowModel,
+  getPaginationRowModel,
+  getSortedRowModel,
+  useReactTable,
+  type ColumnDef,
+  type SortingState,
+} from "@tanstack/react-table";
+import { ArrowDown, ArrowUp, ArrowUpDown, DollarSign } from "lucide-react";
+import { useMemo, useState } from "react";
 
 import { Badge } from "@/lib/components/ui/badge";
+import { Button } from "@/lib/components/ui/button";
 import {
   Card,
   CardContent,
@@ -21,6 +27,21 @@ import {
   CardHeader,
   CardTitle,
 } from "@/lib/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/lib/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/lib/components/ui/table";
 import {
   Tabs,
   TabsContent,
@@ -36,11 +57,19 @@ interface FundLedgerProps {
   loading: boolean;
 }
 
-type LedgerItem = {
+type LedgerRow = {
   id: string;
-  type: "transfer" | "transaction";
   timestamp: Date;
-  data: FundTransfer | FundTransaction;
+  type: "transfer" | "transaction";
+  symbol: string;
+  action: string;
+  quantity: number | null;
+  price: number | null;
+  cashImpact: number;
+  pnl: number | null;
+  isWinner: boolean;
+  // Store original data for rendering
+  _data: FundTransfer | FundTransaction;
 };
 
 export function FundLedger({
@@ -48,6 +77,369 @@ export function FundLedger({
   transfers,
   loading,
 }: FundLedgerProps) {
+  const [selectedTicker, setSelectedTicker] = useState<string>("all");
+  const [sorting, setSorting] = useState<SortingState>([
+    { id: "timestamp", desc: true },
+  ]);
+  const [activeTab, setActiveTab] = useState("all");
+
+  // Extract unique tickers from transactions
+  const uniqueTickers = useMemo(() => {
+    const tickers = new Set(transactions.map((t) => t.symbol));
+    return Array.from(tickers).sort();
+  }, [transactions]);
+
+  // Calculate average entry price per symbol for P&L calculation
+  const calculatePnL = useMemo(() => {
+    const positionTracker: Record<
+      string,
+      { totalQty: number; totalCost: number; avgPrice: number }
+    > = {};
+    const pnlMap: Record<string, number | null> = {};
+
+    // Sort transactions by timestamp to process in order
+    const sortedTxns = [...transactions].sort(
+      (a, b) =>
+        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    );
+
+    sortedTxns.forEach((txn) => {
+      if (!positionTracker[txn.symbol]) {
+        positionTracker[txn.symbol] = {
+          totalQty: 0,
+          totalCost: 0,
+          avgPrice: 0,
+        };
+      }
+
+      const position = positionTracker[txn.symbol];
+
+      if (txn.side === "buy") {
+        // Add to position
+        position.totalCost += txn.totalValue;
+        position.totalQty += txn.quantity;
+        position.avgPrice = position.totalCost / position.totalQty;
+      } else if (txn.side === "sell") {
+        // Calculate P&L for this sell
+        const costBasis = position.avgPrice * txn.quantity;
+        const proceeds = txn.totalValue;
+        const pnl = proceeds - costBasis;
+        pnlMap[txn.id] = pnl;
+
+        // Reduce position
+        position.totalQty -= txn.quantity;
+        if (position.totalQty > 0) {
+          position.totalCost = position.avgPrice * position.totalQty;
+        } else {
+          // Position closed
+          position.totalCost = 0;
+          position.avgPrice = 0;
+        }
+      }
+    });
+
+    return pnlMap;
+  }, [transactions]);
+
+  // Transform data into table rows
+  const tableData = useMemo(() => {
+    const rows: LedgerRow[] = [];
+
+    // Add transfers
+    transfers.forEach((transfer) => {
+      const isDeposit = transfer.transferType === "deposit";
+      rows.push({
+        id: transfer.id,
+        timestamp: new Date(transfer.timestamp),
+        type: "transfer",
+        symbol: "—",
+        action: isDeposit ? "Deposit" : "Withdrawal",
+        quantity: null,
+        price: null,
+        cashImpact: isDeposit ? transfer.amount : -transfer.amount,
+        pnl: null,
+        isWinner: false,
+        _data: transfer,
+      });
+    });
+
+    // Add transactions
+    transactions.forEach((txn) => {
+      const isBuy = txn.side === "buy";
+      const pnl = calculatePnL[txn.id] ?? null;
+      const isWinner = pnl !== null && pnl > 0;
+
+      rows.push({
+        id: txn.id,
+        timestamp: new Date(txn.timestamp),
+        type: "transaction",
+        symbol: txn.symbol,
+        action: isBuy ? "BUY" : "SELL",
+        quantity: txn.quantity,
+        price: txn.price,
+        cashImpact: isBuy ? -txn.totalValue : txn.totalValue,
+        pnl,
+        isWinner,
+        _data: txn,
+      });
+    });
+
+    return rows;
+  }, [transfers, transactions, calculatePnL]);
+
+  // Filter data based on active tab and ticker
+  const filteredData = useMemo(() => {
+    let filtered = tableData;
+
+    // Apply tab filter
+    if (activeTab === "transfers") {
+      filtered = filtered.filter((row) => row.type === "transfer");
+    } else if (activeTab === "transactions") {
+      filtered = filtered.filter((row) => row.type === "transaction");
+    }
+
+    // Apply ticker filter (only for transactions)
+    if (selectedTicker !== "all") {
+      filtered = filtered.filter(
+        (row) => row.type === "transfer" || row.symbol === selectedTicker
+      );
+    }
+
+    return filtered;
+  }, [tableData, activeTab, selectedTicker]);
+
+  // Calculate cash impact sum for filtered data
+  const cashImpactSum = useMemo(() => {
+    return filteredData.reduce((sum, row) => sum + row.cashImpact, 0);
+  }, [filteredData]);
+
+  // Column definitions
+  const columns = useMemo<ColumnDef<LedgerRow>[]>(
+    () => [
+      {
+        accessorKey: "timestamp",
+        header: ({ column }) => {
+          return (
+            <Button
+              variant="ghost"
+              onClick={() =>
+                column.toggleSorting(column.getIsSorted() === "asc")
+              }
+              className="-ml-4"
+            >
+              Timestamp
+              {column.getIsSorted() === "asc" ? (
+                <ArrowUp className="ml-2 h-4 w-4" />
+              ) : column.getIsSorted() === "desc" ? (
+                <ArrowDown className="ml-2 h-4 w-4" />
+              ) : (
+                <ArrowUpDown className="ml-2 h-4 w-4" />
+              )}
+            </Button>
+          );
+        },
+        cell: ({ row }) => (
+          <span className="text-muted-foreground text-sm">
+            {row.original.timestamp.toLocaleString()}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "type",
+        header: "Type",
+        cell: ({ row }) => (
+          <Badge variant="outline" className="text-xs">
+            {row.original.type === "transfer" ? "Transfer" : "Trade"}
+          </Badge>
+        ),
+      },
+      {
+        accessorKey: "symbol",
+        header: ({ column }) => {
+          return (
+            <Button
+              variant="ghost"
+              onClick={() =>
+                column.toggleSorting(column.getIsSorted() === "asc")
+              }
+              className="-ml-4"
+            >
+              Symbol
+              {column.getIsSorted() === "asc" ? (
+                <ArrowUp className="ml-2 h-4 w-4" />
+              ) : column.getIsSorted() === "desc" ? (
+                <ArrowDown className="ml-2 h-4 w-4" />
+              ) : (
+                <ArrowUpDown className="ml-2 h-4 w-4" />
+              )}
+            </Button>
+          );
+        },
+        cell: ({ row }) => (
+          <span className="font-medium">{row.original.symbol}</span>
+        ),
+      },
+      {
+        accessorKey: "action",
+        header: "Action",
+        cell: ({ row }) => (
+          <Badge variant="outline" className="text-xs">
+            {row.original.action}
+          </Badge>
+        ),
+      },
+      {
+        accessorKey: "quantity",
+        header: () => <div className="text-right">Quantity</div>,
+        cell: ({ row }) => (
+          <div className="text-right">
+            {row.original.quantity !== null
+              ? row.original.quantity
+              : "—"}
+          </div>
+        ),
+      },
+      {
+        accessorKey: "price",
+        header: ({ column }) => {
+          return (
+            <div className="flex items-center justify-end">
+              <Button
+                variant="ghost"
+                onClick={() =>
+                  column.toggleSorting(column.getIsSorted() === "asc")
+                }
+                className="-mr-4"
+              >
+                Price
+                {column.getIsSorted() === "asc" ? (
+                  <ArrowUp className="ml-2 h-4 w-4" />
+                ) : column.getIsSorted() === "desc" ? (
+                  <ArrowDown className="ml-2 h-4 w-4" />
+                ) : (
+                  <ArrowUpDown className="ml-2 h-4 w-4" />
+                )}
+              </Button>
+            </div>
+          );
+        },
+        cell: ({ row }) => (
+          <div className="text-right">
+            {row.original.price !== null
+              ? `$${row.original.price.toFixed(2)}`
+              : "—"}
+          </div>
+        ),
+      },
+      {
+        accessorKey: "cashImpact",
+        header: ({ column }) => {
+          return (
+            <div className="flex items-center justify-end">
+              <Button
+                variant="ghost"
+                onClick={() =>
+                  column.toggleSorting(column.getIsSorted() === "asc")
+                }
+                className="-mr-4"
+              >
+                Cash Impact
+                {column.getIsSorted() === "asc" ? (
+                  <ArrowUp className="ml-2 h-4 w-4" />
+                ) : column.getIsSorted() === "desc" ? (
+                  <ArrowDown className="ml-2 h-4 w-4" />
+                ) : (
+                  <ArrowUpDown className="ml-2 h-4 w-4" />
+                )}
+              </Button>
+            </div>
+          );
+        },
+        cell: ({ row }) => (
+          <div className="text-right">
+            <span className="font-medium">
+              {row.original.cashImpact >= 0 ? "+" : ""}$
+              {Math.abs(row.original.cashImpact).toFixed(2)}
+            </span>
+          </div>
+        ),
+      },
+      {
+        accessorKey: "pnl",
+        header: ({ column }) => {
+          return (
+            <div className="flex items-center justify-end">
+              <Button
+                variant="ghost"
+                onClick={() =>
+                  column.toggleSorting(column.getIsSorted() === "asc")
+                }
+                className="-mr-4"
+              >
+                P&L
+                {column.getIsSorted() === "asc" ? (
+                  <ArrowUp className="ml-2 h-4 w-4" />
+                ) : column.getIsSorted() === "desc" ? (
+                  <ArrowDown className="ml-2 h-4 w-4" />
+                ) : (
+                  <ArrowUpDown className="ml-2 h-4 w-4" />
+                )}
+              </Button>
+            </div>
+          );
+        },
+        cell: ({ row }) => {
+          const pnl = row.original.pnl;
+          const isWinner = row.original.isWinner;
+          const isLoser = pnl !== null && pnl < 0;
+
+          return (
+            <div className="text-right">
+              {pnl !== null ? (
+                <div className="flex items-center justify-end gap-1">
+                  <span
+                    className={`font-semibold ${
+                      isWinner
+                        ? "text-green-600"
+                        : isLoser
+                        ? "text-red-600"
+                        : ""
+                    }`}
+                  >
+                    {pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}
+                  </span>
+                  {isWinner && <span className="text-xs text-green-600">✓</span>}
+                </div>
+              ) : (
+                <span className="text-muted-foreground">—</span>
+              )}
+            </div>
+          );
+        },
+      },
+    ],
+    []
+  );
+
+  // Initialize table
+  const table = useReactTable({
+    data: filteredData,
+    columns,
+    state: {
+      sorting,
+    },
+    onSortingChange: setSorting,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
+    initialState: {
+      pagination: {
+        pageSize: 20,
+      },
+    },
+  });
+
   if (loading) {
     return (
       <Card>
@@ -66,134 +458,59 @@ export function FundLedger({
     );
   }
 
-  // Combine transfers and transactions into a single timeline
-  const allItems: LedgerItem[] = [
-    ...transfers.map((t) => ({
-      id: t.id,
-      type: "transfer" as const,
-      timestamp: new Date(t.timestamp),
-      data: t,
-    })),
-    ...transactions.map((t) => ({
-      id: t.id,
-      type: "transaction" as const,
-      timestamp: new Date(t.timestamp),
-      data: t,
-    })),
-  ].sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
-
-  const renderLedgerItem = (item: LedgerItem) => {
-    if (item.type === "transfer") {
-      const transfer = item.data as FundTransfer;
-      const isDeposit = transfer.transferType === "deposit";
-      return (
-        <div
-          key={item.id}
-          className="flex items-center justify-between p-4 rounded-lg border bg-card"
-        >
-          <div className="flex items-center gap-3">
-            {isDeposit ? (
-              <ArrowDownCircle className="h-5 w-5 text-green-600" />
-            ) : (
-              <ArrowUpCircle className="h-5 w-5 text-red-600" />
-            )}
-            <div>
-              <div className="flex items-center gap-2">
-                <p className="font-medium">
-                  {isDeposit ? "Deposit" : "Withdrawal"}
-                </p>
-                <Badge variant="outline" className="text-xs">
-                  Transfer
-                </Badge>
-              </div>
-              {transfer.notes && (
-                <p className="text-sm text-muted-foreground">
-                  {transfer.notes}
-                </p>
-              )}
-              <p className="text-xs text-muted-foreground">
-                {item.timestamp.toLocaleString()}
-              </p>
-            </div>
-          </div>
-          <div
-            className={`font-semibold text-lg ${
-              isDeposit ? "text-green-600" : "text-red-600"
-            }`}
-          >
-            {isDeposit ? "+" : "-"}${transfer.amount.toFixed(2)}
-          </div>
-        </div>
-      );
-    }
-
-    if (item.type === "transaction") {
-      const txn = item.data as FundTransaction;
-      const isBuy = txn.side === "buy";
-      return (
-        <div
-          key={item.id}
-          className={`flex items-center justify-between p-4 rounded-lg border ${
-            isBuy
-              ? "bg-green-50 dark:bg-green-950/20"
-              : "bg-red-50 dark:bg-red-950/20"
-          }`}
-        >
-          <div className="flex items-center gap-3">
-            {isBuy ? (
-              <TrendingUp className="h-5 w-5 text-green-600" />
-            ) : (
-              <TrendingDown className="h-5 w-5 text-red-600" />
-            )}
-            <div>
-              <div className="flex items-center gap-2">
-                <p className="font-medium">{txn.symbol}</p>
-                <Badge
-                  variant={isBuy ? "default" : "secondary"}
-                  className="text-xs"
-                >
-                  {isBuy ? "BUY" : "SELL"}
-                </Badge>
-                <Badge variant="outline" className="text-xs">
-                  Trade
-                </Badge>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                {txn.quantity} shares @ ${txn.price.toFixed(2)}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {item.timestamp.toLocaleString()}
-              </p>
-            </div>
-          </div>
-          <div className="text-right">
-            <div
-              className={`font-semibold text-lg ${
-                isBuy ? "text-red-600" : "text-green-600"
-              }`}
-            >
-              {isBuy ? "-" : "+"}${Math.abs(txn.totalValue).toFixed(2)}
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    return null;
-  };
-
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Ledger</CardTitle>
-        <CardDescription>
-          Complete history of money movements - transfers and trades
-        </CardDescription>
+        <div className="flex items-start justify-between">
+          <div>
+            <CardTitle>Ledger</CardTitle>
+            <CardDescription>
+              Complete history of money movements - transfers and trades
+            </CardDescription>
+          </div>
+        </div>
+
+        {/* Filter and Summary Section */}
+        <div className="flex flex-col sm:flex-row gap-4 mt-4 items-start sm:items-center justify-between">
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <label className="text-sm font-medium">Ticker:</label>
+            <Select value={selectedTicker} onValueChange={setSelectedTicker}>
+              <SelectTrigger className="w-[200px]">
+                <SelectValue placeholder="All tickers" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Tickers</SelectItem>
+                {uniqueTickers.map((ticker) => (
+                  <SelectItem key={ticker} value={ticker}>
+                    {ticker}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Cash Impact Sum */}
+          <div className="flex items-center gap-2 px-4 py-2 rounded-lg border bg-muted/50">
+            <DollarSign className="h-4 w-4 text-muted-foreground" />
+            <div className="text-sm">
+              <span className="text-muted-foreground font-medium">
+                Net Cash Impact:{" "}
+              </span>
+              <span
+                className={`font-bold ${
+                  cashImpactSum >= 0 ? "text-green-600" : "text-red-600"
+                }`}
+              >
+                {cashImpactSum >= 0 ? "+" : ""}${cashImpactSum.toFixed(2)}
+              </span>
+            </div>
+          </div>
+        </div>
       </CardHeader>
       <CardContent>
-        <Tabs defaultValue="all" className="w-full">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="all">All ({allItems.length})</TabsTrigger>
+            <TabsTrigger value="all">All ({tableData.length})</TabsTrigger>
             <TabsTrigger value="transfers">
               Transfers ({transfers.length})
             </TabsTrigger>
@@ -202,49 +519,89 @@ export function FundLedger({
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="all" className="space-y-3">
-            {allItems.length === 0 ? (
+          <TabsContent value={activeTab} className="space-y-4">
+            {filteredData.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
-                No ledger entries yet
+                {activeTab === "all"
+                  ? "No ledger entries yet"
+                  : activeTab === "transfers"
+                  ? "No transfers yet"
+                  : selectedTicker === "all"
+                  ? "No transactions yet"
+                  : `No transactions for ${selectedTicker}`}
               </div>
             ) : (
-              allItems.map(renderLedgerItem)
-            )}
-          </TabsContent>
+              <>
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      {table.getHeaderGroups().map((headerGroup) => (
+                        <TableRow key={headerGroup.id}>
+                          {headerGroup.headers.map((header) => (
+                            <TableHead key={header.id}>
+                              {header.isPlaceholder
+                                ? null
+                                : flexRender(
+                                    header.column.columnDef.header,
+                                    header.getContext()
+                                  )}
+                            </TableHead>
+                          ))}
+                        </TableRow>
+                      ))}
+                    </TableHeader>
+                    <TableBody>
+                      {table.getRowModel().rows.map((row) => (
+                        <TableRow key={row.id}>
+                          {row.getVisibleCells().map((cell) => (
+                            <TableCell key={cell.id}>
+                              {flexRender(
+                                cell.column.columnDef.cell,
+                                cell.getContext()
+                              )}
+                            </TableCell>
+                          ))}
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
 
-          <TabsContent value="transfers" className="space-y-3">
-            {transfers.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                No transfers yet
-              </div>
-            ) : (
-              transfers
-                .map((t) => ({
-                  id: t.id,
-                  type: "transfer" as const,
-                  timestamp: new Date(t.timestamp),
-                  data: t,
-                }))
-                .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
-                .map(renderLedgerItem)
-            )}
-          </TabsContent>
-
-          <TabsContent value="transactions" className="space-y-3">
-            {transactions.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                No transactions yet
-              </div>
-            ) : (
-              transactions
-                .map((t) => ({
-                  id: t.id,
-                  type: "transaction" as const,
-                  timestamp: new Date(t.timestamp),
-                  data: t,
-                }))
-                .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
-                .map(renderLedgerItem)
+                {/* Pagination Controls */}
+                <div className="flex items-center justify-between">
+                  <div className="text-sm text-muted-foreground">
+                    Showing {table.getState().pagination.pageIndex * table.getState().pagination.pageSize + 1} to{" "}
+                    {Math.min(
+                      (table.getState().pagination.pageIndex + 1) *
+                        table.getState().pagination.pageSize,
+                      filteredData.length
+                    )}{" "}
+                    of {filteredData.length} entries
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => table.previousPage()}
+                      disabled={!table.getCanPreviousPage()}
+                    >
+                      Previous
+                    </Button>
+                    <div className="text-sm text-muted-foreground">
+                      Page {table.getState().pagination.pageIndex + 1} of{" "}
+                      {table.getPageCount()}
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => table.nextPage()}
+                      disabled={!table.getCanNextPage()}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              </>
             )}
           </TabsContent>
         </Tabs>

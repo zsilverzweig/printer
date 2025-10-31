@@ -152,6 +152,10 @@ class StrategyEngine:
             return
         
         self.is_running = True
+        
+        # Refresh fund balance from database to ensure we have the latest value
+        await self.refresh_fund_balance()
+        
         logger.info(
             f"🚀 Starting strategy engine for fund {self.fund_id} "
             f"(name={self.fund.name}, balance=${self.fund.balance:.2f}, mode={self.fund.mode})"
@@ -795,18 +799,56 @@ class StrategyEngine:
             
             # Get pending buy orders to calculate reserved funds
             pending_orders = await self.get_pending_orders()
-            pending_buy_cost = sum(
-                o.quantity * market_data.price  # Use current price as estimate
-                for o in pending_orders 
-                if o.side == "buy"
-            )
+            
+            # CRITICAL FIX: Calculate pending buy cost using CORRECT price for each symbol
+            # Previously used market_data.price for all symbols, which was wrong!
+            pending_buy_cost = 0.0
+            for o in pending_orders:
+                if o.side == "buy":
+                    try:
+                        # First try to use the estimated_price stored at order creation
+                        if hasattr(o, 'estimated_price') and o.estimated_price and o.estimated_price > 0:
+                            order_price = o.estimated_price
+                            order_cost = o.quantity * order_price
+                            pending_buy_cost += order_cost
+                            logger.debug(
+                                f"   Pending order: {o.symbol} {o.quantity} shares @ ${order_price:.2f} (stored) = ${order_cost:.2f}"
+                            )
+                        else:
+                            # Fallback: Get current price for this specific pending order's symbol
+                            order_symbol_data = await self.market_data_provider.get_latest_quote(o.symbol)
+                            order_price = order_symbol_data.get('price', 0.0) if order_symbol_data else 0.0
+                            
+                            if order_price > 0:
+                                order_cost = o.quantity * order_price
+                                pending_buy_cost += order_cost
+                                logger.debug(
+                                    f"   Pending order: {o.symbol} {o.quantity} shares @ ${order_price:.2f} (fetched) = ${order_cost:.2f}"
+                                )
+                            else:
+                                # If we can't get price, conservatively estimate high
+                                # (better to block an order than allow negative cash)
+                                conservative_estimate = o.quantity * 1000.0  # Assume $1000/share max
+                                pending_buy_cost += conservative_estimate
+                                logger.warning(
+                                    f"   Could not get price for pending order {o.symbol}, "
+                                    f"using conservative estimate: ${conservative_estimate:.2f}"
+                                )
+                    except Exception as e:
+                        logger.error(f"   Error getting price for {o.symbol}: {e}")
+                        # Conservative fallback
+                        conservative_estimate = o.quantity * 1000.0
+                        pending_buy_cost += conservative_estimate
+                        logger.warning(
+                            f"   Using conservative estimate for {o.symbol}: ${conservative_estimate:.2f}"
+                        )
             
             # Calculate available balance (total balance - pending orders)
             available_balance = fund_balance - pending_buy_cost
             
             logger.info(
                 f"💵 Balance check: total=${fund_balance:.2f}, "
-                f"pending_orders=${pending_buy_cost:.2f}, "
+                f"pending_orders=${pending_buy_cost:.2f} ({len([o for o in pending_orders if o.side == 'buy'])} orders), "
                 f"available=${available_balance:.2f}, "
                 f"needed=${actual_cost:.2f}"
             )
@@ -892,6 +934,7 @@ class StrategyEngine:
                         side="buy",
                         quantity=quantity,
                         order_type=order_type,
+                        estimated_price=market_data.price,  # Store price for cash validation
                         status="pending",
                         submitted_at=submitted_at,
                     )
@@ -1024,6 +1067,22 @@ class StrategyEngine:
                 f"(reason: {signal.reason})"
             )
             
+            # Verify position exists in our transaction ledger (prevent over-selling)
+            async with get_async_session() as session:
+                from app.services.position_tracker import get_position_quantity_from_transactions
+                
+                db_position_qty = await get_position_quantity_from_transactions(
+                    session, self.fund_id, position.symbol
+                )
+                
+                if db_position_qty < position.quantity - 0.01:  # epsilon for float comparison
+                    logger.warning(
+                        f"⚠️ Position mismatch for {position.symbol}: "
+                        f"expected {position.quantity}, DB shows {db_position_qty:.2f}. "
+                        f"Skipping sell order to prevent over-selling."
+                    )
+                    return
+            
             # Cancel any pending buy orders for this symbol to avoid wash trade detection
             await self._cancel_pending_orders(position.symbol)
             
@@ -1047,6 +1106,7 @@ class StrategyEngine:
                         side="sell",
                         quantity=position.quantity,
                         order_type="market",
+                        estimated_price=market_data.price,  # Store price for reference
                         status="pending",
                         submitted_at=submitted_at,
                     )
@@ -1181,15 +1241,14 @@ class StrategyEngine:
                 time_in_force="day"  # Required for fractional shares
             )
             
-            # Update position
+            # Update position in memory
             position.quantity -= scale_quantity
             position.has_scaled_out = True
             position.has_taken_profits = True
             position.strategy_state["has_scaled_out"] = True
             position.strategy_state["has_taken_profits"] = True
             
-            # Update database
-            await self._update_position(position)
+            # Note: Position state is tracked through transactions, not persisted separately
             
             # Broadcast trading event
             await _broadcast_trading_event({
@@ -1244,7 +1303,7 @@ class StrategyEngine:
                 time_in_force="day"  # Required for fractional shares
             )
             
-            # Update position
+            # Update position in memory
             old_quantity = position.quantity
             position.quantity += additional_size
             position.scale_in_count += 1
@@ -1258,8 +1317,7 @@ class StrategyEngine:
             if signal.adjust_stop_to_breakeven:
                 position.strategy_state["breakeven_stop"] = position.entry_price
             
-            # Update database
-            await self._update_position(position)
+            # Note: Position state is tracked through transactions, not persisted separately
             
             # Broadcast trading event
             await _broadcast_trading_event({

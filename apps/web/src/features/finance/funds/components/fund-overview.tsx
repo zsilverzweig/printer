@@ -230,7 +230,7 @@ export function FundOverview({
             <AlertDialogTrigger asChild>
               <Button
                 variant="destructive"
-                disabled={fund.status === "paused" || isLiquidating}
+                disabled={isLiquidating}
                 className="bg-red-600 hover:bg-red-700"
               >
                 <AlertTriangle className="h-4 w-4 mr-2" />

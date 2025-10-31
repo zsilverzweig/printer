@@ -245,9 +245,9 @@ export function FundPositions({ fundId }: FundPositionsProps) {
 
   useEffect(() => {
     fetchPositions();
-    // Auto-refresh every 10 seconds
-    const interval = setInterval(fetchPositions, 10000);
-    return () => clearInterval(interval);
+    // Auto-refresh disabled to prevent losing user's place while editing
+    // const interval = setInterval(fetchPositions, 10000);
+    // return () => clearInterval(interval);
   }, [fundId]);
 
   if (loading) {

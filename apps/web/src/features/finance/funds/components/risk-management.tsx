@@ -22,8 +22,8 @@ import {
 import { Input } from "@/lib/components/ui/input";
 import { Label } from "@/lib/components/ui/label";
 
-import { fundService } from "../services/fund-service";
 import { useFundDetails } from "../hooks/use-fund-details";
+import { fundService } from "../services/fund-service";
 
 interface RiskManagementProps {
   fundId: string;
@@ -61,14 +61,10 @@ export function RiskManagement({
   useEffect(() => {
     if (fund) {
       setMaxLossPercent(
-        fund.maxLossPercent != null
-          ? fund.maxLossPercent.toString()
-          : ""
+        fund.maxLossPercent != null ? fund.maxLossPercent.toString() : ""
       );
       setMaxLossDollars(
-        fund.maxLossDollars != null
-          ? fund.maxLossDollars.toString()
-          : ""
+        fund.maxLossDollars != null ? fund.maxLossDollars.toString() : ""
       );
       setMaxGivebackPercent(
         fund.maxGivebackPercent != null
@@ -90,9 +86,7 @@ export function RiskManagement({
         fund.maxBetPercent != null ? fund.maxBetPercent.toString() : ""
       );
       setMaxTotalExposure(
-        fund.maxTotalExposure != null
-          ? fund.maxTotalExposure.toString()
-          : ""
+        fund.maxTotalExposure != null ? fund.maxTotalExposure.toString() : ""
       );
     }
   }, [fund]);
@@ -234,18 +228,6 @@ export function RiskManagement({
 
   return (
     <div className="space-y-6">
-      {/* Fund Balance Info */}
-      {fundBalance > 0 && (
-        <div className="rounded-lg bg-blue-50 dark:bg-blue-950/30 p-4 text-sm text-blue-800 dark:text-blue-200">
-          <p>
-            <strong>Fund Balance:</strong> ${fundBalance.toFixed(2)}
-          </p>
-          <p className="text-xs mt-1">
-            Risk parameters are optional. Leave empty to disable that check.
-          </p>
-        </div>
-      )}
-
       {error && (
         <div className="rounded-lg bg-red-50 dark:bg-red-950/30 p-4 text-sm text-red-800 dark:text-red-200">
           {error}

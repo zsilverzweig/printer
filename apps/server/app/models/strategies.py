@@ -130,6 +130,7 @@ class Order(Base):
     side: Mapped[str] = mapped_column(String(10), nullable=False)  # buy/sell
     quantity: Mapped[float] = mapped_column(Float, nullable=False)
     order_type: Mapped[str] = mapped_column(String(20), nullable=False)  # market/limit/stop
+    estimated_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # Price at order creation (for cash validation)
     
     # Order status (synced from Alpaca)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending", index=True)

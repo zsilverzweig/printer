@@ -62,9 +62,9 @@ export function AlpacaBalanceSummary() {
 
     fetchSummary();
 
-    // Refresh every 30 seconds
-    const interval = setInterval(fetchSummary, 30000);
-    return () => clearInterval(interval);
+    // Auto-refresh disabled to prevent losing user's place while editing
+    // const interval = setInterval(fetchSummary, 30000);
+    // return () => clearInterval(interval);
   }, []);
 
   const formatCurrency = (amount: number) => {

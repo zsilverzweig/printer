@@ -295,6 +295,28 @@ class OrderPollingService:
         try:
             filled_price = float(alpaca_order.filled_avg_price) if alpaca_order.filled_avg_price else 0.0
             
+            # For sells, validate we own enough shares (prevent over-selling)
+            if order.side == "sell":
+                from app.services.position_tracker import get_position_quantity_from_transactions
+                
+                actual_position = await get_position_quantity_from_transactions(
+                    session, order.fund_id, order.symbol
+                )
+                
+                if quantity_to_transact > actual_position + 0.01:  # Small epsilon for float math
+                    logger.error(
+                        f"🚨 OVER-SELL DETECTED: Attempting to sell {quantity_to_transact} "
+                        f"{order.symbol} but only own {actual_position:.2f}. Capping transaction."
+                    )
+                    quantity_to_transact = max(0.0, actual_position)
+                
+                if quantity_to_transact <= 0.001:  # Epsilon check
+                    logger.error(
+                        f"❌ Cannot create sell transaction for {order.symbol} - "
+                        f"no position to sell (actual: {actual_position:.2f})"
+                    )
+                    return
+            
             # Convert timezone-aware datetime to timezone-naive UTC for database
             transaction_timestamp = alpaca_order.filled_at if alpaca_order.filled_at else datetime.now(timezone.utc)
             if transaction_timestamp.tzinfo:

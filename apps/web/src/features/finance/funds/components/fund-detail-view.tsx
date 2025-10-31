@@ -8,7 +8,7 @@
 
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 
 import { Button } from "@/lib/components/ui/button";
 import {
@@ -57,15 +57,15 @@ export function FundDetailView({ fundId }: FundDetailViewProps) {
     await Promise.all([refresh(), refreshLedger()]);
   }, [refresh, refreshLedger]);
 
-  // Auto-refresh every 30 seconds
-  useEffect(() => {
-    const interval = setInterval(() => {
-      refreshAll();
-    }, 30000); // 30 seconds
-
-    // Cleanup interval on unmount
-    return () => clearInterval(interval);
-  }, [refreshAll]);
+  // Auto-refresh disabled to prevent losing user's place while editing
+  // useEffect(() => {
+  //   const interval = setInterval(() => {
+  //     refreshAll();
+  //   }, 30000); // 30 seconds
+  //
+  //   // Cleanup interval on unmount
+  //   return () => clearInterval(interval);
+  // }, [refreshAll]);
 
   if (loading) {
     return (
