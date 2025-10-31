@@ -16,16 +16,26 @@ import {
   CardHeader,
   CardTitle,
 } from "@/lib/components/ui/card";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/lib/components/ui/tabs";
 
 import { useFunds } from "../hooks/use-funds";
 
 import { AlpacaBalanceSummary } from "./alpaca-balance-summary";
 import { CreateFundDialog } from "./create-fund-dialog";
 import { FundList } from "./fund-list";
+import { FundPerformanceOverview } from "./fund-performance-overview";
 
 export function FundManagement() {
   const { funds, loading, error, createFund, refresh } = useFunds();
   const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [activeTab, setActiveTab] = useState<"overview" | "performance">(
+    "overview"
+  );
 
   const simFunds = funds.filter((f) => f.mode === "sim");
   const realFunds = funds.filter((f) => f.mode === "real");
@@ -84,70 +94,93 @@ export function FundManagement() {
         </Button>
       </div>
 
-      {/* Alpaca Account Summary */}
-      <AlpacaBalanceSummary />
+      <Tabs
+        value={activeTab}
+        onValueChange={setActiveTab}
+        className="space-y-6"
+      >
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="performance">Performance</TabsTrigger>
+        </TabsList>
 
-      {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Total Funds
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{funds.length}</div>
-          </CardContent>
-        </Card>
+        <TabsContent value="overview" className="space-y-6">
+          {/* Alpaca Account Summary */}
+          <AlpacaBalanceSummary />
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Total Balance
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              $
-              {totalBalance.toLocaleString("en-US", {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              })}
-            </div>
-          </CardContent>
-        </Card>
+          {/* Stats */}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Total Funds
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{funds.length}</div>
+              </CardContent>
+            </Card>
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              <span className="flex items-center gap-2">
-                <span className="inline-block w-2 h-2 rounded-full bg-blue-500" />
-                Simulation Funds
-              </span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{simFunds.length}</div>
-          </CardContent>
-        </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Total Cash Balance
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  $
+                  {totalBalance.toLocaleString("en-US", {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  See individual fund cards for full AUM
+                </p>
+              </CardContent>
+            </Card>
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              <span className="flex items-center gap-2">
-                <span className="inline-block w-2 h-2 rounded-full bg-green-500" />
-                Real Money Funds
-              </span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{realFunds.length}</div>
-          </CardContent>
-        </Card>
-      </div>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  <span className="flex items-center gap-2">
+                    <span className="inline-block h-2 w-2 rounded-full bg-blue-500" />
+                    Simulation Funds
+                  </span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{simFunds.length}</div>
+              </CardContent>
+            </Card>
 
-      {/* Fund List */}
-      <FundList funds={funds} />
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  <span className="flex items-center gap-2">
+                    <span className="inline-block h-2 w-2 rounded-full bg-green-500" />
+                    Real Money Funds
+                  </span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{realFunds.length}</div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Fund List */}
+          <FundList funds={funds} />
+        </TabsContent>
+
+        <TabsContent value="performance" className="space-y-6">
+          <FundPerformanceOverview
+            funds={funds}
+            isActive={activeTab === "performance"}
+          />
+        </TabsContent>
+      </Tabs>
 
       {/* Create Dialog */}
       <CreateFundDialog

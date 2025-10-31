@@ -16,6 +16,7 @@ import {
   CardTitle,
 } from "@/lib/components/ui/card";
 
+import { useFundSummary } from "../hooks/use-fund-summary";
 import { Fund } from "../types";
 
 interface FundCardProps {
@@ -26,13 +27,10 @@ export function FundCard({ fund }: FundCardProps) {
   const modeColor = fund.mode === "sim" ? "bg-blue-500" : "bg-green-500";
   const modeLabel = fund.mode === "sim" ? "SIM" : "REAL";
 
-  // Mock performance data (will be replaced with real data)
-  const performance = {
-    dayChange: 125.5,
-    dayChangePercent: 0.25,
-  };
+  // Fetch real fund summary data (AUM, performance)
+  const summary = useFundSummary(fund.id);
 
-  const isPositive = performance.dayChange >= 0;
+  const isPositive = summary.dayChange >= 0;
 
   return (
     <Link href={`/funds/${fund.id}`}>
@@ -52,38 +50,64 @@ export function FundCard({ fund }: FundCardProps) {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {/* Balance */}
+            {/* AUM (Assets Under Management) */}
             <div>
-              <p className="text-sm text-muted-foreground">Balance</p>
-              <p className="text-2xl font-bold">
-                $
-                {fund.balance.toLocaleString("en-US", {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}
+              <p className="text-sm text-muted-foreground">
+                Assets Under Management
               </p>
+              {summary.loading ? (
+                <p className="text-2xl font-bold text-muted-foreground">
+                  Loading...
+                </p>
+              ) : summary.error ? (
+                <p className="text-2xl font-bold text-red-600">Error</p>
+              ) : (
+                <>
+                  <p className="text-2xl font-bold">
+                    $
+                    {summary.aum.toLocaleString("en-US", {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Cash: $
+                    {summary.cashBalance.toLocaleString("en-US", {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}{" "}
+                    • Positions: $
+                    {summary.positionValue.toLocaleString("en-US", {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                  </p>
+                </>
+              )}
             </div>
 
             {/* Performance */}
-            <div className="flex items-center justify-between pt-4 border-t">
-              <span className="text-sm text-muted-foreground">Today</span>
-              <div
-                className={`flex items-center gap-1 ${
-                  isPositive ? "text-green-600" : "text-red-600"
-                }`}
-              >
-                {isPositive ? (
-                  <TrendingUp className="h-4 w-4" />
-                ) : (
-                  <TrendingDown className="h-4 w-4" />
-                )}
-                <span className="font-medium">
-                  ${Math.abs(performance.dayChange).toFixed(2)} (
-                  {isPositive ? "+" : ""}
-                  {performance.dayChangePercent.toFixed(2)}%)
-                </span>
+            {!summary.loading && !summary.error && (
+              <div className="flex items-center justify-between pt-4 border-t">
+                <span className="text-sm text-muted-foreground">Today</span>
+                <div
+                  className={`flex items-center gap-1 ${
+                    isPositive ? "text-green-600" : "text-red-600"
+                  }`}
+                >
+                  {isPositive ? (
+                    <TrendingUp className="h-4 w-4" />
+                  ) : (
+                    <TrendingDown className="h-4 w-4" />
+                  )}
+                  <span className="font-medium">
+                    ${Math.abs(summary.dayChange).toFixed(2)} (
+                    {isPositive ? "+" : ""}
+                    {summary.dayChangePercent.toFixed(2)}%)
+                  </span>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Created Date */}
             <div className="text-xs text-muted-foreground">
