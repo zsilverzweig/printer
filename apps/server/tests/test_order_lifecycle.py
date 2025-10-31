@@ -272,9 +272,8 @@ async def test_stale_order_cancellation(async_session, mock_market_data, mock_al
         balance=10000.0,
         status="active",
         strategy_id="monkey_darts",
-        strategy_config={},
+        strategy_config={"max_order_age_seconds": 60},
         size_per_trade=1000.0,
-        max_order_age_seconds=60,  # Orders older than 60 seconds should be cancelled
     )
     async_session.add(fund)
     await async_session.commit()
@@ -445,9 +444,8 @@ async def test_rapid_strategy_ticks_dont_create_multiple_orders(async_session, m
         balance=10000.0,
         status="active",
         strategy_id="monkey_darts",
-        strategy_config={},
+        strategy_config={"max_order_age_seconds": 60},
         size_per_trade=1000.0,
-        max_order_age_seconds=60,
     )
     async_session.add(fund)
     await async_session.commit()

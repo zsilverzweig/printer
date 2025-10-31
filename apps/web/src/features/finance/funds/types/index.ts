@@ -8,8 +8,6 @@
 export type {
   // Input types
   CreateFundInput,
-  CreateScreeningCriteriaInput,
-  CreateSetupInput,
   CreateStrategyInput, // Backward compatibility
   CreateTransferInput,
   ExecutionStrategy,
@@ -27,13 +25,27 @@ export type {
   // Trading control types
   PositionStatus,
   RunningFundSummary,
-  ScreeningCriteria,
-  Setup, // Backward compatibility
   Strategy,
   StrategyType,
   TransferType,
   UpdateFundInput,
-  UpdateScreeningCriteriaInput, // Backward compatibility
-  UpdateSetupInput,
   UpdateStrategyInput,
 } from "@printer/shared";
+
+// Local setup types (deprecated legacy UI helpers)
+export interface Setup {
+  id: string;
+  name: string;
+  description?: string;
+  screeningCriteria: Record<string, any>;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+}
+
+export interface CreateSetupInput {
+  name: string;
+  description?: string;
+  screeningCriteria: Record<string, any>;
+}
+
+export type UpdateSetupInput = Partial<CreateSetupInput>;

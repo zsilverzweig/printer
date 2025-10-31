@@ -11,7 +11,7 @@ from datetime import datetime, timezone, timedelta
 import pytest
 from sqlalchemy import select
 
-from app.models.strategies import Fund, ScreeningCriteria, Order, Transaction
+from app.models.strategies import Fund, Order, Transaction
 
 
 @pytest.mark.asyncio
@@ -288,35 +288,6 @@ async def test_transaction_timezone_aware_conversion(async_session):
     retrieved_transaction = result.scalar_one()
     
     assert retrieved_transaction.timestamp.tzinfo is None
-
-
-@pytest.mark.asyncio
-async def test_screening_criteria_timestamps(async_session):
-    """Test that ScreeningCriteria timestamps are timezone-naive."""
-    criteria_id = str(uuid.uuid4())
-    now_naive = datetime.utcnow()
-    
-    criteria = ScreeningCriteria(
-        id=criteria_id,
-        name="Test Criteria",
-        min_price=1.0,
-        max_price=100.0,
-        min_volume=100000,
-        created_at=now_naive,
-        updated_at=now_naive,
-    )
-    
-    async_session.add(criteria)
-    await async_session.commit()
-    
-    # Retrieve and verify
-    result = await async_session.execute(
-        select(ScreeningCriteria).where(ScreeningCriteria.id == criteria_id)
-    )
-    retrieved_criteria = result.scalar_one()
-    
-    assert retrieved_criteria.created_at.tzinfo is None
-    assert retrieved_criteria.updated_at.tzinfo is None
 
 
 def test_datetime_conversion_utility():

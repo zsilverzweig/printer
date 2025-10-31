@@ -17,7 +17,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select, and_
 
-from app.models.strategies import Fund, ScreeningCriteria, Order, Transaction, Transfer
+from app.models.strategies import Fund, Order, Transaction, Transfer
 from app.services.database import get_async_session
 from app.services.engine_registry import (
     register_engine,
@@ -46,24 +46,17 @@ class CreateFundInput(BaseModel):
     # Strategy configuration
     strategy_id: Optional[str] = None
     strategy_config: dict = {}
-    screening_criteria_id: Optional[str] = None
     
     # Risk parameters (optional - None means no limit)
     max_loss_percent: Optional[float] = None
     max_loss_dollars: Optional[float] = None
     max_giveback_percent: Optional[float] = None
-    max_order_age_seconds: Optional[int] = 60
     
     # Position sizing
     size_per_trade: float = 1000.0
     min_bet_percent: Optional[float] = None
     max_bet_percent: Optional[float] = None
     max_total_exposure: Optional[float] = None
-    
-    # Trading time windows
-    trading_start_time: Optional[str] = None
-    trading_end_time: Optional[str] = None
-    timezone: Optional[str] = None
 
 
 class UpdateFundInput(BaseModel):
@@ -78,24 +71,17 @@ class UpdateFundInput(BaseModel):
     # Strategy configuration
     strategy_id: Optional[str] = None
     strategy_config: Optional[dict] = None
-    screening_criteria_id: Optional[str] = None
     
     # Risk parameters
     max_loss_percent: Optional[float] = None
     max_loss_dollars: Optional[float] = None
     max_giveback_percent: Optional[float] = None
-    max_order_age_seconds: Optional[int] = None
     
     # Position sizing
     size_per_trade: Optional[float] = None
     min_bet_percent: Optional[float] = None
     max_bet_percent: Optional[float] = None
     max_total_exposure: Optional[float] = None
-    
-    # Trading time windows
-    trading_start_time: Optional[str] = None
-    trading_end_time: Optional[str] = None
-    timezone: Optional[str] = None
 
 
 class FundResponse(BaseModel):
@@ -114,24 +100,17 @@ class FundResponse(BaseModel):
     # Strategy configuration
     strategy_id: Optional[str]
     strategy_config: dict
-    screening_criteria_id: Optional[str]
     
     # Risk parameters
     max_loss_percent: Optional[float]
     max_loss_dollars: Optional[float]
     max_giveback_percent: Optional[float]
-    max_order_age_seconds: Optional[int]
     
     # Position sizing
     size_per_trade: float
     min_bet_percent: Optional[float]
     max_bet_percent: Optional[float]
     max_total_exposure: Optional[float]
-    
-    # Trading time windows
-    trading_start_time: Optional[str]
-    trading_end_time: Optional[str]
-    timezone: Optional[str]
     
     created_at: str
     updated_at: str
@@ -203,18 +182,13 @@ def serialize_fund(fund: Fund) -> dict:
         "icon_color": getattr(fund, "icon_color", None),  # Default to None if field doesn't exist yet
         "strategy_id": fund.strategy_id,
         "strategy_config": fund.strategy_config,
-        "screening_criteria_id": fund.screening_criteria_id,
         "max_loss_percent": fund.max_loss_percent,
         "max_loss_dollars": fund.max_loss_dollars,
         "max_giveback_percent": fund.max_giveback_percent,
-        "max_order_age_seconds": fund.max_order_age_seconds,
         "size_per_trade": fund.size_per_trade,
         "min_bet_percent": fund.min_bet_percent,
         "max_bet_percent": fund.max_bet_percent,
         "max_total_exposure": fund.max_total_exposure,
-        "trading_start_time": fund.trading_start_time,
-        "trading_end_time": fund.trading_end_time,
-        "timezone": fund.timezone,
         "created_at": fund.created_at.isoformat() + "Z",  # Add Z to indicate UTC
         "updated_at": fund.updated_at.isoformat() + "Z",  # Add Z to indicate UTC
     }
@@ -238,18 +212,13 @@ async def create_fund(fund_data: CreateFundInput) -> dict:
                 icon_color=fund_data.icon_color,
                 strategy_id=fund_data.strategy_id,
                 strategy_config=fund_data.strategy_config,
-                screening_criteria_id=fund_data.screening_criteria_id,
                 max_loss_percent=fund_data.max_loss_percent,
                 max_loss_dollars=fund_data.max_loss_dollars,
                 max_giveback_percent=fund_data.max_giveback_percent,
-                max_order_age_seconds=fund_data.max_order_age_seconds,
                 size_per_trade=fund_data.size_per_trade,
                 min_bet_percent=fund_data.min_bet_percent,
                 max_bet_percent=fund_data.max_bet_percent,
                 max_total_exposure=fund_data.max_total_exposure,
-                trading_start_time=fund_data.trading_start_time,
-                trading_end_time=fund_data.trading_end_time,
-                timezone=fund_data.timezone,
             )
             session.add(fund)
             await session.commit()
@@ -352,8 +321,6 @@ async def update_fund(fund_id: str, update_data: UpdateFundInput) -> dict:
                 fund.strategy_id = update_data.strategy_id
             if update_data.strategy_config is not None:
                 fund.strategy_config = update_data.strategy_config
-            if update_data.screening_criteria_id is not None:
-                fund.screening_criteria_id = update_data.screening_criteria_id
             
             # Risk parameters
             if update_data.max_loss_percent is not None:
@@ -362,8 +329,6 @@ async def update_fund(fund_id: str, update_data: UpdateFundInput) -> dict:
                 fund.max_loss_dollars = update_data.max_loss_dollars
             if update_data.max_giveback_percent is not None:
                 fund.max_giveback_percent = update_data.max_giveback_percent
-            if update_data.max_order_age_seconds is not None:
-                fund.max_order_age_seconds = update_data.max_order_age_seconds
             
             # Position sizing
             if update_data.size_per_trade is not None:
@@ -374,14 +339,6 @@ async def update_fund(fund_id: str, update_data: UpdateFundInput) -> dict:
                 fund.max_bet_percent = update_data.max_bet_percent
             if update_data.max_total_exposure is not None:
                 fund.max_total_exposure = update_data.max_total_exposure
-            
-            # Trading time windows
-            if update_data.trading_start_time is not None:
-                fund.trading_start_time = update_data.trading_start_time
-            if update_data.trading_end_time is not None:
-                fund.trading_end_time = update_data.trading_end_time
-            if update_data.timezone is not None:
-                fund.timezone = update_data.timezone
             
             await session.commit()
             await session.refresh(fund)

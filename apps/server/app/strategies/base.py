@@ -66,6 +66,14 @@ class ScaleSignal:
 
 
 @dataclass
+class TradingWindow:
+    """Trading window configuration for a strategy."""
+    start_time: str  # e.g., "09:30"
+    end_time: str    # e.g., "16:00"
+    timezone: str = "America/New_York"
+
+
+@dataclass
 class PositionContext:
     """Context information for an open position."""
     position_id: str
@@ -155,6 +163,27 @@ class ExecutionStrategy(ABC):
         Used for UI generation and validation.
         """
         return {}
+
+    def get_trading_window(self) -> Optional[TradingWindow]:
+        """Return the trading window for this strategy, if any."""
+        return None
+
+    def get_max_order_age_seconds(self) -> Optional[int]:
+        """Return the max pending order age (in seconds) for auto-cancel, if any."""
+        return None
+
+    @abstractmethod
+    async def screen(self, screener_results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Apply strategy-specific screening to raw screener results.
+
+        Args:
+            screener_results: Raw list of candidates from the global screener
+
+        Returns:
+            Filtered list of candidates suitable for strategy evaluation
+        """
+        pass
     
     @abstractmethod
     async def get_monitored_symbols(
@@ -171,7 +200,7 @@ class ExecutionStrategy(ABC):
         will then check entry conditions for each returned symbol.
         
         Args:
-            candidates: List of stocks from screener (already filtered by ScreeningCriteria)
+            candidates: List of stocks from the global screener
             active_position_count: Number of currently filled positions
             active_order_count: Number of pending orders (not yet filled)
             
@@ -183,14 +212,9 @@ class ExecutionStrategy(ABC):
             - Monkey Darts: Returns one random pick (or empty if have position/pending order)
             - Chart Analysis: Returns top N by volume/momentum
             
-        Note:
-            All basic filtering (volume, price range, etc.) should already be
-            done by ScreeningCriteria. This method is for strategy-specific
-            selection logic only.
-            
-            Strategies should consider BOTH active positions AND pending orders
-            when deciding whether to place new orders. A pending order might
-            fill at any moment!
+        Strategies should consider BOTH active positions AND pending orders
+        when deciding whether to place new orders. A pending order might
+        fill at any moment!
         """
         pass
     

@@ -42,24 +42,17 @@ export interface Fund {
   // Strategy configuration
   strategyId?: string | null; // References ExecutionStrategy (e.g., "monkey_darts")
   strategyConfig: Record<string, any>; // Plugin-specific params
-  screeningCriteriaId?: string | null; // References ScreeningCriteria
 
   // Risk parameters (optional - null/undefined means no limit)
   maxLossPercent?: number | null; // Max loss % per day
   maxLossDollars?: number | null; // Max loss $ per day
   maxGivebackPercent?: number | null; // Max loss from high water mark
-  maxOrderAgeSeconds?: number | null; // Cancel pending orders after this many seconds
 
   // Position sizing
   sizePerTrade: number; // Default position size (required)
   minBetPercent?: number | null; // Min % of fund per trade
   maxBetPercent?: number | null; // Max % of fund per trade
   maxTotalExposure?: number | null; // Max total $ in positions
-
-  // Trading time windows
-  tradingStartTime?: string; // e.g., "09:30" (market open)
-  tradingEndTime?: string; // e.g., "16:00" (market close)
-  timezone?: string; // e.g., "America/New_York" (default: ET)
 
   createdAt: Date | string;
   updatedAt: Date | string;
@@ -80,45 +73,6 @@ export interface ExecutionStrategy {
   requiredIndicators: string[]; // e.g., ["MACD", "RSI"]
   configSchema: Record<string, any>; // JSON schema for configuration
 }
-
-/**
- * Screening Criteria Parameters
- *
- * Configuration object for both database and real-time filtering.
- */
-export interface ScreeningCriteriaParams {
-  // Database filters (asset metadata)
-  asset_types?: string[]; // e.g., ["CS", "ETF"]
-  market_cap_min?: number; // Min market cap in dollars
-  market_cap_max?: number; // Max market cap in dollars
-  sic_codes?: string[]; // Industry SIC codes
-
-  // Real-time screener filters (price/volume dynamics)
-  min_price?: number; // Min yesterday's close price
-  max_price?: number; // Max yesterday's close price
-  min_volume?: number; // Min volume for liquidity
-  min_change_percent?: number; // Min % change from yesterday's close
-  order_by?: string; // Sort field: "rv14" | "rv30" | "rv60" | "avg_volume"
-  limit?: number; // Max results to return
-}
-
-/**
- * Screening Criteria
- *
- * Reusable screening configuration for filtering market candidates.
- * Previously called "Setup" - renamed to better reflect its purpose.
- */
-export interface ScreeningCriteria {
-  id: string;
-  name: string;
-  description?: string;
-  criteria: ScreeningCriteriaParams;
-  createdAt: Date | string;
-  updatedAt: Date | string;
-}
-
-// Backward compatibility alias
-export type Setup = ScreeningCriteria;
 
 /**
  * @deprecated Strategy configuration has been moved to the Fund model.
@@ -192,24 +146,17 @@ export interface CreateFundInput {
   // Strategy configuration
   strategyId?: string | null;
   strategyConfig?: Record<string, any>;
-  screeningCriteriaId?: string | null;
 
   // Risk parameters
   maxLossPercent?: number | null;
   maxLossDollars?: number | null;
   maxGivebackPercent?: number | null;
-  maxOrderAgeSeconds?: number | null;
 
   // Position sizing
   sizePerTrade?: number;
   minBetPercent?: number | null;
   maxBetPercent?: number | null;
   maxTotalExposure?: number | null;
-
-  // Trading time windows
-  tradingStartTime?: string;
-  tradingEndTime?: string;
-  timezone?: string;
 }
 
 export interface UpdateFundInput {
@@ -224,24 +171,17 @@ export interface UpdateFundInput {
   // Strategy configuration
   strategyId?: string | null;
   strategyConfig?: Record<string, any>;
-  screeningCriteriaId?: string | null;
 
   // Risk parameters
   maxLossPercent?: number | null;
   maxLossDollars?: number | null;
   maxGivebackPercent?: number | null;
-  maxOrderAgeSeconds?: number | null;
 
   // Position sizing
   sizePerTrade?: number;
   minBetPercent?: number | null;
   maxBetPercent?: number | null;
   maxTotalExposure?: number | null;
-
-  // Trading time windows
-  tradingStartTime?: string;
-  tradingEndTime?: string;
-  timezone?: string;
 }
 
 /**
@@ -271,19 +211,6 @@ export interface CreateStrategyInput {
  */
 export interface UpdateStrategyInput
   extends Partial<Omit<CreateStrategyInput, "fundId">> {}
-
-export interface CreateScreeningCriteriaInput {
-  name: string;
-  description?: string;
-  criteria: ScreeningCriteriaParams;
-}
-
-export interface UpdateScreeningCriteriaInput
-  extends Partial<CreateScreeningCriteriaInput> {}
-
-// Backward compatibility aliases
-export type CreateSetupInput = CreateScreeningCriteriaInput;
-export type UpdateSetupInput = UpdateScreeningCriteriaInput;
 
 export interface CreateTransferInput {
   fundId: string;

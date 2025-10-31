@@ -3,16 +3,14 @@ Fund and trading models.
 
 Provides SQLAlchemy models for:
 - Fund: Trading account with balance, mode, strategy configuration, and risk parameters
-- ScreeningCriteria: Reusable screening configurations
 - Order: Order tracking
 - Transaction: Transaction ledger
 """
 
 from datetime import datetime
 from typing import Optional
-import json
 
-from sqlalchemy import String, Float, DateTime, Integer, Text, ForeignKey, JSON
+from sqlalchemy import String, Float, DateTime, Text, ForeignKey, JSON
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -46,17 +44,11 @@ class Fund(Base):
     # Strategy configuration
     strategy_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # e.g., "monkey_darts"
     strategy_config: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
-    screening_criteria_id: Mapped[Optional[str]] = mapped_column(
-        String(36), 
-        ForeignKey("screening_criteria.id"), 
-        nullable=True
-    )
     
     # Risk parameters (nullable - None means no limit)
     max_loss_percent: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
     max_loss_dollars: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
     max_giveback_percent: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
-    max_order_age_seconds: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, default=60)
     
     # Position sizing
     size_per_trade: Mapped[float] = mapped_column(Float, nullable=False, default=1000.0)
@@ -64,11 +56,6 @@ class Fund(Base):
     max_bet_percent: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
     max_total_exposure: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
     
-    # Trading time windows
-    trading_start_time: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)  # e.g., "09:30"
-    trading_end_time: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)    # e.g., "16:00"
-    timezone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)            # e.g., "America/New_York"
-    
     created_at: Mapped[datetime] = mapped_column(
         DateTime, 
         nullable=False, 
@@ -80,37 +67,6 @@ class Fund(Base):
         default=datetime.utcnow,
         onupdate=datetime.utcnow
     )
-
-
-class ScreeningCriteria(Base):
-    """
-    Reusable screening criteria configuration.
-    
-    Defines how to filter and find trading candidates from market data.
-    Previously called "Setup" - renamed to better reflect its purpose.
-    """
-    __tablename__ = "screening_criteria"
-    
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    name: Mapped[str] = mapped_column(String(200), nullable=False)
-    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    
-    # JSON configuration for screening parameters
-    # e.g., {"minPrice": 5, "maxPrice": 100, "minVolume": 1000000, "relativeVolume": 2.0}
-    criteria: Mapped[dict] = mapped_column(JSON, nullable=False)
-    
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, 
-        nullable=False, 
-        default=datetime.utcnow
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, 
-        nullable=False, 
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow
-    )
-
 
 class Order(Base):
     """

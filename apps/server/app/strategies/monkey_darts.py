@@ -24,6 +24,7 @@ from app.strategies.base import (
     ScaleSignal,
     MarketData,
     PositionContext,
+    TradingWindow,
 )
 
 logger = logging.getLogger(__name__)
@@ -38,6 +39,26 @@ class MonkeyDartsStrategy(ExecutionStrategy):
         # Configuration parameters with defaults
         self.hold_time_seconds = config.get("hold_time_seconds", 60)  # 1 minute default
         self.random_seed = config.get("random_seed")  # Optional for reproducibility
+        self.trading_start_time = (
+            config["trading_start_time"]
+            if "trading_start_time" in config
+            else "09:30"
+        )
+        self.trading_end_time = (
+            config["trading_end_time"]
+            if "trading_end_time" in config
+            else "16:00"
+        )
+        self.timezone = (
+            config["timezone"]
+            if "timezone" in config
+            else "America/New_York"
+        )
+        self.max_order_age_seconds = (
+            config["max_order_age_seconds"]
+            if "max_order_age_seconds" in config
+            else 60
+        )
         
         if self.random_seed:
             random.seed(self.random_seed)
@@ -87,8 +108,47 @@ class MonkeyDartsStrategy(ExecutionStrategy):
                     "type": "integer",
                     "description": "Optional random seed for reproducibility",
                 },
+                "trading_start_time": {
+                    "type": ["string", "null"],
+                    "pattern": "^\\d{2}:\\d{2}$",
+                    "default": "09:30",
+                    "description": "Start of trading window (HH:MM). Null disables window.",
+                },
+                "trading_end_time": {
+                    "type": ["string", "null"],
+                    "pattern": "^\\d{2}:\\d{2}$",
+                    "default": "16:00",
+                    "description": "End of trading window (HH:MM). Null disables window.",
+                },
+                "timezone": {
+                    "type": "string",
+                    "default": "America/New_York",
+                    "description": "Timezone for trading window (IANA format).",
+                },
+                "max_order_age_seconds": {
+                    "type": ["integer", "null"],
+                    "minimum": 0,
+                    "default": 60,
+                    "description": "Auto-cancel pending orders older than this (seconds).",
+                },
             },
         }
+
+    def get_trading_window(self) -> Optional[TradingWindow]:
+        if self.trading_start_time is None or self.trading_end_time is None:
+            return None
+        return TradingWindow(
+            start_time=self.trading_start_time,
+            end_time=self.trading_end_time,
+            timezone=self.timezone,
+        )
+
+    def get_max_order_age_seconds(self) -> Optional[int]:
+        return self.max_order_age_seconds
+
+    async def screen(self, screener_results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Monkey trades anything the screener finds."""
+        return screener_results
     
     async def get_monitored_symbols(
         self,
@@ -103,8 +163,7 @@ class MonkeyDartsStrategy(ExecutionStrategy):
         - If we have an active position OR pending order, return empty list (wait for it to close)
         - Otherwise, randomly pick one candidate from the list
         
-        Note: All volume/price filtering should already be done by ScreeningCriteria.
-        We accept any candidates that made it through the screener.
+        Note: Strategy-level screening happens via Monkey's `screen()` implementation.
         """
         logger.info(
             f"🐵 Monkey selection called: "

@@ -40,13 +40,6 @@ def build_fund(
     max_loss_percent: Optional[float] = None,
     max_loss_dollars: Optional[float] = None,
     max_giveback_percent: Optional[float] = None,
-    max_order_age_seconds: Optional[int] = 60,
-    # Trading time windows
-    trading_start_time: Optional[str] = None,
-    trading_end_time: Optional[str] = None,
-    timezone: Optional[str] = None,
-    # Other
-    screening_criteria_id: Optional[str] = None,
     archived: bool = False,
 ) -> Fund:
     """
@@ -67,11 +60,6 @@ def build_fund(
         max_loss_percent: Daily loss limit as percent
         max_loss_dollars: Daily loss limit in dollars
         max_giveback_percent: Giveback limit as percent
-        max_order_age_seconds: Order timeout in seconds
-        trading_start_time: Start of trading window (e.g., "09:30")
-        trading_end_time: End of trading window (e.g., "16:00")
-        timezone: Timezone for trading windows (e.g., "America/New_York")
-        screening_criteria_id: Optional screening criteria ID
         archived: Whether fund is archived
 
     Returns:
@@ -100,11 +88,6 @@ def build_fund(
         max_loss_percent=max_loss_percent,
         max_loss_dollars=max_loss_dollars,
         max_giveback_percent=max_giveback_percent,
-        max_order_age_seconds=max_order_age_seconds,
-        trading_start_time=trading_start_time,
-        trading_end_time=trading_end_time,
-        timezone=timezone,
-        screening_criteria_id=screening_criteria_id,
         archived=archived,
     )
 

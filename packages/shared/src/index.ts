@@ -41,8 +41,6 @@ export type {
 export type {
   // Input types
   CreateFundInput,
-  CreateScreeningCriteriaInput,
-  CreateSetupInput,
   CreateStrategyInput, // Backward compatibility
   CreateTransferInput,
   ExecutionStrategy,
@@ -60,14 +58,9 @@ export type {
   // Trading control types
   PositionStatus,
   RunningFundSummary,
-  ScreeningCriteria,
-  ScreeningCriteriaParams,
-  Setup, // Backward compatibility
   Strategy,
   StrategyType,
   TransferType,
   UpdateFundInput,
-  UpdateScreeningCriteriaInput, // Backward compatibility
-  UpdateSetupInput,
   UpdateStrategyInput,
 } from "./types/funds";

@@ -15,7 +15,7 @@ from typing import Optional, Dict, Any
 import pytz
 
 from app.models.strategies import Fund, Order
-from app.strategies.base import PositionContext
+from app.strategies.base import PositionContext, TradingWindow
 
 
 def assert_risk_limits_enforced(
@@ -155,7 +155,7 @@ def assert_position_size_valid(
 
 
 def assert_trading_hours_respected(
-    fund: Fund,
+    trading_window: Optional[TradingWindow],
     current_time: datetime,
     should_allow_trading: bool,
 ) -> None:
@@ -163,7 +163,7 @@ def assert_trading_hours_respected(
     Assert that trading hours are properly enforced.
     
     Args:
-        fund: Fund instance with trading hour configuration
+        trading_window: Strategy trading window configuration (or None for unrestricted)
         current_time: Current time to check
         should_allow_trading: Whether trading should be allowed at this time
         
@@ -173,24 +173,24 @@ def assert_trading_hours_respected(
     Example:
         >>> from datetime import datetime
         >>> import pytz
-        >>> fund = build_fund(
-        ...     trading_start_time="09:30",
-        ...     trading_end_time="16:00",
+        >>> window = TradingWindow(
+        ...     start_time="09:30",
+        ...     end_time="16:00",
         ...     timezone="America/New_York"
         ... )
         >>> ny_tz = pytz.timezone("America/New_York")
         >>> morning = ny_tz.localize(datetime(2024, 1, 15, 10, 0))  # 10 AM
-        >>> assert_trading_hours_respected(fund, morning, should_allow_trading=True)
+        >>> assert_trading_hours_respected(window, morning, should_allow_trading=True)
     """
     # If no trading hours configured, trading is always allowed
-    if not fund.trading_start_time or not fund.trading_end_time:
+    if trading_window is None:
         assert should_allow_trading, (
             "No trading hours configured, but trading is not allowed"
         )
         return
     
     # Get timezone
-    tz = pytz.timezone(fund.timezone or "America/New_York")
+    tz = pytz.timezone(trading_window.timezone or "America/New_York")
     
     # Localize current time to fund timezone
     if current_time.tzinfo is None:
@@ -200,8 +200,8 @@ def assert_trading_hours_respected(
         current_time = current_time.astimezone(tz)
     
     # Parse trading hours
-    start_hour, start_minute = map(int, fund.trading_start_time.split(":"))
-    end_hour, end_minute = map(int, fund.trading_end_time.split(":"))
+    start_hour, start_minute = map(int, trading_window.start_time.split(":"))
+    end_hour, end_minute = map(int, trading_window.end_time.split(":"))
     
     start_time = dt_time(start_hour, start_minute)
     end_time = dt_time(end_hour, end_minute)

@@ -63,19 +63,20 @@ def test_create_fund_with_full_config(async_session):
         "icon": "TrendingUp",
         "icon_color": "#00FF00",
         "strategy_id": "bull_flag",
-        "strategy_config": {"min_volume": 1000000},
-        "screening_criteria_id": "test-criteria-id",
+        "strategy_config": {
+            "min_volume": 1000000,
+            "trading_start_time": "09:30",
+            "trading_end_time": "15:30",
+            "timezone": "America/New_York",
+            "max_order_age_seconds": 30,
+        },
         "max_loss_percent": 5.0,
         "max_loss_dollars": 500.0,
         "max_giveback_percent": 10.0,
-        "max_order_age_seconds": 30,
         "size_per_trade": 2000.0,
         "min_bet_percent": 1.0,
         "max_bet_percent": 10.0,
         "max_total_exposure": 0.8,
-        "trading_start_time": "09:30",
-        "trading_end_time": "15:30",
-        "timezone": "America/New_York",
     }
 
     with patch("app.routers.funds.get_async_session") as mock_session:
@@ -94,8 +95,8 @@ def test_create_fund_with_full_config(async_session):
     assert data["max_loss_percent"] == 5.0
     assert data["max_loss_dollars"] == 500.0
     assert data["size_per_trade"] == 2000.0
-    assert data["trading_start_time"] == "09:30"
-    assert data["timezone"] == "America/New_York"
+    assert data["strategy_config"]["trading_start_time"] == "09:30"
+    assert data["strategy_config"]["timezone"] == "America/New_York"
 
 
 def test_list_funds_empty(async_session):

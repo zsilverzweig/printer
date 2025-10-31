@@ -12,7 +12,7 @@ from unittest.mock import Mock
 import uuid
 
 from app.main import app
-from app.models.strategies import Base, Fund, ScreeningCriteria, Order, Transaction
+from app.models.strategies import Base, Fund, Order, Transaction
 
 
 @pytest.fixture
@@ -205,6 +205,15 @@ class MockExecutionStrategy:
     def strategy_type(self):
         return "math-based"
     
+    def get_trading_window(self):
+        return None
+
+    def get_max_order_age_seconds(self):
+        return None
+
+    async def screen(self, screener_results):
+        return screener_results
+
     async def get_monitored_symbols(self, candidates, active_position_count=0, active_order_count=0):
         """Mock candidate selection - returns first symbol if no active positions or orders."""
         if candidates and (active_position_count + active_order_count) < self.max_positions:

@@ -80,7 +80,7 @@ async def test_monkey_darts():
             {"ticker": "NVDA", "today_vol": 40000000, "price": 485.75},
         ]
         
-        # Note: Volume/price filtering should be done by ScreeningCriteria, 
+        # Note: Volume/price filtering now happens via strategy.screen(),
         # so all candidates here are assumed to be valid
         
         monitored = await strategy.get_monitored_symbols(

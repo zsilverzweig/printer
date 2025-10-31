@@ -48,7 +48,6 @@ export function RiskManagement({
   const [maxLossPercent, setMaxLossPercent] = useState("");
   const [maxLossDollars, setMaxLossDollars] = useState("");
   const [maxGivebackPercent, setMaxGivebackPercent] = useState("");
-  const [maxOrderAgeSeconds, setMaxOrderAgeSeconds] = useState("");
   const [sizePerTrade, setSizePerTrade] = useState("");
   const [minBetPercent, setMinBetPercent] = useState("");
   const [maxBetPercent, setMaxBetPercent] = useState("");
@@ -74,11 +73,6 @@ export function RiskManagement({
         fund.maxGivebackPercent != null
           ? fund.maxGivebackPercent.toString()
           : ""
-      );
-      setMaxOrderAgeSeconds(
-        fund.maxOrderAgeSeconds != null
-          ? fund.maxOrderAgeSeconds.toString()
-          : "60"
       );
       setSizePerTrade(
         fund.sizePerTrade != null ? fund.sizePerTrade.toString() : "1000"
@@ -207,9 +201,6 @@ export function RiskManagement({
         maxGivebackPercent: maxGivebackPercent
           ? parseFloat(maxGivebackPercent)
           : null,
-        maxOrderAgeSeconds: maxOrderAgeSeconds
-          ? parseInt(maxOrderAgeSeconds)
-          : 60,
         sizePerTrade: parseFloat(sizePerTrade) || 1000,
         minBetPercent: minBetPercent ? parseFloat(minBetPercent) : null,
         maxBetPercent: maxBetPercent ? parseFloat(maxBetPercent) : null,
@@ -368,35 +359,6 @@ export function RiskManagement({
               </p>
             </div>
 
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="maxOrderAgeSeconds">Max Order Age (sec)</Label>
-                {maxOrderAgeSeconds && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 px-2"
-                    onClick={() => setMaxOrderAgeSeconds("")}
-                    disabled={isSaving}
-                  >
-                    <X className="h-3 w-3" />
-                  </Button>
-                )}
-              </div>
-              <Input
-                id="maxOrderAgeSeconds"
-                type="number"
-                step="10"
-                min="10"
-                value={maxOrderAgeSeconds}
-                onChange={(e) => setMaxOrderAgeSeconds(e.target.value)}
-                disabled={isSaving}
-                placeholder="60 (default)"
-              />
-              <p className="text-xs text-muted-foreground">
-                Cancel pending orders after this many seconds
-              </p>
-            </div>
           </div>
         </CardContent>
       </Card>

@@ -29,7 +29,6 @@ import { FundOrders } from "./fund-orders";
 import { FundOverview } from "./fund-overview";
 import { FundPositions } from "./fund-positions";
 import { RiskManagement } from "./risk-management";
-import { ScreenerLink } from "./screener-link";
 import { SetupEditor } from "./setup-editor";
 import { StrategySelection } from "./strategy-selection";
 import { TimeWindows } from "./time-windows";
@@ -126,7 +125,6 @@ export function FundDetailView({ fundId }: FundDetailViewProps) {
           <TabsTrigger value="activity">Activity</TabsTrigger>
           <TabsTrigger value="positions">Positions</TabsTrigger>
           <TabsTrigger value="orders">Orders</TabsTrigger>
-          <TabsTrigger value="screener">Screener</TabsTrigger>
           <TabsTrigger value="ledger">Ledger</TabsTrigger>
         </TabsList>
 
@@ -183,10 +181,6 @@ export function FundDetailView({ fundId }: FundDetailViewProps) {
 
         <TabsContent value="orders" className="space-y-6">
           <FundOrders fundId={fundId} />
-        </TabsContent>
-
-        <TabsContent value="screener" className="space-y-6">
-          <ScreenerLink fundId={fund.id} fund={fund} onUpdate={refreshAll} />
         </TabsContent>
 
         <TabsContent value="ledger" className="space-y-6">

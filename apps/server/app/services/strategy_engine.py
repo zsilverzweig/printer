@@ -22,6 +22,7 @@ from app.strategies.base import (
     EntrySignal,
     ExitSignal,
     ScaleSignal,
+    TradingWindow,
 )
 from app.strategies.registry import get_strategy
 from app.services.market_data_provider import MarketDataProvider
@@ -163,11 +164,16 @@ class StrategyEngine:
         )
         
         # Log risk management settings
-        max_order_age = self.fund.max_order_age_seconds or 60
-        logger.info(
-            f"⏱️  Risk management: max_order_age={max_order_age}s "
-            f"(orders older than this will be auto-canceled)"
-        )
+        max_order_age = self.execution_strategy.get_max_order_age_seconds()
+        if max_order_age and max_order_age > 0:
+            logger.info(
+                f"⏱️  Risk management: max_order_age={max_order_age}s "
+                f"(orders older than this will be auto-canceled)"
+            )
+        else:
+            logger.info(
+                "⏱️  Risk management: auto-cancel for pending orders is disabled by strategy"
+            )
         
         # Sync initial positions from Alpaca
         await self._refresh_positions_from_alpaca()
@@ -391,12 +397,14 @@ class StrategyEngine:
         This is especially important for strategies with time windows or
         that need to move quickly.
         
-        The timeout is configurable via fund.max_order_age_seconds.
+        The timeout is provided by the strategy configuration.
         """
         try:
-            # Get the configured timeout (default 60 seconds if not set)
-            max_age_seconds = self.fund.max_order_age_seconds or 60
-            
+            # Get the configured timeout from strategy
+            max_age_seconds = self.execution_strategy.get_max_order_age_seconds()
+            if not max_age_seconds or max_age_seconds <= 0:
+                return
+
             async with get_async_session() as session:
                 # Get all pending buy orders for this fund
                 stmt = select(Order).where(
@@ -492,11 +500,11 @@ class StrategyEngine:
             screener_results = screener.cached_payload
             logger.debug(f"📊 Screener has {len(screener_results)} total candidates")
             
-            # Optional: Apply ScreeningCriteria filters
-            if self.fund.screening_criteria_id:
-                logger.debug(f"🔍 Applying screening criteria: {self.fund.screening_criteria_id}")
-                screener_results = await self._apply_screening_filters(screener_results)
-                logger.debug(f"🔍 After filtering: {len(screener_results)} candidates")
+            # Strategy-specific screening
+            filtered_results = await self.execution_strategy.screen(screener_results)
+            logger.debug(
+                f"🔍 Strategy screening: {len(filtered_results)} of {len(screener_results)} candidates passed"
+            )
             
             # CRITICAL: Force position refresh BEFORE asking strategy to select
             # This ensures we have up-to-date position counts after order fills
@@ -508,11 +516,11 @@ class StrategyEngine:
             pending_orders = await self.get_pending_orders()
             logger.debug(
                 f"🎯 Asking strategy to select symbols "
-                f"(candidates={len(screener_results)}, active_positions={len(active_positions)}, "
-                f"pending_orders={len(pending_orders)})"
+                f"(raw={len(screener_results)}, filtered={len(filtered_results)}, "
+                f"active_positions={len(active_positions)}, pending_orders={len(pending_orders)})"
             )
             self.monitored_symbols = await self.execution_strategy.get_monitored_symbols(
-                screener_results,
+                filtered_results,
                 active_position_count=len(active_positions),
                 active_order_count=len(pending_orders)
             )
@@ -532,28 +540,6 @@ class StrategyEngine:
         
         except Exception as e:
             logger.error(f"Error updating candidates: {e}", exc_info=True)
-    
-    def _is_trading_time(self) -> bool:
-        """Check if current time is within trading hours."""
-        if not self.fund.trading_start_time:
-            return True  # No restrictions
-        
-        import pytz
-        from datetime import time as dt_time
-        
-        try:
-            tz = pytz.timezone(self.fund.timezone or "America/New_York")
-            now = datetime.now(tz)
-            current_time = now.time()
-            
-            # Parse times like "09:30"
-            start = dt_time(*map(int, self.fund.trading_start_time.split(":")))
-            end = dt_time(*map(int, self.fund.trading_end_time.split(":")))
-            
-            return start <= current_time <= end
-        except Exception as e:
-            logger.error(f"Error checking trading time: {e}")
-            return True  # Default to allowing trades if check fails
     
     async def _check_risk_limits(self) -> tuple[bool, str]:
         """
@@ -597,6 +583,30 @@ class StrategyEngine:
         
         return True, ""
     
+    def _is_within_trading_window(self, window: TradingWindow) -> bool:
+        """Check if current time is within the strategy's trading window."""
+        from datetime import time as dt_time
+        import pytz
+
+        try:
+            tz = pytz.timezone(window.timezone or "America/New_York")
+            now = datetime.now(tz).time()
+
+            start_parts = list(map(int, window.start_time.split(":")))
+            end_parts = list(map(int, window.end_time.split(":")))
+
+            start = dt_time(*start_parts)
+            end = dt_time(*end_parts)
+
+            if start <= end:
+                return start <= now <= end
+
+            # Overnight window (e.g., 22:00 to 04:00)
+            return now >= start or now <= end
+        except Exception as e:
+            logger.error(f"Error checking trading window: {e}")
+            return True
+
     async def _monitor_entries(self) -> None:
         """
         Monitor entry conditions for candidate symbols.
@@ -604,9 +614,10 @@ class StrategyEngine:
         Unified approach for all strategies - no special cases!
         Strategy decides which symbols to monitor via get_monitored_symbols().
         """
-        # Check trading hours BEFORE monitoring
-        if not self._is_trading_time():
-            logger.info("🕐 Outside trading hours, skipping entry monitoring")
+        # Check trading window BEFORE monitoring
+        trading_window = self.execution_strategy.get_trading_window()
+        if trading_window and not self._is_within_trading_window(trading_window):
+            logger.info("🕐 Outside strategy trading window, skipping entry monitoring")
             return
         
         # Check risk limits BEFORE monitoring
@@ -1369,51 +1380,4 @@ class StrategyEngine:
             logger.error(error_msg)
             raise RuntimeError(error_msg)
     
-    async def _apply_screening_filters(
-        self,
-        candidates: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
-        """Apply ScreeningCriteria filters if configured."""
-        if not self.fund.screening_criteria_id:
-            return candidates
-        
-        try:
-            # Load criteria from database
-            from app.services.database import get_async_session
-            from app.models.strategies import ScreeningCriteria
-            
-            async with get_async_session() as session:
-                criteria = await session.get(ScreeningCriteria, self.fund.screening_criteria_id)
-                
-                if not criteria:
-                    logger.warning(f"ScreeningCriteria {self.fund.screening_criteria_id} not found")
-                    return candidates
-                
-                filtered = []
-                for candidate in candidates:
-                    # Apply filters from criteria.criteria dict
-                    if "min_volume" in criteria.criteria:
-                        if candidate.get("today_vol", 0) < criteria.criteria["min_volume"]:
-                            continue
-                    
-                    if "min_price" in criteria.criteria:
-                        if candidate.get("price", 0) < criteria.criteria["min_price"]:
-                            continue
-                    
-                    if "max_price" in criteria.criteria:
-                        if candidate.get("price", 999999) > criteria.criteria["max_price"]:
-                            continue
-                    
-                    if "min_relative_volume" in criteria.criteria:
-                        if candidate.get("rv14", 0) < criteria.criteria["min_relative_volume"]:
-                            continue
-                    
-                    filtered.append(candidate)
-                
-                logger.info(f"Screening filters applied: {len(filtered)} of {len(candidates)} candidates passed")
-                return filtered
-        
-        except Exception as e:
-            logger.error(f"Error applying screening filters: {e}")
-            return candidates  # Return unfiltered on error
 

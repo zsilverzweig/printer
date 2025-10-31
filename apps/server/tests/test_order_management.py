@@ -27,7 +27,7 @@ async def test_stale_order_is_identified(fund_factory):
     
     Expected: Orders older than the configured timeout should be flagged.
     """
-    fund = fund_factory(max_order_age_seconds=60)
+    fund = fund_factory(strategy_config={"max_order_age_seconds": 60})
     
     # Create order that's 120 seconds old
     old_order = build_stale_order(
@@ -46,7 +46,7 @@ async def test_fresh_order_is_not_stale(fund_factory):
     
     Expected: Orders younger than the timeout should not be flagged.
     """
-    fund = fund_factory(max_order_age_seconds=60)
+    fund = fund_factory(strategy_config={"max_order_age_seconds": 60})
     
     # Create fresh order
     fresh_order = build_order(fund_id=fund.id, status="pending")
@@ -66,7 +66,7 @@ async def test_stale_orders_are_cancelled(async_session, fund_factory, mock_mark
     """
     from app.services.strategy_engine import StrategyEngine
     
-    fund = fund_factory(max_order_age_seconds=60)
+    fund = fund_factory(strategy_config={"max_order_age_seconds": 60})
     async_session.add(fund)
     await async_session.commit()
     await async_session.refresh(fund)
@@ -499,14 +499,14 @@ async def test_max_order_age_zero_disables_cancellation(fund_factory):
     Expected: Orders should not be cancelled if max_order_age is 0 or None.
     """
     # Test with None
-    fund = fund_factory(max_order_age_seconds=None)
+    fund = fund_factory(strategy_config={"max_order_age_seconds": None})
     old_order = build_stale_order(fund_id=fund.id, age_seconds=300)
     
     # Should not be considered stale (no limit)
     # Note: assert_order_is_stale would fail, so we just check the concept
-    assert fund.max_order_age_seconds is None, "No age limit set"
+    assert fund.strategy_config.get("max_order_age_seconds") is None, "No age limit set"
     
     # Test with 0
-    fund = fund_factory(max_order_age_seconds=0)
-    assert fund.max_order_age_seconds == 0, "Age limit is 0 (disabled)"
+    fund = fund_factory(strategy_config={"max_order_age_seconds": 0})
+    assert fund.strategy_config.get("max_order_age_seconds") == 0, "Age limit is 0 (disabled)"
 

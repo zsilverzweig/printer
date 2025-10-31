@@ -25,18 +25,13 @@ function parseFundDates(data: any): Fund {
     iconColor: data.icon_color ?? data.iconColor,
     strategyId: data.strategy_id ?? data.strategyId,
     strategyConfig: data.strategy_config || data.strategyConfig || {},
-    screeningCriteriaId: data.screening_criteria_id ?? data.screeningCriteriaId,
     maxLossPercent: data.max_loss_percent ?? data.maxLossPercent,
     maxLossDollars: data.max_loss_dollars ?? data.maxLossDollars,
     maxGivebackPercent: data.max_giveback_percent ?? data.maxGivebackPercent,
-    maxOrderAgeSeconds: data.max_order_age_seconds ?? data.maxOrderAgeSeconds,
     sizePerTrade: data.size_per_trade ?? data.sizePerTrade ?? 1000.0,
     minBetPercent: data.min_bet_percent ?? data.minBetPercent,
     maxBetPercent: data.max_bet_percent ?? data.maxBetPercent,
     maxTotalExposure: data.max_total_exposure ?? data.maxTotalExposure,
-    tradingStartTime: data.trading_start_time ?? data.tradingStartTime,
-    tradingEndTime: data.trading_end_time ?? data.tradingEndTime,
-    timezone: data.timezone,
     createdAt: new Date(data.created_at || data.createdAt),
     updatedAt: new Date(data.updated_at || data.updatedAt),
   };
@@ -112,21 +107,15 @@ export const fundService = {
         // Strategy configuration
         strategy_id: input.strategyId,
         strategy_config: input.strategyConfig || {},
-        screening_criteria_id: input.screeningCriteriaId,
         // Risk parameters
         max_loss_percent: input.maxLossPercent,
         max_loss_dollars: input.maxLossDollars,
         max_giveback_percent: input.maxGivebackPercent,
-        max_order_age_seconds: input.maxOrderAgeSeconds,
         // Position sizing
         size_per_trade: input.sizePerTrade,
         min_bet_percent: input.minBetPercent,
         max_bet_percent: input.maxBetPercent,
         max_total_exposure: input.maxTotalExposure,
-        // Trading time windows
-        trading_start_time: input.tradingStartTime,
-        trading_end_time: input.tradingEndTime,
-        timezone: input.timezone,
       }),
     });
 
@@ -158,21 +147,15 @@ export const fundService = {
         // Strategy configuration
         strategy_id: input.strategyId,
         strategy_config: input.strategyConfig,
-        screening_criteria_id: input.screeningCriteriaId,
         // Risk parameters
         max_loss_percent: input.maxLossPercent,
         max_loss_dollars: input.maxLossDollars,
         max_giveback_percent: input.maxGivebackPercent,
-        max_order_age_seconds: input.maxOrderAgeSeconds,
         // Position sizing
         size_per_trade: input.sizePerTrade,
         min_bet_percent: input.minBetPercent,
         max_bet_percent: input.maxBetPercent,
         max_total_exposure: input.maxTotalExposure,
-        // Trading time windows
-        trading_start_time: input.tradingStartTime,
-        trading_end_time: input.tradingEndTime,
-        timezone: input.timezone,
       }),
     });
 

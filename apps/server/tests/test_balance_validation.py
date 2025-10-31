@@ -40,10 +40,6 @@ def mock_fund():
     fund.max_loss_percent = None
     fund.max_loss_dollars = None
     fund.max_giveback_percent = None
-    fund.max_order_age_seconds = 60
-    fund.trading_start_time = None
-    fund.trading_end_time = None
-    fund.timezone = None
     return fund
 
 
@@ -52,6 +48,14 @@ def mock_execution_strategy():
     """Create a mock execution strategy."""
     strategy = AsyncMock()
     strategy.position_sizing = AsyncMock(return_value=1000.0)  # Returns $1000 position size
+    strategy.get_trading_window.return_value = None
+    strategy.get_max_order_age_seconds.return_value = None
+    strategy.screen = AsyncMock(return_value=[])
+    strategy.get_monitored_symbols = AsyncMock(return_value=[])
+    strategy.should_enter = AsyncMock(return_value=EntrySignal(should_enter=False))
+    strategy.should_exit = AsyncMock(return_value=ExitSignal(should_exit=False))
+    strategy.should_scale_in = AsyncMock(return_value=None)
+    strategy.should_scale_out = AsyncMock(return_value=None)
     return strategy
 
 
@@ -174,10 +178,6 @@ async def test_sufficient_balance_allows_order(
     fund.max_loss_percent = None
     fund.max_loss_dollars = None
     fund.max_giveback_percent = None
-    fund.max_order_age_seconds = 60
-    fund.trading_start_time = None
-    fund.trading_end_time = None
-    fund.timezone = None
     
     engine = StrategyEngine(
         fund=fund,
@@ -249,10 +249,6 @@ async def test_exact_balance_match_allows_order(
     fund.max_loss_percent = None
     fund.max_loss_dollars = None
     fund.max_giveback_percent = None
-    fund.max_order_age_seconds = 60
-    fund.trading_start_time = None
-    fund.trading_end_time = None
-    fund.timezone = None
     
     engine = StrategyEngine(
         fund=fund,
@@ -313,10 +309,6 @@ async def test_fractional_share_cost_rounds_down(
     fund.max_loss_percent = None
     fund.max_loss_dollars = None
     fund.max_giveback_percent = None
-    fund.max_order_age_seconds = 60
-    fund.trading_start_time = None
-    fund.trading_end_time = None
-    fund.timezone = None
     
     # Mock position sizing to return $200
     mock_execution_strategy.position_sizing = AsyncMock(return_value=200.0)

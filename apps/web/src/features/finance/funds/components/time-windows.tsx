@@ -40,15 +40,22 @@ export function TimeWindows({ fundId, fund, onUpdate }: TimeWindowsProps) {
   const [tradingStartTime, setTradingStartTime] = useState("");
   const [tradingEndTime, setTradingEndTime] = useState("");
   const [timezone, setTimezone] = useState("America/New_York");
+  const [maxOrderAgeSeconds, setMaxOrderAgeSeconds] = useState("60");
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
   useEffect(() => {
     if (fund) {
-      setTradingStartTime(fund.tradingStartTime || "");
-      setTradingEndTime(fund.tradingEndTime || "");
-      setTimezone(fund.timezone || "America/New_York");
+      const config = fund.strategyConfig || {};
+      setTradingStartTime(config.trading_start_time || "");
+      setTradingEndTime(config.trading_end_time || "");
+      setTimezone(config.timezone || "America/New_York");
+      if (config.max_order_age_seconds === null || config.max_order_age_seconds === undefined) {
+        setMaxOrderAgeSeconds("");
+      } else {
+        setMaxOrderAgeSeconds(String(config.max_order_age_seconds));
+      }
     }
   }, [fund]);
 
@@ -58,10 +65,20 @@ export function TimeWindows({ fundId, fund, onUpdate }: TimeWindowsProps) {
       setError(null);
       setSuccess(false);
 
-      await fundService.updateFund(fundId, {
-        tradingStartTime,
-        tradingEndTime,
+      const currentConfig = fund.strategyConfig || {};
+      const updatedConfig = {
+        ...currentConfig,
+        trading_start_time: tradingStartTime || null,
+        trading_end_time: tradingEndTime || null,
         timezone,
+        max_order_age_seconds:
+          maxOrderAgeSeconds.trim() === ""
+            ? null
+            : Number.parseInt(maxOrderAgeSeconds, 10),
+      };
+
+      await fundService.updateFund(fundId, {
+        strategyConfig: updatedConfig,
       });
 
       setSuccess(true);
@@ -92,13 +109,14 @@ export function TimeWindows({ fundId, fund, onUpdate }: TimeWindowsProps) {
 
       <Card>
         <CardHeader>
-          <CardTitle>Trading Time Windows</CardTitle>
+          <CardTitle>Strategy Trading Window</CardTitle>
           <CardDescription>
-            Define when trades can be executed during market hours
+            Define when this strategy is allowed to open new positions and how
+            long pending orders may remain active.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
             <div className="space-y-2">
               <Label htmlFor="tradingStartTime">Trading Start Time</Label>
               <Input
@@ -157,13 +175,30 @@ export function TimeWindows({ fundId, fund, onUpdate }: TimeWindowsProps) {
                 Time zone for trading hours
               </p>
             </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="maxOrderAgeSeconds">Auto-Cancel Pending Orders</Label>
+              <Input
+                id="maxOrderAgeSeconds"
+                type="number"
+                min={0}
+                placeholder="60"
+                value={maxOrderAgeSeconds}
+                onChange={(e) => setMaxOrderAgeSeconds(e.target.value)}
+                disabled={isSaving}
+              />
+              <p className="text-sm text-muted-foreground">
+                Seconds before cancelling stale pending orders. Leave blank to
+                disable auto-cancellation.
+              </p>
+            </div>
           </div>
 
           <div className="rounded-lg bg-blue-50 dark:bg-blue-950/30 p-4">
             <p className="text-sm text-blue-800 dark:text-blue-200">
-              💡 <strong>Tip:</strong> Standard US market hours are 9:30 AM -
-              4:00 PM ET. Adjust these times if you want to trade only during
-              specific intraday windows.
+              💡 <strong>Tip:</strong> These settings are strategy-specific. If
+              you run the same strategy on multiple funds, adjust each fund's
+              configuration as needed.
             </p>
           </div>
         </CardContent>

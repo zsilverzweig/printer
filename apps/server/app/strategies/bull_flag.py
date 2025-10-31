@@ -28,6 +28,7 @@ from app.strategies.base import (
     ScaleSignal,
     MarketData,
     PositionContext,
+    TradingWindow,
 )
 
 logger = logging.getLogger(__name__)
@@ -50,6 +51,26 @@ class BullFlagStrategy(ExecutionStrategy):
         self.scale_in_multiplier = config.get("scale_in_multiplier", 2.0)
         self.min_timeout_minutes = config.get("min_timeout_minutes", 1.0)
         self.max_timeout_minutes = config.get("max_timeout_minutes", 3.0)
+        self.min_relative_volume = config.get("min_relative_volume", 1.5)
+        self.momentum_threshold = config.get("momentum_threshold", 0.0)
+        self.trading_start_time = (
+            config["trading_start_time"]
+            if "trading_start_time" in config
+            else "09:30"
+        )
+        self.trading_end_time = (
+            config["trading_end_time"]
+            if "trading_end_time" in config
+            else "16:00"
+        )
+        self.timezone = (
+            config["timezone"] if "timezone" in config else "America/New_York"
+        )
+        self.max_order_age_seconds = (
+            config["max_order_age_seconds"]
+            if "max_order_age_seconds" in config
+            else 90
+        )
     
     @property
     def id(self) -> str:
@@ -126,8 +147,94 @@ class BullFlagStrategy(ExecutionStrategy):
                     "default": 3,
                     "description": "Maximum time to hold position if not profitable",
                 },
+                "min_relative_volume": {
+                    "type": "number",
+                    "minimum": 1.0,
+                    "maximum": 10.0,
+                    "default": 1.5,
+                    "description": "Minimum relative volume (rv14) required for candidates.",
+                },
+                "momentum_threshold": {
+                    "type": "number",
+                    "minimum": -10,
+                    "maximum": 10,
+                    "default": 0.0,
+                    "description": "Minimum percentage change required to consider momentum positive.",
+                },
+                "trading_start_time": {
+                    "type": ["string", "null"],
+                    "pattern": "^\\d{2}:\\d{2}$",
+                    "default": "09:30",
+                    "description": "Start of trading window (HH:MM). Null disables window.",
+                },
+                "trading_end_time": {
+                    "type": ["string", "null"],
+                    "pattern": "^\\d{2}:\\d{2}$",
+                    "default": "16:00",
+                    "description": "End of trading window (HH:MM). Null disables window.",
+                },
+                "timezone": {
+                    "type": ["string", "null"],
+                    "default": "America/New_York",
+                    "description": "Timezone for trading window (IANA format).",
+                },
+                "max_order_age_seconds": {
+                    "type": ["integer", "null"],
+                    "minimum": 0,
+                    "default": 90,
+                    "description": "Auto-cancel pending orders older than this (seconds).",
+                },
             },
         }
+
+    def get_trading_window(self) -> Optional[TradingWindow]:
+        if self.trading_start_time is None or self.trading_end_time is None:
+            return None
+        return TradingWindow(
+            start_time=self.trading_start_time,
+            end_time=self.trading_end_time,
+            timezone=self.timezone or "America/New_York",
+        )
+
+    def get_max_order_age_seconds(self) -> Optional[int]:
+        return self.max_order_age_seconds
+
+    async def screen(self, screener_results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Filter for momentum and liquidity before deeper strategy evaluation."""
+        filtered: List[Dict[str, Any]] = []
+        for candidate in screener_results:
+            symbol = candidate.get("ticker")
+            if not symbol:
+                continue
+
+            change_pct = candidate.get("change_close")
+            if change_pct is None:
+                change_pct = candidate.get("change_percent", 0)
+
+            if change_pct is None:
+                change_pct = 0
+
+            if change_pct <= self.momentum_threshold:
+                continue
+
+            relative_volume = candidate.get("rv14")
+            if relative_volume is None:
+                relative_volume = candidate.get("relative_volume")
+
+            if relative_volume is None:
+                relative_volume = 0
+
+            if relative_volume < self.min_relative_volume:
+                continue
+
+            filtered.append(candidate)
+
+        logger.info(
+            "Bull flag screening: %s of %s candidates passed",
+            len(filtered),
+            len(screener_results),
+        )
+        return filtered
     
     async def get_monitored_symbols(
         self,
@@ -138,30 +245,10 @@ class BullFlagStrategy(ExecutionStrategy):
         Monitor all candidates with positive momentum.
         
         Bull Flag strategy checks pattern on each symbol, so we monitor
-        all candidates that meet basic criteria. We filter for:
-        - Positive momentum (uptrend)
-        - Adequate relative volume
-        
-        Note: Price/volume filters should already be in ScreeningCriteria.
+        all candidates that pass `screen()`. Additional prioritization logic
+        can be added here if needed.
         """
-        monitored = []
-        
-        for candidate in candidates:
-            symbol = candidate.get("ticker")
-            if not symbol:
-                continue
-            
-            # Check for positive change (uptrend) - strategy-specific requirement
-            change_pct = candidate.get("change_close", 0)
-            if change_pct <= 0:
-                continue
-            
-            # Check for adequate volume - strategy-specific requirement
-            rv = candidate.get("rv14", 0)
-            if rv < 1.5:  # At least 1.5x average volume for patterns
-                continue
-            
-            monitored.append(symbol)
+        monitored = [candidate.get("ticker") for candidate in candidates if candidate.get("ticker")]
         
         logger.info(
             f"Bull flag monitoring: {len(monitored)} of {len(candidates)} candidates "
