@@ -129,6 +129,12 @@ def _auto_register_strategies() -> None:
     except ImportError as e:
         logger.warning(f"Failed to import MonkeyDartsStrategy: {e}")
     
+    try:
+        from app.strategies.failed_equal_highs import FailedEqualHighsBreakoutStrategy
+        register_strategy(FailedEqualHighsBreakoutStrategy)
+    except ImportError as e:
+        logger.warning(f"Failed to import FailedEqualHighsBreakoutStrategy: {e}")
+
     # Future strategies can be added here
     # try:
     #     from app.strategies.chart_analysis import ChartAnalysisStrategy
