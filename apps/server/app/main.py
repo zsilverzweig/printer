@@ -44,7 +44,7 @@ logger = logging.getLogger("app.main")
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
-    logger.info(f"Incoming request: {request.method} {request.url.path} (scope type: {request.scope.get('type', 'unknown')})")
+    logger.debug(f"Incoming request: {request.method} {request.url.path} (scope type: {request.scope.get('type', 'unknown')})")
     start_time = time.time()
     response = await call_next(request)
     process_time = time.time() - start_time
