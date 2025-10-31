@@ -58,6 +58,7 @@ export function calculateTradeMetrics(
     const symbolLots = lots[txn.symbol] ?? (lots[txn.symbol] = []);
     let remainingQuantity = txn.quantity;
     let tradePnl = 0;
+    const initialQuantity = txn.quantity;
 
     while (remainingQuantity > 0 && symbolLots.length > 0) {
       const lot = symbolLots[0];
@@ -72,7 +73,11 @@ export function calculateTradeMetrics(
       }
     }
 
-    tradeResults.push({ pnl: tradePnl });
+    // Only record trades that actually matched some buy lots
+    const quantityMatched = initialQuantity - remainingQuantity;
+    if (quantityMatched > 0) {
+      tradeResults.push({ pnl: tradePnl });
+    }
   });
 
   const pnlValues = tradeResults.map((result) => result.pnl);
