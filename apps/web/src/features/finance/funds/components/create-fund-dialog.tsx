@@ -50,7 +50,6 @@ export function CreateFundDialog({
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [mode, setMode] = useState<FundMode>("sim");
-  const [initialBalance, setInitialBalance] = useState("10000");
   const [selectedIcon, setSelectedIcon] = useState("Wallet");
   const [selectedColor, setSelectedColor] = useState("blue");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -64,12 +63,6 @@ export function CreateFundDialog({
       return;
     }
 
-    const balance = parseFloat(initialBalance);
-    if (isNaN(balance) || balance <= 0) {
-      setError("Initial balance must be a positive number");
-      return;
-    }
-
     try {
       setIsSubmitting(true);
       setError(null);
@@ -78,7 +71,7 @@ export function CreateFundDialog({
         name: name.trim(),
         description: description.trim() || undefined,
         mode,
-        initialBalance: balance,
+        initialBalance: 0, // Always start with 0 balance
         icon: selectedIcon,
         iconColor: selectedColor,
       });
@@ -87,7 +80,6 @@ export function CreateFundDialog({
       setName("");
       setDescription("");
       setMode("sim");
-      setInitialBalance("10000");
       setSelectedIcon("Wallet");
       setSelectedColor("blue");
       onOpenChange(false);
@@ -108,8 +100,8 @@ export function CreateFundDialog({
           <DialogHeader>
             <DialogTitle>Create New Fund</DialogTitle>
             <DialogDescription>
-              Set up a new trading fund with an initial balance. You can
-              configure the strategy and risk parameters after creation.
+              Set up a new trading fund. You can add deposits and configure the
+              strategy and risk parameters after creation.
             </DialogDescription>
           </DialogHeader>
 
@@ -180,26 +172,6 @@ export function CreateFundDialog({
                     linked account.
                   </p>
                 )}
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="initialBalance">Initial Balance *</Label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
-                    $
-                  </span>
-                  <Input
-                    id="initialBalance"
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    placeholder="10000"
-                    value={initialBalance}
-                    onChange={(e) => setInitialBalance(e.target.value)}
-                    disabled={isSubmitting}
-                    className="pl-7"
-                  />
-                </div>
               </div>
             </TabsContent>
 

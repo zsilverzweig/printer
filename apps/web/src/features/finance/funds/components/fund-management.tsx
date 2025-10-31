@@ -6,7 +6,7 @@
 
 "use client";
 
-import { Plus, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "@/lib/components/ui/button";
@@ -63,21 +63,25 @@ export function FundManagement() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Fund Management</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-3xl font-bold tracking-tight">
+              Fund Management
+            </h1>
+            <button
+              onClick={() => setShowCreateDialog(true)}
+              className="text-sm text-muted-foreground hover:text-foreground underline underline-offset-4 transition-colors"
+            >
+              Create Fund
+            </button>
+          </div>
           <p className="text-muted-foreground mt-2">
-            Create and manage trading funds with automated strategies
+            Manage trading funds with automated strategies
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={refresh}>
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Refresh
-          </Button>
-          <Button onClick={() => setShowCreateDialog(true)}>
-            <Plus className="h-4 w-4 mr-2" />
-            Create Fund
-          </Button>
-        </div>
+        <Button variant="outline" size="sm" onClick={refresh}>
+          <RefreshCw className="h-4 w-4 mr-2" />
+          Refresh
+        </Button>
       </div>
 
       {/* Alpaca Account Summary */}

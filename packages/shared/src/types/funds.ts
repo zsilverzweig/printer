@@ -183,7 +183,7 @@ export interface CreateFundInput {
   name: string;
   description?: string;
   mode: FundMode;
-  initialBalance: number;
+  initialBalance?: number; // Optional, defaults to 0 if not provided
 
   // UI customization
   icon?: string;

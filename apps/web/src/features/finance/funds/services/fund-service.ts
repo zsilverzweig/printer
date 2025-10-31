@@ -82,7 +82,7 @@ export const fundService = {
         name: input.name,
         description: input.description,
         mode: input.mode,
-        initial_balance: input.initialBalance,
+        initial_balance: input.initialBalance ?? 0,
         // UI customization
         icon: input.icon,
         icon_color: input.iconColor,
