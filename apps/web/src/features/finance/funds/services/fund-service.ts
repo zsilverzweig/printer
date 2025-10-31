@@ -8,6 +8,7 @@ import type {
   CreateFundInput,
   Fund,
   FundTradingStatus,
+  FundTransaction,
   UpdateFundInput,
 } from "@printer/shared";
 
@@ -67,6 +68,28 @@ export const fundService = {
     }
     const data = await response.json();
     return parseFundDates(data);
+  },
+
+  /**
+   * Get transactions for a fund
+   */
+  async getFundTransactions(fundId: string): Promise<FundTransaction[]> {
+    const response = await fetch(`${API_BASE}/api/funds/${fundId}/transactions`);
+
+    if (!response.ok) {
+      throw new Error("Failed to fetch fund transactions");
+    }
+
+    const data = await response.json();
+    return data.map((txn: any) => ({
+      id: txn.id,
+      symbol: txn.symbol,
+      side: txn.side,
+      quantity: Number(txn.quantity),
+      price: Number(txn.price),
+      totalValue: Number(txn.total_value ?? txn.totalValue),
+      timestamp: txn.timestamp,
+    }));
   },
 
   /**

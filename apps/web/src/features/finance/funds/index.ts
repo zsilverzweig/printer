@@ -18,6 +18,7 @@ export { FundList } from "./components/fund-list";
 export { FundManagement } from "./components/fund-management";
 export { FundOverview } from "./components/fund-overview";
 export { FundPerformanceCard } from "./components/fund-performance-card";
+export { FundPerformanceOverview } from "./components/fund-performance-overview";
 export { FundTransferForm } from "./components/fund-transfer-form";
 export { RiskManagement } from "./components/risk-management";
 export { ScreenerLink } from "./components/screener-link";
