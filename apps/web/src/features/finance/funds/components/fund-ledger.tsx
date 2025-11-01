@@ -57,6 +57,7 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/lib/components/ui/tabs";
+import { useUrlTabs } from "@/lib/hooks/use-url-tabs";
 
 import { FundTransaction, FundTransfer } from "../types";
 import { StrategyEngineEventsModal } from "./strategy-engine-events-modal";
@@ -93,7 +94,10 @@ export function FundLedger({
   const [sorting, setSorting] = useState<SortingState>([
     { id: "timestamp", desc: true },
   ]);
-  const [activeTab, setActiveTab] = useState("all");
+  const [activeTab, setActiveTab] = useUrlTabs({
+    defaultTab: "all",
+    paramName: "ledgerTab",
+  });
   const [eventsModalOpen, setEventsModalOpen] = useState(false);
   const [eventsModalSymbol, setEventsModalSymbol] = useState<
     string | undefined

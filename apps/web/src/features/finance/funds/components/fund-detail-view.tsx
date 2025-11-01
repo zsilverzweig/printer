@@ -17,6 +17,7 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/lib/components/ui/tabs";
+import { useUrlTabs } from "@/lib/hooks/use-url-tabs";
 
 import { useFundDetails } from "../hooks/use-fund-details";
 import { useFundLedger } from "../hooks/use-fund-ledger";
@@ -50,7 +51,7 @@ export function FundDetailView({ fundId }: FundDetailViewProps) {
   } = useFundLedger(fundId);
   const [selectedSetupId, setSelectedSetupId] = useState<string | null>(null);
   const [showSetupEditor, setShowSetupEditor] = useState(false);
-  const [activeTab, setActiveTab] = useState("overview");
+  const [activeTab, setActiveTab] = useUrlTabs({ defaultTab: "overview" });
 
   // Combined refresh function for fund data and ledger
   const refreshAll = useCallback(async () => {

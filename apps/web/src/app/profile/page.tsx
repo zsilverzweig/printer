@@ -15,10 +15,12 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/lib/components/ui/tabs";
+import { useUrlTabs } from "@/lib/hooks/use-url-tabs";
 import { useAuthContext } from "@/lib/providers/auth-provider";
 
 export default function ProfilePage() {
   const { user, isAdmin } = useAuthContext();
+  const [activeTab, setActiveTab] = useUrlTabs({ defaultTab: "connections" });
 
   return (
     <div className="container mx-auto max-w-4xl space-y-6 px-6 py-8">
@@ -83,7 +85,11 @@ export default function ProfilePage() {
       </Card>
 
       {/* Settings Tabs */}
-      <Tabs defaultValue="connections" className="space-y-6">
+      <Tabs
+        value={activeTab}
+        onValueChange={setActiveTab}
+        className="space-y-6"
+      >
         <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="connections">Connections</TabsTrigger>
           <TabsTrigger value="preferences">Preferences</TabsTrigger>

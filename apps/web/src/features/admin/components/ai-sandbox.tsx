@@ -33,6 +33,7 @@ import {
   TabsTrigger,
 } from "@/lib/components/ui/tabs";
 import { Textarea } from "@/lib/components/ui/textarea";
+import { useUrlTabs } from "@/lib/hooks/use-url-tabs";
 
 interface AIResponse {
   success: boolean;
@@ -55,7 +56,7 @@ export function AISandbox() {
   const [portfolioName, setPortfolioName] = useState("Test Portfolio");
   const [loading, setLoading] = useState(false);
   const [response, setResponse] = useState<AIResponse | null>(null);
-  const [activeTab, setActiveTab] = useState("portfolio");
+  const [activeTab, setActiveTab] = useUrlTabs({ defaultTab: "portfolio" });
 
   const testAIService = async () => {
     setLoading(true);

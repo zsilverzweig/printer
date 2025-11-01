@@ -7,7 +7,7 @@ An AI-powered trading strategy that:
 - Uses GPT to determine entry price levels to monitor
 - Waits for price to cross entry levels, then places MARKET orders
 - Long-only positions with automated stop-loss exits
-- Logs all monitored entry levels on each tick
+- Logs monitored entry levels only when they change
 """
 
 import asyncio
@@ -134,6 +134,9 @@ class GPTCandlestickStrategy(ExecutionStrategy):
         
         # Cache for trade theses (symbol -> GPTTradeThesis)
         self._thesis_cache: Dict[str, Optional[GPTTradeThesis]] = {}
+        
+        # Track last logged state to avoid duplicate logging
+        self._last_logged_levels: Dict[str, str] = {}
         
         # Note: _interval_tracker, _task_manager from base class
         # replaces _last_evaluation, _news_fetch_tasks, _thesis_tasks
@@ -275,23 +278,33 @@ class GPTCandlestickStrategy(ExecutionStrategy):
         Log all currently monitored entry levels.
         
         Called on each tick to show what levels we're watching.
+        Only logs when levels have changed to avoid clutter.
         """
         if not self._monitored_levels:
+            # Clear last logged state if no levels
+            if self._last_logged_levels:
+                self._last_logged_levels.clear()
             return
         
         level_info = []
+        current_state = {}
         for symbol, signal in self._monitored_levels.items():
             current_price = self._last_price.get(symbol, 0.0)
             distance_pct = ((signal.entry_price - current_price) / current_price * 100) if current_price > 0 else 0
-            level_info.append(
+            info = (
                 f"{symbol}: entry=${signal.entry_price:.2f} (current=${current_price:.2f}, "
                 f"{'↑' if distance_pct > 0 else '↓'}{abs(distance_pct):.1f}%), "
                 f"stop=${signal.stop_loss:.2f}, conf={signal.confidence:.2f}"
             )
+            level_info.append(info)
+            current_state[symbol] = info
         
-        logger.info(f"📊 Monitored Entry Levels ({len(self._monitored_levels)}):")
-        for info in level_info:
-            logger.info(f"   {info}")
+        # Only log if state has changed
+        if current_state != self._last_logged_levels:
+            logger.info(f"📊 Monitored Entry Levels ({len(self._monitored_levels)}):")
+            for info in level_info:
+                logger.info(f"   {info}")
+            self._last_logged_levels = current_state
     
     def _format_candlesticks(self, bars: List[Dict[str, Any]], timeframe: str) -> str:
         """
@@ -367,6 +380,11 @@ If you see a valid DAY TRADE setup:
 - Provide an entry price (where we buy if price crosses it)
 - Set stop loss to protect against adverse moves
 - Confidence should reflect likelihood of intraday success
+  * Rank confidence on a scale from A+ setup (0.9-1.0) to monkey throwing darts (0.0-0.3)
+  * 0.8-1.0: High-probability setup with multiple confirming factors
+  * 0.6-0.8: Decent setup with some supporting evidence
+  * 0.4-0.6: Mediocre setup, coin flip odds
+  * 0.0-0.4: Weak/speculative setup, avoid unless exceptional
 
 Respond ONLY with a JSON object in this exact format:
 {{

@@ -22,6 +22,7 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/lib/components/ui/tabs";
+import { useUrlTabs } from "@/lib/hooks/use-url-tabs";
 
 import { useFunds } from "../hooks/use-funds";
 
@@ -33,9 +34,7 @@ import { FundPerformanceOverview } from "./fund-performance-overview";
 export function FundManagement() {
   const { funds, loading, error, createFund, refresh } = useFunds();
   const [showCreateDialog, setShowCreateDialog] = useState(false);
-  const [activeTab, setActiveTab] = useState<"overview" | "performance">(
-    "overview"
-  );
+  const [activeTab, setActiveTab] = useUrlTabs({ defaultTab: "overview" });
 
   const simFunds = funds.filter((f) => f.mode === "sim");
   const realFunds = funds.filter((f) => f.mode === "real");

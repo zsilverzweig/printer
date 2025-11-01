@@ -14,6 +14,7 @@ export interface TradeMetrics {
   averageWin: number;
   averageLoss: number;
   standardDeviation: number;
+  totalPnl: number;
 }
 
 interface TradeResult {
@@ -35,6 +36,7 @@ export function calculateTradeMetrics(
       averageWin: 0,
       averageLoss: 0,
       standardDeviation: 0,
+      totalPnl: 0,
     };
   }
 
@@ -99,6 +101,7 @@ export function calculateTradeMetrics(
       : 0;
 
   const standardDeviation = calculateStandardDeviation(pnlValues);
+  const totalPnl = pnlValues.reduce((sum, pnl) => sum + pnl, 0);
 
   return {
     totalTrades,
@@ -108,6 +111,7 @@ export function calculateTradeMetrics(
     averageWin,
     averageLoss,
     standardDeviation,
+    totalPnl,
   };
 }
 

@@ -13,6 +13,7 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/lib/components/ui/tabs";
+import { useUrlTabs } from "@/lib/hooks/use-url-tabs";
 
 interface TestResult {
   success: boolean;
@@ -24,6 +25,7 @@ interface TestResult {
 export default function AlpacaDebugPage() {
   const [results, setResults] = useState<Record<string, TestResult>>({});
   const [loading, setLoading] = useState<Record<string, boolean>>({});
+  const [activeTab, setActiveTab] = useUrlTabs({ defaultTab: "environment" });
 
   const runTest = async (
     testName: string,
@@ -295,7 +297,11 @@ export default function AlpacaDebugPage() {
         </p>
       </div>
 
-      <Tabs defaultValue="environment" className="space-y-6">
+      <Tabs
+        value={activeTab}
+        onValueChange={setActiveTab}
+        className="space-y-6"
+      >
         <TabsList className="grid w-full grid-cols-8">
           <TabsTrigger value="environment">Environment</TabsTrigger>
           <TabsTrigger value="urls">URL Generation</TabsTrigger>

@@ -6,7 +6,7 @@
 
 "use client";
 
-import { Loader2, RefreshCw } from "lucide-react";
+import { Copy, Loader2, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { Button } from "@/lib/components/ui/button";
@@ -26,13 +26,12 @@ import {
   TableRow,
 } from "@/lib/components/ui/table";
 
-import { Fund, FundTransaction } from "../types";
 import { fundService } from "../services/fund-service";
+import { Fund, FundTransaction } from "../types";
 import { formatCurrency } from "../utils/ledger-calculations";
-import {
-  calculateTradeMetrics,
-  TradeMetrics,
-} from "../utils/trade-metrics";
+import { calculateTradeMetrics, TradeMetrics } from "../utils/trade-metrics";
+
+import { TradeDistributionChart } from "./trade-distribution-chart";
 
 interface FundPerformanceOverviewProps {
   funds: Fund[];
@@ -43,6 +42,7 @@ interface FundPerformanceSummary {
   fundId: string;
   fundName: string;
   metrics: TradeMetrics;
+  transactions: FundTransaction[];
 }
 
 export function FundPerformanceOverview({
@@ -55,6 +55,7 @@ export function FundPerformanceOverview({
   const [portfolioMetrics, setPortfolioMetrics] = useState<TradeMetrics | null>(
     null
   );
+  const [copied, setCopied] = useState(false);
 
   const hasFunds = funds.length > 0;
 
@@ -82,6 +83,7 @@ export function FundPerformanceOverview({
             fundId: fund.id,
             fundName: fund.name,
             metrics,
+            transactions,
           } satisfies FundPerformanceSummary;
         })
       );
@@ -105,6 +107,32 @@ export function FundPerformanceOverview({
       void loadMetrics();
     }
   }, [isActive, loadMetrics]);
+
+  const handleCopyPortfolioSummary = useCallback(async () => {
+    if (!portfolioMetrics) return;
+
+    const formatPnl = (value: number) => {
+      const formatted = formatCurrency(value);
+      return value >= 0 ? `+${formatted}` : formatted;
+    };
+
+    const text = `Portfolio Performance Summary
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Total P&L: ${formatPnl(portfolioMetrics.totalPnl)}
+Total Trades: ${portfolioMetrics.totalTrades}
+Win Rate: ${portfolioMetrics.winRate.toFixed(1)}%
+Average Win: ${formatCurrency(portfolioMetrics.averageWin)}
+Average Loss: ${formatCurrency(portfolioMetrics.averageLoss)}`;
+
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error("Failed to copy:", err);
+    }
+  }, [portfolioMetrics]);
 
   return (
     <Card>
@@ -160,6 +188,7 @@ export function FundPerformanceOverview({
                   <TableRow>
                     <TableHead>Fund</TableHead>
                     <TableHead className="text-right"># Trades</TableHead>
+                    <TableHead className="text-right">Total P&L</TableHead>
                     <TableHead className="text-right">% Winners</TableHead>
                     <TableHead className="text-right">Avg Win</TableHead>
                     <TableHead className="text-right">Avg Loss</TableHead>
@@ -174,6 +203,17 @@ export function FundPerformanceOverview({
                       </TableCell>
                       <TableCell className="text-right">
                         {summary.metrics.totalTrades}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <span
+                          className={
+                            summary.metrics.totalPnl >= 0
+                              ? "text-green-600"
+                              : "text-red-600"
+                          }
+                        >
+                          {formatCurrency(summary.metrics.totalPnl)}
+                        </span>
                       </TableCell>
                       <TableCell className="text-right">
                         {summary.metrics.winRate.toFixed(1)}%
@@ -193,10 +233,48 @@ export function FundPerformanceOverview({
               </Table>
             </div>
 
+            {/* Distribution Chart */}
+            <div className="mt-6">
+              <div className="mb-3">
+                <h3 className="text-sm font-semibold">
+                  Trade Return Distribution
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                  Histogram of individual trade P&L across all funds
+                </p>
+              </div>
+              <TradeDistributionChart summaries={summaries} height={320} />
+            </div>
+
             {portfolioMetrics && (
               <div className="rounded-md border bg-muted/50 p-4 text-sm">
-                <div className="font-semibold mb-2">Portfolio Summary</div>
-                <div className="grid gap-2 md:grid-cols-4">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="font-semibold">Portfolio Summary</div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleCopyPortfolioSummary}
+                    className="h-7 text-xs"
+                  >
+                    <Copy className="h-3 w-3 mr-1" />
+                    {copied ? "Copied!" : "Copy"}
+                  </Button>
+                </div>
+                <div className="grid gap-2 md:grid-cols-5">
+                  <div>
+                    <div className="text-xs text-muted-foreground">
+                      Total P&L
+                    </div>
+                    <div
+                      className={`font-medium ${
+                        portfolioMetrics.totalPnl >= 0
+                          ? "text-green-600"
+                          : "text-red-600"
+                      }`}
+                    >
+                      {formatCurrency(portfolioMetrics.totalPnl)}
+                    </div>
+                  </div>
                   <div>
                     <div className="text-xs text-muted-foreground">Trades</div>
                     <div className="font-medium">
@@ -204,7 +282,9 @@ export function FundPerformanceOverview({
                     </div>
                   </div>
                   <div>
-                    <div className="text-xs text-muted-foreground">Win Rate</div>
+                    <div className="text-xs text-muted-foreground">
+                      Win Rate
+                    </div>
                     <div className="font-medium">
                       {portfolioMetrics.winRate.toFixed(1)}%
                     </div>
