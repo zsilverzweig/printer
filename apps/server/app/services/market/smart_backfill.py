@@ -366,6 +366,113 @@ class SmartBackfillService:
         finally:
             self.gaps_processed += 1
     
+    async def backfill_gap_batch(self, gap: DataGap, batch_start: date, batch_end: date) -> bool:
+        """
+        Backfill a batch of consecutive dates for a symbol (up to 30 days in one API call).
+        
+        Args:
+            gap: DataGap representing the batch (symbol and gap_type)
+            batch_start: Start date of the batch
+            batch_end: End date of the batch (inclusive)
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            loading_code = f"{MATRIX_CYAN}[⋯⋯⋯⋯]{RESET}"
+            days_count = (batch_end - batch_start).days + 1
+            logger.info(f"{loading_code} Backfilling batch: {gap.symbol} for {days_count} days ({batch_start} to {batch_end})")
+            
+            # Verify symbol is valid
+            async with get_async_session() as session:
+                from sqlalchemy import text
+                result = await session.execute(
+                    text("""
+                        SELECT symbol, type
+                        FROM ticker_details 
+                        WHERE symbol = :symbol
+                          AND type IN ('CS', 'ETF')
+                          AND active = true
+                    """),
+                    {"symbol": gap.symbol}
+                )
+                row = result.first()
+                if not row:
+                    skip_code = f"{MATRIX_DIM}[✗✗✗✗]{RESET}"
+                    logger.info(f"{skip_code} Skipping {gap.symbol}: not an active stock/ETF")
+                    return True
+            
+            # Calculate date range for API call
+            start_date = datetime.combine(batch_start, datetime.min.time()).replace(tzinfo=timezone.utc)
+            end_date = datetime.combine(batch_end, datetime.min.time()).replace(tzinfo=timezone.utc) + timedelta(days=1)
+            
+            # Get bar counts before backfill
+            async with get_async_session() as session:
+                from sqlalchemy import select
+                from app.models.market_data import SymbolDateValidation
+                
+                result = await session.execute(
+                    select(SymbolDateValidation).where(
+                        SymbolDateValidation.symbol == gap.symbol,
+                        SymbolDateValidation.date >= batch_start,
+                        SymbolDateValidation.date <= batch_end
+                    )
+                )
+                validations_before = {v.date: v.bar_count for v in result.scalars().all()}
+            
+            # Create semaphore for rate limiting
+            semaphore = asyncio.Semaphore(self.concurrent_requests)
+            
+            # Fetch data for the entire batch range in one API call
+            bars_inserted = await _load_symbol_data(
+                client=self.rest_client,
+                symbol=gap.symbol,
+                start_date=start_date,
+                end_date=end_date,
+                semaphore=semaphore
+            )
+            
+            # Check if any dates improved
+            improved_count = 0
+            total_bars_after = 0
+            async with get_async_session() as session:
+                result = await session.execute(
+                    select(SymbolDateValidation).where(
+                        SymbolDateValidation.symbol == gap.symbol,
+                        SymbolDateValidation.date >= batch_start,
+                        SymbolDateValidation.date <= batch_end
+                    )
+                )
+                for validation in result.scalars().all():
+                    bar_count_before = validations_before.get(validation.date, 0)
+                    if validation.bar_count > bar_count_before:
+                        improved_count += 1
+                    total_bars_after += validation.bar_count
+            
+            # Generate Matrix status code
+            matrix_code = _encode_matrix_status(
+                bar_count=total_bars_after,
+                improved=improved_count > 0,
+                symbol=gap.symbol,
+                gap_type=gap.gap_type,
+                is_etf=False
+            )
+            
+            if improved_count > 0:
+                logger.info(f"{matrix_code} Backfilled batch {gap.symbol}: {improved_count}/{days_count} days improved (+{bars_inserted:,} bars)")
+            else:
+                logger.info(f"{matrix_code} Batch {gap.symbol}: Polygon returned 0 bars for {days_count} days")
+            
+            self.gaps_succeeded += 1
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to backfill batch {gap.symbol} ({batch_start} to {batch_end}): {e}", exc_info=True)
+            self.gaps_failed += 1
+            return False
+        finally:
+            self.gaps_processed += 1
+    
     async def _backfill_loop(self) -> None:
         """
         Main backfill loop.
@@ -393,12 +500,74 @@ class SmartBackfillService:
                 
                 logger.info(f"Processing {len(gaps)} gaps from queue")
                 
-                # Process gaps (highest priority first)
+                # Group gaps by symbol and batch consecutive dates together (up to 30 days per API call)
+                gaps_by_symbol: Dict[str, List[DataGap]] = {}
                 for gap in gaps:
+                    if gap.symbol == "*":
+                        # Wildcard gaps handled separately
+                        continue
+                    if gap.symbol not in gaps_by_symbol:
+                        gaps_by_symbol[gap.symbol] = []
+                    gaps_by_symbol[gap.symbol].append(gap)
+                
+                # Process wildcard gaps first (affect all symbols)
+                for gap in gaps:
+                    if gap.symbol == "*":
+                        if self.should_stop:
+                            break
+                        await self.backfill_gap(gap)
+                
+                # Process symbol-specific gaps in batches
+                for symbol, symbol_gaps in gaps_by_symbol.items():
                     if self.should_stop:
                         break
                     
-                    await self.backfill_gap(gap)
+                    # Sort gaps by date
+                    symbol_gaps.sort(key=lambda g: g.date)
+                    
+                    if not symbol_gaps:
+                        continue
+                    
+                    # Calculate date range: always fetch at least 30 days back from today
+                    today = datetime.now(timezone.utc).date()
+                    earliest_gap = min(g.date for g in symbol_gaps)
+                    latest_gap = max(g.date for g in symbol_gaps)
+                    
+                    # Ensure we fetch at least 30 days from today
+                    # Start from 30 days ago OR earliest gap, whichever is earlier
+                    target_start = min(earliest_gap, today - timedelta(days=30))
+                    
+                    # End at today (or latest gap if that's later, but shouldn't happen)
+                    target_end = max(latest_gap, today)
+                    
+                    # API supports up to 30 days, so split into 30-day chunks if needed
+                    batches = []
+                    current_start = target_start
+                    
+                    while current_start <= target_end:
+                        # Calculate end date (30 days from start, or target_end, whichever is earlier)
+                        current_end = min(current_start + timedelta(days=30), target_end)
+                        
+                        # Create a synthetic gap for this batch
+                        batch_gap = DataGap(
+                            symbol=symbol,
+                            date=current_start,
+                            gap_type=symbol_gaps[0].gap_type,
+                            priority=symbol_gaps[0].priority
+                        )
+                        
+                        batches.append((batch_gap, current_start, current_end))
+                        
+                        # Move to next batch (start after current_end)
+                        current_start = current_end + timedelta(days=1)
+                    
+                    # Process each batch
+                    for batch_gap, batch_start, batch_end in batches:
+                        if self.should_stop:
+                            break
+                        
+                        # Backfill the entire batch range at once
+                        await self.backfill_gap_batch(batch_gap, batch_start, batch_end)
                 
                 # After processing, trigger another gap detection
                 if not self.should_stop:

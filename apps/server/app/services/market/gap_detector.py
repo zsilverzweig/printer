@@ -19,6 +19,27 @@ from app.services.core.database import get_async_session
 logger = logging.getLogger("app.gap_detector")
 
 
+def _is_weekend(d: date) -> bool:
+    """Check if a date is a weekend (Saturday or Sunday)."""
+    return d.weekday() >= 5  # Saturday = 5, Sunday = 6
+
+
+def _next_trading_day(d: date) -> date:
+    """Get the next trading day (skip weekends)."""
+    next_day = d + timedelta(days=1)
+    while _is_weekend(next_day):
+        next_day += timedelta(days=1)
+    return next_day
+
+
+def _prev_trading_day(d: date) -> date:
+    """Get the previous trading day (skip weekends)."""
+    prev_day = d - timedelta(days=1)
+    while _is_weekend(prev_day):
+        prev_day -= timedelta(days=1)
+    return prev_day
+
+
 class DataGap:
     """Represents a gap in market data."""
     
@@ -214,6 +235,9 @@ class GapDetectorService:
             # Create a gap for each missing symbol for yesterday (to trigger backfill)
             # The backfill will load the entire lookback period
             yesterday = today - timedelta(days=1)
+            # Skip weekends - use last trading day instead
+            if _is_weekend(yesterday):
+                yesterday = _prev_trading_day(yesterday)
             gaps = [
                 DataGap(
                     symbol=symbol,
@@ -278,11 +302,16 @@ class GapDetectorService:
                     min_date = min(validated_dates)
                     max_date = max(validated_dates)
                     
-                    # Generate expected date range (ALL days - no weekend skip)
-                    # CRITICAL: Only add gaps for dates that are NOT already validated
-                    current_date = min_date
-                    while current_date <= max_date:
-                        if current_date not in validated_dates:  # This is the key check!
+                    # Generate expected date range from cutoff_date to today
+                    # This ensures we fill gaps BEFORE the existing data, not just within it
+                    today = datetime.now(timezone.utc).date()
+                    range_start = max(cutoff_date, min_date)  # Start from cutoff or min_date, whichever is later
+                    range_end = max_date
+                    
+                    # Check for gaps within the existing range
+                    current_date = range_start
+                    while current_date <= range_end:
+                        if not _is_weekend(current_date) and current_date not in validated_dates:  # Skip weekends
                             gaps.append(DataGap(
                                 symbol=symbol,
                                 date=current_date,
@@ -290,6 +319,33 @@ class GapDetectorService:
                                 priority=2  # Medium priority
                             ))
                         current_date += timedelta(days=1)
+                    
+                    # CRITICAL FIX: Also check for gaps BEFORE the existing data
+                    # If we have data starting after cutoff_date, we need to backfill earlier dates
+                    if min_date > cutoff_date:
+                        current_date = cutoff_date
+                        while current_date < min_date:
+                            if not _is_weekend(current_date) and current_date not in validated_dates:  # Skip weekends
+                                gaps.append(DataGap(
+                                    symbol=symbol,
+                                    date=current_date,
+                                    gap_type='missing_date',
+                                    priority=2  # Medium priority
+                                ))
+                            current_date += timedelta(days=1)
+                    
+                    # Also check for gaps AFTER the existing data (up to today)
+                    if max_date < today:
+                        current_date = max_date + timedelta(days=1)
+                        while current_date <= today:
+                            if not _is_weekend(current_date) and current_date not in validated_dates:  # Skip weekends
+                                gaps.append(DataGap(
+                                    symbol=symbol,
+                                    date=current_date,
+                                    gap_type='missing_date',
+                                    priority=2  # Medium priority
+                                ))
+                            current_date += timedelta(days=1)
             
             self.logger.debug(f"Found {len(gaps)} missing validation dates")
             return gaps
@@ -320,13 +376,13 @@ class GapDetectorService:
             
             validated_dates = {row[0] for row in result}
             
-            # Generate expected date range (ALL days - no weekend skip)
+            # Generate expected date range (skip weekends)
             gaps = []
             current_date = cutoff_date
             today = datetime.now(timezone.utc).date()
             
             while current_date < today:
-                if current_date not in validated_dates:
+                if not _is_weekend(current_date) and current_date not in validated_dates:  # Skip weekends
                     # Any day with no validation records - high priority
                     gaps.append(DataGap(
                         symbol="*",  # Affects all symbols

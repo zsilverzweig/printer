@@ -55,9 +55,10 @@ async def startup_init() -> None:
     
     # Initialize gap detector
     from app.services.market.gap_detector import initialize_gap_detector
-    gap_detector = initialize_gap_detector(lookback_days=30)
+    lookback_days = int(os.getenv("MARKET_DATA_LOOKBACK_DAYS", "30"))
+    gap_detector = initialize_gap_detector(lookback_days=lookback_days)
     # Run initial gap detection
-    logger.info("Running initial gap detection...")
+    logger.info(f"Running initial gap detection (lookback: {lookback_days} days)...")
     await gap_detector.detect_gaps()
     
     # Initialize real-time ingestion (if enabled)

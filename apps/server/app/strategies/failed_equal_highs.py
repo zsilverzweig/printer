@@ -34,7 +34,7 @@ from app.strategies.base import (
     PositionContext,
     ScaleSignal,
 )
-from app.services.ai.technical_analysis import (
+from app.lib.technical_analysis import (
     SwingPoint,
     find_swing_points,
     find_equal_levels,
