@@ -88,11 +88,14 @@ def extract_snapshot_data(snapshot: Any) -> Dict[str, Any]:
     if isinstance(snapshot, dict):
         result["ticker"] = snapshot.get("ticker") or snapshot.get("T")
         
-        last_trade = snapshot.get("lastTrade") or snapshot.get("last_trade") or {}
-        result["price"] = (
-            (last_trade.get("price") if isinstance(last_trade, dict) else None) or
-            (last_trade.get("p") if isinstance(last_trade, dict) else None)
-        )
+        # Try direct price field first (from TimescaleDB snapshots), then lastTrade
+        result["price"] = snapshot.get("price")
+        if result["price"] is None:
+            last_trade = snapshot.get("lastTrade") or snapshot.get("last_trade") or {}
+            result["price"] = (
+                (last_trade.get("price") if isinstance(last_trade, dict) else None) or
+                (last_trade.get("p") if isinstance(last_trade, dict) else None)
+            )
         
         day = snapshot.get("day") or {}
         result["volume"] = (

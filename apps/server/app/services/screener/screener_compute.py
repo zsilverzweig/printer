@@ -98,11 +98,11 @@ class ScreenerCompute:
                 day_data = snapshot["day"]
                 if isinstance(day_data, dict):
                     snapshot_ohlc_map[ticker] = {
-                        "o": float(day_data.get("o", 0.0)),
-                        "h": float(day_data.get("h", 0.0)),
-                        "l": float(day_data.get("l", 0.0)),
-                        "c": float(day_data.get("c", 0.0)),
-                        "v": float(day_data.get("v", 0.0)),
+                        "o": float(day_data.get("o") or 0.0),
+                        "h": float(day_data.get("h") or 0.0),
+                        "l": float(day_data.get("l") or 0.0),
+                        "c": float(day_data.get("c") or 0.0),
+                        "v": float(day_data.get("v") or 0.0),
                     }
         
         # Process stocks - use snapshot data directly if last_day_ohlc is empty

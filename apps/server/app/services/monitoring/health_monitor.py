@@ -61,12 +61,18 @@ class BaseHealthCheck(ABC):
 
 class MarketDataHealthCheck(BaseHealthCheck):
     """
-    Health check for market data ingestion and completeness.
+    Health check for market data loading and validation coverage.
+    
+    Philosophy: We check that we're ATTEMPTING to load data for all symbols
+    and dates, not that the data is complete (which may not exist on Polygon).
     
     Checks:
-    - Data freshness (is recent data being ingested?)
-    - Data gaps (are there missing dates?)
-    - Validation coverage (how many symbols have validated data?)
+    - Data freshness: Is recent data being ingested?
+    - Validation coverage: Have we attempted to load data for most active symbols?
+    - Missing validations: Are there symbols/dates we haven't tried to load yet?
+    
+    Note: We do NOT flag incomplete validations (is_complete=FALSE) as problems.
+    If we tried to load data and got incomplete results, that's all Polygon has.
     """
     
     def __init__(self, lookback_days: int = 30):
@@ -100,7 +106,7 @@ class MarketDataHealthCheck(BaseHealthCheck):
                 }
                 
                 if all_healthy:
-                    message = f"Market data healthy: {validation_check['complete_count']} symbols with complete data"
+                    message = f"Market data healthy: {validation_check['validated_symbols']} symbols validated, {validation_check['coverage_pct']:.1f}% coverage"
                 else:
                     issues = []
                     if not freshness_check["is_healthy"]:
@@ -108,7 +114,7 @@ class MarketDataHealthCheck(BaseHealthCheck):
                     if not validation_check["is_healthy"]:
                         issues.append("low validation coverage")
                     if not gap_check["is_healthy"]:
-                        issues.append("data gaps detected")
+                        issues.append("missing validation records")
                     message = f"Market data issues: {', '.join(issues)}"
                 
                 return HealthCheckResult(
@@ -166,16 +172,20 @@ class MarketDataHealthCheck(BaseHealthCheck):
             }
     
     async def _check_validation_coverage(self, session: AsyncSession) -> Dict:
-        """Check how many symbols have validated complete data."""
+        """
+        Check how many symbols have validation records (attempted loads).
+        
+        This checks that we're TRYING to load data for symbols, not whether
+        the data is complete (which may not be available from Polygon).
+        """
         try:
             cutoff_date = datetime.now(timezone.utc).date() - timedelta(days=self.lookback_days)
             
-            # Count symbols with complete validation in lookback period
+            # Count symbols with ANY validation records in lookback period
             result = await session.execute(
                 text("""
                     SELECT 
-                        COUNT(DISTINCT symbol) as total_symbols,
-                        COUNT(DISTINCT CASE WHEN is_complete THEN symbol END) as complete_symbols,
+                        COUNT(DISTINCT symbol) as validated_symbols,
                         COUNT(*) as total_validations,
                         COUNT(CASE WHEN is_complete THEN 1 END) as complete_validations
                     FROM symbol_date_validation
@@ -189,25 +199,37 @@ class MarketDataHealthCheck(BaseHealthCheck):
                 return {
                     "is_healthy": False,
                     "message": "No validation data found",
-                    "total_symbols": 0,
-                    "complete_count": 0
+                    "validated_symbols": 0,
+                    "total_validations": 0
                 }
             
-            total_symbols = row[0] or 0
-            complete_symbols = row[1] or 0
-            total_validations = row[2] or 0
-            complete_validations = row[3] or 0
+            validated_symbols = row[0] or 0
+            total_validations = row[1] or 0
+            complete_validations = row[2] or 0
             
-            # Healthy if at least 50% of symbols have some complete data
-            is_healthy = total_symbols > 0 and (complete_symbols / total_symbols) >= 0.5
+            # Count total active symbols in ticker_details
+            result = await session.execute(
+                text("""
+                    SELECT COUNT(*)
+                    FROM ticker_details
+                    WHERE type IN ('CS', 'ETF')
+                      AND active = true
+                """)
+            )
+            total_active_symbols = result.scalar() or 0
+            
+            # Healthy if we have validation records for at least 90% of active symbols
+            coverage_pct = (validated_symbols / total_active_symbols * 100) if total_active_symbols > 0 else 0
+            is_healthy = coverage_pct >= 90.0
             
             completion_rate = (complete_validations / total_validations * 100) if total_validations > 0 else 0
             
             return {
                 "is_healthy": is_healthy,
-                "message": f"{complete_symbols}/{total_symbols} symbols with complete data ({completion_rate:.1f}% completion)",
-                "total_symbols": total_symbols,
-                "complete_count": complete_symbols,
+                "message": f"{validated_symbols}/{total_active_symbols} active symbols validated ({coverage_pct:.1f}% coverage, {completion_rate:.1f}% complete)",
+                "validated_symbols": validated_symbols,
+                "total_active_symbols": total_active_symbols,
+                "coverage_pct": coverage_pct,
                 "total_validations": total_validations,
                 "complete_validations": complete_validations,
                 "completion_rate": completion_rate,
@@ -222,46 +244,84 @@ class MarketDataHealthCheck(BaseHealthCheck):
             }
     
     async def _check_for_gaps(self, session: AsyncSession) -> Dict:
-        """Check for missing dates in validation table."""
+        """
+        Check for missing validation records (dates we haven't tried to load).
+        
+        NOTE: We intentionally DO NOT flag incomplete validations (is_complete=FALSE)
+        as problems. If we tried to load data and got incomplete results, that's all
+        Polygon has for that symbol/date. No point retrying or flagging as unhealthy.
+        
+        We only flag:
+        1. Symbols with NO validation records at all
+        2. Trading days with missing validation records
+        """
         try:
             cutoff_date = datetime.now(timezone.utc).date() - timedelta(days=self.lookback_days)
+            today = datetime.now(timezone.utc).date()
             
-            # Find symbols with incomplete data in recent dates
+            # Check 1: Find active symbols with NO validation records at all
             result = await session.execute(
                 text("""
-                    SELECT 
-                        symbol,
-                        COUNT(*) as incomplete_days
+                    SELECT td.symbol
+                    FROM ticker_details td
+                    WHERE td.type IN ('CS', 'ETF')
+                      AND td.active = true
+                      AND td.symbol NOT IN (
+                          SELECT DISTINCT symbol 
+                          FROM symbol_date_validation
+                      )
+                    LIMIT 100
+                """)
+            )
+            
+            missing_symbols = [row[0] for row in result]
+            
+            # Check 2: Find recent trading days with no validation records
+            # (Market closed on weekends, so only check weekdays)
+            result = await session.execute(
+                text("""
+                    SELECT DISTINCT date
                     FROM symbol_date_validation
                     WHERE date >= :cutoff_date
-                      AND is_complete = FALSE
-                    GROUP BY symbol
-                    HAVING COUNT(*) > 5
-                    ORDER BY incomplete_days DESC
-                    LIMIT 10
+                    ORDER BY date DESC
                 """),
                 {"cutoff_date": cutoff_date}
             )
             
-            gaps = []
-            for row in result:
-                gaps.append({
-                    "symbol": row[0],
-                    "incomplete_days": row[1]
-                })
+            validated_dates = {row[0] for row in result}
             
-            is_healthy = len(gaps) < 10  # Arbitrary threshold
+            # Generate expected trading days (exclude weekends)
+            missing_dates = []
+            current_date = cutoff_date
+            while current_date < today:
+                # Skip weekends (Monday=0, Sunday=6)
+                if current_date.weekday() < 5 and current_date not in validated_dates:
+                    missing_dates.append(current_date)
+                current_date += timedelta(days=1)
             
-            if gaps:
-                gap_symbols = [g["symbol"] for g in gaps[:3]]
-                message = f"{len(gaps)} symbols with significant gaps (e.g., {', '.join(gap_symbols)})"
+            # Overall health assessment
+            total_issues = len(missing_symbols) + len(missing_dates)
+            is_healthy = total_issues == 0
+            
+            # Build message
+            issues = []
+            if missing_symbols:
+                issues.append(f"{len(missing_symbols)} symbols never loaded")
+            if missing_dates:
+                issues.append(f"{len(missing_dates)} dates not validated")
+            
+            if issues:
+                message = "Missing validation records: " + ", ".join(issues)
             else:
-                message = "No significant data gaps detected"
+                message = "All expected validation records present"
             
             return {
                 "is_healthy": is_healthy,
                 "message": message,
-                "gaps": gaps
+                "missing_symbols_count": len(missing_symbols),
+                "missing_symbols": missing_symbols[:10],  # First 10 for details
+                "missing_dates_count": len(missing_dates),
+                "missing_dates": [d.isoformat() for d in missing_dates[:10]]  # First 10 for details
             }
             
         except Exception as e:
