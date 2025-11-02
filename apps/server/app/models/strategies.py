@@ -69,6 +69,12 @@ class Fund(Base):
     trading_end_time: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)    # e.g., "16:00"
     timezone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)            # e.g., "America/New_York"
     
+    # AI cost tracking
+    total_ai_cost: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    ai_cost_mtd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)  # Month-to-date
+    ai_cost_ytd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)  # Year-to-date
+    last_ai_cost_reset: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    
     created_at: Mapped[datetime] = mapped_column(
         DateTime, 
         nullable=False, 
@@ -210,6 +216,42 @@ class Transfer(Base):
     transfer_type: Mapped[str] = mapped_column(String(20), nullable=False)  # deposit/withdrawal
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True, default=datetime.utcnow)
+    
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, 
+        nullable=False, 
+        default=datetime.utcnow
+    )
+
+
+class AICost(Base):
+    """
+    AI service cost tracking.
+    
+    Records detailed usage of AI services (GPT calls) by funds for cost monitoring
+    and performance impact analysis.
+    """
+    __tablename__ = "ai_costs"
+    
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    fund_id: Mapped[str] = mapped_column(String(36), ForeignKey("funds.id"), nullable=False, index=True)
+    
+    # Context
+    symbol: Mapped[Optional[str]] = mapped_column(String(10), nullable=True, index=True)
+    operation: Mapped[str] = mapped_column(String(50), nullable=False)  # e.g., "entry_analysis", "stop_update"
+    
+    # Model and usage
+    model: Mapped[str] = mapped_column(String(50), nullable=False)  # e.g., "gpt-4o-mini"
+    prompt_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
+    completion_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
+    total_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
+    cost: Mapped[float] = mapped_column(Float, nullable=False)
+    
+    # Timing
+    timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    
+    # Additional context
+    metadata: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     
     created_at: Mapped[datetime] = mapped_column(
         DateTime, 
