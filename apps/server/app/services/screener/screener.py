@@ -13,7 +13,6 @@ from app.services.screener.screener_broadcast import ScreenerBroadcaster
 from app.services.screener.screener_compute import ScreenerCompute
 from app.services.screener.screener_data import ScreenerDataLoader
 from app.services.screener.screener_historical import ScreenerHistorical
-from app.services.screener.screener_snapshot import fetch_snapshot_all
 
 
 # Global screener service instance for strategy engines to access
@@ -79,66 +78,34 @@ class ScreenerService:
             await asyncio.sleep(self.interval_s)
 
     async def _tick(self) -> None:
-        """Fetch current market snapshot, compute filtered results, and broadcast to subscribers."""
-        if not core.API_KEY:
-            self.logger.error("POLYGON_API_KEY not set; skipping tick")
-            self.broadcaster.cached_payload = []
-            return
-        
+        """Fetch current market data from database, compute filtered results, and broadcast to subscribers."""
         try:
-            import time
-            current_time = time.time()
-            self.logger.info("[SCREENER] Fetching market snapshots…")
-            snaps = fetch_snapshot_all(core.API_KEY)
-            self.logger.info("[SCREENER] Snapshots fetched: %s", len(snaps))
+            # Fetch latest market data from TimescaleDB
+            # This queries both market_data (minute bars) and market_latest_trades (real-time prices)
+            self.logger.debug("[SCREENER] Fetching latest market data from TimescaleDB…")
+            snaps = await self.data_loader.fetch_latest_from_timescale()
+            self.logger.debug("[SCREENER] Market data fetched: %s symbols", len(snaps))
             
-            # Update price history for all tickers
-            self.data_loader.update_price_history(snaps, current_time)
-            
-            # Use permissive defaults (no filters except ETF filter and exchange filter)
-            payload = await self.compute.compute(
-                snaps,
-                min_price=None,
-                max_price=None,
-                min_volume=None,
-                min_change_percent=None,
-                max_change_percent=None,
-                order_by="rv14",
-                limit=200,
-                exclude_etfs=True,  # Default to excluding ETFs
-                asset_types=None
-            )
-        except Exception as e:
-            # Fallback to client method if available
-            try:
-                if hasattr(self.client, "list_snapshot_all_tickers"):
-                    import time
-                    current_time = time.time()
-                    self.logger.info("Falling back to client.list_snapshot_all_tickers()…")
-                    snaps = list(self.client.list_snapshot_all_tickers())
-                    self.logger.info("Snapshots fetched (fallback): %s", len(snaps))
-                    
-                    # Update price history for all tickers
-                    self.data_loader.update_price_history(snaps, current_time)
-                    
-                    # Use permissive defaults (no filters except ETF filter and exchange filter)
-                    payload = await self.compute.compute(
-                        snaps,
-                        min_price=None,
-                        max_price=None,
-                        min_volume=None,
-                        min_change_percent=None,
-                        max_change_percent=None,
-                        order_by="rv14",
-                        limit=200,
-                        exclude_etfs=True,  # Default to excluding ETFs
-                        asset_types=None
-                    )
-                else:
-                    raise
-            except Exception:
-                self.logger.error("Failed to fetch/process snapshots: %s", e)
+            if not snaps:
+                self.logger.warning("[SCREENER] No market data available from database")
                 payload = []
+            else:
+                # Use permissive defaults (no filters except ETF filter and exchange filter)
+                payload = await self.compute.compute(
+                    snaps,
+                    min_price=None,
+                    max_price=None,
+                    min_volume=None,
+                    min_change_percent=None,
+                    max_change_percent=None,
+                    order_by="rv14",
+                    limit=200,
+                    exclude_etfs=True,  # Default to excluding ETFs
+                    asset_types=None
+                )
+        except Exception as e:
+            self.logger.error("Failed to fetch/process market data from database: %s", e, exc_info=True)
+            payload = []
         
         # Broadcast results
         await self.broadcaster.broadcast(payload)

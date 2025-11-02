@@ -62,6 +62,20 @@ async def startup_init() -> None:
     logger.info(f"Running initial gap detection (lookback: {lookback_days} days)...")
     await gap_detector.detect_gaps()
     
+    # Initialize snapshot ingestion service (for real-time pricing and gap filling)
+    snapshot_ingestion_enabled = os.getenv("SNAPSHOT_INGESTION_ENABLED", "true").lower() == "true"
+    if snapshot_ingestion_enabled:
+        from app.services.market.snapshot_ingestion import initialize_snapshot_service
+        logger.info("Initializing snapshot ingestion service...")
+        snapshot_service = initialize_snapshot_service(
+            api_key=API_KEY,
+            fetch_interval_seconds=5
+        )
+        await snapshot_service.start()
+        logger.info("✓ Snapshot ingestion service started (fetching every 5s)")
+    else:
+        logger.info("Snapshot ingestion disabled (set SNAPSHOT_INGESTION_ENABLED=true to enable)")
+    
     # Initialize real-time ingestion (if enabled)
     ingestion_enabled = os.getenv("MARKET_DATA_INGESTION_ENABLED", "false").lower() == "true"
     if ingestion_enabled:

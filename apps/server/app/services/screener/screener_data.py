@@ -113,33 +113,38 @@ class ScreenerDataLoader:
         """
         Fetch the latest market data from TimescaleDB.
         
+        Queries both market_data (minute bars) and market_latest_trades (real-time prices).
+        Uses latest trade price if more recent than the last complete minute bar.
+        
         Returns a list of snapshot-like dictionaries compatible with the existing compute logic.
         Each snapshot contains:
         - ticker: Symbol
-        - price: Latest close price from most recent 1min bar
+        - price: Latest price (from market_latest_trades or last minute bar)
         - volume: Today's accumulated volume
-        - exchange: Exchange code (default 'XNYS')
+        - exchange: Exchange code
         - day: Yesterday's OHLC data
         """
         try:
             from sqlalchemy import text
             from app.services.core.database import get_async_session
             from datetime import datetime, timezone
+            import time
             
             snapshots = []
             today = date.today()
             yesterday = today - timedelta(days=1)
+            current_time = time.time()
             
             async with get_async_session() as session:
-                # Query for the latest price and today's volume for each symbol
-                # Get the most recent 1min bar for each symbol from today
+                # Query for latest bars, latest trades, and yesterday's data
                 result = await session.execute(
                     text("""
                         WITH latest_bars AS (
                             SELECT DISTINCT ON (symbol)
                                 symbol,
-                                close as current_price,
-                                time as bar_time
+                                close as bar_price,
+                                time as bar_time,
+                                EXTRACT(EPOCH FROM time) as bar_timestamp
                             FROM market_data
                             WHERE timescale = '1min'
                               AND time::date = :today
@@ -165,11 +170,23 @@ class ScreenerDataLoader:
                             FROM market_data
                             WHERE time::date = :yesterday
                               AND timescale = '1day'
+                        ),
+                        latest_trades AS (
+                            SELECT
+                                symbol,
+                                price as trade_price,
+                                timestamp as trade_time,
+                                exchange,
+                                EXTRACT(EPOCH FROM timestamp) as trade_timestamp
+                            FROM market_latest_trades
                         )
                         SELECT 
-                            lb.symbol,
-                            lb.current_price,
-                            lb.bar_time,
+                            COALESCE(lb.symbol, lt.symbol) as symbol,
+                            lb.bar_price,
+                            lb.bar_timestamp,
+                            lt.trade_price,
+                            lt.trade_timestamp,
+                            lt.exchange,
                             COALESCE(tv.total_volume, 0) as today_volume,
                             yo.prev_open,
                             yo.prev_high,
@@ -177,21 +194,49 @@ class ScreenerDataLoader:
                             yo.prev_close,
                             yo.prev_volume
                         FROM latest_bars lb
-                        LEFT JOIN today_volume tv ON lb.symbol = tv.symbol
-                        LEFT JOIN yesterday_ohlc yo ON lb.symbol = yo.symbol
+                        FULL OUTER JOIN latest_trades lt ON lb.symbol = lt.symbol
+                        LEFT JOIN today_volume tv ON COALESCE(lb.symbol, lt.symbol) = tv.symbol
+                        LEFT JOIN yesterday_ohlc yo ON COALESCE(lb.symbol, lt.symbol) = yo.symbol
                         WHERE yo.prev_close IS NOT NULL
-                        ORDER BY lb.symbol
+                        ORDER BY symbol
                     """),
                     {"today": today, "yesterday": yesterday}
                 )
                 
                 for row in result:
                     symbol = row[0]
-                    current_price = float(row[1])
-                    today_volume = int(row[3])
+                    bar_price = float(row[1]) if row[1] else None
+                    bar_timestamp = float(row[2]) if row[2] else None
+                    trade_price = float(row[3]) if row[3] else None
+                    trade_timestamp = float(row[4]) if row[4] else None
+                    exchange = row[5]
+                    today_volume = int(row[6])
                     
-                    # Get exchange (default to XNYS for now, could be enhanced later)
-                    exchange = self.symbol_exchanges.get(symbol, "XNYS")
+                    # Choose price: use trade price if it's more recent than bar, otherwise use bar
+                    if trade_price and bar_price:
+                        # Use trade if it's newer than the bar
+                        current_price = trade_price if (trade_timestamp or 0) > (bar_timestamp or 0) else bar_price
+                        price_timestamp = trade_timestamp if (trade_timestamp or 0) > (bar_timestamp or 0) else bar_timestamp
+                    elif trade_price:
+                        current_price = trade_price
+                        price_timestamp = trade_timestamp
+                    elif bar_price:
+                        current_price = bar_price
+                        price_timestamp = bar_timestamp
+                    else:
+                        # No price data available
+                        continue
+                    
+                    # Update price history tracker for intraday change calculations
+                    if current_price and price_timestamp:
+                        try:
+                            self.price_tracker.update_price(symbol, price_timestamp, current_price)
+                        except Exception:
+                            pass
+                    
+                    # Get exchange (use from latest_trades, or default)
+                    if not exchange:
+                        exchange = self.symbol_exchanges.get(symbol, "XNYS")
                     
                     # Build snapshot-like dict
                     snapshot = {
@@ -200,16 +245,16 @@ class ScreenerDataLoader:
                         "volume": today_volume,
                         "exchange": exchange,
                         "day": {
-                            "o": float(row[4]) if row[4] else None,
-                            "h": float(row[5]) if row[5] else None,
-                            "l": float(row[6]) if row[6] else None,
-                            "c": float(row[7]) if row[7] else None,
-                            "v": int(row[8]) if row[8] else None,
+                            "o": float(row[7]) if row[7] else None,
+                            "h": float(row[8]) if row[8] else None,
+                            "l": float(row[9]) if row[9] else None,
+                            "c": float(row[10]) if row[10] else None,
+                            "v": int(row[11]) if row[11] else None,
                         }
                     }
                     snapshots.append(snapshot)
                     
-                self.logger.info(f"Fetched {len(snapshots)} latest market data records from TimescaleDB")
+                self.logger.debug(f"Fetched {len(snapshots)} latest market data records from TimescaleDB")
                 return snapshots
                 
         except Exception as e:
