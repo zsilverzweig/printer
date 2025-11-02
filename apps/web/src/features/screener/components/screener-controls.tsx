@@ -17,8 +17,8 @@ import {
   SelectValue,
 } from "@/lib/components/ui/select";
 import { Switch } from "@/lib/components/ui/switch";
-import { Play, Check, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils/utils";
+import { Check, ChevronDown, Play } from "lucide-react";
 import type { ScreeningCriteria } from "../hooks/use-screeners";
 
 interface ScreenerControlsProps {
@@ -71,7 +71,7 @@ export function ScreenerControls({
 
   return (
     <div className="space-y-3">
-      {/* Row 1: Mode + Date/Time + Run */}
+      {/* Row 1: Mode + Date/Time + Run (Historical only) */}
       <div className="flex items-center gap-3 flex-wrap">
         <div className="flex items-center gap-2">
           <Label htmlFor="mode-toggle" className="text-xs cursor-pointer">
@@ -94,22 +94,28 @@ export function ScreenerControls({
         </div>
 
         {mode === "historical" && (
-          <div className="flex items-center gap-2">
-            <DateTimePicker
-              date={timestamp}
-              onDateChange={onTimestampChange}
-              placeholder="Pick date and time"
+          <>
+            <div className="flex items-center gap-2">
+              <DateTimePicker
+                date={timestamp}
+                onDateChange={onTimestampChange}
+                placeholder="Pick date and time"
+                disabled={loading}
+                className="w-[280px]"
+                showTime={true}
+              />
+            </div>
+            <Button
+              onClick={onRun}
+              size="sm"
               disabled={loading}
-              className="w-[280px]"
-              showTime={true}
-            />
-          </div>
+              className="h-8"
+            >
+              <Play className="h-3 w-3 mr-1" />
+              Run Historical
+            </Button>
+          </>
         )}
-
-        <Button onClick={onRun} size="sm" disabled={loading} className="h-8">
-          <Play className="h-3 w-3 mr-1" />
-          {mode === "historical" ? "Run Historical" : "Refresh"}
-        </Button>
       </div>
 
       {/* Row 2: Basic Filters */}
@@ -308,7 +314,9 @@ export function ScreenerControls({
 
       {/* Row 3: Technical Filters - Always Visible */}
       <div className="flex flex-wrap gap-3 p-3 bg-muted/20 rounded-lg text-xs border">
-        <Label className="text-xs font-semibold w-full mb-1">Technical Filters:</Label>
+        <Label className="text-xs font-semibold w-full mb-1">
+          Technical Filters:
+        </Label>
         <div className="flex items-center gap-1">
           <Switch
             checked={filters.technical_filters?.near_resistance || false}

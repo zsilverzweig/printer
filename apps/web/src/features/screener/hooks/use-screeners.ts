@@ -73,6 +73,57 @@ export function useScreeners() {
     loadScreeners();
   }, [loadScreeners]);
 
+  const runScreenerWithCriteria = useCallback(
+    async (
+      criteria: ScreeningCriteria["criteria"],
+      timestamp?: Date
+    ): Promise<ScreenerRunResult | null> => {
+      try {
+        // Don't set loading state - this is for auto-runs and shouldn't block UI
+        setError(null);
+
+        const url = new URL(`${API_BASE}/api/screening-criteria/run`);
+        if (timestamp) {
+          const isoString = timestamp.toISOString();
+          url.searchParams.set("timestamp", isoString);
+        }
+
+        const response = await fetch(url.toString(), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(criteria),
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          log.error("[useScreeners] Inline screener API error", {
+            status: response.status,
+            statusText: response.statusText,
+            error: errorText,
+          });
+          throw new Error(`Failed to run screener: ${response.statusText}`);
+        }
+
+        const result = await response.json();
+        log.debug("[useScreeners] Inline screener run result", {
+          ticker_count: result.ticker_count,
+          results_length: result.results?.length || 0,
+          has_results: !!result.results,
+        });
+        return result;
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "Failed to run screener";
+        setError(message);
+        log.error("[useScreeners] Error running inline screener", err);
+        return null;
+      }
+    },
+    []
+  );
+
   const runScreener = useCallback(
     async (
       screenerId: string,
@@ -240,6 +291,7 @@ export function useScreeners() {
     error,
     loadScreeners,
     runScreener,
+    runScreenerWithCriteria,
     saveScreener,
     deleteScreener,
   };

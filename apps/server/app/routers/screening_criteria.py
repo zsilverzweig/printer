@@ -34,6 +34,134 @@ class ScreenerRunResult(BaseModel):
     results: Optional[List[Dict[str, Any]]] = None  # Full screener result data
 
 
+@router.post("/screening-criteria/run", response_model=ScreenerRunResult)
+async def run_screener_with_inline_criteria(
+    criteria: ScreeningCriteriaParams,
+    timestamp: Optional[datetime] = Query(None, description="Historical timestamp for time-travel mode. None = live mode.")
+) -> ScreenerRunResult:
+    """
+    Run the screener with inline criteria (no database save required).
+    
+    This endpoint allows running screeners with temporary criteria without
+    creating a database record. Useful for testing filters.
+    
+    Args:
+        criteria: Screening criteria parameters
+        timestamp: Optional datetime for historical mode. If None, uses live data.
+        
+    Returns:
+        List of tickers matching the criteria and count
+    """
+    try:
+        technical_filters = criteria.technical_filters
+        
+        # Extract parameters
+        min_price = criteria.min_price
+        max_price = criteria.max_price
+        min_volume = criteria.min_volume
+        min_change_percent = criteria.min_change_percent
+        max_change_percent = criteria.max_change_percent
+        exclude_etfs = criteria.exclude_etfs if criteria.exclude_etfs is not None else True
+        asset_types = criteria.asset_types
+        order_by = criteria.order_by or "rv14"
+        limit = criteria.limit or 200
+        
+        # Determine if historical or live mode
+        if timestamp is not None:
+            # Historical mode: query TimescaleDB
+            logger.info(f"Running historical screener with inline criteria at {timestamp}")
+            from app.services.screener.screener import get_screener_service
+            screener_service = get_screener_service()
+            
+            if not screener_service:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Screener service not available"
+                )
+            
+            results = await screener_service.compute_historical(
+                timestamp=timestamp,
+                min_price=min_price,
+                max_price=max_price,
+                min_volume=min_volume,
+                min_change_percent=min_change_percent,
+                max_change_percent=max_change_percent,
+                order_by=order_by,
+                limit=limit,
+                technical_filters=technical_filters,
+                exclude_etfs=exclude_etfs,
+                asset_types=asset_types
+            )
+        else:
+            # Live mode: use existing flow
+            from app.services.screener.screener import get_screener_service
+            screener_service = get_screener_service()
+            
+            if not screener_service:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Screener service not available. Please ensure the server is fully started."
+                )
+            
+            # Get latest snapshot data from screener service
+            if not screener_service.cached_payload:
+                # Try to fetch fresh data
+                try:
+                    await screener_service._tick()
+                except Exception as e:
+                    logger.warning(f"Failed to fetch fresh data: {e}")
+                    if not screener_service.cached_payload:
+                        return ScreenerRunResult(ticker_count=0, tickers=[])
+            
+            # Get the last snapshot and recompute with custom criteria
+            from app.services.screener.screener_snapshot import fetch_snapshot_all
+            import app.core as core
+            
+            if not core.API_KEY:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Polygon API key not configured"
+                )
+            
+            # Fetch current snapshots
+            snaps = fetch_snapshot_all(core.API_KEY)
+            
+            # Apply screener computation with custom parameters
+            results = await screener_service._compute(
+                snaps,
+                min_price=min_price,
+                max_price=max_price,
+                min_volume=min_volume,
+                min_change_percent=min_change_percent,
+                max_change_percent=max_change_percent,
+                order_by=order_by,
+                limit=limit,
+                technical_filters=technical_filters,
+                exclude_etfs=exclude_etfs,
+                asset_types=asset_types
+            )
+        
+        # Extract ticker symbols
+        tickers = [r["ticker"] for r in results]
+        
+        logger.info(f"Screener run with inline criteria: {len(tickers)} tickers matched (timestamp={timestamp})")
+        
+        return ScreenerRunResult(
+            ticker_count=len(tickers),
+            tickers=tickers,
+            results=results  # Include full result data
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to run screener with inline criteria: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to run screener: {str(e)}"
+        )
+
+
 @router.post("/screening-criteria/{criteria_id}/run", response_model=ScreenerRunResult)
 async def run_screener_with_criteria(
     criteria_id: str,

@@ -57,15 +57,15 @@ def passes_price_filter(
     
     Args:
         current_price: Current trading price
-        yesterday_close: Previous day's closing price
-        min_price: Minimum price for yesterday's close (default: 0, no minimum)
-        max_price: Maximum price for yesterday's close (default: inf, no maximum)
+        yesterday_close: Previous day's closing price (unused, kept for compatibility)
+        min_price: Minimum price for current trading price (default: 0, no minimum)
+        max_price: Maximum price for current trading price (default: inf, no maximum)
     
     Returns:
         True if stock passes all price filters
     """
-    # Filter by yesterday's close price range
-    if not (min_price <= yesterday_close <= max_price):
+    # Filter by current trading price (what user sees in the table)
+    if not (min_price <= current_price <= max_price):
         return False
     
     # Note: Penny stock filter removed - can be controlled via min_price if needed
