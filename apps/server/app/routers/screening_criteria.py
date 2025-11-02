@@ -160,6 +160,10 @@ async def run_screener_with_inline_criteria(
     Returns:
         List of tickers matching the criteria and count
     """
+    import time
+    request_start = time.time()
+    logger.info(f"[ENDPOINT] POST /screening-criteria/run called - timestamp={timestamp}, criteria={criteria.dict()}")
+    
     try:
         technical_filters = criteria.technical_filters
         
@@ -226,7 +230,8 @@ async def run_screener_with_inline_criteria(
                 )
             else:
                 # Historical mode: query TimescaleDB
-                logger.info(f"Running historical screener with inline criteria at {timestamp}")
+                hist_start = time.time()
+                logger.info(f"[ENDPOINT] Running historical screener with inline criteria at {timestamp}")
                 
                 results = await screener_service.compute_historical(
                     timestamp=timestamp,
@@ -293,7 +298,8 @@ async def run_screener_with_inline_criteria(
         # Extract ticker symbols
         tickers = [r["ticker"] for r in results]
         
-        logger.info(f"Screener run with inline criteria: {len(tickers)} tickers matched (timestamp={timestamp})")
+        request_time = time.time() - request_start
+        logger.info(f"[ENDPOINT] Screener run completed in {request_time:.2f}s: {len(tickers)} tickers matched (timestamp={timestamp})")
         
         # If historical mode returned no results and timestamp was provided, check if it's a data issue
         if timestamp and len(results) == 0 and not use_live_for_recent:

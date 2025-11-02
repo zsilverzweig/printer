@@ -143,142 +143,19 @@ class ScreenerDataLoader:
         - day: Yesterday's OHLC data
         """
         try:
-            from sqlalchemy import text
-            from app.services.core.database import get_async_session
-            from datetime import datetime, timezone
-            import time
+            # Use unified fetcher (same pattern as historical screener)
+            from app.services.screener.screener_data_unified import fetch_screener_data_unified
             
-            snapshots = []
-            current_time = time.time()
+            self.logger.info("[LIVE SCREENER] Fetching data using unified fetcher...")
+            snapshots = await fetch_screener_data_unified()
             
-            async with get_async_session() as session:
-                # Set statement timeout to prevent hanging queries (30 seconds)
-                await session.execute(text("SET statement_timeout = '30s'"))
-                
-                # First, find the most recent date with daily data
-                latest_daily_result = await session.execute(
-                    text("""
-                        SELECT MAX(time::date) as latest_date
-                        FROM market_data
-                        WHERE timescale = '1day'
-                    """)
-                )
-                latest_daily_row = latest_daily_result.fetchone()
-                if not latest_daily_row or not latest_daily_row[0]:
-                    self.logger.warning("No daily market data found in database")
-                    return []
-                
-                latest_daily_date = latest_daily_row[0]
-                self.logger.info(f"Using most recent daily data from: {latest_daily_date}")
-                
-                # Query for latest trades and daily data only (no minute bars needed)
-                # Screener uses daily OHLC + latest trade price
-                result = await session.execute(
-                    text("""
-                        WITH recent_daily_ohlc AS (
-                            SELECT
-                                symbol,
-                                open as prev_open,
-                                high as prev_high,
-                                low as prev_low,
-                                close as prev_close,
-                                volume as prev_volume
-                            FROM market_data
-                            WHERE time::date = :latest_daily_date
-                              AND timescale = '1day'
-                        ),
-                        latest_trades AS (
-                            SELECT DISTINCT ON (symbol)
-                                symbol,
-                                price as trade_price,
-                                timestamp as trade_time,
-                                exchange,
-                                EXTRACT(EPOCH FROM timestamp) as trade_timestamp
-                            FROM market_latest_trades
-                            WHERE symbol IN (SELECT symbol FROM recent_daily_ohlc)
-                            ORDER BY symbol, timestamp DESC
-                        )
-                        SELECT 
-                            rd.symbol,
-                            lt.trade_price,
-                            lt.trade_timestamp,
-                            lt.exchange,
-                            rd.prev_open,
-                            rd.prev_high,
-                            rd.prev_low,
-                            rd.prev_close,
-                            rd.prev_volume
-                        FROM recent_daily_ohlc rd
-                        LEFT JOIN latest_trades lt ON rd.symbol = lt.symbol
-                        ORDER BY rd.symbol
-                    """),
-                    {"latest_daily_date": latest_daily_date}
-                )
-                
-                for row in result:
-                    symbol = row[0]
-                    trade_price = float(row[1]) if row[1] else None
-                    trade_timestamp = float(row[2]) if row[2] else None
-                    exchange = row[3]
-                    prev_open = float(row[4]) if row[4] else None
-                    prev_high = float(row[5]) if row[5] else None
-                    prev_low = float(row[6]) if row[6] else None
-                    prev_close = float(row[7]) if row[7] else None
-                    prev_volume = int(row[8]) if row[8] else 0
-                    
-                    # Skip symbols without previous close (can't calculate % change)
-                    if not prev_close:
-                        continue
-                    
-                    # Use trade price if available, otherwise fall back to previous close
-                    if trade_price:
-                        current_price = trade_price
-                        price_timestamp = trade_timestamp
-                    else:
-                        # No real-time price data, use previous close as current price
-                        current_price = prev_close
-                        price_timestamp = current_time
-                    
-                    # Update price history tracker for intraday change calculations
-                    if current_price and price_timestamp:
-                        try:
-                            self.price_tracker.update_price(symbol, price_timestamp, current_price)
-                        except Exception:
-                            pass
-                    
-                    # Get exchange (use from latest_trades, or default)
-                    if not exchange:
-                        exchange = self.symbol_exchanges.get(symbol, "XNYS")
-                    
-                    # Build snapshot-like dict with daily OHLC
-                    snapshot = {
-                        "ticker": symbol,
-                        "price": current_price,
-                        "volume": prev_volume,  # Use yesterday's volume
-                        "exchange": exchange,
-                        "day": {
-                            "o": prev_open,
-                            "h": prev_high,
-                            "l": prev_low,
-                            "c": prev_close,
-                            "v": prev_volume,
-                        }
-                    }
-                    snapshots.append(snapshot)
-                
-                if len(snapshots) == 0:
-                    self.logger.warning(
-                        "No market data available for screener. Possible causes:\n"
-                        f"  1. No recent daily close data (checked date: {latest_daily_date}) - run historical data loader for 1day timescale\n"
-                        "  2. No current pricing data - ensure real-time ingestion is running\n"
-                        "  → Check admin panel or logs to verify data ingestion services are active"
-                    )
-                else:
-                    self.logger.info(f"Fetched {len(snapshots)} market data records from TimescaleDB (using daily data from: {latest_daily_date})")
-                    
-                return snapshots
-                
+            if snapshots:
+                self.logger.info(f"[LIVE SCREENER] Got {len(snapshots)} snapshots from unified fetcher")
+            else:
+                self.logger.warning("[LIVE SCREENER] No snapshots from unified fetcher")
+            
+            return snapshots
+            
         except Exception as e:
-            self.logger.error(f"Failed to fetch latest data from TimescaleDB: {e}", exc_info=True)
+            self.logger.error(f"[LIVE SCREENER] Error with unified fetcher: {e}", exc_info=True)
             return []
-

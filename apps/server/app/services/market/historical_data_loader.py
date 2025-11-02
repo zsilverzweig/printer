@@ -989,31 +989,18 @@ async def get_database_stats(include_details: bool = False) -> Dict:
             )
             sizes = result.first()
             
-            # Per-timescale statistics - use chunk metadata instead of scanning all data
-            # Query chunks table for timescale information (much faster)
+            # Per-timescale statistics - use index-only scan with sampling
+            # Query timescale (indexed), MIN/MAX time (indexed) - should hit indexes
             result = await session.execute(
                 text("""
-                    WITH timescale_chunks AS (
-                        SELECT 
-                            c.chunk_name,
-                            c.range_start,
-                            c.range_end,
-                            c.table_bytes,
-                            d.column_value as timescale
-                        FROM timescaledb_information.chunks c
-                        LEFT JOIN timescaledb_information.dimensions d 
-                            ON d.hypertable_name = c.hypertable_name 
-                            AND d.dimension_number = 2
-                        WHERE c.hypertable_name = 'market_data'
-                    )
                     SELECT 
-                        COALESCE(timescale, 'unknown') as timescale,
-                        0 as bar_count,  -- Approximate from chunk metadata instead
-                        0 as symbol_count,  -- Approximate
-                        MIN(range_start) as min_time,
-                        MAX(range_end) as max_time,
-                        COUNT(DISTINCT DATE(range_start)) as unique_days
-                    FROM timescale_chunks
+                        timescale,
+                        COUNT(*) as approximate_bars,
+                        COUNT(DISTINCT symbol) as symbol_count,
+                        MIN(time) as min_time,
+                        MAX(time) as max_time
+                    FROM market_data
+                    WHERE time >= NOW() - INTERVAL '90 days'
                     GROUP BY timescale
                     ORDER BY 
                         CASE timescale
@@ -1028,13 +1015,19 @@ async def get_database_stats(include_details: bool = False) -> Dict:
             )
             timescale_stats = []
             for row in result:
+                # Calculate approximate unique days from date range
+                if row[3] and row[4]:  # min_time and max_time
+                    days_range = (row[4] - row[3]).days + 1
+                else:
+                    days_range = 0
+                    
                 timescale_stats.append({
                     "timescale": row[0],
-                    "bar_count": row[1],
+                    "bar_count": row[1],  # Count from last 90 days only
                     "symbol_count": row[2],
                     "min_time": row[3].isoformat() if row[3] else None,
                     "max_time": row[4].isoformat() if row[4] else None,
-                    "unique_days": row[5]
+                    "unique_days": days_range
                 })
             
             # Base response with fast stats

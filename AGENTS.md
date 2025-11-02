@@ -12,6 +12,52 @@ When working in IDE modes, never commit files unless explicitly directed to.
 
 Assume that there is a pattern already in place to solve problems, don't create a new one. If you can't find a pattern, ask the user for more guidance.
 
+## Testing and Development Workflow
+
+**CRITICAL: Always test endpoints with curl before assuming they work!**
+
+### Testing API Endpoints
+
+When working on backend features:
+
+1. ✅ **ALWAYS** test endpoints with `curl` after making changes
+2. ✅ **ALWAYS** verify the response matches expectations
+3. ✅ **ALWAYS** check server logs for errors: `nx docker:logs:server printer --follow`
+4. ✅ **ALWAYS** verify database state with direct queries when relevant
+
+Example testing workflow:
+```bash
+# Test the endpoint
+curl -X POST "http://localhost:8000/api/screening-criteria/run?timestamp=2025-10-29T14:30:00Z" \
+  -H "Content-Type: application/json" \
+  -d '{"min_price": 5, "max_price": 100, "limit": 5}' | jq '.'
+
+# Watch server logs in another terminal
+nx docker:logs:server printer --follow
+
+# Check database if needed
+docker exec printer-db psql -U postgres -d printer_events -c "SELECT COUNT(*) FROM market_data WHERE timescale = '5min';"
+```
+
+### Performance Testing
+
+When working on queries or data processing:
+
+1. ✅ **ALWAYS** profile slow operations
+2. ✅ **ALWAYS** watch for N+1 query problems (loops calling individual queries)
+3. ✅ **ALWAYS** use batch operations when processing multiple items
+4. ✅ **ALWAYS** test with realistic data volumes
+
+**Example N+1 Problem to Avoid:**
+```python
+# BAD: N+1 queries (slow!)
+for symbol in symbols:
+    data = await get_data(symbol)  # Individual query per symbol
+    
+# GOOD: Batch query (fast!)
+all_data = await get_data_batch(symbols)  # Single query for all symbols
+```
+
 ## Docker Environment
 
 **CRITICAL: This application runs in Docker containers.**

@@ -52,62 +52,47 @@ class ScreenerHistorical:
         Returns:
             List of screener result dictionaries
         """
+        import time
+        start_time = time.time()
         self.logger.info(f"[HISTORICAL SCREENER] Starting compute_historical at {timestamp}")
         
-        from app.lib.market_queries import get_snapshot_at_time, get_daily_context
-        from app.models.assets import TickerDetails
-        from app.services.core.database import get_async_session
-        from sqlalchemy import select
-        
         try:
-            # Get active symbols
-            self.logger.info("[HISTORICAL SCREENER] Fetching active symbols")
-            async with get_async_session() as session:
-                result = await session.execute(
-                    select(TickerDetails.symbol).where(
-                        TickerDetails.type.in_(["CS", "ETF"]),
-                        TickerDetails.active == True
-                    )
-                )
-                all_symbols = [row[0] for row in result.all()]
+            # Use unified data fetcher (same pattern as live screener)
+            step_start = time.time()
+            self.logger.info(f"[HISTORICAL SCREENER] Fetching data using unified fetcher...")
             
-            self.logger.info(f"[HISTORICAL SCREENER] Found {len(all_symbols)} active symbols")
+            from app.services.screener.screener_data_unified import fetch_screener_data_unified
+            snapshots = await fetch_screener_data_unified(target_timestamp=timestamp)
             
-            # Get snapshot at timestamp
-            self.logger.info(f"[HISTORICAL SCREENER] Getting snapshot at {timestamp}")
-            snapshot = await get_snapshot_at_time(timestamp, all_symbols)
+            step_time = time.time() - step_start
+            self.logger.info(f"[HISTORICAL SCREENER] ✓ Got {len(snapshots)} snapshots ({step_time:.2f}s)")
             
-            self.logger.info(f"[HISTORICAL SCREENER] Got snapshot with {len(snapshot)} symbols")
-            
-            if not snapshot:
-                self.logger.warning(f"[HISTORICAL SCREENER] No snapshot data found at {timestamp}")
-                self.logger.warning(
-                    "[HISTORICAL SCREENER] Historical mode requires data in TimescaleDB. "
-                    "Load data using: POST /api/market/historical/start-load?days=1"
-                )
+            if not snapshots:
+                self.logger.warning("[HISTORICAL SCREENER] No snapshots returned from unified fetcher")
                 return []
             
             rows: List[dict] = []
             processed_count = 0
             filtered_count = 0
-            missing_context_count = 0
             
-            # Process each symbol
-            for symbol, bar_data in snapshot.items():
-                current_price = bar_data["close"]
+            # Process all symbols (now using unified snapshot format - same as live screener!)
+            step_start = time.time()
+            self.logger.info(f"[HISTORICAL SCREENER] Processing {len(snapshots)} symbols with filters...")
+            
+            # Process each snapshot
+            for snapshot in snapshots:
+                symbol = snapshot["ticker"]
+                current_price = snapshot["price"]
+                day = snapshot["day"]
                 
-                # Get daily context (yesterday's OHLC, 90-day high/low)
-                context = await get_daily_context(symbol, timestamp)
-                
-                if not context.get("has_data"):
-                    missing_context_count += 1
+                # Skip if no daily close
+                if not day.get("c"):
                     continue
                 
                 processed_count += 1
                 
-                yesterday = context["yesterday"]
-                yesterday_close = yesterday["close"]
-                yesterday_vol = yesterday["volume"]
+                yesterday_close = day["c"]
+                yesterday_vol = day["v"]
                 
                 # Apply optional basic filters
                 if min_price is not None or max_price is not None:
@@ -169,35 +154,55 @@ class ScreenerHistorical:
                 except Exception as e:
                     self.logger.debug(f"Error calculating rv14 for {symbol}: {e}")
                 
-                # Get historical bars for technical analysis
-                historical_bars = await self._get_bars_for_technical_analysis(symbol, timestamp)
-                
-                # Build result row
+                # Build result row (matches live screener format)
                 row = {
                     "ticker": symbol,
-                    "open": yesterday["open"],
-                    "high": yesterday["high"],
-                    "low": yesterday["low"],
+                    "open": day["o"],
+                    "high": day["h"],
+                    "low": day["l"],
                     "close": yesterday_close,
                     "price": current_price,
                     "today_vol": yesterday_vol,
                     "rv": rv14,
                     "rv14": rv14,
                     "change_close": change_close_pct,
-                    # Add context for technical analysis
-                    "ninety_day_high": context.get("ninety_day_high"),
-                    "ninety_day_low": context.get("ninety_day_low"),
-                    # Get historical bars for technical analysis
-                    "_historical_bars": historical_bars,
+                    # TODO: Add 90-day high/low if needed for technical filters
+                    "ninety_day_high": None,
+                    "ninety_day_low": None,
                 }
                 
                 rows.append(row)
             
+            step_time = time.time() - step_start
+            self.logger.info(f"[HISTORICAL SCREENER] ✓ Processed all symbols: {processed_count} passed basic filters, {filtered_count} filtered out ({step_time:.2f}s)")
+            
             # Apply technical filters if provided
             if technical_filters:
+                step_start = time.time()
+                self.logger.info(f"[HISTORICAL SCREENER] Step 5/5: Applying technical filters to {len(rows)} symbols...")
+                # Fetch historical bars ONLY for symbols that passed basic filters
+                # This avoids N+1 queries for symbols we'll filter out anyway
+                bars_start = time.time()
+                self.logger.info(f"[HISTORICAL SCREENER] Fetching historical bars for {len(rows)} symbols...")
+                for row in rows:
+                    symbol = row["ticker"]
+                    historical_bars = await self._get_bars_for_technical_analysis(symbol, timestamp)
+                    row["_historical_bars"] = historical_bars
+                
+                bars_time = time.time() - bars_start
+                self.logger.info(f"[HISTORICAL SCREENER] ✓ Got historical bars ({bars_time:.2f}s), applying filters...")
+                filter_start = time.time()
                 rows = await self.compute._apply_technical_filters(rows, technical_filters, is_historical=True)
+                filter_time = time.time() - filter_start
+                step_time = time.time() - step_start
+                self.logger.info(f"[HISTORICAL SCREENER] ✓ {len(rows)} symbols passed technical filters (filter: {filter_time:.2f}s, total: {step_time:.2f}s)")
+                
+                # Remove internal _historical_bars field after filtering
+                for row in rows:
+                    row.pop("_historical_bars", None)
             
             # Sort results
+            self.logger.info(f"[HISTORICAL SCREENER] Sorting by {order_by}...")
             sort_key = {
                 "rv14": lambda x: x["rv14"],
                 "avg_volume": lambda x: x["today_vol"],
@@ -205,14 +210,11 @@ class ScreenerHistorical:
             }.get(order_by, lambda x: x["rv14"])
             rows.sort(key=sort_key, reverse=True)
             
-            # Remove internal _historical_bars field before returning
-            for row in rows:
-                row.pop("_historical_bars", None)
-            
+            final_count = min(len(rows), limit)
+            total_time = time.time() - start_time
             self.logger.info(
-                f"[HISTORICAL SCREENER] Completed: processed={processed_count}, "
-                f"missing_context={missing_context_count}, filtered={filtered_count}, "
-                f"final_rows={len(rows)}"
+                f"[HISTORICAL SCREENER] ✓ Complete! Returning {final_count} results in {total_time:.2f}s "
+                f"(processed={processed_count}, filtered={filtered_count})"
             )
             
             return rows[:limit]
