@@ -11,7 +11,7 @@ load_dotenv("env.local")
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from app.core import startup_init
-from app.routers import market, news, trading, events, noc, admin, screener, strategies, funds, screening_criteria, db_admin
+from app.routers import market, news, trading, events, noc, admin, screener, strategies, funds, screening_criteria, db_admin, screener_metrics
 from app.routers.realtime import router as realtime_router
 import logging
 import time
@@ -110,6 +110,7 @@ app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
 app.include_router(db_admin.router, prefix="/api/db-admin", tags=["db-admin"])
 app.include_router(screener.router, prefix="/api/screener", tags=["screener"])
 app.include_router(screening_criteria.router, prefix="/api", tags=["screening-criteria"])
+app.include_router(screener_metrics.router)  # Screener metrics management
 app.include_router(strategies.router)
 app.include_router(funds.router, prefix="/api", tags=["funds"])
 

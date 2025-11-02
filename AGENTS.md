@@ -26,6 +26,7 @@ When working on backend features:
 4. ✅ **ALWAYS** verify database state with direct queries when relevant
 
 Example testing workflow:
+
 ```bash
 # Test the endpoint
 curl -X POST "http://localhost:8000/api/screening-criteria/run?timestamp=2025-10-29T14:30:00Z" \
@@ -49,11 +50,12 @@ When working on queries or data processing:
 4. ✅ **ALWAYS** test with realistic data volumes
 
 **Example N+1 Problem to Avoid:**
+
 ```python
 # BAD: N+1 queries (slow!)
 for symbol in symbols:
     data = await get_data(symbol)  # Individual query per symbol
-    
+
 # GOOD: Batch query (fast!)
 all_data = await get_data_batch(symbols)  # Single query for all symbols
 ```

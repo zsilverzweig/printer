@@ -85,6 +85,10 @@ async def fetch_screener_data_unified(
         async with get_async_session() as session:
             # STEP 1: Get ALL daily OHLCV in ONE query (10K+ symbols in < 1 second)
             start_time = datetime.now()
+            # OPTIMIZED: Use time range instead of date cast for efficient index usage
+            day_start = datetime.combine(prev_trading_day, datetime.min.time(), tzinfo=timezone.utc)
+            day_end = day_start + timedelta(days=1)
+            
             result = await session.execute(
                 text("""
                     SELECT 
@@ -95,11 +99,12 @@ async def fetch_screener_data_unified(
                         close,
                         volume
                     FROM market_data
-                    WHERE time::date = :target_date
+                    WHERE time >= :day_start
+                      AND time < :day_end
                       AND timescale = '1day'
                     ORDER BY symbol
                 """),
-                {"target_date": prev_trading_day}
+                {"day_start": day_start, "day_end": day_end}
             )
             
             daily_data = {}
@@ -123,25 +128,42 @@ async def fetch_screener_data_unified(
             start_time = datetime.now()
             if mode == "historical":
                 # Historical: Get 5min bars at timestamp
-                result = await session.execute(
-                    text("""
-                        SELECT DISTINCT ON (symbol)
-                            symbol,
-                            close as current_price
-                        FROM market_data
-                        WHERE time <= :timestamp
-                          AND timescale = '5min'
-                        ORDER BY symbol, time DESC
-                    """),
-                    {"timestamp": target_timestamp}
-                )
-                
+                # OPTIMIZED: Use batched queries to avoid scanning millions of rows
+                # Query in batches of 2000 symbols at a time for better performance
+                symbols_list = list(daily_data.keys())
+                batch_size = 2000
+                num_batches = (len(symbols_list) + batch_size - 1) // batch_size
                 price_data = {}
-                for row in result:
-                    price_data[row[0]] = float(row[1]) if row[1] else None
+                
+                logger.info(f"[UNIFIED] Fetching 5min data for {len(symbols_list)} symbols in {num_batches} batches...")
+                
+                for batch_idx, i in enumerate(range(0, len(symbols_list), batch_size), 1):
+                    batch = symbols_list[i:i + batch_size]
+                    batch_start = datetime.now()
+                    
+                    result = await session.execute(
+                        text("""
+                            SELECT DISTINCT ON (symbol)
+                                symbol,
+                                close as current_price
+                            FROM market_data
+                            WHERE symbol = ANY(:symbols)
+                              AND timescale = '5min'
+                              AND time <= :timestamp
+                            ORDER BY symbol, time DESC
+                        """),
+                        {"symbols": batch, "timestamp": target_timestamp}
+                    )
+                    
+                    for row in result:
+                        price_data[row[0]] = float(row[1]) if row[1] else None
+                    
+                    batch_time = (datetime.now() - batch_start).total_seconds()
+                    if batch_idx % 2 == 0 or batch_idx == num_batches:
+                        logger.info(f"[UNIFIED] Batch {batch_idx}/{num_batches}: {len(price_data)} total symbols ({batch_time:.2f}s this batch)")
                 
                 price_time = (datetime.now() - start_time).total_seconds()
-                logger.info(f"[UNIFIED] Got {len(price_data)} symbols with 5min data ({price_time:.2f}s)")
+                logger.info(f"[UNIFIED] Got {len(price_data)} symbols with 5min data ({price_time:.2f}s, {num_batches} batches)")
             else:
                 # Live: Get latest trades
                 result = await session.execute(
@@ -161,7 +183,56 @@ async def fetch_screener_data_unified(
                 price_time = (datetime.now() - start_time).total_seconds()
                 logger.info(f"[UNIFIED] Got {len(price_data)} symbols with live trades ({price_time:.2f}s)")
             
-            # STEP 3: Combine into snapshot format (in-memory processing, very fast)
+            # STEP 3: Fetch pre-calculated metrics
+            start_time = datetime.now()
+            symbols_list = list(daily_data.keys())
+            
+            result = await session.execute(
+                text("""
+                    SELECT 
+                        symbol,
+                        rv14, rv30, rv60,
+                        high_90d, low_90d,
+                        sma_20, sma_50, sma_200,
+                        rsi_14,
+                        macd_line, macd_signal, macd_histogram,
+                        bb_upper, bb_middle, bb_lower, atr_14,
+                        volume_ma_20, volume_trend
+                    FROM screener_metrics
+                    WHERE date = :prev_trading_day
+                      AND symbol = ANY(:symbols)
+                """),
+                {"prev_trading_day": prev_trading_day, "symbols": symbols_list}
+            )
+            
+            # Build metrics map
+            metrics_map = {}
+            for row in result:
+                metrics_map[row[0]] = {
+                    "rv14": float(row[1]) if row[1] else 0.0,
+                    "rv30": float(row[2]) if row[2] else 0.0,
+                    "rv60": float(row[3]) if row[3] else 0.0,
+                    "high_90d": float(row[4]) if row[4] else None,
+                    "low_90d": float(row[5]) if row[5] else None,
+                    "sma_20": float(row[6]) if row[6] else None,
+                    "sma_50": float(row[7]) if row[7] else None,
+                    "sma_200": float(row[8]) if row[8] else None,
+                    "rsi_14": float(row[9]) if row[9] else None,
+                    "macd_line": float(row[10]) if row[10] else None,
+                    "macd_signal": float(row[11]) if row[11] else None,
+                    "macd_histogram": float(row[12]) if row[12] else None,
+                    "bb_upper": float(row[13]) if row[13] else None,
+                    "bb_middle": float(row[14]) if row[14] else None,
+                    "bb_lower": float(row[15]) if row[15] else None,
+                    "atr_14": float(row[16]) if row[16] else None,
+                    "volume_ma_20": float(row[17]) if row[17] else None,
+                    "volume_trend": row[18]
+                }
+            
+            metrics_time = (datetime.now() - start_time).total_seconds()
+            logger.info(f"[UNIFIED] Got metrics for {len(metrics_map)} symbols ({metrics_time:.2f}s)")
+            
+            # STEP 4: Combine into snapshot format (in-memory processing, very fast)
             snapshots = []
             for symbol, daily in daily_data.items():
                 # Skip if no daily close
@@ -183,6 +254,11 @@ async def fetch_screener_data_unified(
                         "v": daily["volume"],
                     }
                 }
+                
+                # Add pre-calculated metrics if available
+                if symbol in metrics_map:
+                    snapshot.update(metrics_map[symbol])
+                
                 snapshots.append(snapshot)
             
             logger.info(f"[UNIFIED] Returning {len(snapshots)} complete snapshots")
