@@ -15,16 +15,8 @@ export interface ServerUser {
   email: string;
   displayName: string;
   photoURL?: string;
-  status:
-    | "pending"
-    | "active"
-    | "waitlist"
-    | "invited"
-    | "suspended"
-    | "banned";
+  status: "pending" | "active" | "invited" | "suspended" | "banned";
   role: "user" | "admin" | "super_admin";
-  waitlistEntryId?: string;
-  waitlistPosition?: number;
 }
 
 /**
@@ -53,8 +45,6 @@ export async function getServerUser(): Promise<ServerUser | null> {
       photoURL: userData.photoURL,
       status: userData.status,
       role: userData.role,
-      waitlistEntryId: userData.waitlistEntryId,
-      waitlistPosition: userData.waitlistPosition,
     };
   } catch (error) {
     console.error("Error getting server user:", error);
@@ -98,8 +88,6 @@ export async function requireAppAccess(): Promise<ServerUser> {
   switch (user.status) {
     case "pending":
       redirect("/signup-info");
-    case "waitlist":
-      redirect("/waitlist");
     case "suspended":
     case "banned":
       redirect("/account-suspended");
@@ -117,7 +105,6 @@ export async function requireAppAccess(): Promise<ServerUser> {
 export async function getUserStatus(): Promise<{
   isAuthenticated: boolean;
   isAdmin: boolean;
-  isOnWaitlist: boolean;
   canAccessApp: boolean;
   user: ServerUser | null;
 }> {
@@ -127,20 +114,17 @@ export async function getUserStatus(): Promise<{
     return {
       isAuthenticated: false,
       isAdmin: false,
-      isOnWaitlist: false,
       canAccessApp: false,
       user: null,
     };
   }
 
   const isAdmin = user.role === "admin" || user.role === "super_admin";
-  const isOnWaitlist = user.status === "waitlist";
   const canAccessApp = user.status === "active" || user.status === "invited";
 
   return {
     isAuthenticated: true,
     isAdmin,
-    isOnWaitlist,
     canAccessApp,
     user,
   };

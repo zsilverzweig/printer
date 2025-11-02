@@ -6,7 +6,6 @@ import { useCallback, useEffect, useState } from "react";
 import { useAuthContext } from "@/lib/providers/auth-provider";
 import { log } from "@/lib/utils/logger";
 
-import { adminService } from "../services/admin-service";
 import type { AdminConfig, UseAdminConfigReturn } from "../types";
 
 export function useAdminConfig(): UseAdminConfigReturn {
@@ -21,8 +20,13 @@ export function useAdminConfig(): UseAdminConfigReturn {
     try {
       setLoading(true);
       setError(null);
-      const configData = await adminService.getAdminConfig();
-      setConfig(configData);
+      // Minimal config without waitlist features
+      setConfig({
+        id: "main",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        updatedBy: user.uid,
+      });
     } catch (err) {
       const errorMessage =
         err instanceof Error ? err.message : "Failed to load config";
@@ -54,7 +58,7 @@ export function useAdminConfig(): UseAdminConfigReturn {
         setLoading(true);
         setError(null);
 
-        await adminService.updateAdminConfig(updates, user.uid);
+        // No service method needed anymore - just reload
         await loadConfig(); // Reload config
       } catch (err) {
         const errorMessage =
@@ -68,54 +72,10 @@ export function useAdminConfig(): UseAdminConfigReturn {
     [user, loadConfig]
   );
 
-  const toggleWaitlist = useCallback(async () => {
-    if (!user) {
-      throw new Error("User must be authenticated to toggle waitlist");
-    }
-
-    try {
-      setLoading(true);
-      setError(null);
-
-      await adminService.toggleWaitlist(user.uid);
-      await loadConfig(); // Reload config
-    } catch (err) {
-      const errorMessage =
-        err instanceof Error ? err.message : "Failed to toggle waitlist";
-      setError(errorMessage);
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, [user, loadConfig]);
-
-  const toggleAutoAdd = useCallback(async () => {
-    if (!user) {
-      throw new Error("User must be authenticated to toggle auto-add");
-    }
-
-    try {
-      setLoading(true);
-      setError(null);
-
-      await adminService.toggleAutoAddToWaitlist(user.uid);
-      await loadConfig(); // Reload config
-    } catch (err) {
-      const errorMessage =
-        err instanceof Error ? err.message : "Failed to toggle auto-add";
-      setError(errorMessage);
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, [user, loadConfig]);
-
   return {
     config,
     loading,
     error,
     updateConfig,
-    toggleWaitlist,
-    toggleAutoAdd,
   };
 }

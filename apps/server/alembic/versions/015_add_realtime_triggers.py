@@ -80,15 +80,17 @@ def upgrade() -> None:
         $$ LANGUAGE plpgsql;
     """)
     
+    # Create trigger (idempotent)
     op.execute("""
-        DROP TRIGGER IF EXISTS orders_notify_trigger ON orders;
-    """)
-    
-    op.execute("""
-        CREATE TRIGGER orders_notify_trigger
-        AFTER INSERT OR UPDATE OR DELETE ON orders
-        FOR EACH ROW
-        EXECUTE FUNCTION notify_fund_orders_changed();
+        DO $$
+        BEGIN
+            DROP TRIGGER IF EXISTS orders_notify_trigger ON orders;
+            
+            CREATE TRIGGER orders_notify_trigger
+            AFTER INSERT OR UPDATE OR DELETE ON orders
+            FOR EACH ROW
+            EXECUTE FUNCTION notify_fund_orders_changed();
+        END $$;
     """)
     
     # Trigger function for transactions table
@@ -135,15 +137,17 @@ def upgrade() -> None:
         $$ LANGUAGE plpgsql;
     """)
     
+    # Create trigger (idempotent)
     op.execute("""
-        DROP TRIGGER IF EXISTS transactions_notify_trigger ON transactions;
-    """)
-    
-    op.execute("""
-        CREATE TRIGGER transactions_notify_trigger
-        AFTER INSERT OR UPDATE OR DELETE ON transactions
-        FOR EACH ROW
-        EXECUTE FUNCTION notify_fund_transactions_changed();
+        DO $$
+        BEGIN
+            DROP TRIGGER IF EXISTS transactions_notify_trigger ON transactions;
+            
+            CREATE TRIGGER transactions_notify_trigger
+            AFTER INSERT OR UPDATE OR DELETE ON transactions
+            FOR EACH ROW
+            EXECUTE FUNCTION notify_fund_transactions_changed();
+        END $$;
     """)
     
     # Trigger function for transfers table
@@ -187,15 +191,17 @@ def upgrade() -> None:
         $$ LANGUAGE plpgsql;
     """)
     
+    # Create trigger (idempotent)
     op.execute("""
-        DROP TRIGGER IF EXISTS transfers_notify_trigger ON transfers;
-    """)
-    
-    op.execute("""
-        CREATE TRIGGER transfers_notify_trigger
-        AFTER INSERT OR UPDATE OR DELETE ON transfers
-        FOR EACH ROW
-        EXECUTE FUNCTION notify_fund_transfers_changed();
+        DO $$
+        BEGIN
+            DROP TRIGGER IF EXISTS transfers_notify_trigger ON transfers;
+            
+            CREATE TRIGGER transfers_notify_trigger
+            AFTER INSERT OR UPDATE OR DELETE ON transfers
+            FOR EACH ROW
+            EXECUTE FUNCTION notify_fund_transfers_changed();
+        END $$;
     """)
     
     # Trigger function for funds table (balance changes only)
@@ -225,15 +231,17 @@ def upgrade() -> None:
         $$ LANGUAGE plpgsql;
     """)
     
+    # Create trigger (idempotent)
     op.execute("""
-        DROP TRIGGER IF EXISTS funds_balance_notify_trigger ON funds;
-    """)
-    
-    op.execute("""
-        CREATE TRIGGER funds_balance_notify_trigger
-        AFTER UPDATE ON funds
-        FOR EACH ROW
-        EXECUTE FUNCTION notify_fund_balance_changed();
+        DO $$
+        BEGIN
+            DROP TRIGGER IF EXISTS funds_balance_notify_trigger ON funds;
+            
+            CREATE TRIGGER funds_balance_notify_trigger
+            AFTER UPDATE ON funds
+            FOR EACH ROW
+            EXECUTE FUNCTION notify_fund_balance_changed();
+        END $$;
     """)
 
 

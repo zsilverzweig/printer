@@ -7,6 +7,7 @@
 import {
   Activity,
   ArrowDownUp,
+  Brain,
   DollarSign,
   TrendingDown,
   TrendingUp,
@@ -45,6 +46,7 @@ interface FundPerformanceCardProps {
   fundId: string;
   balance: FundBalanceCalculation;
   performance: PerformanceMetrics;
+  aiCosts?: { totalAiCost?: number; aiCostMtd?: number; aiCostYtd?: number };
   onUpdate: () => void;
 }
 
@@ -52,6 +54,7 @@ export function FundPerformanceCard({
   fundId,
   balance,
   performance,
+  aiCosts = {},
   onUpdate,
 }: FundPerformanceCardProps) {
   const { createTransfer } = useFundTransfers(fundId);
@@ -192,6 +195,49 @@ export function FundPerformanceCard({
                 </div>
               </div>
             </div>
+
+            {/* AI Cost Section */}
+            {(aiCosts.totalAiCost || 0) > 0 && (
+              <div className="pt-4 border-t">
+                <div className="flex items-center gap-2 mb-2">
+                  <Brain className="h-4 w-4 text-purple-600" />
+                  <span className="text-xs font-medium text-muted-foreground">
+                    AI Costs
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <div className="text-xs text-muted-foreground">
+                      All Time
+                    </div>
+                    <div className="text-xs font-semibold text-purple-600">
+                      {formatCurrency(aiCosts.totalAiCost || 0)}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-muted-foreground">MTD</div>
+                    <div className="text-xs font-semibold text-purple-600">
+                      {formatCurrency(aiCosts.aiCostMtd || 0)}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-muted-foreground">YTD</div>
+                    <div className="text-xs font-semibold text-purple-600">
+                      {formatCurrency(aiCosts.aiCostYtd || 0)}
+                    </div>
+                  </div>
+                </div>
+                {aiCosts.totalAiCost && balance.realizedPnL !== 0 && (
+                  <div className="mt-2 text-xs text-muted-foreground">
+                    {(
+                      (aiCosts.totalAiCost / Math.abs(balance.realizedPnL)) *
+                      100
+                    ).toFixed(2)}
+                    % of realized P&L
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="pt-4 border-t space-y-2">
               <div className="flex items-center justify-between">

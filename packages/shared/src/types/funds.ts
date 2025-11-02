@@ -61,6 +61,12 @@ export interface Fund {
   tradingEndTime?: string; // e.g., "16:00" (market close)
   timezone?: string; // e.g., "America/New_York" (default: ET)
 
+  // AI cost tracking
+  totalAiCost?: number; // Total AI costs incurred by this fund
+  aiCostMtd?: number; // Month-to-date AI costs
+  aiCostYtd?: number; // Year-to-date AI costs
+  lastAiCostReset?: Date | string | null; // Last time periodic costs were reset
+
   createdAt: Date | string;
   updatedAt: Date | string;
 }

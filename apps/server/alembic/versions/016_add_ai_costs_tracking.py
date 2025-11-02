@@ -40,7 +40,7 @@ def upgrade() -> None:
         sa.Column('total_tokens', sa.Integer(), nullable=False),
         sa.Column('cost', sa.Float(), nullable=False),
         sa.Column('timestamp', sa.DateTime(), nullable=False, index=True),
-        sa.Column('metadata', sa.JSON(), nullable=True),  # Additional context (strategy_id, etc.)
+        sa.Column('extra_data', sa.JSON(), nullable=True),  # Additional context (strategy_id, etc.)
         sa.Column('created_at', sa.DateTime(), nullable=False, server_default=sa.text('CURRENT_TIMESTAMP'))
     )
     

@@ -16,7 +16,6 @@ export interface UseUserRoutingReturn {
   loading: boolean;
   error: string | null;
   isAdmin: boolean;
-  isOnWaitlist: boolean;
   canAccessApp: boolean;
   access: UserAccess | null;
 }
@@ -28,7 +27,6 @@ export function useUserRouting(): UseUserRoutingReturn {
     isAdmin,
     loading,
     error,
-    isOnWaitlist,
     canAccessApp,
     access,
   } = useUser();
@@ -46,14 +44,6 @@ export function useUserRouting(): UseUserRoutingReturn {
       };
     }
 
-    // Check if user is on waitlist
-    if (isOnWaitlist) {
-      return {
-        path: "/waitlist",
-        reason: "User is on waitlist - redirecting to waitlist dashboard",
-      };
-    }
-
     // Check if user has active access
     if (canAccessApp) {
       return {
@@ -67,7 +57,7 @@ export function useUserRouting(): UseUserRoutingReturn {
       path: "/signup-info",
       reason: "Pending user - redirecting to complete profile setup",
     };
-  }, [isAuthenticated, user, isAdmin, isOnWaitlist, canAccessApp]);
+  }, [isAuthenticated, user, isAdmin, canAccessApp]);
 
   const route = determineRoute();
 
@@ -76,7 +66,6 @@ export function useUserRouting(): UseUserRoutingReturn {
     loading,
     error,
     isAdmin,
-    isOnWaitlist,
     canAccessApp,
     access,
   };

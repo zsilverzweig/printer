@@ -1,4 +1,11 @@
-import { Cpu, Database, Settings, Users, Wrench } from "lucide-react";
+import {
+  BarChart3,
+  Cpu,
+  Database,
+  Settings,
+  Users,
+  Wrench,
+} from "lucide-react";
 import Link from "next/link";
 
 import { requireAdmin } from "@/lib/auth/server";
@@ -124,6 +131,23 @@ export default async function AdminPage() {
               <CardContent>
                 <Link href="/admin/alpaca-debug">
                   <Button className="w-full">Open Debug Tool</Button>
+                </Link>
+              </CardContent>
+            </Card>
+
+            <Card className="hover:shadow-md transition-shadow">
+              <CardHeader>
+                <div className="flex items-center space-x-2">
+                  <BarChart3 className="h-5 w-5 text-purple-600" />
+                  <CardTitle>Market Data</CardTitle>
+                </div>
+                <CardDescription>
+                  Load and manage historical market data from TimescaleDB
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Link href="/admin/market-data">
+                  <Button className="w-full">Manage Market Data</Button>
                 </Link>
               </CardContent>
             </Card>

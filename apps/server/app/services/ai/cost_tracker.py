@@ -102,7 +102,7 @@ def record_ai_cost(
         total_tokens=total_tokens,
         cost=cost,
         timestamp=datetime.now(timezone.utc),
-        metadata=metadata or {},
+        extra_data=metadata or {},
     )
     
     db.add(ai_cost)

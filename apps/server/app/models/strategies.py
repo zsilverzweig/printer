@@ -251,7 +251,7 @@ class AICost(Base):
     timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
     
     # Additional context
-    metadata: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    extra_data: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     
     created_at: Mapped[datetime] = mapped_column(
         DateTime, 

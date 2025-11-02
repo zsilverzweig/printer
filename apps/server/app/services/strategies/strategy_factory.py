@@ -91,10 +91,11 @@ async def create_strategy_engine(
     try:
         execution_strategy = get_strategy(
             fund.strategy_id,
-            fund.strategy_config
+            fund.strategy_config,
+            fund_id=fund.id
         )
         logger.info(
-            f"✓ Execution strategy '{fund.strategy_id}' instantiated"
+            f"✓ Execution strategy '{fund.strategy_id}' instantiated with fund_id={fund.id}"
         )
     except Exception as e:
         logger.error(f"Failed to instantiate execution strategy: {e}")

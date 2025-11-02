@@ -67,14 +67,14 @@ const pillars = [
 
 const plans = [
   {
-    name: "Free waitlist",
+    name: "Free Access",
     price: "$0 today",
     description:
-      "Reserve your place for the next cohort and stay informed as we open new seats.",
+      "Get started with Printer and access AI-powered investment research.",
     features: [
-      "Save your spot in line with a quick signup.",
-      "Receive product updates and sample research drops.",
-      "Know exactly when activation begins for your account.",
+      "Sign up and start using Printer immediately.",
+      "Receive product updates and research insights.",
+      "Full access to all core features.",
     ],
     ctaLabel: "Sign up free",
     featured: true,
@@ -137,15 +137,14 @@ export function WelcomePage() {
         </p>
         <div className="flex flex-col items-center justify-center gap-3 sm:flex-row">
           <Button size="lg" asChild>
-            <Link href="/waitlist">
+            <Link href="/signup">
               Sign up free
               <ArrowRight className="ml-2 h-4 w-4" />
             </Link>
           </Button>
         </div>
         <p className="text-sm text-muted-foreground">
-          Signing up today adds you to the waitlist. We will reach out as soon
-          as your spot is ready.
+          Sign up today and start using Printer immediately.
         </p>
       </section>
 
@@ -212,8 +211,8 @@ export function WelcomePage() {
             Choose how you want to reserve access
           </h2>
           <p className="text-muted-foreground">
-            Every option routes to the waitlist today. Paid reservations secure
-            your place so you can activate as soon as seats open.
+            Choose the plan that works best for you. Sign up today and get
+            started immediately.
           </p>
         </div>
         <div className="grid gap-4 md:grid-cols-2">
@@ -253,7 +252,7 @@ export function WelcomePage() {
                   className="w-full"
                   variant={plan.featured ? "default" : "outline"}
                 >
-                  <Link href="/waitlist">{plan.ctaLabel}</Link>
+                  <Link href="/signup">{plan.ctaLabel}</Link>
                 </Button>
               </CardFooter>
             </Card>

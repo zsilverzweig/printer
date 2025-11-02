@@ -2,32 +2,32 @@ import { NextRequest, NextResponse } from "next/server";
 
 /**
  * Next.js 14 Middleware for Authentication and Route Protection
- * 
+ *
  * PURPOSE: Handles all server-side routing logic before pages render.
- * 
+ *
  * ROLE IN ARCHITECTURE:
  * - Middleware handles: Authentication checks, route protection, redirects (server-side)
  * - AppLayout handles: UI layout decisions (client-side)
- * 
+ *
  * KEY RESPONSIBILITIES:
  * 1. Authentication checks using cookies (auth-token, user-role, user-status)
  * 2. Route protection (public vs protected routes)
  * 3. Status-based redirects (pending → signup-info, waitlist → waitlist, etc.)
  * 4. Admin route protection
- * 
+ *
  * PERFORMANCE BENEFITS:
  * - Runs at the edge before any React code loads
  * - Prevents unnecessary page renders for unauthorized users
  * - Fast redirects without client-side JavaScript
- * 
+ *
  * COOKIE DEPENDENCIES:
  * - auth-token: Main authentication token
  * - user-role: admin, super_admin, user
  * - user-status: pending, active, waitlist, invited, suspended, banned
- * 
+ *
  * REDIRECT LOGIC:
  * - Unauthenticated + protected route → /login
- * - Non-admin + admin route → /unauthorized  
+ * - Non-admin + admin route → /unauthorized
  * - Pending user + non-signup route → /signup-info
  * - Waitlist user + non-waitlist route → /waitlist
  * - Active user + signup-info → /portfolios
@@ -46,7 +46,6 @@ export function middleware(request: NextRequest) {
     "/login",
     "/signup",
     "/signup-info",
-    "/waitlist",
     "/docs",
     "/api",
     "/_next",
@@ -66,64 +65,49 @@ export function middleware(request: NextRequest) {
 
   // If authenticated, handle route-specific logic
   if (authToken) {
-    // Redirect authenticated users away from auth pages based on their status
-    if (pathname === "/login" || pathname === "/signup") {
-      let redirectPath = "/portfolios"; // default
-      
-      if (userStatus === "pending") {
-        redirectPath = "/signup-info";
-      } else if (userStatus === "waitlist") {
-        redirectPath = "/waitlist";
-      } else if (userStatus === "active" || userStatus === "invited") {
-        redirectPath = "/portfolios";
-      }
-      
-      console.log(
-        `Redirecting authenticated user (${userStatus}) from ${pathname} to ${redirectPath}`
-      );
-      return NextResponse.redirect(new URL(redirectPath, request.url));
-    }
-
-    // Admin routes - require admin role
-    if (pathname.startsWith("/admin")) {
-      if (userRole !== "admin" && userRole !== "super_admin") {
-        console.log(
-          `Redirecting non-admin user from ${pathname} to /unauthorized`
-        );
-        return NextResponse.redirect(new URL("/unauthorized", request.url));
-      }
-    }
-
-    // Handle user status-based routing for other pages
-    if (userStatus) {
-      // Pending users should complete profile setup
-      if (
-        userStatus === "pending" &&
-        pathname !== "/signup-info" &&
-        !pathname.startsWith("/signup")
-      ) {
-        console.log(
-          `Redirecting pending user from ${pathname} to /signup-info`
-        );
-        return NextResponse.redirect(new URL("/signup-info", request.url));
-      }
-
-      // Waitlist users should see waitlist dashboard
-      if (
-        userStatus === "waitlist" &&
-        pathname !== "/waitlist" &&
-        !pathname.startsWith("/waitlist")
-      ) {
-        console.log(`Redirecting waitlist user from ${pathname} to /waitlist`);
-        return NextResponse.redirect(new URL("/waitlist", request.url));
-      }
-
-      // Active users can access app features
-      if (userStatus === "active" && pathname === "/signup-info") {
-        console.log(`Redirecting active user from ${pathname} to /portfolios`);
-        return NextResponse.redirect(new URL("/portfolios", request.url));
-      }
-    }
+    // // COMMENTED OUT: Redirect authenticated users away from auth pages based on their status
+    // if (pathname === "/login" || pathname === "/signup") {
+    //   let redirectPath = "/portfolios"; // default
+    //   if (userStatus === "pending") {
+    //     redirectPath = "/signup-info";
+    //   } else if (userStatus === "active" || userStatus === "invited") {
+    //     redirectPath = "/portfolios";
+    //   }
+    //   console.log(
+    //     `Redirecting authenticated user (${userStatus}) from ${pathname} to ${redirectPath}`
+    //   );
+    //   return NextResponse.redirect(new URL(redirectPath, request.url));
+    // }
+    // // Admin routes - require admin role
+    // if (pathname.startsWith("/admin")) {
+    //   if (userRole !== "admin" && userRole !== "super_admin") {
+    //     console.log(
+    //       `Redirecting non-admin user from ${pathname} to /unauthorized`
+    //     );
+    //     return NextResponse.redirect(new URL("/unauthorized", request.url));
+    //   }
+    //   // Admin users on admin routes should not be subject to status-based redirects
+    //   return NextResponse.next();
+    // }
+    // // COMMENTED OUT: Handle user status-based routing for other pages
+    // if (userStatus) {
+    //   // Pending users should complete profile setup
+    //   if (
+    //     userStatus === "pending" &&
+    //     pathname !== "/signup-info" &&
+    //     !pathname.startsWith("/signup")
+    //   ) {
+    //     console.log(
+    //       `Redirecting pending user from ${pathname} to /signup-info`
+    //     );
+    //     return NextResponse.redirect(new URL("/signup-info", request.url));
+    //   }
+    //   // Active users can access app features
+    //   if (userStatus === "active" && pathname === "/signup-info") {
+    //     console.log(`Redirecting active user from ${pathname} to /portfolios`);
+    //     return NextResponse.redirect(new URL("/portfolios", request.url));
+    //   }
+    // }
   }
 
   // Allow request to proceed

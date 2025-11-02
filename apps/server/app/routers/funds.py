@@ -104,6 +104,12 @@ class FundResponse(BaseModel):
     description: Optional[str]
     mode: str
     balance: float
+    
+    # AI cost tracking
+    total_ai_cost: float
+    ai_cost_mtd: float
+    ai_cost_ytd: float
+    last_ai_cost_reset: Optional[str]
     status: str
     archived: bool
     
@@ -215,6 +221,11 @@ def serialize_fund(fund: Fund) -> dict:
         "trading_start_time": fund.trading_start_time,
         "trading_end_time": fund.trading_end_time,
         "timezone": fund.timezone,
+        # AI cost tracking
+        "total_ai_cost": getattr(fund, "total_ai_cost", 0.0),
+        "ai_cost_mtd": getattr(fund, "ai_cost_mtd", 0.0),
+        "ai_cost_ytd": getattr(fund, "ai_cost_ytd", 0.0),
+        "last_ai_cost_reset": fund.last_ai_cost_reset.isoformat() + "Z" if getattr(fund, "last_ai_cost_reset", None) else None,
         "created_at": fund.created_at.isoformat() + "Z",  # Add Z to indicate UTC
         "updated_at": fund.updated_at.isoformat() + "Z",  # Add Z to indicate UTC
     }

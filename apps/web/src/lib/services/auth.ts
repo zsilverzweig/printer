@@ -68,8 +68,8 @@ export class AuthService {
         "AuthService"
       );
 
-      // Check if auto-add to waitlist is enabled
-      await this.handleAutoWaitlist(user);
+      // Create user profile and set server cookies
+      await this.handleUserProfile(user);
 
       return user;
     } catch (error) {
@@ -219,14 +219,14 @@ export class AuthService {
   }
 
   /**
-   * Handle auto-add to waitlist if enabled and set server-side cookies
+   * Handle user profile creation and set server-side cookies
    */
-  private async handleAutoWaitlist(user: AuthUser): Promise<void> {
+  private async handleUserProfile(user: AuthUser): Promise<void> {
     try {
       // Dynamic import to avoid circular dependency
       const { userService } = await import("@/lib/services/user-service");
 
-      // Create or update user profile - this will handle waitlist logic
+      // Create or update user profile
       const userProfile = await userService.createUserProfile(user, {
         signupSource: "google",
         lastActiveAt: new Date(),

@@ -2,22 +2,22 @@
 
 /**
  * AppLayout Component
- * 
+ *
  * PURPOSE: Manages UI layout decisions based on authentication state and current route.
- * 
+ *
  * ROLE IN ARCHITECTURE:
  * - Middleware handles: Route protection and redirects (server-side)
  * - AppLayout handles: UI layout decisions (client-side)
- * 
+ *
  * KEY RESPONSIBILITIES:
  * 1. Auth pages: Always render children (login, signup, etc.)
  * 2. Loading states: Show spinner only for authenticated users loading data
  * 3. Layout switching: Landing page vs App with sidebar
- * 
+ *
  * AUTH PAGE HANDLING:
  * - Auth pages bypass loading states to prevent login page from being blocked
- * - Includes: /login, /signup, /signup-info, /waitlist
- * 
+ * - Includes: /login, /signup, /signup-info
+ *
  * LAYOUT TYPES:
  * - Unauthenticated + non-auth page: LandingPage component
  * - Authenticated: App with sidebar (SidebarProvider + MainAppSidebar)
@@ -63,7 +63,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   const currentPath = usePathname();
 
   // Check if we're on an auth page that should always be accessible
-  const authPaths = ["/login", "/signup", "/signup-info", "/waitlist"];
+  const authPaths = ["/login", "/signup", "/signup-info"];
   const isAuthPage = authPaths.includes(currentPath);
 
   // For auth pages, always allow access - middleware handles routing

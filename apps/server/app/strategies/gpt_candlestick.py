@@ -29,6 +29,7 @@ from app.services.ai.gpt_helper import get_gpt_helper
 from app.services.core.validation import validate_entry_prices, validate_stop_update
 from app.services.market.market_formatting import format_candlesticks_table
 from app.services.news.news_service import NewsService
+from app.services.core.database import get_sync_session
 
 logger = logging.getLogger(__name__)
 
@@ -110,8 +111,8 @@ class GPTTradeThesis(BaseModel):
 class GPTCandlestickStrategy(ExecutionStrategy):
     """AI-powered candlestick analysis strategy using GPT."""
     
-    def __init__(self, config: Dict[str, Any]):
-        super().__init__(config)
+    def __init__(self, config: Dict[str, Any], fund_id: Optional[str] = None):
+        super().__init__(config, fund_id=fund_id)
         
         # Configuration
         self.evaluation_interval_minutes = config.get("evaluation_interval_minutes", 15)
@@ -120,8 +121,8 @@ class GPTCandlestickStrategy(ExecutionStrategy):
         self.min_confidence = config.get("min_confidence", 0.5)
         self.update_stop_interval_minutes = config.get("update_stop_interval_minutes", 15)
         
-        # Initialize GPT helper
-        self.gpt_helper = get_gpt_helper(model="gpt-4o-mini")
+        # Initialize GPT helper (without DB session here, will pass per call)
+        self.gpt_helper = None  # Will be created per call with DB session
         
         # Initialize news service
         self.news_service = NewsService()
@@ -140,6 +141,18 @@ class GPTCandlestickStrategy(ExecutionStrategy):
         
         # Note: _interval_tracker, _task_manager from base class
         # replaces _last_evaluation, _news_fetch_tasks, _thesis_tasks
+    
+    def _get_gpt_helper(self):
+        """Get GPT helper with cost tracking if fund_id is available."""
+        if self.fund_id:
+            try:
+                db = get_sync_session()
+                return get_gpt_helper(model="gpt-4o-mini", db=db, fund_id=self.fund_id)
+            except Exception as e:
+                logger.warning(f"Failed to initialize cost tracking: {e}, falling back to non-tracked GPT")
+                return get_gpt_helper(model="gpt-4o-mini")
+        else:
+            return get_gpt_helper(model="gpt-4o-mini")
     
     @property
     def id(self) -> str:
@@ -399,11 +412,15 @@ If there is NO clear DAY TRADE setup, set entry_price and stop_loss to 0 and con
                 
                 # Get GPT response
                 logger.info(f"🤖 Calling GPT for {symbol} entry analysis...")
-                response = await self.gpt_helper.get_structured_response(
+                gpt_helper = self._get_gpt_helper()
+                response = await gpt_helper.get_structured_response(
                     prompt=prompt,
                     response_model=GPTTradeSignal,
                     system_prompt="You are an expert intraday trader analyzing candlestick patterns for day trading entry signals. Focus on realistic intraday setups that can play out in hours, not days. Respond only with valid JSON.",
                     temperature=0.2,
+                    operation="entry_analysis",
+                    symbol=symbol,
+                    metadata={"strategy": "gpt_candlestick", "confidence_threshold": self.min_confidence},
                 )
                 
                 logger.info(
@@ -721,11 +738,15 @@ Respond ONLY with a JSON object in this exact format:
 """
             
             logger.info(f"🤖 Calling GPT for {symbol} stop loss update...")
-            response = await self.gpt_helper.get_structured_response(
+            gpt_helper = self._get_gpt_helper()
+            response = await gpt_helper.get_structured_response(
                 prompt=prompt,
                 response_model=GPTStopUpdate,
                 system_prompt="You are an expert trader managing stop losses. Never lower stops. Respond only with valid JSON.",
                 temperature=0.1,
+                operation="stop_loss_update",
+                symbol=symbol,
+                metadata={"strategy": "gpt_candlestick", "current_stop": current_stop},
             )
             
             logger.info(
@@ -908,11 +929,15 @@ Respond ONLY with a JSON object in this exact format:
 """
             
             logger.info(f"🧠 Generating trade thesis for {symbol}...")
-            thesis = await self.gpt_helper.get_structured_response(
+            gpt_helper = self._get_gpt_helper()
+            thesis = await gpt_helper.get_structured_response(
                 prompt=prompt,
                 response_model=GPTTradeThesis,
                 system_prompt="You are an intraday trader reflecting on a day trade you just entered. Focus on realistic intraday targets and exit plans that work within market hours. Be specific about levels and timing.",
                 temperature=0.3,
+                operation="trade_thesis",
+                symbol=symbol,
+                metadata={"strategy": "gpt_candlestick", "entry_price": entry_price},
             )
             
             # Log the thesis

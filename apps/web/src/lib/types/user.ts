@@ -8,8 +8,6 @@ export interface UserProfile {
   photoURL?: string;
   emailVerified: boolean;
   status: UserStatus;
-  waitlistEntryId?: string;
-  waitlistPosition?: number;
   role: UserRole;
   preferences: UserPreferences;
   metadata: UserMetadata;
@@ -21,8 +19,7 @@ export interface UserProfile {
 
 export type UserStatus =
   | "pending" // User signed up but not yet processed
-  | "waitlist" // User is on waitlist
-  | "invited" // User was invited from waitlist
+  | "invited" // User was invited
   | "active" // User has full access
   | "suspended" // User is temporarily suspended
   | "banned"; // User is permanently banned
@@ -78,7 +75,6 @@ export interface UserStatusUpdate {
 
 export interface UserAccess {
   canAccessApp: boolean;
-  canAccessWaitlist: boolean;
   canAccessAdmin: boolean;
   canAccessBetaFeatures: boolean;
   restrictions: string[];
@@ -96,7 +92,6 @@ export interface UserService {
     updatedBy?: string
   ): Promise<void>;
   getUserAccess(uid: string): Promise<UserAccess>;
-  isUserOnWaitlist(uid: string): Promise<boolean>;
   isUserActive(uid: string): Promise<boolean>;
   isUserAdmin(uid: string): Promise<boolean>;
   deleteUserProfile(uid: string): Promise<void>;

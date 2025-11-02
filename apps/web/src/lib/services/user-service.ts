@@ -1,4 +1,4 @@
-// User profile service for managing user data and waitlist status
+// User profile service for managing user data
 import {
   collection,
   deleteDoc,
@@ -12,8 +12,6 @@ import {
   where,
 } from "firebase/firestore";
 
-import { adminService } from "@/features/admin/services/admin-service";
-import { waitlistService } from "@/features/waitlist/services/waitlist-service";
 import { db } from "@/lib/services/firebase";
 import type {
   UserAccess,
@@ -100,50 +98,16 @@ export class UserProfileService implements UserService {
         return existingProfile;
       }
 
-      // Determine initial status based on waitlist and admin settings
+      // Determine initial status based on admin settings
       let initialStatus: UserStatus = "pending";
-      let waitlistEntryId: string | undefined;
-      let waitlistPosition: number | undefined;
 
       // Check if user is admin
       const isAdmin = this.isAdminEmail(user.email);
       if (isAdmin) {
         initialStatus = "active";
       } else {
-        // Check waitlist settings
-        const isWaitlistEnabled = await adminService.isWaitlistEnabled();
-        const isAutoAddEnabled =
-          await adminService.isAutoAddToWaitlistEnabled();
-
-        if (isWaitlistEnabled) {
-          if (isAutoAddEnabled) {
-            // Auto-add to waitlist
-            try {
-              const waitlistEntry = await waitlistService.joinWaitlist(
-                uid,
-                user.email,
-                user.displayName,
-                { source: "auto_signup", ...metadata }
-              );
-              waitlistEntryId = waitlistEntry.id;
-              waitlistPosition = waitlistEntry.position;
-              initialStatus = "waitlist";
-            } catch (error) {
-              log.error(
-                "Failed to auto-add user to waitlist",
-                error,
-                "UserProfileService"
-              );
-              // Continue with pending status if waitlist add fails
-            }
-          } else {
-            // Waitlist enabled but no auto-add - user needs to manually join
-            initialStatus = "pending";
-          }
-        } else {
-          // No waitlist - user gets immediate access
-          initialStatus = "active";
-        }
+        // Non-admin users start as active by default
+        initialStatus = "active";
       }
 
       // Create user profile
@@ -165,11 +129,17 @@ export class UserProfileService implements UserService {
           ...(metadata?.userAgent && { userAgent: metadata.userAgent }),
           ...(metadata?.ipAddress && { ipAddress: metadata.ipAddress }),
           ...(metadata?.utmParams && { utmParams: metadata.utmParams }),
-          ...(metadata?.referralCode && { referralCode: metadata.referralCode }),
-          ...(metadata?.signupSource && { signupSource: metadata.signupSource }),
+          ...(metadata?.referralCode && {
+            referralCode: metadata.referralCode,
+          }),
+          ...(metadata?.signupSource && {
+            signupSource: metadata.signupSource,
+          }),
           // Include other defined metadata fields
           ...Object.fromEntries(
-            Object.entries(metadata || {}).filter(([_, value]) => value !== undefined)
+            Object.entries(metadata || {}).filter(
+              ([_, value]) => value !== undefined
+            )
           ),
         },
         createdAt: serverTimestamp(),
@@ -177,21 +147,11 @@ export class UserProfileService implements UserService {
         lastLoginAt: serverTimestamp(),
       };
 
-      // Only include waitlist fields if they have values
-      if (waitlistEntryId !== undefined) {
-        profileData.waitlistEntryId = waitlistEntryId;
-      }
-      if (waitlistPosition !== undefined) {
-        profileData.waitlistPosition = waitlistPosition;
-      }
-
       await setDoc(doc(db, COLLECTIONS.USER_PROFILES, uid), profileData);
 
       const profile: UserProfile = {
         id: uid,
         ...profileData,
-        waitlistEntryId: waitlistEntryId || undefined,
-        waitlistPosition: waitlistPosition || undefined,
         createdAt: new Date(),
         updatedAt: new Date(),
         lastLoginAt: new Date(),
@@ -286,7 +246,6 @@ export class UserProfileService implements UserService {
       if (!profile) {
         return {
           canAccessApp: false,
-          canAccessWaitlist: false,
           canAccessAdmin: false,
           canAccessBetaFeatures: false,
           restrictions: ["User profile not found"],
@@ -295,7 +254,6 @@ export class UserProfileService implements UserService {
 
       const restrictions: string[] = [];
       let canAccessApp = false;
-      let canAccessWaitlist = false;
       let canAccessAdmin = false;
       let canAccessBetaFeatures = false;
 
@@ -303,17 +261,11 @@ export class UserProfileService implements UserService {
       switch (profile.status) {
         case "active":
           canAccessApp = true;
-          canAccessWaitlist = true;
           canAccessBetaFeatures = profile.preferences.features.betaFeatures;
           break;
         case "invited":
           canAccessApp = true;
-          canAccessWaitlist = true;
           canAccessBetaFeatures = profile.preferences.features.betaFeatures;
-          break;
-        case "waitlist":
-          canAccessWaitlist = true;
-          restrictions.push("On waitlist - full access pending");
           break;
         case "pending":
           restrictions.push("Account pending activation");
@@ -331,27 +283,8 @@ export class UserProfileService implements UserService {
         canAccessAdmin = true;
       }
 
-      // Check waitlist status
-      if (profile.status === "waitlist" && profile.waitlistEntryId) {
-        try {
-          const waitlistEntry = await waitlistService.getWaitlistEntryByUserId(
-            uid
-          );
-          if (waitlistEntry) {
-            restrictions.push(`Waitlist position: ${waitlistEntry.position}`);
-          }
-        } catch (error) {
-          log.error(
-            "Failed to get waitlist entry for access check",
-            error,
-            "UserProfileService"
-          );
-        }
-      }
-
       return {
         canAccessApp,
-        canAccessWaitlist,
         canAccessAdmin,
         canAccessBetaFeatures,
         restrictions,
@@ -360,28 +293,10 @@ export class UserProfileService implements UserService {
       log.failure("Failed to get user access", error, "UserProfileService");
       return {
         canAccessApp: false,
-        canAccessWaitlist: false,
         canAccessAdmin: false,
         canAccessBetaFeatures: false,
         restrictions: ["Error checking access permissions"],
       };
-    }
-  }
-
-  /**
-   * Check if user is on waitlist
-   */
-  async isUserOnWaitlist(uid: string): Promise<boolean> {
-    try {
-      const profile = await this.getUserProfile(uid);
-      return profile?.status === "waitlist" || false;
-    } catch (error) {
-      log.failure(
-        "Failed to check waitlist status",
-        error,
-        "UserProfileService"
-      );
-      return false;
     }
   }
 
@@ -509,8 +424,6 @@ export const updateUserStatus = (
   updatedBy?: string
 ) => userService.updateUserStatus(uid, status, reason, updatedBy);
 export const getUserAccess = (uid: string) => userService.getUserAccess(uid);
-export const isUserOnWaitlist = (uid: string) =>
-  userService.isUserOnWaitlist(uid);
 export const isUserActive = (uid: string) => userService.isUserActive(uid);
 export const isUserAdmin = (uid: string) => userService.isUserAdmin(uid);
 export const deleteUserProfile = (uid: string) =>

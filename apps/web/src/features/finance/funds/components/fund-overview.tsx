@@ -162,6 +162,11 @@ export function FundOverview({
         fundId={fund.id}
         balance={balance}
         performance={performance}
+        aiCosts={{
+          totalAiCost: fund.totalAiCost,
+          aiCostMtd: fund.aiCostMtd,
+          aiCostYtd: fund.aiCostYtd,
+        }}
         onUpdate={onFundUpdate}
       />
 

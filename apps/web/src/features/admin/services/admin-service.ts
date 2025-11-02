@@ -1,381 +1,161 @@
-// Admin service for managing waitlist and system configuration
-import {
-    collection,
-    doc,
-    getDoc,
-    getDocs,
-    query,
-    serverTimestamp,
-    setDoc,
-    updateDoc,
-    where,
-    writeBatch
-} from 'firebase/firestore'
+// Admin service for managing system configuration
+import type { AdminConfig } from "../types";
 
-import { waitlistService } from '@/features/waitlist/services/waitlist-service'
-import { db } from '@/lib/services/firebase'
-import { log } from '@/lib/utils/logger'
-
-import type {
-    AdminConfig,
-    WaitlistStats
-} from '../types'
-
-// Collection names
-const COLLECTIONS = {
-  ADMIN_CONFIG: 'admin_config',
-  WAITLIST_ENTRIES: 'waitlist_entries',
-  WAITLIST_ACTIONS: 'waitlist_actions',
-  WAITLIST_PAYMENTS: 'waitlist_payments'
-} as const
+import { log } from "@/lib/utils/logger";
 
 // Default admin configuration
-const DEFAULT_ADMIN_CONFIG: Omit<AdminConfig, 'id' | 'createdAt' | 'updatedAt' | 'updatedBy'> = {
-  waitlistEnabled: true,
-  autoAddToWaitlist: false,
-  waitlistCapacity: 1000,
-  inviteBatchSize: 10
-}
+const DEFAULT_ADMIN_CONFIG: Omit<
+  AdminConfig,
+  "id" | "createdAt" | "updatedAt" | "updatedBy"
+> = {};
 
 export class AdminService {
-  private static instance: AdminService
+  private static instance: AdminService;
 
   static getInstance(): AdminService {
     if (!AdminService.instance) {
-      AdminService.instance = new AdminService()
+      AdminService.instance = new AdminService();
     }
-    return AdminService.instance
+    return AdminService.instance;
+  }
+
+  // Market Data Methods
+
+  /**
+   * Start loading historical market data
+   */
+  async startMarketDataLoad(
+    days: number,
+    symbols?: string[]
+  ): Promise<{ status_id: number; message: string }> {
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+      const response = await fetch(`${apiUrl}/api/market/historical/load`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          days,
+          symbols: symbols || null,
+          start_date: null,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || "Failed to start market data load");
+      }
+
+      const result = await response.json();
+      log.success("Started market data load", "AdminService");
+      return result;
+    } catch (error) {
+      log.failure("Failed to start market data load", error, "AdminService");
+      throw error;
+    }
   }
 
   /**
-   * Get admin configuration
+   * Cancel the running market data load
    */
-  async getAdminConfig(): Promise<AdminConfig> {
+  async cancelMarketDataLoad(): Promise<void> {
     try {
-      const docRef = doc(db, COLLECTIONS.ADMIN_CONFIG, 'main')
-      const docSnap = await getDoc(docRef)
-      
-      if (docSnap.exists()) {
-        const data = docSnap.data()
-        return {
-          id: docSnap.id,
-          ...data,
-          createdAt: data.createdAt?.toDate() || new Date(),
-          updatedAt: data.updatedAt?.toDate() || new Date()
-        } as AdminConfig
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+      const response = await fetch(`${apiUrl}/api/market/historical/cancel`, {
+        method: "POST",
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || "Failed to cancel market data load");
       }
 
-      // Create default config if none exists
-      const defaultConfig = {
-        ...DEFAULT_ADMIN_CONFIG,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-        updatedBy: 'system'
+      log.success("Cancelled market data load", "AdminService");
+    } catch (error) {
+      log.failure("Failed to cancel market data load", error, "AdminService");
+      throw error;
+    }
+  }
+
+  /**
+   * Get status of a market data load task
+   */
+  async getMarketDataLoadStatus(statusId: number): Promise<{
+    status_id: number;
+    status: "running" | "completed" | "failed" | "cancelled";
+    progress_pct: number;
+    tickers_processed: number;
+    tickers_succeeded: number;
+    tickers_failed: number;
+    started_at: string | null;
+    completed_at: string | null;
+    last_updated: string | null;
+    error_message: string | null;
+  }> {
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+      const response = await fetch(
+        `${apiUrl}/api/market/historical/status/${statusId}`
+      );
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || "Failed to get load status");
       }
 
-      await setDoc(docRef, defaultConfig)
-      
+      return await response.json();
+    } catch (error) {
+      log.failure(
+        "Failed to get market data load status",
+        error,
+        "AdminService"
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Get database statistics
+   */
+  async getMarketDataStats(): Promise<{
+    total_bars: number;
+    min_date: string | null;
+    max_date: string | null;
+    symbol_count: number;
+    total_size: string;
+    table_size: string;
+    error?: string;
+  }> {
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+      const response = await fetch(`${apiUrl}/api/market/historical/stats`);
+
+      if (!response.ok) {
+        throw new Error("Failed to get database stats");
+      }
+
+      const result = await response.json();
+      return result;
+    } catch (error) {
+      log.failure("Failed to get market data stats", error, "AdminService");
+      // Return empty stats instead of throwing
       return {
-        id: docRef.id,
-        ...defaultConfig,
-        createdAt: new Date(),
-        updatedAt: new Date()
-      } as AdminConfig
-    } catch (error) {
-      log.failure('Failed to get admin config', error, 'AdminService')
-      throw error
-    }
-  }
-
-  /**
-   * Update admin configuration
-   */
-  async updateAdminConfig(
-    updates: Partial<AdminConfig>,
-    updatedBy: string
-  ): Promise<void> {
-    try {
-      const docRef = doc(db, COLLECTIONS.ADMIN_CONFIG, 'main')
-      
-      await updateDoc(docRef, {
-        ...updates,
-        updatedAt: serverTimestamp(),
-        updatedBy
-      })
-    } catch (error) {
-      log.failure('Failed to update admin config', error, 'AdminService')
-      throw error
-    }
-  }
-
-  /**
-   * Toggle waitlist enabled/disabled
-   */
-  async toggleWaitlist(updatedBy: string): Promise<void> {
-    try {
-      const config = await this.getAdminConfig()
-      await this.updateAdminConfig(
-        { waitlistEnabled: !config.waitlistEnabled },
-        updatedBy
-      )
-    } catch (error) {
-      log.failure('Failed to toggle waitlist', error, 'AdminService')
-      throw error
-    }
-  }
-
-  /**
-   * Toggle auto-add to waitlist
-   */
-  async toggleAutoAddToWaitlist(updatedBy: string): Promise<void> {
-    try {
-      const config = await this.getAdminConfig()
-      await this.updateAdminConfig(
-        { autoAddToWaitlist: !config.autoAddToWaitlist },
-        updatedBy
-      )
-    } catch (error) {
-      log.failure('Failed to toggle auto-add to waitlist', error, 'AdminService')
-      throw error
-    }
-  }
-
-  /**
-   * Get waitlist statistics
-   */
-  async getWaitlistStats(): Promise<WaitlistStats> {
-    try {
-      // Get total entries
-      const entriesQuery = query(
-        collection(db, COLLECTIONS.WAITLIST_ENTRIES),
-        where('status', '==', 'active')
-      )
-      const entriesSnapshot = await getDocs(entriesQuery)
-      const totalEntries = entriesSnapshot.size
-
-      // Get recent entries (last 7 days) - simplified query
-      const sevenDaysAgo = new Date()
-      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
-      
-      // Simple query without composite index - filter client-side
-      const allActiveEntriesQuery = query(
-        collection(db, COLLECTIONS.WAITLIST_ENTRIES),
-        where('status', '==', 'active')
-      )
-      const allActiveSnapshot = await getDocs(allActiveEntriesQuery)
-      
-      // Filter and sort client-side to avoid composite index
-      const recentEntries = allActiveSnapshot.docs
-        .map(doc => ({
-          id: doc.id,
-          email: doc.data().email,
-          position: doc.data().position,
-          joinedAt: doc.data().joinedAt?.toDate() || new Date(),
-          totalPoints: doc.data().totalPoints || 0
-        }))
-        .filter(entry => entry.joinedAt >= sevenDaysAgo)
-        .sort((a, b) => b.joinedAt.getTime() - a.joinedAt.getTime())
-        .slice(0, 10)
-
-      // Get top actions
-      const actionsQuery = query(
-        collection(db, COLLECTIONS.WAITLIST_ACTIONS),
-        where('status', '==', 'completed')
-      )
-      const actionsSnapshot = await getDocs(actionsQuery)
-      
-      const actionCounts: Record<string, number> = {}
-      actionsSnapshot.docs.forEach(doc => {
-        const actionType = doc.data().type
-        actionCounts[actionType] = (actionCounts[actionType] || 0) + 1
-      })
-
-      const topActions = Object.entries(actionCounts)
-        .map(([actionType, count]) => ({ actionType, count }))
-        .sort((a, b) => b.count - a.count)
-        .slice(0, 5)
-
-      // Calculate average position
-      let totalPosition = 0
-      entriesSnapshot.docs.forEach(doc => {
-        totalPosition += doc.data().position || 0
-      })
-      const averagePosition = totalEntries > 0 ? Math.round(totalPosition / totalEntries) : 0
-
-      // Get daily signups (last 7 days) - use existing data to avoid multiple queries
-      const dailySignups = []
-      for (let i = 6; i >= 0; i--) {
-        const date = new Date()
-        date.setDate(date.getDate() - i)
-        const startOfDay = new Date(date)
-        startOfDay.setHours(0, 0, 0, 0)
-        const endOfDay = new Date(date)
-        endOfDay.setHours(23, 59, 59, 999)
-
-        // Count from already fetched data instead of new queries
-        const dayCount = allActiveSnapshot.docs.filter(doc => {
-          const joinedAt = doc.data().joinedAt?.toDate()
-          return joinedAt && joinedAt >= startOfDay && joinedAt <= endOfDay
-        }).length
-        
-        dailySignups.push({
-          date: date.toISOString().split('T')[0],
-          count: dayCount
-        })
-      }
-
-      return {
-        totalEntries,
-        activeEntries: totalEntries,
-        averagePosition,
-        conversionRate: 0, // TODO: Calculate based on invites sent vs accepted
-        topActions,
-        dailySignups,
-        recentEntries
-      }
-    } catch (error) {
-      log.failure('Failed to get waitlist stats', error, 'AdminService')
-      throw error
-    }
-  }
-
-  /**
-   * Get all waitlist entries
-   */
-  async getAllWaitlistEntries(): Promise<any[]> {
-    try {
-      // Simple query without orderBy to avoid index requirements
-      const entriesQuery = query(
-        collection(db, COLLECTIONS.WAITLIST_ENTRIES)
-      )
-      const snapshot = await getDocs(entriesQuery)
-      
-      // Sort client-side to avoid composite index
-      const entries = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        position: doc.data().position || 0,
-        joinedAt: doc.data().joinedAt?.toDate() || new Date(),
-        createdAt: doc.data().createdAt?.toDate() || new Date(),
-        updatedAt: doc.data().updatedAt?.toDate() || new Date(),
-        lastActionAt: doc.data().lastActionAt?.toDate()
-      }))
-      
-      // Sort by position ascending
-      return entries.sort((a, b) => (a.position || 0) - (b.position || 0))
-    } catch (error) {
-      log.failure('Failed to get waitlist entries', error, 'AdminService')
-      throw error
-    }
-  }
-
-  /**
-   * Remove a waitlist entry
-   */
-  async removeWaitlistEntry(entryId: string): Promise<void> {
-    try {
-      const docRef = doc(db, COLLECTIONS.WAITLIST_ENTRIES, entryId)
-      await updateDoc(docRef, {
-        status: 'cancelled',
-        updatedAt: serverTimestamp()
-      })
-      
-      // Recalculate positions
-      await waitlistService.recalculatePositions()
-    } catch (error) {
-      log.failure('Failed to remove waitlist entry', error, 'AdminService')
-      throw error
-    }
-  }
-
-  /**
-   * Update waitlist entry status
-   */
-  async updateWaitlistEntryStatus(
-    entryId: string,
-    status: 'active' | 'invited' | 'converted' | 'cancelled'
-  ): Promise<void> {
-    try {
-      const docRef = doc(db, COLLECTIONS.WAITLIST_ENTRIES, entryId)
-      await updateDoc(docRef, {
-        status,
-        updatedAt: serverTimestamp()
-      })
-      
-      // Recalculate positions if status changed to/from active
-      if (status === 'active' || status === 'cancelled') {
-        await waitlistService.recalculatePositions()
-      }
-    } catch (error) {
-      log.failure('Failed to update waitlist entry status', error, 'AdminService')
-      throw error
-    }
-  }
-
-  /**
-   * Send invites to top waitlist entries
-   */
-  async sendInvites(count: number): Promise<void> {
-    try {
-      // Get all active entries and sort client-side
-      const entriesQuery = query(
-        collection(db, COLLECTIONS.WAITLIST_ENTRIES),
-        where('status', '==', 'active')
-      )
-      
-      const snapshot = await getDocs(entriesQuery)
-      
-      // Sort by position and take top entries
-      const sortedEntries = snapshot.docs
-        .map(doc => ({ ref: doc.ref, position: doc.data().position || 0 }))
-        .sort((a, b) => a.position - b.position)
-        .slice(0, count)
-      
-      const batch = writeBatch(db)
-      
-      sortedEntries.forEach(entry => {
-        batch.update(entry.ref, {
-          status: 'invited',
-          updatedAt: serverTimestamp()
-        })
-      })
-      
-      await batch.commit()
-      
-      // Recalculate positions
-      await waitlistService.recalculatePositions()
-    } catch (error) {
-      log.failure('Failed to send invites', error, 'AdminService')
-      throw error
-    }
-  }
-
-  /**
-   * Check if auto-add to waitlist is enabled
-   */
-  async isAutoAddToWaitlistEnabled(): Promise<boolean> {
-    try {
-      const config = await this.getAdminConfig()
-      return config.autoAddToWaitlist
-    } catch (error) {
-      log.failure('Failed to check auto-add setting', error, 'AdminService')
-      return false
-    }
-  }
-
-  /**
-   * Check if waitlist is enabled
-   */
-  async isWaitlistEnabled(): Promise<boolean> {
-    try {
-      const config = await this.getAdminConfig()
-      return config.waitlistEnabled
-    } catch (error) {
-      log.failure('Failed to check waitlist setting', error, 'AdminService')
-      return false
+        total_bars: 0,
+        min_date: null,
+        max_date: null,
+        symbol_count: 0,
+        total_size: "unknown",
+        table_size: "unknown",
+        error: error instanceof Error ? error.message : "Unknown error",
+      };
     }
   }
 }
 
 // Export singleton instance
-export const adminService = AdminService.getInstance()
+export const adminService = AdminService.getInstance();

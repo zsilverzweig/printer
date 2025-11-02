@@ -105,14 +105,16 @@ class ExecutionStrategy(ABC):
     and position sizing. Optional methods can be overridden for scaling behavior.
     """
     
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any], fund_id: Optional[str] = None):
         """
         Initialize strategy with configuration.
         
         Args:
             config: Strategy-specific configuration parameters
+            fund_id: Optional fund ID for cost tracking and attribution
         """
         self.config = config
+        self.fund_id = fund_id
         
         # Common tracking infrastructure
         from app.services.core.timing import IntervalTracker

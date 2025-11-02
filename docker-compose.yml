@@ -1,7 +1,7 @@
 services:
-  # PostgreSQL Database
+  # PostgreSQL Database with TimescaleDB
   db:
-    image: postgres:16-alpine
+    image: timescale/timescaledb:latest-pg16
     container_name: printer-db
     environment:
       POSTGRES_DB: printer_events

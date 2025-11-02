@@ -35,13 +35,14 @@ def register_strategy(strategy_class: Type[ExecutionStrategy]) -> None:
     logger.info(f"Registered strategy: {strategy_id} ({temp_instance.name})")
 
 
-def get_strategy(strategy_id: str, config: Dict[str, Any]) -> ExecutionStrategy:
+def get_strategy(strategy_id: str, config: Dict[str, Any], fund_id: Optional[str] = None) -> ExecutionStrategy:
     """
     Get an instantiated strategy by ID.
     
     Args:
         strategy_id: Unique strategy identifier
         config: Configuration parameters for the strategy
+        fund_id: Optional fund ID for cost tracking and attribution
         
     Returns:
         Instantiated ExecutionStrategy
@@ -59,7 +60,7 @@ def get_strategy(strategy_id: str, config: Dict[str, Any]) -> ExecutionStrategy:
     strategy_class = _STRATEGY_REGISTRY[strategy_id]
     
     try:
-        strategy = strategy_class(config)
+        strategy = strategy_class(config, fund_id=fund_id)
         strategy.validate_config(config)
         return strategy
     except Exception as e:
