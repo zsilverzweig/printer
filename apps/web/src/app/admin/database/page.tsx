@@ -1,12 +1,15 @@
 "use client";
 
 import {
+  Activity,
   AlertCircle,
   CheckCircle2,
   Database,
+  HardDrive,
   Loader2,
   Play,
   Table as TableIcon,
+  Zap,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -49,6 +52,58 @@ interface QueryResult {
   execution_time_ms?: number;
 }
 
+interface PerformanceMetrics {
+  connections: {
+    active: number;
+    idle: number;
+    idle_in_transaction: number;
+    total: number;
+    max_connections: number;
+  };
+  cache_stats: {
+    heap_read: number;
+    heap_hit: number;
+    cache_hit_ratio: number;
+  };
+  table_stats: Array<{
+    table_name: string;
+    size: string;
+    size_bytes: number;
+    row_count: number;
+    dead_rows: number;
+    last_vacuum: string | null;
+    last_autovacuum: string | null;
+    seq_scans: number;
+    index_scans: number;
+  }>;
+  query_performance: {
+    total_queries: number;
+    active_queries: number;
+    avg_active_duration_seconds: number;
+  };
+  index_usage: Array<{
+    table_name: string;
+    index_name: string;
+    scans: number;
+    size: string;
+  }>;
+  active_queries: Array<{
+    pid: number;
+    user: string;
+    application: string;
+    client_address: string;
+    state: string;
+    duration_seconds: number;
+    query_preview: string;
+  }>;
+  database_size: {
+    size_bytes: number;
+    size_pretty: string;
+    max_wal_size: string;
+    shared_buffers: string;
+  };
+}
+
 export default function DatabaseAdminPage() {
   const [activeTab, setActiveTab] = useUrlTabs({ defaultTab: "sql" });
   const [tables, setTables] = useState<TableInfo[]>([]);
@@ -59,11 +114,21 @@ export default function DatabaseAdminPage() {
   const [nlQueryResult, setNlQueryResult] = useState<QueryResult | null>(null);
   const [executingSql, setExecutingSql] = useState(false);
   const [executingNl, setExecutingNl] = useState(false);
+  const [performanceMetrics, setPerformanceMetrics] =
+    useState<PerformanceMetrics | null>(null);
+  const [loadingPerformance, setLoadingPerformance] = useState(false);
 
   // Fetch database schema on mount
   useEffect(() => {
     fetchSchema();
   }, []);
+
+  // Fetch performance metrics when on performance tab
+  useEffect(() => {
+    if (activeTab === "performance") {
+      fetchPerformanceMetrics();
+    }
+  }, [activeTab]);
 
   const fetchSchema = async () => {
     try {
@@ -76,6 +141,22 @@ export default function DatabaseAdminPage() {
       setTables([]);
     } finally {
       setLoadingTables(false);
+    }
+  };
+
+  const fetchPerformanceMetrics = async () => {
+    try {
+      setLoadingPerformance(true);
+      const response = await fetch(
+        "http://localhost:8000/api/db-admin/performance"
+      );
+      const data = await response.json();
+      setPerformanceMetrics(data);
+    } catch (error) {
+      console.error("Failed to fetch performance metrics:", error);
+      setPerformanceMetrics(null);
+    } finally {
+      setLoadingPerformance(false);
     }
   };
 
@@ -393,10 +474,15 @@ export default function DatabaseAdminPage() {
 
         {/* Right column: Query Interface */}
         <div className="lg:col-span-2 space-y-6">
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-2">
+          <Tabs
+            value={activeTab}
+            onValueChange={setActiveTab}
+            className="w-full"
+          >
+            <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="sql">SQL Query</TabsTrigger>
               <TabsTrigger value="natural">Natural Language</TabsTrigger>
+              <TabsTrigger value="performance">Performance</TabsTrigger>
             </TabsList>
 
             {/* SQL Query Tab */}
@@ -578,6 +664,297 @@ export default function DatabaseAdminPage() {
                   )}
                 </CardContent>
               </Card>
+            </TabsContent>
+
+            {/* Performance Tab */}
+            <TabsContent value="performance" className="space-y-4">
+              {loadingPerformance ? (
+                <Card>
+                  <CardContent className="flex items-center justify-center py-12">
+                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                  </CardContent>
+                </Card>
+              ) : !performanceMetrics ? (
+                <Card>
+                  <CardContent className="py-12">
+                    <Alert variant="destructive">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertTitle>Error</AlertTitle>
+                      <AlertDescription>
+                        Failed to load performance metrics. Make sure the server
+                        is running.
+                      </AlertDescription>
+                    </Alert>
+                  </CardContent>
+                </Card>
+              ) : (
+                <>
+                  {/* Overview Cards */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <Card>
+                      <CardHeader className="pb-3">
+                        <CardTitle className="text-sm font-medium flex items-center gap-2">
+                          <Activity className="h-4 w-4" />
+                          Connections
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="text-2xl font-bold">
+                          {performanceMetrics.connections.active}
+                          <span className="text-sm text-muted-foreground font-normal">
+                            {" "}
+                            / {performanceMetrics.connections.total}
+                          </span>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {performanceMetrics.connections.idle} idle,{" "}
+                          {performanceMetrics.connections.idle_in_transaction}{" "}
+                          idle in txn
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Max: {performanceMetrics.connections.max_connections}
+                        </p>
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <CardHeader className="pb-3">
+                        <CardTitle className="text-sm font-medium flex items-center gap-2">
+                          <Zap className="h-4 w-4" />
+                          Cache Hit Ratio
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="text-2xl font-bold">
+                          {performanceMetrics.cache_stats.cache_hit_ratio.toFixed(
+                            1
+                          )}
+                          %
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {performanceMetrics.cache_stats.heap_hit.toLocaleString()}{" "}
+                          hits
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {performanceMetrics.cache_stats.heap_read.toLocaleString()}{" "}
+                          disk reads
+                        </p>
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <CardHeader className="pb-3">
+                        <CardTitle className="text-sm font-medium flex items-center gap-2">
+                          <HardDrive className="h-4 w-4" />
+                          Database Size
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="text-2xl font-bold">
+                          {performanceMetrics.database_size.size_pretty}
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          WAL: {performanceMetrics.database_size.max_wal_size}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Buffers:{" "}
+                          {performanceMetrics.database_size.shared_buffers}
+                        </p>
+                      </CardContent>
+                    </Card>
+                  </div>
+
+                  {/* Table Statistics */}
+                  <Card>
+                    <CardHeader>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <CardTitle>Table Statistics</CardTitle>
+                          <CardDescription>Top tables by size</CardDescription>
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={fetchPerformanceMetrics}
+                        >
+                          <Activity className="h-4 w-4 mr-2" />
+                          Refresh
+                        </Button>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="overflow-auto max-h-96 border rounded-md">
+                        <table className="w-full text-sm">
+                          <thead className="bg-muted sticky top-0">
+                            <tr>
+                              <th className="px-4 py-2 text-left font-medium">
+                                Table
+                              </th>
+                              <th className="px-4 py-2 text-left font-medium">
+                                Size
+                              </th>
+                              <th className="px-4 py-2 text-right font-medium">
+                                Rows
+                              </th>
+                              <th className="px-4 py-2 text-right font-medium">
+                                Dead Rows
+                              </th>
+                              <th className="px-4 py-2 text-right font-medium">
+                                Seq Scans
+                              </th>
+                              <th className="px-4 py-2 text-right font-medium">
+                                Index Scans
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {performanceMetrics.table_stats.map(
+                              (table, idx) => (
+                                <tr
+                                  key={idx}
+                                  className="border-t hover:bg-muted/50"
+                                >
+                                  <td className="px-4 py-2 font-mono text-xs">
+                                    {table.table_name}
+                                  </td>
+                                  <td className="px-4 py-2">{table.size}</td>
+                                  <td className="px-4 py-2 text-right">
+                                    {table.row_count.toLocaleString()}
+                                  </td>
+                                  <td className="px-4 py-2 text-right">
+                                    <span
+                                      className={
+                                        table.dead_rows > table.row_count * 0.1
+                                          ? "text-orange-500"
+                                          : ""
+                                      }
+                                    >
+                                      {table.dead_rows.toLocaleString()}
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-2 text-right">
+                                    {table.seq_scans.toLocaleString()}
+                                  </td>
+                                  <td className="px-4 py-2 text-right">
+                                    {table.index_scans.toLocaleString()}
+                                  </td>
+                                </tr>
+                              )
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Index Usage */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Index Usage</CardTitle>
+                      <CardDescription>
+                        Least used indexes (potential optimization targets)
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="overflow-auto max-h-64 border rounded-md">
+                        <table className="w-full text-sm">
+                          <thead className="bg-muted sticky top-0">
+                            <tr>
+                              <th className="px-4 py-2 text-left font-medium">
+                                Table
+                              </th>
+                              <th className="px-4 py-2 text-left font-medium">
+                                Index
+                              </th>
+                              <th className="px-4 py-2 text-right font-medium">
+                                Scans
+                              </th>
+                              <th className="px-4 py-2 text-left font-medium">
+                                Size
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {performanceMetrics.index_usage.map(
+                              (index, idx) => (
+                                <tr
+                                  key={idx}
+                                  className="border-t hover:bg-muted/50"
+                                >
+                                  <td className="px-4 py-2 font-mono text-xs">
+                                    {index.table_name}
+                                  </td>
+                                  <td className="px-4 py-2 font-mono text-xs">
+                                    {index.index_name}
+                                  </td>
+                                  <td className="px-4 py-2 text-right">
+                                    <span
+                                      className={
+                                        index.scans === 0
+                                          ? "text-red-500"
+                                          : index.scans < 10
+                                          ? "text-orange-500"
+                                          : ""
+                                      }
+                                    >
+                                      {index.scans}
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-2">{index.size}</td>
+                                </tr>
+                              )
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Active Queries */}
+                  {performanceMetrics.active_queries.length > 0 && (
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Active Queries</CardTitle>
+                        <CardDescription>
+                          Currently running queries
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-3">
+                          {performanceMetrics.active_queries.map(
+                            (query, idx) => (
+                              <div
+                                key={idx}
+                                className="border rounded-lg p-3 text-sm"
+                              >
+                                <div className="flex items-center justify-between mb-2">
+                                  <div className="flex items-center gap-4">
+                                    <span className="font-mono text-xs text-muted-foreground">
+                                      PID: {query.pid}
+                                    </span>
+                                    <span className="text-xs">
+                                      {query.user}
+                                    </span>
+                                    <span className="text-xs text-muted-foreground">
+                                      {query.application}
+                                    </span>
+                                  </div>
+                                  <span className="text-xs font-medium">
+                                    {query.duration_seconds.toFixed(2)}s
+                                  </span>
+                                </div>
+                                <pre className="font-mono text-xs text-muted-foreground bg-muted p-2 rounded overflow-x-auto">
+                                  {query.query_preview}
+                                </pre>
+                              </div>
+                            )
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+                </>
+              )}
             </TabsContent>
           </Tabs>
         </div>

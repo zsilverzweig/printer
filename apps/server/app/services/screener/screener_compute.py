@@ -123,6 +123,17 @@ class ScreenerCompute:
             else set(price_map.keys())
         )
         
+        # Pre-calculate rv14 for all tickers in batch to avoid N queries (OPTIMIZATION)
+        rv14_map: Dict[str, float] = {}
+        try:
+            from app.services.screener.screener_volume import TimescaleVolumeCalculator
+            ts_calc = TimescaleVolumeCalculator(lookback_days=30)
+            # Batch calculate for all tickers at once (single query)
+            rv14_map = await ts_calc.calculate_rv14_batch(list(tickers_to_process))
+        except Exception:
+            # If batch fails, continue with empty map (rv14 will be 0 for all)
+            pass
+        
         for ticker in tickers_to_process:
             # Get OHLC data - prefer last_day_ohlc, fallback to snapshot
             if ticker in self.data_loader.last_day_ohlc:
@@ -213,15 +224,8 @@ class ScreenerCompute:
                 filtered_count += 1
                 continue
             
-            # Calculate relative volume (rv14) from TimescaleDB - non-blocking, use 0 if fails
-            rv14 = 0.0
-            try:
-                from app.services.screener.screener_volume import TimescaleVolumeCalculator
-                ts_calc = TimescaleVolumeCalculator(lookback_days=30)
-                rv14 = await ts_calc.calculate_rv14(ticker)
-            except (ValueError, Exception):
-                # Data incomplete or error - just use 0, don't log or block
-                pass
+            # Get pre-calculated rv14 from batch (already computed above)
+            rv14 = rv14_map.get(ticker, 0.0)
             
             # Calculate percentage changes for different timeframes
             changes = self.data_loader.price_tracker.calculate_all_changes(ticker)

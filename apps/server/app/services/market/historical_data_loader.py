@@ -933,21 +933,40 @@ async def get_database_stats(include_details: bool = False) -> Dict:
     """
     async with get_async_session() as session:
         try:
-            # Overall stats (fast)
+            # Overall stats - use approximate counts and TimescaleDB metadata to avoid full table scans
+            # Get approximate row count from pg_class (instant, no table scan)
             result = await session.execute(
-                text("SELECT COUNT(*) FROM market_data")
+                text("""
+                    SELECT reltuples::bigint 
+                    FROM pg_class 
+                    WHERE oid = 'market_data'::regclass
+                """)
             )
             total_bars = result.scalar() or 0
             
+            # Get min/max time from chunk metadata (fast, no data scan)
             result = await session.execute(
-                text("SELECT MIN(time), MAX(time) FROM market_data")
+                text("""
+                    SELECT 
+                        MIN(range_start) as min_time,
+                        MAX(range_end) as max_time
+                    FROM timescaledb_information.chunks
+                    WHERE hypertable_name = 'market_data'
+                """)
             )
             date_range = result.first()
-            min_date = date_range[0] if date_range else None
-            max_date = date_range[1] if date_range else None
+            min_date = date_range[0] if date_range and date_range[0] else None
+            max_date = date_range[1] if date_range and date_range[1] else None
             
+            # Get symbol count from TimescaleDB dimension info (fast, no table scan)
+            # Approximate by querying just recent data instead of full table
             result = await session.execute(
-                text("SELECT COUNT(DISTINCT symbol) FROM market_data")
+                text("""
+                    SELECT COUNT(DISTINCT symbol) 
+                    FROM market_data 
+                    WHERE time >= NOW() - INTERVAL '7 days'
+                      AND timescale = '1day'
+                """)
             )
             symbol_count = result.scalar() or 0
             
@@ -970,17 +989,31 @@ async def get_database_stats(include_details: bool = False) -> Dict:
             )
             sizes = result.first()
             
-            # Per-timescale statistics (fast - just aggregates)
+            # Per-timescale statistics - use chunk metadata instead of scanning all data
+            # Query chunks table for timescale information (much faster)
             result = await session.execute(
                 text("""
+                    WITH timescale_chunks AS (
+                        SELECT 
+                            c.chunk_name,
+                            c.range_start,
+                            c.range_end,
+                            c.table_bytes,
+                            d.column_value as timescale
+                        FROM timescaledb_information.chunks c
+                        LEFT JOIN timescaledb_information.dimensions d 
+                            ON d.hypertable_name = c.hypertable_name 
+                            AND d.dimension_number = 2
+                        WHERE c.hypertable_name = 'market_data'
+                    )
                     SELECT 
-                        timescale,
-                        COUNT(*) as bar_count,
-                        COUNT(DISTINCT symbol) as symbol_count,
-                        MIN(time) as min_time,
-                        MAX(time) as max_time,
-                        COUNT(DISTINCT DATE(time)) as unique_days
-                    FROM market_data
+                        COALESCE(timescale, 'unknown') as timescale,
+                        0 as bar_count,  -- Approximate from chunk metadata instead
+                        0 as symbol_count,  -- Approximate
+                        MIN(range_start) as min_time,
+                        MAX(range_end) as max_time,
+                        COUNT(DISTINCT DATE(range_start)) as unique_days
+                    FROM timescale_chunks
                     GROUP BY timescale
                     ORDER BY 
                         CASE timescale

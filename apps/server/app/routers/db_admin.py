@@ -62,6 +62,17 @@ class SchemaResponse(BaseModel):
     tables: List[TableInfo]
 
 
+class PerformanceMetrics(BaseModel):
+    """Performance metrics for database monitoring."""
+    connections: Dict[str, Any]
+    cache_stats: Dict[str, Any]
+    table_stats: List[Dict[str, Any]]
+    query_performance: Dict[str, Any]
+    index_usage: List[Dict[str, Any]]
+    active_queries: List[Dict[str, Any]]
+    database_size: Dict[str, Any]
+
+
 @router.post("/query", response_model=SQLQueryResponse)
 async def execute_sql_query(request: SQLQueryRequest) -> SQLQueryResponse:
     """
@@ -171,6 +182,192 @@ async def get_database_schema() -> SchemaResponse:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to retrieve database schema: {str(e)}"
+        )
+
+
+@router.get("/performance", response_model=PerformanceMetrics)
+async def get_performance_metrics() -> PerformanceMetrics:
+    """
+    Get database performance metrics.
+    
+    Retrieves comprehensive performance statistics including:
+    - Connection statistics
+    - Cache hit ratios
+    - Table and index usage
+    - Active queries
+    - Database size information
+    
+    Returns:
+        PerformanceMetrics with all performance data
+    """
+    try:
+        async with get_async_session() as session:
+            # Connection stats
+            connections_result = await session.execute(text("""
+                SELECT 
+                    count(*) FILTER (WHERE state = 'active') as active,
+                    count(*) FILTER (WHERE state = 'idle') as idle,
+                    count(*) FILTER (WHERE state = 'idle in transaction') as idle_in_transaction,
+                    count(*) as total
+                FROM pg_stat_activity
+            """))
+            conn_row = connections_result.fetchone()
+            
+            # Get max connections separately
+            max_conn_result = await session.execute(text("""
+                SELECT setting::int FROM pg_settings WHERE name = 'max_connections'
+            """))
+            max_conn_row = max_conn_result.fetchone()
+            
+            connections = {
+                "active": conn_row[0] or 0,
+                "idle": conn_row[1] or 0,
+                "idle_in_transaction": conn_row[2] or 0,
+                "total": conn_row[3] or 0,
+                "max_connections": max_conn_row[0] if max_conn_row else 100
+            }
+            
+            # Cache hit ratio
+            cache_result = await session.execute(text("""
+                SELECT 
+                    sum(heap_blks_read) as heap_read,
+                    sum(heap_blks_hit) as heap_hit,
+                    sum(heap_blks_hit) / NULLIF(sum(heap_blks_hit) + sum(heap_blks_read), 0) * 100 as cache_hit_ratio
+                FROM pg_statio_user_tables
+            """))
+            cache_row = cache_result.fetchone()
+            cache_stats = {
+                "heap_read": int(cache_row[0] or 0),
+                "heap_hit": int(cache_row[1] or 0),
+                "cache_hit_ratio": round(float(cache_row[2] or 0), 2)
+            }
+            
+            # Table statistics (top 10 by size)
+            table_stats_result = await session.execute(text("""
+                SELECT 
+                    schemaname || '.' || relname as table_name,
+                    pg_size_pretty(pg_total_relation_size(schemaname||'.'||relname)) as size,
+                    pg_total_relation_size(schemaname||'.'||relname) as size_bytes,
+                    n_live_tup as row_count,
+                    n_dead_tup as dead_rows,
+                    last_vacuum,
+                    last_autovacuum,
+                    seq_scan,
+                    idx_scan
+                FROM pg_stat_user_tables
+                ORDER BY pg_total_relation_size(schemaname||'.'||relname) DESC
+                LIMIT 10
+            """))
+            table_stats = []
+            for row in table_stats_result:
+                table_stats.append({
+                    "table_name": row[0],
+                    "size": row[1],
+                    "size_bytes": int(row[2]),
+                    "row_count": int(row[3] or 0),
+                    "dead_rows": int(row[4] or 0),
+                    "last_vacuum": str(row[5]) if row[5] else None,
+                    "last_autovacuum": str(row[6]) if row[6] else None,
+                    "seq_scans": int(row[7] or 0),
+                    "index_scans": int(row[8] or 0)
+                })
+            
+            # Query performance stats
+            query_perf_result = await session.execute(text("""
+                SELECT 
+                    count(*) as total_queries,
+                    count(*) FILTER (WHERE state = 'active') as active_queries,
+                    avg(EXTRACT(EPOCH FROM (now() - query_start))) FILTER (WHERE state = 'active') as avg_active_duration
+                FROM pg_stat_activity
+                WHERE query != '<IDLE>'
+            """))
+            qp_row = query_perf_result.fetchone()
+            query_performance = {
+                "total_queries": int(qp_row[0] or 0),
+                "active_queries": int(qp_row[1] or 0),
+                "avg_active_duration_seconds": round(float(qp_row[2] or 0), 2)
+            }
+            
+            # Index usage (unused indexes)
+            index_usage_result = await session.execute(text("""
+                SELECT 
+                    schemaname || '.' || relname as table_name,
+                    indexrelname,
+                    idx_scan,
+                    pg_size_pretty(pg_relation_size(indexrelid)) as index_size
+                FROM pg_stat_user_indexes
+                ORDER BY idx_scan ASC, pg_relation_size(indexrelid) DESC
+                LIMIT 10
+            """))
+            index_usage = []
+            for row in index_usage_result:
+                index_usage.append({
+                    "table_name": row[0],
+                    "index_name": row[1],
+                    "scans": int(row[2] or 0),
+                    "size": row[3]
+                })
+            
+            # Active queries (top 10 longest running)
+            active_queries_result = await session.execute(text("""
+                SELECT 
+                    pid,
+                    usename,
+                    application_name,
+                    client_addr::text,
+                    state,
+                    EXTRACT(EPOCH FROM (now() - query_start)) as duration_seconds,
+                    LEFT(query, 100) as query_preview
+                FROM pg_stat_activity
+                WHERE state = 'active' 
+                  AND pid != pg_backend_pid()
+                  AND query NOT LIKE '%pg_stat_activity%'
+                ORDER BY query_start ASC
+                LIMIT 10
+            """))
+            active_queries = []
+            for row in active_queries_result:
+                active_queries.append({
+                    "pid": int(row[0]),
+                    "user": row[1],
+                    "application": row[2],
+                    "client_address": row[3],
+                    "state": row[4],
+                    "duration_seconds": round(float(row[5] or 0), 2),
+                    "query_preview": row[6]
+                })
+            
+            # Database size
+            db_size_result = await session.execute(text("""
+                SELECT 
+                    pg_database_size(current_database()) as size_bytes,
+                    pg_size_pretty(pg_database_size(current_database())) as size_pretty,
+                    current_setting('max_wal_size') as max_wal_size,
+                    current_setting('shared_buffers') as shared_buffers
+            """))
+            db_size_row = db_size_result.fetchone()
+            database_size = {
+                "size_bytes": int(db_size_row[0]),
+                "size_pretty": db_size_row[1],
+                "max_wal_size": db_size_row[2],
+                "shared_buffers": db_size_row[3]
+            }
+            
+            return PerformanceMetrics(
+                connections=connections,
+                cache_stats=cache_stats,
+                table_stats=table_stats,
+                query_performance=query_performance,
+                index_usage=index_usage,
+                active_queries=active_queries,
+                database_size=database_size
+            )
+            
+    except Exception as e:
+        logger.error(f"Failed to get performance metrics: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve performance metrics: {str(e)}"
         )
 
 

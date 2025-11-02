@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from collections import deque
 from datetime import datetime, date, timedelta, timezone
-from typing import Deque, Dict, Optional
+from typing import Deque, Dict, List, Optional
 
 from sqlalchemy import text
 
@@ -268,6 +268,88 @@ class TimescaleVolumeCalculator:
         except Exception as e:
             self.logger.error(f"Error calculating rv14 for {symbol}: {e}", exc_info=True)
             return 0.0
+    
+    async def calculate_rv14_batch(self, symbols: List[str]) -> Dict[str, float]:
+        """
+        Calculate rv14 for multiple symbols in a single batch query (MUCH faster).
+        
+        Args:
+            symbols: List of ticker symbols
+            
+        Returns:
+            Dict mapping symbol to rv14 value
+        """
+        if not symbols:
+            return {}
+        
+        try:
+            from app.services.core.database import get_async_session
+            from sqlalchemy import text
+            from datetime import date, timedelta
+            
+            async with get_async_session() as session:
+                # Query last 16 days of data for ALL symbols at once
+                cutoff_date = date.today() - timedelta(days=16)
+                yesterday = date.today() - timedelta(days=1)
+                
+                # Batch query for all symbols
+                result = await session.execute(
+                    text("""
+                        WITH symbol_volumes AS (
+                            SELECT 
+                                symbol,
+                                time::date as date,
+                                volume,
+                                ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY time DESC) as rn
+                            FROM market_data
+                            WHERE symbol = ANY(:symbols)
+                              AND timescale = '1day'
+                              AND time >= :cutoff_date
+                              AND time::date <= :yesterday
+                        ),
+                        validated_symbols AS (
+                            SELECT symbol
+                            FROM symbol_date_validation
+                            WHERE date = :yesterday
+                              AND is_complete = true
+                              AND symbol = ANY(:symbols)
+                        )
+                        SELECT 
+                            v.symbol,
+                            ARRAY_AGG(v.volume ORDER BY v.rn) as volumes
+                        FROM symbol_volumes v
+                        INNER JOIN validated_symbols vs ON v.symbol = vs.symbol
+                        WHERE v.rn <= 16
+                        GROUP BY v.symbol
+                        HAVING COUNT(*) >= 15
+                    """),
+                    {
+                        "symbols": symbols,
+                        "cutoff_date": cutoff_date,
+                        "yesterday": yesterday
+                    }
+                )
+                
+                rv14_results = {}
+                for row in result:
+                    symbol = row[0]
+                    volumes = row[1]
+                    
+                    if len(volumes) >= 15:
+                        yesterday_volume = float(volumes[0])
+                        prior_14_days = [float(v) for v in volumes[1:15]]
+                        avg_prior = sum(prior_14_days) / len(prior_14_days)
+                        
+                        if avg_prior > 0:
+                            rv14_results[symbol] = yesterday_volume / avg_prior
+                        else:
+                            rv14_results[symbol] = 0.0
+                
+                return rv14_results
+                
+        except Exception as e:
+            self.logger.error(f"Error in batch rv14 calculation: {e}", exc_info=True)
+            return {}
     
     async def get_yesterday_ohlcv(self, symbol: str) -> Optional[Dict]:
         """
