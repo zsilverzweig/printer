@@ -77,14 +77,37 @@ async def noc_ws(websocket: WebSocket):
             # Keep-alive; wait for client messages or disconnection
             message = await websocket.receive_text()
             
-            # Handle ping/pong for connection keep-alive
+            # Handle client messages
             try:
                 data = json.loads(message)
-                if isinstance(data, dict) and data.get("type") == "ping":
-                    # Respond to ping with pong
-                    await websocket.send_json({"type": "pong", "timestamp": data.get("timestamp")})
-                    if logger.isEnabledFor(logging.DEBUG):
-                        logger.debug("Sent pong response to NOC client")
+                if isinstance(data, dict):
+                    msg_type = data.get("type")
+                    
+                    if msg_type == "ping":
+                        # Respond to ping with pong
+                        await websocket.send_json({"type": "pong", "timestamp": data.get("timestamp")})
+                        if logger.isEnabledFor(logging.DEBUG):
+                            logger.debug("Sent pong response to NOC client")
+                    
+                    elif msg_type == "set_screener":
+                        # Update the active screener for NOC
+                        screener_id = data.get("screener_id")
+                        if screener_id == "default" or screener_id is None:
+                            noc_service.screener_criteria_id = None
+                            logger.info(f"NOC screener set to default")
+                            await websocket.send_json({
+                                "type": "screener_updated",
+                                "screener_id": None,
+                                "message": "Using default screener"
+                            })
+                        else:
+                            noc_service.screener_criteria_id = screener_id
+                            logger.info(f"NOC screener set to: {screener_id}")
+                            await websocket.send_json({
+                                "type": "screener_updated",
+                                "screener_id": screener_id,
+                                "message": f"Screener updated to {screener_id}"
+                            })
             except (json.JSONDecodeError, Exception):
                 # Not JSON or other error, ignore and continue
                 pass

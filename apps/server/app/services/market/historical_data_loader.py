@@ -130,7 +130,7 @@ async def start_historical_load_task(
         days: Number of days of historical data to load (ignored if timescales specified)
         symbols: List of symbols to load (None = all from snapshot)
         start_date: Starting date for historical data (None = use default lookback per timescale)
-        timescales: List of timescales to load (None = ['1min']). Options: '1min', '5min', '15min', '1hour', '1day'
+        timescales: List of timescales to load (None = all: ['1min', '5min', '15min', '1hour', '1day'])
     
     Returns:
         Dict with status_id and message
@@ -146,9 +146,9 @@ async def start_historical_load_task(
     # Reset cancel flag
     _cancel_flag = False
     
-    # Default to 1min if no timescales specified
+    # Default to all configured timescales if none specified
     if timescales is None:
-        timescales = ['1min']
+        timescales = ['1min', '5min', '15min', '1hour', '1day']
     
     # Validate timescales
     invalid_timescales = [ts for ts in timescales if ts not in TIMESCALE_CONFIG]

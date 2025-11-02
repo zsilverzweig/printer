@@ -1,5 +1,6 @@
 "use client";
 
+import { useScreeners } from "@/features/screener/hooks/use-screeners";
 import {
   Card,
   CardContent,
@@ -8,6 +9,13 @@ import {
 } from "@/lib/components/ui/card";
 import { CardActionButton } from "@/lib/components/ui/card-action-button";
 import { Input } from "@/lib/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/lib/components/ui/select";
 import {
   Table,
   TableBody,
@@ -23,6 +31,7 @@ import {
   TooltipTrigger,
 } from "@/lib/components/ui/tooltip";
 import { useNocData } from "@/lib/hooks/use-noc-data";
+import { useWebSocketContext } from "@/lib/providers/websocket-provider";
 import type { StockIndicators } from "@printer/shared";
 import { Search } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -304,8 +313,14 @@ export function NocTable({ initialTicker }: NocTableProps) {
   );
   const [activeFilterCount, setActiveFilterCount] = useState(0);
 
-  // Use new unified WebSocket hook
+  // Screener selection
+  const [selectedScreenerId, setSelectedScreenerId] =
+    useState<string>("default");
+  const { screeners, loading: screenersLoading } = useScreeners();
+
+  // Use hooks for data and WebSocket messaging
   const { data: stocks, isConnected, error } = useNocData();
+  const { sendMessage } = useWebSocketContext();
 
   const handleStockClick = (ticker: string) => {
     setSelectedStock(ticker);
@@ -358,6 +373,19 @@ export function NocTable({ initialTicker }: NocTableProps) {
       }
     } catch (error) {
       console.error("Error updating NOC config:", error);
+    }
+  };
+
+  const handleScreenerChange = (screenerId: string) => {
+    setSelectedScreenerId(screenerId);
+
+    // Send WebSocket message to update the screener
+    if (sendMessage) {
+      sendMessage({
+        type: "set_screener",
+        screener_id: screenerId === "default" ? null : screenerId,
+      });
+      console.log("Screener changed to:", screenerId);
     }
   };
 
@@ -489,6 +517,28 @@ export function NocTable({ initialTicker }: NocTableProps) {
                   onFilterClear={handleFilterClear}
                   activeFilterCount={activeFilterCount}
                 />
+              </div>
+              {/* Screener selector */}
+              <div className="mb-2">
+                <Select
+                  value={selectedScreenerId}
+                  onValueChange={handleScreenerChange}
+                  disabled={screenersLoading}
+                >
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue placeholder="Select screener..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="default">
+                      Default (No filters)
+                    </SelectItem>
+                    {screeners.map((screener) => (
+                      <SelectItem key={screener.id} value={screener.id}>
+                        {screener.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               {/* Timeframe filter buttons - Wrap if needed */}
               <div className="flex flex-wrap gap-1">

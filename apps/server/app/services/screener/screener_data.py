@@ -197,7 +197,7 @@ class ScreenerDataLoader:
                         FULL OUTER JOIN latest_trades lt ON lb.symbol = lt.symbol
                         LEFT JOIN today_volume tv ON COALESCE(lb.symbol, lt.symbol) = tv.symbol
                         LEFT JOIN yesterday_ohlc yo ON COALESCE(lb.symbol, lt.symbol) = yo.symbol
-                        WHERE yo.prev_close IS NOT NULL
+                        WHERE (lb.symbol IS NOT NULL OR lt.symbol IS NOT NULL)
                         ORDER BY symbol
                     """),
                     {"today": today, "yesterday": yesterday}
@@ -211,6 +211,11 @@ class ScreenerDataLoader:
                     trade_timestamp = float(row[4]) if row[4] else None
                     exchange = row[5]
                     today_volume = int(row[6])
+                    prev_close = float(row[10]) if row[10] else None
+                    
+                    # Skip symbols without yesterday's close (can't calculate % change)
+                    if not prev_close:
+                        continue
                     
                     # Choose price: use trade price if it's more recent than bar, otherwise use bar
                     if trade_price and bar_price:
@@ -253,8 +258,17 @@ class ScreenerDataLoader:
                         }
                     }
                     snapshots.append(snapshot)
+                
+                if len(snapshots) == 0:
+                    self.logger.warning(
+                        "No market data available for screener. Possible causes:\n"
+                        f"  1. No yesterday's daily close data (date: {yesterday}) - run historical data loader for 1day timescale\n"
+                        f"  2. No today's pricing data (date: {today}) - ensure snapshot ingestion or real-time ingestion is running\n"
+                        "  → Check admin panel or logs to verify data ingestion services are active"
+                    )
+                else:
+                    self.logger.debug(f"Fetched {len(snapshots)} latest market data records from TimescaleDB")
                     
-                self.logger.debug(f"Fetched {len(snapshots)} latest market data records from TimescaleDB")
                 return snapshots
                 
         except Exception as e:

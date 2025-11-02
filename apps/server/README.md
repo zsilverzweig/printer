@@ -1,5 +1,7 @@
 # Minimal FastAPI + Polygon backend
 
+> **🐳 Note for AI Assistants**: This server runs in Docker. See [AGENTS.md](../../AGENTS.md) for Docker-specific operational guidance.
+
 This is a minimal FastAPI service that proxies a few Polygon.io endpoints and provides a simple WebSocket pass-through.
 
 Reference: [polygon-io/client-python](https://github.com/polygon-io/client-python)

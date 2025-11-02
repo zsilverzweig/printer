@@ -11,6 +11,7 @@ class NocConfigUpdate(BaseModel):
     """Request model for updating NOC filter configuration."""
     timeframe: Optional[str] = None  # "1m", "5m", "1h", "close"
     min_change_percent: Optional[float] = None
+    screener_criteria_id: Optional[str] = None  # Optional saved screener ID
 
 
 @router.get("/config")
@@ -27,6 +28,7 @@ async def get_noc_config():
     return {
         "timeframe": noc_service.timeframe,
         "min_change_percent": noc_service.min_change_percent,
+        "screener_criteria_id": noc_service.screener_criteria_id,
     }
 
 
@@ -63,11 +65,18 @@ async def update_noc_config(config: NocConfigUpdate):
             )
         noc_service.min_change_percent = config.min_change_percent
     
+    if config.screener_criteria_id is not None:
+        if config.screener_criteria_id == "default" or config.screener_criteria_id == "":
+            noc_service.screener_criteria_id = None
+        else:
+            noc_service.screener_criteria_id = config.screener_criteria_id
+    
     return {
         "status": "success",
         "config": {
             "timeframe": noc_service.timeframe,
             "min_change_percent": noc_service.min_change_percent,
+            "screener_criteria_id": noc_service.screener_criteria_id,
         }
     }
 

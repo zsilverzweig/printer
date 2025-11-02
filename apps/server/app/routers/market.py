@@ -18,7 +18,7 @@ class HistoricalLoadRequest(BaseModel):
     days: int = 1
     symbols: Optional[List[str]] = None
     start_date: Optional[str] = None
-    timescales: Optional[List[str]] = None  # ['1min', '5min', '15min', '1hour', '1day']
+    timescales: Optional[List[str]] = None  # Default: all ['1min', '5min', '15min', '1hour', '1day']
 
 
 class HistoricalLoadResponse(BaseModel):

@@ -12,6 +12,54 @@ When working in IDE modes, never commit files unless explicitly directed to.
 
 Assume that there is a pattern already in place to solve problems, don't create a new one. If you can't find a pattern, ask the user for more guidance.
 
+## Docker Environment
+
+**CRITICAL: This application runs in Docker containers.**
+
+### Database Access
+
+- ❌ **NEVER** run SQL queries directly with `psql` or database clients from the host
+- ❌ **NEVER** connect to databases from the host machine expecting local access without verifying Docker status
+- ✅ **ALWAYS** use Docker exec: `docker exec printer-db psql -U postgres -d printer_events -c "QUERY"`
+- ⚠️ **NOTE**: Use `-it` flags only for interactive sessions (manual shell access), NOT for scripted commands
+- ✅ **ALWAYS** check if services are running: `nx docker:ps printer`
+
+### API/Service Access
+
+- ❌ **NEVER** run curl/wget against localhost expecting services without checking Docker status first
+- ❌ **NEVER** suggest running Python scripts directly without considering container context
+- ✅ **ALWAYS** verify services are running in Docker first
+- ✅ **ALWAYS** use docker-compose commands or NX docker targets
+- ✅ **ALWAYS** remember: Database runs at `db:5432` inside containers, `localhost:5432` from host
+
+### Common Operations
+
+```bash
+# Check what's running
+nx docker:ps printer
+
+# Execute database queries (non-interactive)
+docker exec printer-db psql -U postgres -d printer_events -c "SELECT COUNT(*) FROM market_data;"
+
+# Interactive database shell (manual use only)
+docker exec -it printer-db psql -U postgres -d printer_events
+
+# Run Python scripts in server container
+docker exec printer-server python /app/check_db_data.py
+
+# Interactive shell in container (manual use only)
+docker exec -it printer-server bash
+
+# View logs
+nx docker:logs:server printer
+nx docker:logs:web printer
+nx docker:logs:db printer
+
+# Start/stop services
+nx docker:up printer
+nx docker:down printer
+```
+
 Follow a folder structure along these lines:
 
 ```

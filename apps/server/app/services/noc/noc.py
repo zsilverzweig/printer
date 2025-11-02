@@ -36,6 +36,9 @@ class NocService:
         # Filter settings (configurable via REST API)
         self.timeframe: str = "close"  # "1m", "5m", "1h", "close"
         self.min_change_percent: float = 5.0  # Minimum % change to display
+        
+        # Screener configuration
+        self.screener_criteria_id: str | None = None  # Optional saved screener to use
 
     async def start(self) -> None:
         self.logger.info("NocService starting; interval=%ss", self.interval_s)
@@ -95,6 +98,74 @@ class NocService:
         except Exception as e:
             self.logger.error("Failed to compute/broadcast NOC data: %s", e, exc_info=True)
 
+    async def _run_saved_screener(self, criteria_id: str) -> List[dict]:
+        """Run a saved screener configuration and return the results.
+        
+        Args:
+            criteria_id: UUID of the saved screening criteria
+            
+        Returns:
+            List of screener results
+        """
+        try:
+            from app.models.strategies import ScreeningCriteria
+            from app.services.core.database import get_async_session
+            from sqlalchemy import select
+            
+            # Fetch the screening criteria from database
+            async with get_async_session() as session:
+                result = await session.execute(
+                    select(ScreeningCriteria).where(ScreeningCriteria.id == criteria_id)
+                )
+                criteria = result.scalar_one_or_none()
+                
+                if not criteria:
+                    self.logger.warning(f"Screener criteria {criteria_id} not found, using default")
+                    return self.screener.cached_payload
+            
+            # Extract filter parameters from saved criteria
+            params = criteria.criteria
+            min_price = params.get("min_price")
+            max_price = params.get("max_price")
+            min_volume = params.get("min_volume")
+            min_change_percent = params.get("min_change_percent")
+            max_change_percent = params.get("max_change_percent")
+            exclude_etfs = params.get("exclude_etfs", True)
+            asset_types = params.get("asset_types")
+            order_by = params.get("order_by", "rv14")
+            limit = params.get("limit", 200)
+            technical_filters = params.get("technical_filters")
+            
+            # Fetch latest market data
+            snaps = await self.screener.data_loader.fetch_latest_from_timescale()
+            
+            if not snaps:
+                self.logger.warning("No market data available for saved screener")
+                return []
+            
+            # Run screener computation with saved criteria
+            results = await self.screener.compute.compute(
+                snaps,
+                min_price=min_price,
+                max_price=max_price,
+                min_volume=min_volume,
+                min_change_percent=min_change_percent,
+                max_change_percent=max_change_percent,
+                order_by=order_by,
+                limit=limit,
+                technical_filters=technical_filters,
+                exclude_etfs=exclude_etfs,
+                asset_types=asset_types,
+            )
+            
+            self.logger.info(f"Saved screener '{criteria.name}' returned {len(results)} stocks")
+            return results
+            
+        except Exception as e:
+            self.logger.error(f"Failed to run saved screener {criteria_id}: {e}", exc_info=True)
+            # Fall back to default screener data
+            return self.screener.cached_payload
+    
     async def _compute_noc_data(self) -> List[dict]:
         """Compute NOC data using screener service data.
         
@@ -104,9 +175,10 @@ class NocService:
         - Real relative volume metrics
         
         Strategy:
-        - Process all available stocks
+        - If screener_criteria_id is set, run that saved screener
+        - Otherwise, use default screener data from service
         - Sort by absolute % change for selected timeframe
-        - Return top 25-50 stocks (most volatile for the timeframe)
+        - Return top 50 stocks (most volatile for the timeframe)
         - Minimum 50k volume for adequate liquidity
         
         Returns up to 50 stocks, guaranteeing at least 25 if available.
@@ -118,8 +190,11 @@ class NocService:
         """
         candidates: List[dict] = []
         
-        # Get screener data (already has real prices and RV)
-        screener_data = self.screener.cached_payload
+        # Get screener data - either from saved screener or default
+        if self.screener_criteria_id:
+            screener_data = await self._run_saved_screener(self.screener_criteria_id)
+        else:
+            screener_data = self.screener.cached_payload
         
         if not screener_data:
             self.logger.warning("No screener data available, returning empty NOC data")
