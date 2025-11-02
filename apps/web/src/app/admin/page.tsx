@@ -1,4 +1,4 @@
-import { Cpu, Settings, Users, Wrench } from "lucide-react";
+import { Cpu, Database, Settings, Users, Wrench } from "lucide-react";
 import Link from "next/link";
 
 import { requireAdmin } from "@/lib/auth/server";
@@ -38,7 +38,6 @@ export default async function AdminPage() {
 
         {/* Admin Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-
           <Card className="hover:shadow-md transition-shadow">
             <CardHeader>
               <div className="flex items-center space-x-2">
@@ -95,6 +94,23 @@ export default async function AdminPage() {
         <div className="space-y-4">
           <h2 className="text-xl font-semibold">Utilities</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Card className="hover:shadow-md transition-shadow">
+              <CardHeader>
+                <div className="flex items-center space-x-2">
+                  <Database className="h-5 w-5 text-blue-600" />
+                  <CardTitle>Database Admin</CardTitle>
+                </div>
+                <CardDescription>
+                  Query and explore database with SQL or natural language
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Link href="/admin/database">
+                  <Button className="w-full">Open Database Admin</Button>
+                </Link>
+              </CardContent>
+            </Card>
+
             <Card className="hover:shadow-md transition-shadow">
               <CardHeader>
                 <div className="flex items-center space-x-2">

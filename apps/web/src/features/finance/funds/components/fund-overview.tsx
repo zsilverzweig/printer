@@ -194,7 +194,9 @@ export function FundOverview({
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-lg">{fund.createdAt.toLocaleDateString()}</div>
+            <div className="text-lg">
+              {new Date(fund.createdAt).toLocaleDateString()}
+            </div>
           </CardContent>
         </Card>
       </div>

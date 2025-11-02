@@ -6,7 +6,6 @@ import {
   Briefcase,
   Building2,
   Database,
-  FileText,
   Home,
   Newspaper,
   Settings,
@@ -115,20 +114,6 @@ export function MainAppSidebar() {
           href: "/news-test",
           icon: <Newspaper className="h-4 w-4" />,
         },
-        {
-          id: "analysis",
-          title: "Analysis",
-          href: "/analysis",
-          icon: <BarChart3 className="h-4 w-4" />,
-          disabled: true,
-        },
-        {
-          id: "reports",
-          title: "Reports",
-          href: "/reports",
-          icon: <FileText className="h-4 w-4" />,
-          disabled: true,
-        },
       ],
     },
   ];
@@ -148,6 +133,12 @@ export function MainAppSidebar() {
           id: "ticker-database",
           title: "Ticker Database",
           href: "/admin/assets",
+          icon: <Database className="h-4 w-4" />,
+        },
+        {
+          id: "database-admin",
+          title: "Database Admin",
+          href: "/admin/database",
           icon: <Database className="h-4 w-4" />,
         },
         {

@@ -7,6 +7,7 @@
 "use client";
 
 import { Copy, Loader2, RefreshCw } from "lucide-react";
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 import { Button } from "@/lib/components/ui/button";
@@ -199,7 +200,12 @@ Average Loss: ${formatCurrency(portfolioMetrics.averageLoss)}`;
                   {summaries.map((summary) => (
                     <TableRow key={summary.fundId}>
                       <TableCell className="font-medium">
-                        {summary.fundName}
+                        <Link
+                          href={`/funds/${summary.fundId}`}
+                          className="text-blue-600 hover:text-blue-800 hover:underline"
+                        >
+                          {summary.fundName}
+                        </Link>
                       </TableCell>
                       <TableCell className="text-right">
                         {summary.metrics.totalTrades}

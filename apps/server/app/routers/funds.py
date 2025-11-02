@@ -188,7 +188,7 @@ class TransactionResponse(BaseModel):
         from_attributes = True
 
 
-# Helper function to serialize Fund to dict
+# Helper functions to serialize models to dicts
 def serialize_fund(fund: Fund) -> dict:
     """Convert a Fund model instance to a response dict."""
     return {
@@ -218,6 +218,98 @@ def serialize_fund(fund: Fund) -> dict:
         "created_at": fund.created_at.isoformat() + "Z",  # Add Z to indicate UTC
         "updated_at": fund.updated_at.isoformat() + "Z",  # Add Z to indicate UTC
     }
+
+
+def serialize_order(order: Order) -> dict:
+    """Convert an Order model instance to a response dict."""
+    return {
+        "id": order.id,
+        "symbol": order.symbol,
+        "side": order.side,
+        "quantity": order.quantity,
+        "status": order.status,
+        "order_type": order.order_type,
+        "submitted_at": order.submitted_at.isoformat() + "Z",
+        "filled_at": order.filled_at.isoformat() + "Z" if order.filled_at else None,
+        "filled_qty": order.filled_qty,
+        "filled_avg_price": order.filled_avg_price,
+        "alpaca_order_id": order.alpaca_order_id,
+    }
+
+
+def serialize_transaction(txn: Transaction) -> dict:
+    """Convert a Transaction model instance to a response dict."""
+    return {
+        "id": txn.id,
+        "symbol": txn.symbol,
+        "side": txn.side,
+        "quantity": txn.quantity,
+        "price": txn.price,
+        "total_value": txn.total_value,
+        "timestamp": txn.timestamp.isoformat() + "Z",
+    }
+
+
+def serialize_transfer(transfer: Transfer) -> dict:
+    """Convert a Transfer model instance to a response dict."""
+    return {
+        "id": transfer.id,
+        "fund_id": transfer.fund_id,
+        "amount": transfer.amount,
+        "transfer_type": transfer.transfer_type,
+        "notes": transfer.notes,
+        "timestamp": transfer.timestamp.isoformat() + "Z",
+    }
+
+
+async def get_fund_snapshot(fund_id: str, limit: int = 100) -> dict:
+    """
+    Get a complete snapshot of fund data for real-time WebSocket connections.
+    
+    Returns fund details, recent orders, transactions, and transfers.
+    """
+    async with get_async_session() as session:
+        # Get fund
+        fund = await session.get(Fund, fund_id)
+        if not fund:
+            return None
+        
+        # Get recent orders
+        stmt = (
+            select(Order)
+            .where(Order.fund_id == fund_id)
+            .order_by(Order.submitted_at.desc())
+            .limit(limit)
+        )
+        result = await session.execute(stmt)
+        orders = [serialize_order(order) for order in result.scalars().all()]
+        
+        # Get recent transactions
+        stmt = (
+            select(Transaction)
+            .where(Transaction.fund_id == fund_id)
+            .order_by(Transaction.timestamp.desc())
+            .limit(limit)
+        )
+        result = await session.execute(stmt)
+        transactions = [serialize_transaction(txn) for txn in result.scalars().all()]
+        
+        # Get recent transfers
+        stmt = (
+            select(Transfer)
+            .where(Transfer.fund_id == fund_id)
+            .order_by(Transfer.timestamp.desc())
+            .limit(limit)
+        )
+        result = await session.execute(stmt)
+        transfers = [serialize_transfer(transfer) for transfer in result.scalars().all()]
+        
+        return {
+            "fund": serialize_fund(fund),
+            "orders": orders,
+            "transactions": transactions,
+            "transfers": transfers,
+        }
 
 
 # Endpoints
@@ -774,22 +866,7 @@ async def get_fund_orders(fund_id: str, limit: int = 100) -> List[dict]:
             result = await session.execute(stmt)
             orders = result.scalars().all()
             
-            return [
-                {
-                    "id": order.id,
-                    "symbol": order.symbol,
-                    "side": order.side,
-                    "quantity": order.quantity,
-                    "status": order.status,
-                    "order_type": order.order_type,
-                    "submitted_at": order.submitted_at.isoformat() + "Z",  # Add Z to indicate UTC
-                    "filled_at": order.filled_at.isoformat() + "Z" if order.filled_at else None,  # Add Z to indicate UTC
-                    "filled_qty": order.filled_qty,
-                    "filled_avg_price": order.filled_avg_price,
-                    "alpaca_order_id": order.alpaca_order_id,
-                }
-                for order in orders
-            ]
+            return [serialize_order(order) for order in orders]
     except Exception as e:
         logger.error(f"Error getting orders for fund {fund_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -810,18 +887,7 @@ async def get_fund_transactions(fund_id: str, limit: int = 100) -> List[dict]:
             result = await session.execute(stmt)
             transactions = result.scalars().all()
             
-            return [
-                {
-                    "id": txn.id,
-                    "symbol": txn.symbol,
-                    "side": txn.side,
-                    "quantity": txn.quantity,
-                    "price": txn.price,
-                    "total_value": txn.total_value,
-                    "timestamp": txn.timestamp.isoformat() + "Z",  # Add Z to indicate UTC
-                }
-                for txn in transactions
-            ]
+            return [serialize_transaction(txn) for txn in transactions]
     except Exception as e:
         logger.error(f"Error getting transactions for fund {fund_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -1207,17 +1273,7 @@ async def get_fund_transfers(fund_id: str, limit: int = 100) -> List[dict]:
             result = await session.execute(stmt)
             transfers = result.scalars().all()
             
-            return [
-                {
-                    "id": transfer.id,
-                    "fund_id": transfer.fund_id,
-                    "amount": transfer.amount,
-                    "transfer_type": transfer.transfer_type,
-                    "notes": transfer.notes,
-                    "timestamp": transfer.timestamp.isoformat() + "Z",  # Add Z to indicate UTC
-                }
-                for transfer in transfers
-            ]
+            return [serialize_transfer(transfer) for transfer in transfers]
     except Exception as e:
         logger.error(f"Error getting transfers for fund {fund_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

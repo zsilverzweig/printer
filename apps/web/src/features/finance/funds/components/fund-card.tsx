@@ -111,7 +111,7 @@ export function FundCard({ fund }: FundCardProps) {
 
             {/* Created Date */}
             <div className="text-xs text-muted-foreground">
-              Created {fund.createdAt.toLocaleDateString()}
+              Created {new Date(fund.createdAt).toLocaleDateString()}
             </div>
           </div>
         </CardContent>

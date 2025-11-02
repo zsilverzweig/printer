@@ -7,7 +7,7 @@ import logging
 import threading
 import time
 
-from fastapi import APIRouter, WebSocket
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from fastapi.encoders import jsonable_encoder
 from polygon import WebSocketClient
 
@@ -15,6 +15,7 @@ import app.core as core
 from app.core import rest_client
 from app.services.screener.screener import ScreenerService
 from app.services.noc.noc import NocService
+from app.services.realtime.db_listener import get_db_listener_service
 
 
 router = APIRouter()
@@ -520,5 +521,109 @@ async def broadcast_trading_activity(event: dict) -> None:
         trading_activity_subscribers.discard(ws)
     
     logger.debug(f"Broadcasted trading activity to {len(trading_activity_subscribers)} subscribers")
+
+
+@router.websocket("/funds/{fund_id}/ws")
+async def fund_realtime(websocket: WebSocket, fund_id: str):
+    """
+    WebSocket endpoint for real-time fund updates.
+    
+    Subscribes to PostgreSQL NOTIFY events for orders, transactions, transfers,
+    and balance changes for a specific fund.
+    
+    Connection flow:
+    1. Client connects
+    2. Server sends initial snapshot of fund data
+    3. Server streams real-time updates as they occur in the database
+    4. Client sends ping every 5s, server responds with pong
+    5. Server closes if no ping received in 15s
+    """
+    logger = logging.getLogger("app.realtime")
+    
+    await websocket.accept()
+    logger.info(f"Fund WebSocket connection accepted for fund {fund_id}")
+    
+    # Get or create the database listener service
+    db_listener = get_db_listener_service()
+    
+    # Start the listener if not already running
+    if not db_listener.running:
+        try:
+            await db_listener.start()
+        except Exception as e:
+            logger.error(f"Failed to start DatabaseListenerService: {e}")
+            await websocket.close()
+            return
+    
+    # Subscribe this WebSocket to fund updates
+    db_listener.subscribe(fund_id, websocket)
+    
+    try:
+        # Send initial snapshot
+        from app.routers.funds import get_fund_snapshot
+        snapshot = await get_fund_snapshot(fund_id)
+        
+        if snapshot:
+            await websocket.send_json({
+                "type": "snapshot",
+                "fund_id": fund_id,
+                "snapshot": snapshot,
+                "timestamp": time.time()
+            })
+            logger.info(f"Sent initial snapshot to fund {fund_id} WebSocket")
+        else:
+            logger.warning(f"Fund {fund_id} not found, closing connection")
+            await websocket.close()
+            return
+        
+        # Track last ping time
+        last_ping_time = time.time()
+        ping_timeout = 15  # 3x the 5s ping interval
+        
+        # Keep connection alive and handle client messages
+        while True:
+            try:
+                # Wait for message with timeout
+                message = await asyncio.wait_for(
+                    websocket.receive_text(),
+                    timeout=1.0  # Check every second
+                )
+                
+                # Parse message
+                try:
+                    data = json.loads(message)
+                    
+                    # Handle ping messages
+                    if isinstance(data, dict) and data.get("type") == "ping":
+                        last_ping_time = time.time()
+                        await websocket.send_json({
+                            "type": "pong",
+                            "timestamp": data.get("timestamp", time.time())
+                        })
+                        logger.debug(f"Sent pong to fund {fund_id} WebSocket")
+                        
+                except (json.JSONDecodeError, Exception) as e:
+                    logger.warning(f"Invalid message from fund {fund_id} WebSocket: {e}")
+                    
+            except asyncio.TimeoutError:
+                # Check if client has timed out (no ping received)
+                if time.time() - last_ping_time > ping_timeout:
+                    logger.warning(f"Fund {fund_id} WebSocket timed out (no ping in {ping_timeout}s)")
+                    break
+                # Otherwise, continue waiting
+                continue
+                
+            except WebSocketDisconnect:
+                logger.info(f"Fund {fund_id} WebSocket disconnected by client")
+                break
+                
+            except Exception as e:
+                logger.error(f"Error in fund {fund_id} WebSocket loop: {e}")
+                break
+    
+    finally:
+        # Unsubscribe from updates
+        db_listener.unsubscribe(fund_id, websocket)
+        logger.info(f"Fund {fund_id} WebSocket connection closed")
 
 
