@@ -326,11 +326,15 @@ export function ScreenerLink({ fundId, fund, onUpdate }: ScreenerLinkProps) {
                         <p>
                           • Market Cap: $
                           {(
-                            selectedCriteria.criteria.market_cap_min || 0
-                          ).toLocaleString()}{" "}
-                          -{" "}
+                            (selectedCriteria.criteria.market_cap_min || 0) /
+                            1000000
+                          ).toLocaleString()}
+                          M -{" "}
                           {selectedCriteria.criteria.market_cap_max
-                            ? `$${selectedCriteria.criteria.market_cap_max.toLocaleString()}`
+                            ? `$${(
+                                (selectedCriteria.criteria.market_cap_max ||
+                                  0) / 1000000
+                              ).toLocaleString()}M`
                             : "∞"}
                         </p>
                       )}

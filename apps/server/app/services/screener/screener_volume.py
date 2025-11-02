@@ -268,7 +268,7 @@ class TimescaleVolumeCalculator:
         except Exception as e:
             self.logger.error(f"Error calculating rv14 for {symbol}: {e}", exc_info=True)
             return 0.0
-    
+
     async def calculate_rv14_batch(self, symbols: List[str]) -> Dict[str, float]:
         """
         Calculate rv14 for multiple symbols in a single batch query (MUCH faster).

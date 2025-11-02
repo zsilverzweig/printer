@@ -154,7 +154,8 @@ export function SetupEditor({
               />
               <p className="text-xs text-muted-foreground">
                 Common fields: minPrice, maxPrice, minVolume, relativeVolume,
-                priceChangePercent, gapPercent, hasNews
+                priceChangePercent, gapPercent, hasNews, market_cap_min,
+                market_cap_max (in millions)
               </p>
             </div>
           </div>

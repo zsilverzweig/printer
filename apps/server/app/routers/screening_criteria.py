@@ -115,6 +115,7 @@ class ScreeningCriteriaParams(BaseModel):
     min_volume: Optional[float] = None
     min_change_percent: Optional[float] = None
     max_change_percent: Optional[float] = None
+    min_relative_volume: Optional[float] = None  # Minimum RV14 value
     exclude_etfs: Optional[bool] = True  # Default to excluding ETFs
     order_by: Optional[str] = None
     limit: Optional[int] = None
@@ -173,23 +174,31 @@ async def run_screener_with_inline_criteria(
         min_volume = criteria.min_volume
         min_change_percent = criteria.min_change_percent
         max_change_percent = criteria.max_change_percent
+        min_relative_volume = criteria.min_relative_volume
         exclude_etfs = criteria.exclude_etfs if criteria.exclude_etfs is not None else True
         asset_types = criteria.asset_types
+        market_cap_min = criteria.market_cap_min
+        market_cap_max = criteria.market_cap_max
         order_by = criteria.order_by or "rv14"
         limit = criteria.limit or 200
         
+        logger.info(f"[ENDPOINT] Extracted params: min_rv={min_relative_volume}, timestamp={timestamp}")
+        
         # Determine if historical or live mode
         if timestamp is not None:
+            logger.info(f"[ENDPOINT] Timestamp mode check starting...")
             from datetime import timezone, timedelta
             from app.services.screener.screener import get_screener_service
             screener_service = get_screener_service()
             
             if not screener_service:
+                logger.error("[ENDPOINT] Screener service not available!")
                 raise HTTPException(
                     status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                     detail="Screener service not available"
                 )
             
+            logger.info("[ENDPOINT] Screener service available, checking if recent timestamp...")
             # If timestamp is very recent (within last 5 minutes), use live mode instead
             # This ensures we get the most up-to-date data and matches live screener behavior
             now = datetime.now(timezone.utc) if timestamp.tzinfo else datetime.utcnow()
@@ -199,8 +208,10 @@ async def run_screener_with_inline_criteria(
             time_diff = (now - timestamp).total_seconds()
             use_live_for_recent = time_diff <= 300  # 5 minutes
             
+            logger.info(f"[ENDPOINT] Time check: now={now}, timestamp={timestamp}, diff={time_diff:.0f}s, use_live={use_live_for_recent}")
+            
             if use_live_for_recent:
-                logger.info(f"Timestamp {timestamp} is recent ({time_diff:.0f}s ago), using live mode instead of historical")
+                logger.info(f"[ENDPOINT] Using LIVE mode (timestamp is recent: {time_diff:.0f}s ago)")
                 # Fetch current snapshots from Polygon (same as live mode)
                 from app.services.screener.screener_snapshot import fetch_snapshot_all
                 import app.core as core
@@ -222,11 +233,14 @@ async def run_screener_with_inline_criteria(
                     min_volume=min_volume,
                     min_change_percent=min_change_percent,
                     max_change_percent=max_change_percent,
+                    min_relative_volume=min_relative_volume,
                     order_by=order_by,
                     limit=limit,
                     technical_filters=technical_filters,
                     exclude_etfs=exclude_etfs,
-                    asset_types=asset_types
+                    asset_types=asset_types,
+                    market_cap_min=market_cap_min,
+                    market_cap_max=market_cap_max
                 )
             else:
                 # Historical mode: query TimescaleDB
@@ -240,11 +254,14 @@ async def run_screener_with_inline_criteria(
                     min_volume=min_volume,
                     min_change_percent=min_change_percent,
                     max_change_percent=max_change_percent,
+                    min_relative_volume=min_relative_volume,
                     order_by=order_by,
                     limit=limit,
                     technical_filters=technical_filters,
                     exclude_etfs=exclude_etfs,
-                    asset_types=asset_types
+                    asset_types=asset_types,
+                    market_cap_min=market_cap_min,
+                    market_cap_max=market_cap_max
                 )
         else:
             # Live mode: use existing flow
@@ -288,11 +305,14 @@ async def run_screener_with_inline_criteria(
                 min_volume=min_volume,
                 min_change_percent=min_change_percent,
                 max_change_percent=max_change_percent,
+                min_relative_volume=min_relative_volume,
                 order_by=order_by,
                 limit=limit,
                 technical_filters=technical_filters,
                 exclude_etfs=exclude_etfs,
-                asset_types=asset_types
+                asset_types=asset_types,
+                market_cap_min=market_cap_min,
+                market_cap_max=market_cap_max
             )
         
         # Extract ticker symbols
@@ -364,6 +384,8 @@ async def run_screener_with_criteria(
         max_change_percent = params.get("max_change_percent")
         exclude_etfs = params.get("exclude_etfs", True)  # Default to True
         asset_types = params.get("asset_types")  # Optional list of asset types to include
+        market_cap_min = params.get("market_cap_min")
+        market_cap_max = params.get("market_cap_max")
         order_by = params.get("order_by", "rv14")
         limit = params.get("limit", 200)
         
@@ -411,11 +433,14 @@ async def run_screener_with_criteria(
                     min_volume=min_volume,
                     min_change_percent=min_change_percent,
                     max_change_percent=max_change_percent,
+                    min_relative_volume=min_relative_volume,
                     order_by=order_by,
                     limit=limit,
                     technical_filters=technical_filters,
                     exclude_etfs=exclude_etfs,
-                    asset_types=asset_types
+                    asset_types=asset_types,
+                    market_cap_min=market_cap_min,
+                    market_cap_max=market_cap_max
                 )
             else:
                 # Historical mode: query TimescaleDB
@@ -428,11 +453,14 @@ async def run_screener_with_criteria(
                     min_volume=min_volume,
                     min_change_percent=min_change_percent,
                     max_change_percent=max_change_percent,
+                    min_relative_volume=min_relative_volume,
                     order_by=order_by,
                     limit=limit,
                     technical_filters=technical_filters,
                     exclude_etfs=exclude_etfs,
-                    asset_types=asset_types
+                    asset_types=asset_types,
+                    market_cap_min=market_cap_min,
+                    market_cap_max=market_cap_max
                 )
         else:
             # Live mode: use existing flow
@@ -476,11 +504,14 @@ async def run_screener_with_criteria(
                 min_volume=min_volume,
                 min_change_percent=min_change_percent,
                 max_change_percent=max_change_percent,
+                min_relative_volume=min_relative_volume,
                 order_by=order_by,
                 limit=limit,
                 technical_filters=technical_filters,
                 exclude_etfs=exclude_etfs,
-                asset_types=asset_types
+                asset_types=asset_types,
+                market_cap_min=market_cap_min,
+                market_cap_max=market_cap_max
             )
         
         # Extract ticker symbols

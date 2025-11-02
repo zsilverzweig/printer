@@ -154,6 +154,51 @@ export function ScreenerControls({
           />
         </div>
 
+        {/* Market Cap Range */}
+        <div className="flex items-center gap-1 bg-muted/30 px-2 py-1 rounded">
+          <Label className="text-xs font-medium">Market Cap:</Label>
+          <Input
+            type="number"
+            step="100"
+            placeholder="Min"
+            value={
+              filters.market_cap_min
+                ? (filters.market_cap_min / 1000000).toString()
+                : ""
+            }
+            onChange={(e) =>
+              handleFilterUpdate(
+                "market_cap_min",
+                e.target.value ? parseInt(e.target.value) * 1000000 : undefined
+              )
+            }
+            className="w-24 h-7 text-xs"
+            disabled={loading}
+            title="Minimum market cap in millions (e.g., 1000 for $1B)"
+          />
+          <span className="text-muted-foreground">M to</span>
+          <Input
+            type="number"
+            step="100"
+            placeholder="Max"
+            value={
+              filters.market_cap_max
+                ? (filters.market_cap_max / 1000000).toString()
+                : ""
+            }
+            onChange={(e) =>
+              handleFilterUpdate(
+                "market_cap_max",
+                e.target.value ? parseInt(e.target.value) * 1000000 : undefined
+              )
+            }
+            className="w-24 h-7 text-xs"
+            disabled={loading}
+            title="Maximum market cap in millions (e.g., 100000 for $100B)"
+          />
+          <span className="text-muted-foreground">M</span>
+        </div>
+
         {/* Min Volume */}
         <div className="flex items-center gap-1 bg-muted/30 px-2 py-1 rounded">
           <Label className="text-xs font-medium">Min Volume:</Label>
@@ -171,6 +216,29 @@ export function ScreenerControls({
             className="w-28 h-7 text-xs"
             disabled={loading}
           />
+        </div>
+
+        {/* Min Relative Volume */}
+        <div className="flex items-center gap-1 bg-muted/30 px-2 py-1 rounded">
+          <Label className="text-xs font-medium">Min RV:</Label>
+          <Input
+            type="number"
+            min="1"
+            max="5"
+            step="0.1"
+            placeholder="1.5"
+            value={filters.min_relative_volume || ""}
+            onChange={(e) =>
+              handleFilterUpdate(
+                "min_relative_volume",
+                parseFloat(e.target.value) || undefined
+              )
+            }
+            className="w-20 h-7 text-xs"
+            disabled={loading}
+            title="Minimum relative volume (RV14) - e.g., 1.5 means 1.5x average volume"
+          />
+          <span className="text-muted-foreground">x</span>
         </div>
 
         {/* Change % Range */}
@@ -391,25 +459,6 @@ export function ScreenerControls({
             disabled={loading}
           />
           <Label className="text-xs cursor-pointer">Below 90d Low</Label>
-        </div>
-        <div className="flex items-center gap-1">
-          <Label className="text-xs w-20">Min RV:</Label>
-          <Input
-            type="number"
-            min="1"
-            max="5"
-            step="0.1"
-            value={filters.technical_filters?.relative_volume_min || 1}
-            onChange={(e) =>
-              handleTechnicalFilterUpdate(
-                "relative_volume_min",
-                parseFloat(e.target.value) || undefined
-              )
-            }
-            className="w-16 h-7 text-xs"
-            disabled={loading}
-          />
-          <span className="text-xs text-muted-foreground">x</span>
         </div>
       </div>
     </div>

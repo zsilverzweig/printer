@@ -28,11 +28,14 @@ class ScreenerHistorical:
         min_volume: Optional[float] = None,
         min_change_percent: Optional[float] = None,
         max_change_percent: Optional[float] = None,
+        min_relative_volume: Optional[float] = None,
         order_by: str = "rv14",
         limit: int = 200,
         technical_filters: Optional[Dict[str, Any]] = None,
         exclude_etfs: bool = True,
         asset_types: Optional[List[str]] = None,
+        market_cap_min: Optional[int] = None,
+        market_cap_max: Optional[int] = None,
     ) -> List[dict]:
         """Compute screener results at a specific historical timestamp.
         
@@ -43,11 +46,14 @@ class ScreenerHistorical:
             min_volume: Minimum volume for liquidity
             min_change_percent: Minimum % change from yesterday's close
             max_change_percent: Maximum % change from yesterday's close
+            min_relative_volume: Minimum relative volume (RV14) filter
             order_by: Field to sort by (rv14, avg_volume, change_close)
             limit: Maximum number of results to return
             technical_filters: Optional dict of technical analysis filters
             exclude_etfs: Whether to exclude ETFs (default: True)
             asset_types: Optional list of asset types to include
+            market_cap_min: Minimum market cap filter (in dollars)
+            market_cap_max: Maximum market cap filter (in dollars)
             
         Returns:
             List of screener result dictionaries
@@ -62,7 +68,13 @@ class ScreenerHistorical:
             self.logger.info(f"[HISTORICAL SCREENER] Fetching data using unified fetcher...")
             
             from app.services.screener.screener_data_unified import fetch_screener_data_unified
-            snapshots = await fetch_screener_data_unified(target_timestamp=timestamp)
+            snapshots = await fetch_screener_data_unified(
+                target_timestamp=timestamp,
+                market_cap_min=market_cap_min,
+                market_cap_max=market_cap_max,
+                asset_types=asset_types,
+                min_relative_volume=min_relative_volume
+            )
             
             step_time = time.time() - step_start
             self.logger.info(f"[HISTORICAL SCREENER] ✓ Got {len(snapshots)} snapshots ({step_time:.2f}s)")
@@ -74,6 +86,8 @@ class ScreenerHistorical:
             rows: List[dict] = []
             processed_count = 0
             filtered_count = 0
+            
+            # NOTE: Market cap filtering is now handled in the unified data fetcher for efficiency
             
             # Process all symbols (now using unified snapshot format - same as live screener!)
             step_start = time.time()
@@ -142,18 +156,13 @@ class ScreenerHistorical:
                 if max_change_percent is not None and change_close_pct > max_change_percent:
                     filtered_count += 1
                     continue
-                
-                # Calculate relative volume (rv14) at historical time
-                rv14 = 0.0
-                try:
-                    from app.services.screener.screener_volume import TimescaleVolumeCalculator
-                    ts_calc = TimescaleVolumeCalculator(lookback_days=30)
-                    # Note: calculate_rv14 uses today's date - would need historical version
-                    # For now, skip rv14 in historical mode
-                    rv14 = 0.0
-                except Exception as e:
-                    self.logger.debug(f"Error calculating rv14 for {symbol}: {e}")
-                
+
+                # NOTE: RV14 filtering now handled in unified data fetcher for efficiency
+                # Snapshots already filtered by min_relative_volume if specified
+
+                # Get RV14 from snapshot (already calculated by unified fetcher)
+                rv14 = snapshot.get("rv14", 0.0)
+
                 # Build result row (matches live screener format)
                 row = {
                     "ticker": symbol,

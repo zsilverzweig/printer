@@ -15,6 +15,7 @@ from app.services.screener.screener_filters import (
     is_likely_etf,
     is_allowed_exchange,
 )
+from app.services.screener.ticker_filter import FilterCriteria
 
 
 class TestBasicFilters:
@@ -522,6 +523,164 @@ class TestScreenerFilters:
             assert "FAIL_PRICE" not in tickers, "Should fail price filter"
             assert "FAIL_VOL" not in tickers, "Should fail volume filter"
             assert "FAIL_CHANGE" not in tickers, "Should fail change filter"
+
+    @pytest.mark.asyncio
+    async def test_market_cap_filter(self):
+        """Test market cap filtering."""
+        mock_client = Mock()
+        screener = ScreenerService(client=mock_client)
+
+        mock_snaps = [
+            {
+                "ticker": "SMALL",
+                "price": 100.0,
+                "volume": 1000000,
+                "day": {"o": 100.0, "h": 105.0, "l": 95.0, "c": 100.0, "v": 5000000},
+                "exchange": "XNAS",
+            },
+            {
+                "ticker": "LARGE",
+                "price": 200.0,
+                "volume": 1000000,
+                "day": {"o": 200.0, "h": 205.0, "l": 195.0, "c": 200.0, "v": 5000000},
+                "exchange": "XNAS",
+            },
+        ]
+
+        with patch('app.services.screener.screener_snapshot.extract_snapshot_data') as mock_extract, \
+             patch('app.services.screener.ticker_filter.get_filtered_tickers') as mock_get_filtered:
+
+            def extract_fn(snap):
+                return {
+                    "ticker": snap["ticker"],
+                    "price": snap["price"],
+                    "volume": snap["volume"],
+                    "exchange": snap["exchange"],
+                }
+            mock_extract.side_effect = extract_fn
+
+            # Mock the ticker filter to return only SMALL (small cap stock)
+            mock_get_filtered.return_value = ["SMALL"]
+
+            # Test with market_cap_max=50000000000 (50B)
+            results = await screener._compute(
+                snaps=mock_snaps,
+                market_cap_max=50000000000,  # 50B
+                limit=100
+            )
+
+            # Verify ticker filter was called with correct criteria
+            mock_get_filtered.assert_called_once()
+            args, kwargs = mock_get_filtered.call_args
+            criteria = args[0]  # First positional argument should be FilterCriteria
+            assert isinstance(criteria, FilterCriteria)
+            assert criteria.market_cap_max == 50000000000
+
+            tickers = [r["ticker"] for r in results]
+            assert "SMALL" in tickers, "SMALL should pass market cap filter"
+            assert "LARGE" not in tickers, "LARGE should be filtered out by market cap"
+
+    @pytest.mark.asyncio
+    async def test_market_cap_min_filter(self):
+        """Test minimum market cap filtering."""
+        mock_client = Mock()
+        screener = ScreenerService(client=mock_client)
+
+        mock_snaps = [
+            {
+                "ticker": "SMALL",
+                "price": 100.0,
+                "volume": 1000000,
+                "day": {"o": 100.0, "h": 105.0, "l": 95.0, "c": 100.0, "v": 5000000},
+                "exchange": "XNAS",
+            },
+            {
+                "ticker": "LARGE",
+                "price": 200.0,
+                "volume": 1000000,
+                "day": {"o": 200.0, "h": 205.0, "l": 195.0, "c": 200.0, "v": 5000000},
+                "exchange": "XNAS",
+            },
+        ]
+
+        with patch('app.services.screener.screener_snapshot.extract_snapshot_data') as mock_extract, \
+             patch('app.services.screener.ticker_filter.get_filtered_tickers') as mock_get_filtered:
+
+            def extract_fn(snap):
+                return {
+                    "ticker": snap["ticker"],
+                    "price": snap["price"],
+                    "volume": snap["volume"],
+                    "exchange": snap["exchange"],
+                }
+            mock_extract.side_effect = extract_fn
+
+            # Mock the ticker filter to return only LARGE (large cap stock)
+            mock_get_filtered.return_value = ["LARGE"]
+
+            # Test with market_cap_min=100000000000 (100B)
+            results = await screener._compute(
+                snaps=mock_snaps,
+                market_cap_min=100000000000,  # 100B
+                limit=100
+            )
+
+            # Verify ticker filter was called with correct criteria
+            mock_get_filtered.assert_called_once()
+            args, kwargs = mock_get_filtered.call_args
+            criteria = args[0]
+            assert isinstance(criteria, FilterCriteria)
+            assert criteria.market_cap_min == 100000000000
+
+            tickers = [r["ticker"] for r in results]
+            assert "SMALL" not in tickers, "SMALL should be filtered out by min market cap"
+            assert "LARGE" in tickers, "LARGE should pass min market cap filter"
+
+    @pytest.mark.asyncio
+    async def test_relative_volume_filter(self):
+        """Test relative volume filtering."""
+        mock_client = Mock()
+        screener = ScreenerService(client=mock_client)
+
+        mock_snaps = [
+            {
+                "ticker": "LOWVOL",
+                "price": 100.0,
+                "volume": 1000000,
+                "day": {"o": 100.0, "h": 105.0, "l": 95.0, "c": 100.0, "v": 5000000},
+                "exchange": "XNAS",
+                "rv14": 1.2,  # Below threshold
+            },
+            {
+                "ticker": "HIGHVOL",
+                "price": 200.0,
+                "volume": 1000000,
+                "day": {"o": 200.0, "h": 205.0, "l": 195.0, "c": 200.0, "v": 5000000},
+                "exchange": "XNAS",
+                "rv14": 2.5,  # Above threshold
+            },
+        ]
+
+        with patch('app.services.screener.screener_snapshot.extract_snapshot_data') as mock_extract:
+            def extract_fn(snap):
+                return {
+                    "ticker": snap["ticker"],
+                    "price": snap["price"],
+                    "volume": snap["volume"],
+                    "exchange": snap["exchange"],
+                }
+            mock_extract.side_effect = extract_fn
+
+            # Test with min_relative_volume=2.0
+            results = await screener._compute(
+                snaps=mock_snaps,
+                min_relative_volume=2.0,
+                limit=100
+            )
+
+            tickers = [r["ticker"] for r in results]
+            assert "LOWVOL" not in tickers, "LOWVOL should be filtered out by RV filter (1.2 < 2.0)"
+            assert "HIGHVOL" in tickers, "HIGHVOL should pass RV filter (2.5 >= 2.0)"
 
 
 class TestHistoricalFilters:

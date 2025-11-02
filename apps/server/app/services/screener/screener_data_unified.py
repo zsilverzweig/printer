@@ -17,7 +17,11 @@ logger = logging.getLogger("app.screener.data.unified")
 
 async def fetch_screener_data_unified(
     target_date: Optional[date] = None,
-    target_timestamp: Optional[datetime] = None
+    target_timestamp: Optional[datetime] = None,
+    market_cap_min: Optional[int] = None,
+    market_cap_max: Optional[int] = None,
+    asset_types: Optional[List[str]] = None,
+    min_relative_volume: Optional[float] = None,
 ) -> List[Dict[str, Any]]:
     """
     Unified data fetcher for both live and historical screeners.
@@ -31,6 +35,9 @@ async def fetch_screener_data_unified(
     Args:
         target_date: For live mode, date for daily data (None = most recent)
         target_timestamp: For historical mode, specific datetime to screen at
+        market_cap_min: Minimum market cap filter (in dollars)
+        market_cap_max: Maximum market cap filter (in dollars)
+        asset_types: Optional list of asset types to include
         
     Returns:
         List of snapshot-like dicts with daily + current price data:
@@ -123,6 +130,39 @@ async def fetch_screener_data_unified(
             if not daily_data:
                 logger.warning(f"[UNIFIED] No daily data found for {prev_trading_day}")
                 return []
+            
+            # STEP 1.5: Apply market cap filtering if specified
+            if market_cap_min is not None or market_cap_max is not None:
+                from app.services.screener.ticker_filter import get_filtered_tickers, FilterCriteria
+                
+                logger.info(
+                    f"[UNIFIED] Applying market cap filter: min={market_cap_min}, max={market_cap_max}"
+                )
+                
+                criteria = FilterCriteria(
+                    asset_types=asset_types if asset_types else None,
+                    market_cap_min=market_cap_min,
+                    market_cap_max=market_cap_max,
+                )
+                
+                allowed_tickers = await get_filtered_tickers(criteria)
+                allowed_tickers_set = set(allowed_tickers)
+                
+                # Filter daily_data to only include tickers that pass market cap filter
+                original_count = len(daily_data)
+                daily_data = {
+                    symbol: data
+                    for symbol, data in daily_data.items()
+                    if symbol in allowed_tickers_set
+                }
+                
+                logger.info(
+                    f"[UNIFIED] Market cap filter reduced symbols from {original_count} to {len(daily_data)}"
+                )
+                
+                if not daily_data:
+                    logger.warning(f"[UNIFIED] No symbols remain after market cap filtering")
+                    return []
             
             # STEP 2: Get current price data (mode-specific, also ONE query)
             start_time = datetime.now()
@@ -232,12 +272,24 @@ async def fetch_screener_data_unified(
             metrics_time = (datetime.now() - start_time).total_seconds()
             logger.info(f"[UNIFIED] Got metrics for {len(metrics_map)} symbols ({metrics_time:.2f}s)")
             
-            # STEP 4: Combine into snapshot format (in-memory processing, very fast)
+            # STEP 4: Combine into snapshot format and apply filters (in-memory, very fast)
             snapshots = []
+            filtered_by_rv = 0
+            
             for symbol, daily in daily_data.items():
                 # Skip if no daily close
                 if not daily.get("close"):
                     continue
+                
+                # Get metrics for this symbol
+                metrics = metrics_map.get(symbol, {})
+                
+                # Apply relative volume filter if specified
+                if min_relative_volume is not None:
+                    rv14 = metrics.get("rv14", 0.0)
+                    if rv14 < min_relative_volume:
+                        filtered_by_rv += 1
+                        continue
                 
                 # Get current price (use 5min/live, or fallback to daily close)
                 current_price = price_data.get(symbol) or daily["close"]
@@ -255,11 +307,13 @@ async def fetch_screener_data_unified(
                     }
                 }
                 
-                # Add pre-calculated metrics if available
-                if symbol in metrics_map:
-                    snapshot.update(metrics_map[symbol])
+                # Add pre-calculated metrics
+                snapshot.update(metrics)
                 
                 snapshots.append(snapshot)
+            
+            if min_relative_volume is not None:
+                logger.info(f"[UNIFIED] RV filter (>={min_relative_volume}): filtered out {filtered_by_rv} symbols")
             
             logger.info(f"[UNIFIED] Returning {len(snapshots)} complete snapshots")
             return snapshots

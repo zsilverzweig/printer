@@ -29,14 +29,17 @@ class ScreenerCompute:
         min_volume: Optional[float] = None,
         min_change_percent: Optional[float] = None,
         max_change_percent: Optional[float] = None,
+        min_relative_volume: Optional[float] = None,
         order_by: str = "rv14",
         limit: int = 200,
         technical_filters: Optional[Dict[str, Any]] = None,
         exclude_etfs: bool = True,
         asset_types: Optional[List[str]] = None,
+        market_cap_min: Optional[int] = None,
+        market_cap_max: Optional[int] = None,
     ) -> List[dict]:
         """Compute filtered and sorted screener results from market snapshots.
-        
+
         Args:
             snaps: List of market snapshots
             min_price: Minimum price filter (for yesterday's close)
@@ -44,12 +47,15 @@ class ScreenerCompute:
             min_volume: Minimum volume for liquidity
             min_change_percent: Minimum % change from yesterday's close
             max_change_percent: Maximum % change from yesterday's close
+            min_relative_volume: Minimum relative volume (RV14) filter
             order_by: Field to sort by (rv14 or avg_volume)
             limit: Maximum number of results to return
             technical_filters: Optional dict of technical analysis filters
             exclude_etfs: Whether to exclude ETFs (default: True)
             asset_types: Optional list of asset types to include (e.g., ["CS", "ETF"])
-        
+            market_cap_min: Minimum market cap filter (in dollars)
+            market_cap_max: Maximum market cap filter (in dollars)
+
         Returns:
             List of screener result dictionaries
         """
@@ -122,11 +128,40 @@ class ScreenerCompute:
         
         # Build ticker set from either last_day_ohlc or price_map
         tickers_to_process = (
-            set(self.data_loader.last_day_ohlc.keys()) 
-            if self.data_loader.last_day_ohlc 
+            set(self.data_loader.last_day_ohlc.keys())
+            if self.data_loader.last_day_ohlc
             else set(price_map.keys())
         )
-        
+
+        # Apply market cap filtering if specified
+        if market_cap_min is not None or market_cap_max is not None:
+            from app.services.screener.ticker_filter import get_filtered_tickers, FilterCriteria
+
+            self.logger.info(
+                "Applying market cap filter: min=%s, max=%s",
+                market_cap_min,
+                market_cap_max
+            )
+
+            criteria = FilterCriteria(
+                asset_types=asset_types if asset_types else None,
+                market_cap_min=market_cap_min,
+                market_cap_max=market_cap_max,
+            )
+
+            allowed_tickers = await get_filtered_tickers(criteria)
+            allowed_tickers_set = set(allowed_tickers)
+
+            # Filter tickers_to_process to only include those that meet market cap criteria
+            original_count = len(tickers_to_process)
+            tickers_to_process = tickers_to_process & allowed_tickers_set
+
+            self.logger.info(
+                "Market cap filter reduced tickers from %d to %d",
+                original_count,
+                len(tickers_to_process)
+            )
+
         # NOTE: RV14 and other metrics are now pre-calculated and included in snapshots
         # via the unified data fetcher. No need to calculate on-demand anymore!
         
@@ -179,7 +214,10 @@ class ScreenerCompute:
                 if not passes_volume_filter(yesterday_vol, min_volume):
                     filtered_count += 1
                     continue
-            
+
+            # NOTE: RV14 filtering now handled in unified data fetcher for efficiency
+            # Snapshots already filtered by min_relative_volume if specified
+
             # Apply asset type filtering if specified
             if asset_types and len(asset_types) > 0:
                 # For now, use ETF detection as fallback if asset type not available

@@ -80,11 +80,11 @@ class ScreenerService:
     async def _tick(self) -> None:
         """Fetch current market data from database, compute filtered results, and broadcast to subscribers."""
         try:
-            # Fetch latest market data from TimescaleDB
+            # Fetch latest market data from TimescaleDB using unified fetcher
             # This queries both market_data (minute bars) and market_latest_trades (real-time prices)
-            self.logger.debug("[SCREENER] Fetching latest market data from TimescaleDB…")
+            self.logger.debug("[REALTIME SCREENER] Fetching latest market data from TimescaleDB…")
             snaps = await self.data_loader.fetch_latest_from_timescale()
-            self.logger.debug("[SCREENER] Market data fetched: %s symbols", len(snaps))
+            self.logger.debug("[REALTIME SCREENER] Market data fetched: %s symbols", len(snaps))
             
             if not snaps:
                 self.logger.warning("[SCREENER] No market data available from database")
@@ -120,11 +120,14 @@ class ScreenerService:
         min_volume: Optional[float] = None,
         min_change_percent: Optional[float] = None,
         max_change_percent: Optional[float] = None,
+        min_relative_volume: Optional[float] = None,
         order_by: str = "rv14",
         limit: int = 200,
         technical_filters: Optional[Dict[str, Any]] = None,
         exclude_etfs: bool = True,
         asset_types: Optional[List[str]] = None,
+        market_cap_min: Optional[int] = None,
+        market_cap_max: Optional[int] = None,
     ) -> List[dict]:
         """Compute filtered and sorted screener results from market snapshots.
         
@@ -138,11 +141,14 @@ class ScreenerService:
             min_volume=min_volume,
             min_change_percent=min_change_percent,
             max_change_percent=max_change_percent,
+            min_relative_volume=min_relative_volume,
             order_by=order_by,
             limit=limit,
             technical_filters=technical_filters,
             exclude_etfs=exclude_etfs,
             asset_types=asset_types,
+            market_cap_min=market_cap_min,
+            market_cap_max=market_cap_max,
         )
     
     async def compute_historical(
@@ -153,11 +159,14 @@ class ScreenerService:
         min_volume: Optional[float] = None,
         min_change_percent: Optional[float] = None,
         max_change_percent: Optional[float] = None,
+        min_relative_volume: Optional[float] = None,
         order_by: str = "rv14",
         limit: int = 200,
         technical_filters: Optional[Dict[str, Any]] = None,
         exclude_etfs: bool = True,
         asset_types: Optional[List[str]] = None,
+        market_cap_min: Optional[int] = None,
+        market_cap_max: Optional[int] = None,
     ) -> List[dict]:
         """Compute screener results at a specific historical timestamp.
         
@@ -170,11 +179,14 @@ class ScreenerService:
             min_volume=min_volume,
             min_change_percent=min_change_percent,
             max_change_percent=max_change_percent,
+            min_relative_volume=min_relative_volume,
             order_by=order_by,
             limit=limit,
             technical_filters=technical_filters,
             exclude_etfs=exclude_etfs,
             asset_types=asset_types,
+            market_cap_min=market_cap_min,
+            market_cap_max=market_cap_max,
         )
     
     # WebSocket subscriber management

@@ -126,13 +126,19 @@ class ScreenerDataLoader:
             except Exception:
                 pass
     
-    async def fetch_latest_from_timescale(self) -> List[Dict[str, Any]]:
+    async def fetch_latest_from_timescale(
+        self,
+        min_relative_volume: float | None = None,
+    ) -> List[Dict[str, Any]]:
         """
-        Fetch the latest market data from TimescaleDB.
+        Fetch the latest market data from TimescaleDB using the unified fetcher.
         
         Queries both market_data (minute bars) and market_latest_trades (real-time prices).
         Uses latest trade price if more recent than the last complete minute bar.
         Uses the most recent available data, not hardcoded to today/yesterday.
+        
+        Args:
+            min_relative_volume: Optional RV14 filter (applied in unified fetcher)
         
         Returns a list of snapshot-like dictionaries compatible with the existing compute logic.
         Each snapshot contains:
@@ -141,21 +147,25 @@ class ScreenerDataLoader:
         - volume: Today's accumulated volume
         - exchange: Exchange code
         - day: Yesterday's OHLC data
+        - rv14, rv30, rv60: Pre-calculated relative volumes
+        - Other technical indicators from screener_metrics
         """
         try:
             # Use unified fetcher (same pattern as historical screener)
             from app.services.screener.screener_data_unified import fetch_screener_data_unified
             
-            self.logger.info("[LIVE SCREENER] Fetching data using unified fetcher...")
-            snapshots = await fetch_screener_data_unified()
+            self.logger.info("[REALTIME SCREENER] Fetching data using unified fetcher...")
+            snapshots = await fetch_screener_data_unified(
+                min_relative_volume=min_relative_volume
+            )
             
             if snapshots:
-                self.logger.info(f"[LIVE SCREENER] Got {len(snapshots)} snapshots from unified fetcher")
+                self.logger.info(f"[REALTIME SCREENER] Got {len(snapshots)} snapshots from unified fetcher")
             else:
-                self.logger.warning("[LIVE SCREENER] No snapshots from unified fetcher")
+                self.logger.warning("[REALTIME SCREENER] No snapshots from unified fetcher")
             
             return snapshots
             
         except Exception as e:
-            self.logger.error(f"[LIVE SCREENER] Error with unified fetcher: {e}", exc_info=True)
+            self.logger.error(f"[REALTIME SCREENER] Error with unified fetcher: {e}", exc_info=True)
             return []

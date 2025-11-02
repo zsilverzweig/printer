@@ -141,6 +141,12 @@ def _auto_register_strategies() -> None:
         register_strategy(GPTCandlestickStrategy)
     except ImportError as e:
         logger.warning(f"Failed to import GPTCandlestickStrategy: {e}")
+    
+    try:
+        from app.strategies.wyckoff import WyckoffStrategy
+        register_strategy(WyckoffStrategy)
+    except ImportError as e:
+        logger.warning(f"Failed to import WyckoffStrategy: {e}")
 
     # Future strategies can be added here
     # try:

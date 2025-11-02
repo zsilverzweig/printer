@@ -294,15 +294,17 @@ export function ScreeningCriteriaForm({
               <div className="grid grid-cols-2 gap-4 mt-2">
                 <div className="space-y-1">
                   <Label htmlFor="marketCapMin" className="text-xs">
-                    Min ($)
+                    Min (M)
                   </Label>
                   <Input
                     id="marketCapMin"
                     type="number"
-                    value={marketCapMin || ""}
+                    value={
+                      marketCapMin ? (marketCapMin / 1000000).toString() : ""
+                    }
                     onChange={(e) =>
                       setMarketCapMin(
-                        e.target.value ? Number(e.target.value) : null
+                        e.target.value ? Number(e.target.value) * 1000000 : null
                       )
                     }
                     placeholder="0"
@@ -311,15 +313,17 @@ export function ScreeningCriteriaForm({
                 </div>
                 <div className="space-y-1">
                   <Label htmlFor="marketCapMax" className="text-xs">
-                    Max ($)
+                    Max (M)
                   </Label>
                   <Input
                     id="marketCapMax"
                     type="number"
-                    value={marketCapMax || ""}
+                    value={
+                      marketCapMax ? (marketCapMax / 1000000).toString() : ""
+                    }
                     onChange={(e) =>
                       setMarketCapMax(
-                        e.target.value ? Number(e.target.value) : null
+                        e.target.value ? Number(e.target.value) * 1000000 : null
                       )
                     }
                     placeholder="Unlimited"
