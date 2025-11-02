@@ -1,5 +1,15 @@
 "use client";
 
+import {
+  AlertCircle,
+  CheckCircle2,
+  Database,
+  Loader2,
+  Play,
+  Table as TableIcon,
+} from "lucide-react";
+import { useEffect, useState } from "react";
+
 import { Alert, AlertDescription, AlertTitle } from "@/lib/components/ui/alert";
 import { Button } from "@/lib/components/ui/button";
 import {
@@ -17,15 +27,6 @@ import {
   TabsTrigger,
 } from "@/lib/components/ui/tabs";
 import { Textarea } from "@/lib/components/ui/textarea";
-import {
-  AlertCircle,
-  CheckCircle2,
-  Database,
-  Loader2,
-  Play,
-  Table as TableIcon,
-} from "lucide-react";
-import { useEffect, useState } from "react";
 
 interface TableInfo {
   name: string;

@@ -92,7 +92,7 @@ async def on_startup() -> None:
     
     # Log all registered routes
     for route in app.routes:
-        logger.info(f"Registered route: {route.path} ({getattr(route, 'methods', 'WEBSOCKET' if 'WebSocket' in str(type(route)) else 'UNKNOWN')})")
+        logger.debug(f"Registered route: {route.path} ({getattr(route, 'methods', 'WEBSOCKET' if 'WebSocket' in str(type(route)) else 'UNKNOWN')})")
 
 
 @app.get("/health")

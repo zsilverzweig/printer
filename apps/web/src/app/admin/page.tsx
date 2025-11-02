@@ -1,11 +1,4 @@
-import {
-  BarChart3,
-  Cpu,
-  Database,
-  Settings,
-  Users,
-  Wrench,
-} from "lucide-react";
+import { Cpu, Database, Settings, Users, Wrench } from "lucide-react";
 import Link from "next/link";
 
 import { requireAdmin } from "@/lib/auth/server";
@@ -138,16 +131,16 @@ export default async function AdminPage() {
             <Card className="hover:shadow-md transition-shadow">
               <CardHeader>
                 <div className="flex items-center space-x-2">
-                  <BarChart3 className="h-5 w-5 text-purple-600" />
-                  <CardTitle>Market Data</CardTitle>
+                  <Database className="h-5 w-5 text-purple-600" />
+                  <CardTitle>Asset Loading</CardTitle>
                 </div>
                 <CardDescription>
-                  Load and manage historical market data from TimescaleDB
+                  Load ticker details and historical market data
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <Link href="/admin/market-data">
-                  <Button className="w-full">Manage Market Data</Button>
+                <Link href="/admin/assets">
+                  <Button className="w-full">Manage Assets</Button>
                 </Link>
               </CardContent>
             </Card>

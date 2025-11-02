@@ -21,6 +21,25 @@ export interface LoadStatus {
   error_message: string | null;
 }
 
+export interface SymbolDetail {
+  symbol: string;
+  bar_count: number;
+  first_date: string | null;
+  last_date: string | null;
+  unique_days: number;
+}
+
+export interface DateCoverage {
+  date: string;
+  symbol_count: number;
+  bar_count: number;
+}
+
+export interface BarDistribution {
+  range: string;
+  count: number;
+}
+
 export interface DatabaseStats {
   total_bars: number;
   min_date: string | null;
@@ -28,6 +47,13 @@ export interface DatabaseStats {
   symbol_count: number;
   total_size: string;
   table_size: string;
+  index_size?: string;
+  toast_size?: string;
+  total_bytes_raw?: number;
+  symbol_details?: SymbolDetail[];
+  date_coverage?: DateCoverage[];
+  bar_distribution?: BarDistribution[];
+  total_symbols_analyzed?: number;
   error?: string;
 }
 
@@ -52,7 +78,7 @@ export function useMarketDataLoader(): UseMarketDataLoaderReturn {
     null
   );
 
-  // Load database stats on mount
+  // Load database stats on mount and check for active tasks
   useEffect(() => {
     if (!isAdmin || !user) {
       setDbStats(null);
@@ -60,7 +86,28 @@ export function useMarketDataLoader(): UseMarketDataLoaderReturn {
       return;
     }
 
-    refreshStats();
+    const initializeData = async () => {
+      await refreshStats();
+
+      // Check if there's an active load task and resume tracking
+      try {
+        const response = await fetch(
+          "http://localhost:8000/api/market/historical/status/latest"
+        );
+        if (response.ok) {
+          const status = await response.json();
+          if (status && status.status === "running") {
+            // Resume tracking active task
+            await refreshStatus(status.status_id);
+          }
+        }
+      } catch (err) {
+        // Silently fail if no active task exists
+        log.debug("No active load task found", "useMarketDataLoader");
+      }
+    };
+
+    initializeData();
   }, [isAdmin, user]);
 
   // Clean up polling on unmount

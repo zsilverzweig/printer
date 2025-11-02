@@ -124,6 +124,10 @@ class AssetLoadingStatus(Base):
     total_tickers: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     processed_tickers: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     failed_tickers: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    progress_pct: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=0.0)
+    
+    # Additional counters for historical data loading
+    tickers_succeeded: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     
     # Current phase
     current_phase: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

@@ -149,6 +149,13 @@ class DatabaseListenerService:
         
         for websocket in subscribers:
             try:
+                # Check if websocket is still connected before sending
+                from starlette.websockets import WebSocketState
+                if websocket.client_state != WebSocketState.CONNECTED:
+                    logger.debug(f"WebSocket not connected, skipping broadcast")
+                    disconnected.append(websocket)
+                    continue
+                    
                 await websocket.send_json(message)
             except Exception as e:
                 logger.warning(f"Failed to send to WebSocket: {e}")

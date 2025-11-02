@@ -279,12 +279,57 @@ async def get_historical_load_status(status_id: int):
 @router.get("/historical/stats")
 async def get_database_stats():
     """
-    Get statistics about the market data database.
+    Get comprehensive statistics about the market data database.
     
     Returns:
-        Dict with total bars, date range, storage size, etc.
+        Dict with total bars, date range, storage size, coverage analysis, etc.
     """
     return await historical_data_loader.get_database_stats()
+
+
+@router.get("/historical/debug/symbols")
+async def debug_symbols_list(
+    limit: int = Query(50, description="Number of symbols to return")
+):
+    """
+    Debug endpoint: Get a list of symbols with their bar counts.
+    
+    Useful for verifying what data actually exists in the database.
+    """
+    from app.lib.dependencies import get_async_session
+    from sqlalchemy import text
+    
+    async with get_async_session() as session:
+        result = await session.execute(
+            text("""
+                SELECT 
+                    symbol,
+                    COUNT(*) as bar_count,
+                    MIN(time) as first_bar,
+                    MAX(time) as last_bar,
+                    COUNT(DISTINCT DATE(time)) as unique_days
+                FROM market_data_minute
+                GROUP BY symbol
+                ORDER BY bar_count DESC
+                LIMIT :limit
+            """),
+            {"limit": limit}
+        )
+        
+        symbols = []
+        for row in result:
+            symbols.append({
+                "symbol": row[0],
+                "bar_count": row[1],
+                "first_bar": row[2].isoformat() if row[2] else None,
+                "last_bar": row[3].isoformat() if row[3] else None,
+                "unique_days": row[4]
+            })
+        
+        return {
+            "symbols": symbols,
+            "count": len(symbols)
+        }
 
 
 @router.get("/bars/{symbol}")

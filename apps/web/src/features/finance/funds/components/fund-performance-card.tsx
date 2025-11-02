@@ -196,38 +196,37 @@ export function FundPerformanceCard({
               </div>
             </div>
 
-            {/* AI Cost Section */}
-            {(aiCosts.totalAiCost || 0) > 0 && (
-              <div className="pt-4 border-t">
-                <div className="flex items-center gap-2 mb-2">
-                  <Brain className="h-4 w-4 text-purple-600" />
-                  <span className="text-xs font-medium text-muted-foreground">
-                    AI Costs
-                  </span>
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                  <div>
-                    <div className="text-xs text-muted-foreground">
-                      All Time
-                    </div>
-                    <div className="text-xs font-semibold text-purple-600">
-                      {formatCurrency(aiCosts.totalAiCost || 0)}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-muted-foreground">MTD</div>
-                    <div className="text-xs font-semibold text-purple-600">
-                      {formatCurrency(aiCosts.aiCostMtd || 0)}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-muted-foreground">YTD</div>
-                    <div className="text-xs font-semibold text-purple-600">
-                      {formatCurrency(aiCosts.aiCostYtd || 0)}
-                    </div>
+            {/* AI Cost Section - Always show for funds using AI strategies */}
+            <div className="pt-4 border-t">
+              <div className="flex items-center gap-2 mb-2">
+                <Brain className="h-4 w-4 text-purple-600" />
+                <span className="text-xs font-medium text-muted-foreground">
+                  AI Costs
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <div className="text-xs text-muted-foreground">All Time</div>
+                  <div className="text-xs font-semibold text-purple-600">
+                    {formatCurrency(aiCosts.totalAiCost || 0)}
                   </div>
                 </div>
-                {aiCosts.totalAiCost && balance.realizedPnL !== 0 && (
+                <div>
+                  <div className="text-xs text-muted-foreground">MTD</div>
+                  <div className="text-xs font-semibold text-purple-600">
+                    {formatCurrency(aiCosts.aiCostMtd || 0)}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground">YTD</div>
+                  <div className="text-xs font-semibold text-purple-600">
+                    {formatCurrency(aiCosts.aiCostYtd || 0)}
+                  </div>
+                </div>
+              </div>
+              {aiCosts.totalAiCost &&
+                aiCosts.totalAiCost > 0 &&
+                balance.realizedPnL !== 0 && (
                   <div className="mt-2 text-xs text-muted-foreground">
                     {(
                       (aiCosts.totalAiCost / Math.abs(balance.realizedPnL)) *
@@ -236,8 +235,12 @@ export function FundPerformanceCard({
                     % of realized P&L
                   </div>
                 )}
-              </div>
-            )}
+              {(!aiCosts.totalAiCost || aiCosts.totalAiCost === 0) && (
+                <div className="mt-2 text-xs text-muted-foreground italic">
+                  No AI costs yet. Costs tracked when GPT strategies run.
+                </div>
+              )}
+            </div>
 
             <div className="pt-4 border-t space-y-2">
               <div className="flex items-center justify-between">
