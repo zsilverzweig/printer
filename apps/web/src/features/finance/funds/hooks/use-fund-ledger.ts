@@ -1,7 +1,8 @@
 /**
  * Hook to fetch complete fund ledger data
  *
- * Fetches orders, transactions, and transfers for a fund
+ * Fetches orders, transactions, transfers, and positions for a fund.
+ * Position prices are now updated via WebSocket, not polling!
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -59,12 +60,13 @@ export function useFundLedger(fundId: string): UseFundLedgerReturn {
       setError(null);
 
       // Fetch all four types in parallel
-      const [ordersRes, transactionsRes, transfersRes, positionsRes] = await Promise.all([
-        fetch(`http://localhost:8000/api/funds/${fundId}/orders`),
-        fetch(`http://localhost:8000/api/funds/${fundId}/transactions`),
-        fetch(`http://localhost:8000/api/funds/${fundId}/transfers`),
-        fetch(`http://localhost:8000/api/funds/${fundId}/positions/summary`),
-      ]);
+      const [ordersRes, transactionsRes, transfersRes, positionsRes] =
+        await Promise.all([
+          fetch(`http://localhost:8000/api/funds/${fundId}/orders`),
+          fetch(`http://localhost:8000/api/funds/${fundId}/transactions`),
+          fetch(`http://localhost:8000/api/funds/${fundId}/transfers`),
+          fetch(`http://localhost:8000/api/funds/${fundId}/positions/summary`),
+        ]);
 
       if (!ordersRes.ok) {
         throw new Error("Failed to fetch orders");
@@ -151,6 +153,9 @@ export function useFundLedger(fundId: string): UseFundLedgerReturn {
 
   useEffect(() => {
     void fetchLedgerData();
+
+    // Position prices are now updated via WebSocket in real-time!
+    // No more polling needed - the WebSocket connection handles it automatically.
   }, [fetchLedgerData]);
 
   return {

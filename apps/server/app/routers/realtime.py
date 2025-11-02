@@ -529,14 +529,16 @@ async def fund_realtime(websocket: WebSocket, fund_id: str):
     WebSocket endpoint for real-time fund updates.
     
     Subscribes to PostgreSQL NOTIFY events for orders, transactions, transfers,
-    and balance changes for a specific fund.
+    and balance changes for a specific fund. Also broadcasts position price
+    updates every 30 seconds.
     
     Connection flow:
     1. Client connects
-    2. Server sends initial snapshot of fund data
+    2. Server sends initial snapshot of fund data (including positions)
     3. Server streams real-time updates as they occur in the database
-    4. Client sends ping every 5s, server responds with pong
-    5. Server closes if no ping received in 15s
+    4. Server broadcasts position price updates every 30 seconds
+    5. Client sends ping every 5s, server responds with pong
+    6. Server closes if no ping received in 15s
     """
     logger = logging.getLogger("app.realtime")
     
@@ -558,9 +560,11 @@ async def fund_realtime(websocket: WebSocket, fund_id: str):
     # Subscribe this WebSocket to fund updates
     db_listener.subscribe(fund_id, websocket)
     
+    # Import the positions helper
+    from app.routers.funds import get_fund_snapshot, _get_positions_for_websocket
+    
     try:
         # Send initial snapshot
-        from app.routers.funds import get_fund_snapshot
         snapshot = await get_fund_snapshot(fund_id)
         
         if snapshot:
@@ -576,9 +580,11 @@ async def fund_realtime(websocket: WebSocket, fund_id: str):
             await websocket.close()
             return
         
-        # Track last ping time
+        # Track last ping time and last position refresh
         last_ping_time = time.time()
+        last_position_refresh = time.time()
         ping_timeout = 15  # 3x the 5s ping interval
+        position_refresh_interval = 30  # Refresh positions every 30 seconds
         
         # Keep connection alive and handle client messages
         while True:
@@ -610,7 +616,32 @@ async def fund_realtime(websocket: WebSocket, fund_id: str):
                 if time.time() - last_ping_time > ping_timeout:
                     logger.warning(f"Fund {fund_id} WebSocket timed out (no ping in {ping_timeout}s)")
                     break
-                # Otherwise, continue waiting
+                
+                # Check if it's time to refresh position prices
+                if time.time() - last_position_refresh >= position_refresh_interval:
+                    try:
+                        # Fetch updated position prices
+                        positions_data = await _get_positions_for_websocket(fund_id)
+                        
+                        # Only broadcast if there are positions
+                        if positions_data["positions"]:
+                            await websocket.send_json({
+                                "type": "update",
+                                "category": "positions",
+                                "event_type": "positions_updated",
+                                "timestamp": time.time(),
+                                "data": {
+                                    "positions": positions_data["positions"],
+                                    "summary": positions_data["summary"]
+                                }
+                            })
+                            logger.debug(f"Sent position price update to fund {fund_id} WebSocket")
+                        
+                        last_position_refresh = time.time()
+                    except Exception as e:
+                        logger.warning(f"Error refreshing positions for fund {fund_id}: {e}")
+                
+                # Continue waiting
                 continue
                 
             except WebSocketDisconnect:

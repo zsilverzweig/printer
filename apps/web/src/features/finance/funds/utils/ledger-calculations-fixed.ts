@@ -2,7 +2,7 @@
  * Ledger Calculation Utilities - FIXED VERSION
  *
  * Calculate fund balances and performance metrics from ledger data.
- * 
+ *
  * FIXES:
  * 1. Proper EST timezone handling
  * 2. Correct position valuation over time windows
@@ -74,14 +74,16 @@ function getDateDaysAgoEST(days: number): Date {
   // Get current time in EST
   const now = new Date();
   const estOffset = -5 * 60; // EST is UTC-5 (in minutes)
-  const nowEST = new Date(now.getTime() + (now.getTimezoneOffset() + estOffset) * 60 * 1000);
-  
+  const nowEST = new Date(
+    now.getTime() + (now.getTimezoneOffset() + estOffset) * 60 * 1000
+  );
+
   // Subtract days
   nowEST.setDate(nowEST.getDate() - days);
-  
+
   // Set to start of day in EST
   nowEST.setHours(0, 0, 0, 0);
-  
+
   return nowEST;
 }
 
@@ -91,7 +93,9 @@ function getDateDaysAgoEST(days: number): Date {
 function getStartOfDayEST(date: Date): Date {
   const estDate = new Date(date);
   const estOffset = -5 * 60; // EST is UTC-5
-  const adjusted = new Date(estDate.getTime() + (estDate.getTimezoneOffset() + estOffset) * 60 * 1000);
+  const adjusted = new Date(
+    estDate.getTime() + (estDate.getTimezoneOffset() + estOffset) * 60 * 1000
+  );
   adjusted.setHours(0, 0, 0, 0);
   return adjusted;
 }
@@ -453,4 +457,3 @@ export function formatPercent(value: number): string {
   const sign = value >= 0 ? "+" : "";
   return `${sign}${value.toFixed(2)}%`;
 }
-

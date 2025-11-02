@@ -48,6 +48,8 @@ export function FundDetailView({ fundId }: FundDetailViewProps) {
     orders: fallbackOrders,
     transactions: fallbackTransactions,
     transfers: fallbackTransfers,
+    positions: fallbackPositions,
+    positionsSummary: fallbackPositionsSummary,
     loading: ledgerLoading,
     refresh: refreshLedger,
   } = useFundLedger(fundId);
@@ -109,6 +111,16 @@ export function FundDetailView({ fundId }: FundDetailViewProps) {
     realtimeData.transfers.length > 0
       ? realtimeData.transfers
       : fallbackTransfers;
+
+  // Use realtime positions (updated every 30s via WebSocket!)
+  const positions =
+    realtimeData.positions.length > 0
+      ? realtimeData.positions
+      : fallbackPositions;
+  const positionsSummary =
+    realtimeData.positions.length > 0
+      ? realtimeData.positionsSummary
+      : fallbackPositionsSummary;
 
   const handleSaveSetup = async (input: CreateSetupInput) => {
     const newSetup = await setupService.createSetup(input);
@@ -204,6 +216,8 @@ export function FundDetailView({ fundId }: FundDetailViewProps) {
             orders={orders}
             transactions={transactions}
             transfers={transfers}
+            positions={positions}
+            positionsSummary={positionsSummary}
             onFundUpdate={refreshAll}
           />
         </TabsContent>

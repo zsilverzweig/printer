@@ -61,16 +61,67 @@ function transformTransfer(data: any): Transfer {
   } as Transfer;
 }
 
+/**
+ * Transform snake_case position to camelCase
+ */
+function transformPosition(data: any): FundPosition {
+  if (!data) return data;
+
+  return {
+    symbol: data.symbol,
+    quantity: data.quantity,
+    avgEntryPrice: data.avg_entry_price ?? data.avgEntryPrice,
+    currentPrice: data.current_price ?? data.currentPrice,
+    costBasis: data.cost_basis ?? data.costBasis,
+    marketValue: data.market_value ?? data.marketValue,
+    unrealizedPl: data.unrealized_pl ?? data.unrealizedPl,
+    unrealizedPlpc: data.unrealized_plpc ?? data.unrealizedPlpc,
+  } as FundPosition;
+}
+
+/**
+ * Transform snake_case positions summary to camelCase
+ */
+function transformPositionsSummary(data: any): PositionsSummary {
+  if (!data)
+    return { positionCount: 0, totalMarketValue: 0, totalUnrealizedPl: 0 };
+
+  return {
+    positionCount: data.position_count ?? data.positionCount ?? 0,
+    totalMarketValue: data.total_market_value ?? data.totalMarketValue ?? 0,
+    totalUnrealizedPl: data.total_unrealized_pl ?? data.totalUnrealizedPl ?? 0,
+  };
+}
+
+interface FundPosition {
+  symbol: string;
+  quantity: number;
+  avgEntryPrice: number;
+  currentPrice: number | null;
+  costBasis: number;
+  marketValue: number | null;
+  unrealizedPl: number | null;
+  unrealizedPlpc: number | null;
+}
+
+interface PositionsSummary {
+  positionCount: number;
+  totalMarketValue: number;
+  totalUnrealizedPl: number;
+}
+
 interface FundSnapshot {
   fund: Fund;
   orders: Order[];
   transactions: Transaction[];
   transfers: Transfer[];
+  positions: FundPosition[];
+  positions_summary: PositionsSummary;
 }
 
 interface FundUpdate {
   type: "update";
-  category: "orders" | "transactions" | "transfers" | "balance";
+  category: "orders" | "transactions" | "transfers" | "balance" | "positions";
   event_type: string;
   timestamp: string;
   data: any;
@@ -81,6 +132,8 @@ interface FundRealtimeData {
   orders: Order[];
   transactions: Transaction[];
   transfers: Transfer[];
+  positions: FundPosition[];
+  positionsSummary: PositionsSummary;
 }
 
 interface UseFundRealtimeResult {
@@ -107,6 +160,12 @@ export function useFundRealtime(fundId: string | null): UseFundRealtimeResult {
     orders: [],
     transactions: [],
     transfers: [],
+    positions: [],
+    positionsSummary: {
+      positionCount: 0,
+      totalMarketValue: 0,
+      totalUnrealizedPl: 0,
+    },
   });
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -182,8 +241,16 @@ export function useFundRealtime(fundId: string | null): UseFundRealtimeResult {
               orders: snapshot.orders.map((o: any) => o), // Orders are already handled elsewhere
               transactions: snapshot.transactions.map(transformTransaction),
               transfers: snapshot.transfers.map(transformTransfer),
+              positions: (snapshot.positions || []).map(transformPosition),
+              positionsSummary: transformPositionsSummary(
+                snapshot.positions_summary
+              ),
             });
-            console.log(`[Fund ${fundId}] Received snapshot`);
+            console.log(
+              `[Fund ${fundId}] Received snapshot with ${
+                snapshot.positions?.length || 0
+              } positions`
+            );
           } else if (message.type === "update") {
             // Real-time update
             const update: FundUpdate = message;
@@ -305,6 +372,21 @@ export function useFundRealtime(fundId: string | null): UseFundRealtimeResult {
               ...prevData.fund,
               balance: update.data.balance,
             });
+          }
+          break;
+
+        case "positions":
+          if (update.event_type === "positions_updated") {
+            // Update all positions with fresh market prices
+            newData.positions = (update.data.positions || []).map(
+              transformPosition
+            );
+            newData.positionsSummary = transformPositionsSummary(
+              update.data.summary
+            );
+            console.log(
+              `[Fund Update] Updated ${newData.positions.length} positions`
+            );
           }
           break;
       }

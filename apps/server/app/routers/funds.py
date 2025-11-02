@@ -266,7 +266,7 @@ async def get_fund_snapshot(fund_id: str, limit: int = 100) -> dict:
     """
     Get a complete snapshot of fund data for real-time WebSocket connections.
     
-    Returns fund details, recent orders, transactions, and transfers.
+    Returns fund details, recent orders, transactions, transfers, and current positions.
     """
     async with get_async_session() as session:
         # Get fund
@@ -304,11 +304,132 @@ async def get_fund_snapshot(fund_id: str, limit: int = 100) -> dict:
         result = await session.execute(stmt)
         transfers = [serialize_transfer(transfer) for transfer in result.scalars().all()]
         
+    # Get current positions with prices (outside session to avoid blocking)
+    positions_data = await _get_positions_for_websocket(fund_id)
+    
+    return {
+        "fund": serialize_fund(fund),
+        "orders": orders,
+        "transactions": transactions,
+        "transfers": transfers,
+        "positions": positions_data["positions"],
+        "positions_summary": positions_data["summary"],
+    }
+
+
+async def _get_positions_for_websocket(fund_id: str) -> dict:
+    """
+    Get current positions with market prices for WebSocket updates.
+    This is a simplified version that doesn't raise HTTP exceptions.
+    """
+    try:
+        async with get_async_session() as session:
+            # Calculate positions from transaction history
+            stmt = select(
+                Transaction.symbol,
+                Transaction.side,
+                Transaction.quantity,
+                Transaction.price,
+                Transaction.total_value
+            ).where(
+                Transaction.fund_id == fund_id
+            ).order_by(Transaction.timestamp.asc())
+            
+            result = await session.execute(stmt)
+            transactions = result.all()
+            
+            # Calculate net positions with cost basis
+            position_tracker = {}
+            for symbol, side, quantity, price, total_value in transactions:
+                if symbol not in position_tracker:
+                    position_tracker[symbol] = {
+                        "quantity": 0.0,
+                        "total_cost": 0.0,
+                    }
+                
+                if side == "buy":
+                    position_tracker[symbol]["quantity"] += quantity
+                    position_tracker[symbol]["total_cost"] += total_value
+                else:  # sell
+                    # FIFO: reduce quantity and proportional cost
+                    if position_tracker[symbol]["quantity"] > 0:
+                        avg_cost_per_share = position_tracker[symbol]["total_cost"] / position_tracker[symbol]["quantity"]
+                        position_tracker[symbol]["quantity"] -= quantity
+                        position_tracker[symbol]["total_cost"] -= (quantity * avg_cost_per_share)
+            
+            # Filter to only positive positions
+            current_positions = []
+            for symbol, data in position_tracker.items():
+                if data["quantity"] > 0.001:
+                    avg_entry_price = data["total_cost"] / data["quantity"] if data["quantity"] > 0 else 0
+                    current_positions.append({
+                        "symbol": symbol,
+                        "quantity": data["quantity"],
+                        "avg_entry_price": avg_entry_price,
+                        "cost_basis": data["total_cost"],
+                    })
+        
+        # Fetch current market prices (outside session)
+        from app.services.market.market_data_provider import MarketDataProvider
+        market_provider = MarketDataProvider()
+        
+        positions_with_prices = []
+        total_market_value = 0.0
+        total_unrealized_pl = 0.0
+        
+        for position in current_positions:
+            try:
+                # Get current price
+                current_price = await market_provider.get_current_price(position["symbol"])
+                market_value = position["quantity"] * current_price
+                unrealized_pl = market_value - position["cost_basis"]
+                unrealized_plpc = (unrealized_pl / position["cost_basis"] * 100) if position["cost_basis"] > 0 else 0
+                
+                positions_with_prices.append({
+                    "symbol": position["symbol"],
+                    "quantity": position["quantity"],
+                    "avg_entry_price": position["avg_entry_price"],
+                    "current_price": current_price,
+                    "cost_basis": position["cost_basis"],
+                    "market_value": market_value,
+                    "unrealized_pl": unrealized_pl,
+                    "unrealized_plpc": unrealized_plpc,
+                })
+                
+                total_market_value += market_value
+                total_unrealized_pl += unrealized_pl
+            except Exception as e:
+                logger.warning(f"Could not fetch price for {position['symbol']}: {e}")
+                # Fallback: Use cost basis as market value
+                positions_with_prices.append({
+                    "symbol": position["symbol"],
+                    "quantity": position["quantity"],
+                    "avg_entry_price": position["avg_entry_price"],
+                    "current_price": None,
+                    "cost_basis": position["cost_basis"],
+                    "market_value": position["cost_basis"],
+                    "unrealized_pl": 0.0,
+                    "unrealized_plpc": 0.0,
+                })
+                total_market_value += position["cost_basis"]
+        
         return {
-            "fund": serialize_fund(fund),
-            "orders": orders,
-            "transactions": transactions,
-            "transfers": transfers,
+            "positions": positions_with_prices,
+            "summary": {
+                "position_count": len(positions_with_prices),
+                "total_market_value": total_market_value,
+                "total_unrealized_pl": total_unrealized_pl,
+            },
+        }
+    except Exception as e:
+        logger.error(f"Error getting positions for WebSocket: {e}")
+        return {
+            "positions": [],
+            "summary": {
+                "position_count": 0,
+                "total_market_value": 0.0,
+                "total_unrealized_pl": 0.0,
+            },
         }
 
 

@@ -28,7 +28,6 @@ import {
   CardTitle,
 } from "@/lib/components/ui/card";
 
-import { useFundLedger } from "../hooks/use-fund-ledger";
 import { useFundPerformance } from "../hooks/use-fund-performance";
 import { fundService } from "../services/fund-service";
 import { Fund, FundOrder, FundTransaction, FundTransfer } from "../types";
@@ -40,6 +39,8 @@ interface FundOverviewProps {
   orders: FundOrder[];
   transactions: FundTransaction[];
   transfers: FundTransfer[];
+  positions: any[]; // Use the FundPosition type from use-fund-ledger
+  positionsSummary: any; // Use the PositionsSummary type from use-fund-ledger
   onFundUpdate: () => void;
 }
 
@@ -48,10 +49,11 @@ export function FundOverview({
   orders,
   transactions,
   transfers,
+  positions,
+  positionsSummary,
   onFundUpdate,
 }: FundOverviewProps) {
-  // Get positions from ledger hook
-  const { positions, positionsSummary } = useFundLedger(fund.id);
+  // Positions are now passed as props (from realtime WebSocket updates!)
   const { balance, performance } = useFundPerformance(
     transfers,
     transactions,
