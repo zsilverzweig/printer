@@ -1,16 +1,13 @@
 // Market Data Coverage Visualization Component
 "use client";
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/lib/components/ui/card";
 import { Badge } from "@/lib/components/ui/badge";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/lib/components/ui/table";
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/lib/components/ui/card";
 import { BarChart3, Calendar, TrendingUp } from "lucide-react";
 
 import type { DatabaseStats } from "../hooks/use-market-data-loader";
@@ -20,12 +17,13 @@ interface MarketDataCoverageProps {
 }
 
 export function MarketDataCoverage({ stats }: MarketDataCoverageProps) {
-  if (!stats.symbol_details || !stats.date_coverage || !stats.bar_distribution) {
+  if (
+    !stats.symbol_details ||
+    !stats.date_coverage ||
+    !stats.bar_distribution
+  ) {
     return null;
   }
-
-  // Top 20 symbols by bar count
-  const topSymbols = stats.symbol_details.slice(0, 20);
 
   // Bar distribution visualization
   const maxDistCount = Math.max(
@@ -161,77 +159,6 @@ export function MarketDataCoverage({ stats }: MarketDataCoverageProps) {
           </CardContent>
         </Card>
       </div>
-
-      {/* Top Symbols Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">
-            Top 20 Symbols by Data Volume
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="border rounded-md">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-16">#</TableHead>
-                  <TableHead>Symbol</TableHead>
-                  <TableHead className="text-right">Bars</TableHead>
-                  <TableHead className="text-right">Days</TableHead>
-                  <TableHead>First Date</TableHead>
-                  <TableHead>Last Date</TableHead>
-                  <TableHead className="text-right">Avg Bars/Day</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {topSymbols.map((symbol, idx) => {
-                  const avgBarsPerDay =
-                    symbol.unique_days > 0
-                      ? Math.round(symbol.bar_count / symbol.unique_days)
-                      : 0;
-
-                  return (
-                    <TableRow key={symbol.symbol}>
-                      <TableCell className="font-medium text-muted-foreground">
-                        {idx + 1}
-                      </TableCell>
-                      <TableCell className="font-mono font-semibold">
-                        {symbol.symbol}
-                      </TableCell>
-                      <TableCell className="text-right font-mono">
-                        {symbol.bar_count.toLocaleString()}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {symbol.unique_days}
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {symbol.first_date
-                          ? new Date(symbol.first_date).toLocaleDateString()
-                          : "-"}
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {symbol.last_date
-                          ? new Date(symbol.last_date).toLocaleDateString()
-                          : "-"}
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-sm">
-                        {avgBarsPerDay}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </div>
-          {stats.total_symbols_analyzed &&
-            stats.total_symbols_analyzed > 20 && (
-              <p className="text-sm text-muted-foreground text-center mt-3">
-                Showing top 20 of {stats.total_symbols_analyzed} symbols
-              </p>
-            )}
-        </CardContent>
-      </Card>
     </div>
   );
 }
-

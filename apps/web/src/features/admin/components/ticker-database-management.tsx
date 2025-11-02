@@ -5,13 +5,10 @@ import {
   BarChart3,
   Calendar,
   CheckCircle,
-  Clock,
   Database,
-  Download,
   HardDrive,
   RefreshCw,
   TrendingUp,
-  XCircle,
 } from "lucide-react";
 import * as React from "react";
 import { useState } from "react";
@@ -26,9 +23,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/lib/components/ui/card";
-import { Input } from "@/lib/components/ui/input";
 import { Progress } from "@/lib/components/ui/progress";
-import { log } from "@/lib/utils/logger";
 
 import { useMarketDataLoader } from "../hooks/use-market-data-loader";
 import { MarketDataCoverage } from "./market-data-coverage";
@@ -51,25 +46,17 @@ interface ValidationProgress {
 }
 
 export function TickerDatabaseManagement() {
-  const {
-    loadStatus,
-    dbStats,
-    loading,
-    error,
-    startLoad,
-    cancelLoad,
-    refreshStats,
-  } = useMarketDataLoader();
+  const { dbStats, loading, error, refreshStats } = useMarketDataLoader();
 
-  const [days, setDays] = useState(1);
-  const [customSymbols, setCustomSymbols] = useState("");
-  const [useCustomSymbols, setUseCustomSymbols] = useState(false);
-  const [validationProgress, setValidationProgress] = useState<ValidationProgress | null>(null);
-  
+  const [validationProgress, setValidationProgress] =
+    useState<ValidationProgress | null>(null);
+
   // Fetch validation progress
   const fetchValidationProgress = async () => {
     try {
-      const response = await fetch("http://localhost:8000/api/market/validation/progress");
+      const response = await fetch(
+        "http://localhost:8000/api/market/validation/progress"
+      );
       if (response.ok) {
         const data = await response.json();
         setValidationProgress(data);
@@ -78,39 +65,13 @@ export function TickerDatabaseManagement() {
       console.error("Failed to fetch validation progress:", err);
     }
   };
-  
+
   // Refresh validation progress every 10 seconds
   React.useEffect(() => {
     fetchValidationProgress();
     const interval = setInterval(fetchValidationProgress, 10000);
     return () => clearInterval(interval);
   }, []);
-
-  const handleStartLoad = async () => {
-    try {
-      const symbols =
-        useCustomSymbols && customSymbols
-          ? customSymbols
-              .split(",")
-              .map((s) => s.trim())
-              .filter(Boolean)
-          : undefined;
-
-      await startLoad(days, symbols);
-    } catch (err) {
-      log.error("Failed to start load", err, "TickerDatabaseManagement");
-    }
-  };
-
-  const handleCancelLoad = async () => {
-    if (confirm("Are you sure you want to cancel the current load?")) {
-      try {
-        await cancelLoad();
-      } catch (err) {
-        log.error("Failed to cancel load", err, "TickerDatabaseManagement");
-      }
-    }
-  };
 
   const formatNumber = (num: number): string => {
     return new Intl.NumberFormat().format(num);
@@ -126,38 +87,6 @@ export function TickerDatabaseManagement() {
       minute: "2-digit",
     });
   };
-
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case "running":
-        return <Badge className="bg-blue-500">Running</Badge>;
-      case "completed":
-        return <Badge className="bg-green-500">Completed</Badge>;
-      case "failed":
-        return <Badge variant="destructive">Failed</Badge>;
-      case "cancelled":
-        return <Badge variant="secondary">Cancelled</Badge>;
-      default:
-        return null;
-    }
-  };
-
-  const getStatusIcon = () => {
-    if (!loadStatus) return null;
-
-    switch (loadStatus.status) {
-      case "running":
-        return <Clock className="h-4 w-4 animate-spin" />;
-      case "completed":
-        return <CheckCircle className="h-4 w-4" />;
-      case "failed":
-        return <AlertCircle className="h-4 w-4" />;
-      case "cancelled":
-        return <XCircle className="h-4 w-4" />;
-    }
-  };
-
-  const isLoading = loadStatus?.status === "running";
 
   return (
     <div className="space-y-6">
@@ -180,7 +109,8 @@ export function TickerDatabaseManagement() {
                   Data Loading Progress
                 </CardTitle>
                 <CardDescription>
-                  Validation-based progress tracking ({validationProgress.date_range.unique_days} days covered)
+                  Validation-based progress tracking (
+                  {validationProgress.date_range.unique_days} days covered)
                 </CardDescription>
               </div>
               <Button
@@ -203,9 +133,13 @@ export function TickerDatabaseManagement() {
                       {validationProgress.coverage_percentage}%
                     </Badge>
                   </div>
-                  <Progress value={validationProgress.coverage_percentage} className="h-3" />
+                  <Progress
+                    value={validationProgress.coverage_percentage}
+                    className="h-3"
+                  />
                   <p className="text-xs text-muted-foreground">
-                    {validationProgress.symbols_with_data.toLocaleString()} / {validationProgress.target_symbols.toLocaleString()} symbols
+                    {validationProgress.symbols_with_data.toLocaleString()} /{" "}
+                    {validationProgress.target_symbols.toLocaleString()} symbols
                   </p>
                 </div>
 
@@ -216,15 +150,21 @@ export function TickerDatabaseManagement() {
                       {validationProgress.screening_ready_percentage}%
                     </Badge>
                   </div>
-                  <Progress value={validationProgress.screening_ready_percentage} className="h-3" />
+                  <Progress
+                    value={validationProgress.screening_ready_percentage}
+                    className="h-3"
+                  />
                   <p className="text-xs text-muted-foreground">
-                    {validationProgress.symbols_ready_for_screening.toLocaleString()} symbols with 14+ days
+                    {validationProgress.symbols_ready_for_screening.toLocaleString()}{" "}
+                    symbols with 14+ days
                   </p>
                 </div>
 
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium">Total Validations</span>
+                    <span className="text-sm font-medium">
+                      Total Validations
+                    </span>
                     <span className="text-2xl font-bold">
                       {validationProgress.total_validations.toLocaleString()}
                     </span>
@@ -232,39 +172,53 @@ export function TickerDatabaseManagement() {
                   <p className="text-xs text-muted-foreground mt-2">
                     Date records confirmed with Polygon
                   </p>
-                  {validationProgress.recent_activity.last_hour_validations > 0 && (
+                  {validationProgress.recent_activity.last_hour_validations >
+                    0 && (
                     <Badge variant="secondary" className="mt-2">
-                      +{validationProgress.recent_activity.last_hour_validations.toLocaleString()} in last hour
+                      +
+                      {validationProgress.recent_activity.last_hour_validations.toLocaleString()}{" "}
+                      in last hour
                     </Badge>
                   )}
                 </div>
               </div>
 
               {/* Date Range */}
-              {validationProgress.date_range.min_date && validationProgress.date_range.max_date && (
-                <div className="pt-4 border-t">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-                    <div>
-                      <span className="text-muted-foreground">Earliest Date:</span>
-                      <div className="font-semibold mt-1">
-                        {new Date(validationProgress.date_range.min_date).toLocaleDateString()}
+              {validationProgress.date_range.min_date &&
+                validationProgress.date_range.max_date && (
+                  <div className="pt-4 border-t">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                      <div>
+                        <span className="text-muted-foreground">
+                          Earliest Date:
+                        </span>
+                        <div className="font-semibold mt-1">
+                          {new Date(
+                            validationProgress.date_range.min_date
+                          ).toLocaleDateString()}
+                        </div>
                       </div>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Latest Date:</span>
-                      <div className="font-semibold mt-1">
-                        {new Date(validationProgress.date_range.max_date).toLocaleDateString()}
+                      <div>
+                        <span className="text-muted-foreground">
+                          Latest Date:
+                        </span>
+                        <div className="font-semibold mt-1">
+                          {new Date(
+                            validationProgress.date_range.max_date
+                          ).toLocaleDateString()}
+                        </div>
                       </div>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Days of Coverage:</span>
-                      <div className="font-semibold mt-1">
-                        {validationProgress.date_range.unique_days} days
+                      <div>
+                        <span className="text-muted-foreground">
+                          Days of Coverage:
+                        </span>
+                        <div className="font-semibold mt-1">
+                          {validationProgress.date_range.unique_days} days
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              )}
+                )}
             </div>
           </CardContent>
         </Card>
@@ -389,186 +343,6 @@ export function TickerDatabaseManagement() {
         dbStats.symbol_details.length > 0 && (
           <MarketDataCoverage stats={dbStats} />
         )}
-
-      {/* Load Historical Data Card */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Download className="h-5 w-5" />
-            Load Historical Data
-          </CardTitle>
-          <CardDescription>
-            Import candlestick data from Polygon.io
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          {/* Configuration */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Days of Data</label>
-              <Input
-                type="number"
-                min={1}
-                max={30}
-                value={days}
-                onChange={(e) => setDays(parseInt(e.target.value) || 1)}
-                disabled={isLoading}
-              />
-              <p className="text-xs text-muted-foreground">
-                Number of days to load (1-30)
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Symbol Selection</label>
-              <div className="flex gap-2">
-                <Button
-                  variant={!useCustomSymbols ? "default" : "outline"}
-                  onClick={() => setUseCustomSymbols(false)}
-                  disabled={isLoading}
-                  className="flex-1"
-                >
-                  All from Snapshot
-                </Button>
-                <Button
-                  variant={useCustomSymbols ? "default" : "outline"}
-                  onClick={() => setUseCustomSymbols(true)}
-                  disabled={isLoading}
-                  className="flex-1"
-                >
-                  Custom List
-                </Button>
-              </div>
-            </div>
-          </div>
-
-          {useCustomSymbols && (
-            <div className="space-y-2">
-              <label className="text-sm font-medium">
-                Custom Symbols (comma-separated)
-              </label>
-              <Input
-                type="text"
-                value={customSymbols}
-                onChange={(e) => setCustomSymbols(e.target.value)}
-                placeholder="AAPL, TSLA, MSFT, GOOGL"
-                disabled={isLoading}
-              />
-              <p className="text-xs text-muted-foreground">
-                Enter ticker symbols separated by commas
-              </p>
-            </div>
-          )}
-
-          {/* Action Buttons */}
-          <div className="flex gap-3">
-            <Button
-              onClick={handleStartLoad}
-              disabled={isLoading || loading}
-              size="lg"
-              className="flex-1"
-            >
-              <Download className="h-4 w-4 mr-2" />
-              {isLoading
-                ? "Loading..."
-                : loadStatus?.status === "completed" ||
-                  loadStatus?.status === "failed" ||
-                  loadStatus?.status === "cancelled"
-                ? "Start New Load"
-                : "Start Load"}
-            </Button>
-
-            {isLoading && (
-              <Button
-                onClick={handleCancelLoad}
-                variant="destructive"
-                size="lg"
-              >
-                <XCircle className="h-4 w-4 mr-2" />
-                Cancel
-              </Button>
-            )}
-          </div>
-
-          {/* Load Status */}
-          {loadStatus && (
-            <div className="border-t pt-6 space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  {getStatusIcon()}
-                  <span className="font-medium">Load Status</span>
-                  {getStatusBadge(loadStatus.status)}
-                </div>
-                <div className="text-right">
-                  <div className="text-3xl font-bold">
-                    {Math.round(loadStatus.progress_pct)}%
-                  </div>
-                  <div className="text-xs text-muted-foreground">Complete</div>
-                </div>
-              </div>
-
-              {/* Progress Bar */}
-              <Progress value={loadStatus.progress_pct} className="h-2" />
-
-              {/* Statistics Grid */}
-              <div className="grid grid-cols-3 gap-4 pt-2">
-                <div className="space-y-1">
-                  <div className="text-sm text-muted-foreground">Processed</div>
-                  <div className="text-2xl font-bold">
-                    {formatNumber(loadStatus.tickers_processed)}
-                  </div>
-                </div>
-                <div className="space-y-1">
-                  <div className="text-sm text-muted-foreground">Succeeded</div>
-                  <div className="text-2xl font-bold text-green-600">
-                    {formatNumber(loadStatus.tickers_succeeded)}
-                  </div>
-                </div>
-                <div className="space-y-1">
-                  <div className="text-sm text-muted-foreground">Failed</div>
-                  <div className="text-2xl font-bold text-red-600">
-                    {formatNumber(loadStatus.tickers_failed)}
-                  </div>
-                </div>
-              </div>
-
-              {/* Timestamps */}
-              <div className="pt-4 border-t space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Started</span>
-                  <span className="font-medium">
-                    {formatDate(loadStatus.started_at)}
-                  </span>
-                </div>
-                {loadStatus.completed_at && (
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Completed</span>
-                    <span className="font-medium">
-                      {formatDate(loadStatus.completed_at)}
-                    </span>
-                  </div>
-                )}
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Last Updated</span>
-                  <span className="font-medium">
-                    {formatDate(loadStatus.last_updated)}
-                  </span>
-                </div>
-              </div>
-
-              {/* Error Message */}
-              {loadStatus.error_message && (
-                <Alert variant="destructive">
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>
-                    {loadStatus.error_message}
-                  </AlertDescription>
-                </Alert>
-              )}
-            </div>
-          )}
-        </CardContent>
-      </Card>
 
       {/* Info Card */}
       <Alert>

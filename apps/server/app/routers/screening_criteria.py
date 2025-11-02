@@ -24,8 +24,38 @@ router = APIRouter()
 
 
 # ============================================================================
-# Screener Execution
+# Request/Response Models
 # ============================================================================
+
+class ScreeningCriteriaParams(BaseModel):
+    """Screening criteria parameters for filtering."""
+    # Database filters (asset metadata)
+    asset_types: Optional[List[str]] = None
+    market_cap_min: Optional[int] = None
+    market_cap_max: Optional[int] = None
+    sic_codes: Optional[List[str]] = None
+    
+    # Real-time screener filters (price/volume dynamics)
+    min_price: Optional[float] = None
+    max_price: Optional[float] = None
+    min_volume: Optional[float] = None
+    min_change_percent: Optional[float] = None
+    max_change_percent: Optional[float] = None
+    exclude_etfs: Optional[bool] = True  # Default to excluding ETFs
+    order_by: Optional[str] = None
+    limit: Optional[int] = None
+    
+    # Technical analysis filters
+    technical_filters: Optional[Dict[str, Any]] = None
+    # Contains:
+    # - near_resistance: Optional[bool]  # Price near resistance level
+    # - near_support: Optional[bool]     # Price near support level
+    # - has_equal_highs: Optional[bool]  # Double top pattern detected
+    # - has_equal_lows: Optional[bool]   # Double bottom pattern detected
+    # - above_90day_high: Optional[bool] # Above 90-day high
+    # - below_90day_low: Optional[bool]  # Below 90-day low
+    # - relative_volume_min: Optional[float]  # Minimum RV14 (e.g., 1.3)
+
 
 class ScreenerRunResult(BaseModel):
     """Result of running the screener."""
@@ -33,6 +63,10 @@ class ScreenerRunResult(BaseModel):
     tickers: List[str]
     results: Optional[List[Dict[str, Any]]] = None  # Full screener result data
 
+
+# ============================================================================
+# Screener Execution
+# ============================================================================
 
 @router.post("/screening-criteria/run", response_model=ScreenerRunResult)
 async def run_screener_with_inline_criteria(
@@ -68,8 +102,7 @@ async def run_screener_with_inline_criteria(
         
         # Determine if historical or live mode
         if timestamp is not None:
-            # Historical mode: query TimescaleDB
-            logger.info(f"Running historical screener with inline criteria at {timestamp}")
+            from datetime import timezone, timedelta
             from app.services.screener.screener import get_screener_service
             screener_service = get_screener_service()
             
@@ -79,19 +112,61 @@ async def run_screener_with_inline_criteria(
                     detail="Screener service not available"
                 )
             
-            results = await screener_service.compute_historical(
-                timestamp=timestamp,
-                min_price=min_price,
-                max_price=max_price,
-                min_volume=min_volume,
-                min_change_percent=min_change_percent,
-                max_change_percent=max_change_percent,
-                order_by=order_by,
-                limit=limit,
-                technical_filters=technical_filters,
-                exclude_etfs=exclude_etfs,
-                asset_types=asset_types
-            )
+            # If timestamp is very recent (within last 5 minutes), use live mode instead
+            # This ensures we get the most up-to-date data and matches live screener behavior
+            now = datetime.now(timezone.utc) if timestamp.tzinfo else datetime.utcnow()
+            if timestamp.tzinfo is None:
+                timestamp = timestamp.replace(tzinfo=timezone.utc)
+            
+            time_diff = (now - timestamp).total_seconds()
+            use_live_for_recent = time_diff <= 300  # 5 minutes
+            
+            if use_live_for_recent:
+                logger.info(f"Timestamp {timestamp} is recent ({time_diff:.0f}s ago), using live mode instead of historical")
+                # Fetch current snapshots from Polygon (same as live mode)
+                from app.services.screener.screener_snapshot import fetch_snapshot_all
+                import app.core as core
+                
+                if not core.API_KEY:
+                    raise HTTPException(
+                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                        detail="Polygon API key not configured"
+                    )
+                
+                # Fetch current snapshots
+                snaps = fetch_snapshot_all(core.API_KEY)
+                
+                # Apply screener computation with custom parameters
+                results = await screener_service._compute(
+                    snaps,
+                    min_price=min_price,
+                    max_price=max_price,
+                    min_volume=min_volume,
+                    min_change_percent=min_change_percent,
+                    max_change_percent=max_change_percent,
+                    order_by=order_by,
+                    limit=limit,
+                    technical_filters=technical_filters,
+                    exclude_etfs=exclude_etfs,
+                    asset_types=asset_types
+                )
+            else:
+                # Historical mode: query TimescaleDB
+                logger.info(f"Running historical screener with inline criteria at {timestamp}")
+                
+                results = await screener_service.compute_historical(
+                    timestamp=timestamp,
+                    min_price=min_price,
+                    max_price=max_price,
+                    min_volume=min_volume,
+                    min_change_percent=min_change_percent,
+                    max_change_percent=max_change_percent,
+                    order_by=order_by,
+                    limit=limit,
+                    technical_filters=technical_filters,
+                    exclude_etfs=exclude_etfs,
+                    asset_types=asset_types
+                )
         else:
             # Live mode: use existing flow
             from app.services.screener.screener import get_screener_service
@@ -207,8 +282,7 @@ async def run_screener_with_criteria(
         
         # Determine if historical or live mode
         if timestamp is not None:
-            # Historical mode: query TimescaleDB
-            logger.info(f"Running historical screener for criteria {criteria_id} at {timestamp}")
+            from datetime import timezone, timedelta
             from app.services.screener.screener import get_screener_service
             screener_service = get_screener_service()
             
@@ -218,19 +292,61 @@ async def run_screener_with_criteria(
                     detail="Screener service not available"
                 )
             
-            results = await screener_service.compute_historical(
-                timestamp=timestamp,
-                min_price=min_price,
-                max_price=max_price,
-                min_volume=min_volume,
-                min_change_percent=min_change_percent,
-                max_change_percent=max_change_percent,
-                order_by=order_by,
-                limit=limit,
-                technical_filters=technical_filters,
-                exclude_etfs=exclude_etfs,
-                asset_types=asset_types
-            )
+            # If timestamp is very recent (within last 5 minutes), use live mode instead
+            # This ensures we get the most up-to-date data and matches live screener behavior
+            now = datetime.now(timezone.utc) if timestamp.tzinfo else datetime.utcnow()
+            if timestamp.tzinfo is None:
+                timestamp = timestamp.replace(tzinfo=timezone.utc)
+            
+            time_diff = (now - timestamp).total_seconds()
+            use_live_for_recent = time_diff <= 300  # 5 minutes
+            
+            if use_live_for_recent:
+                logger.info(f"Timestamp {timestamp} is recent ({time_diff:.0f}s ago), using live mode instead of historical")
+                # Fetch current snapshots from Polygon (same as live mode)
+                from app.services.screener.screener_snapshot import fetch_snapshot_all
+                import app.core as core
+                
+                if not core.API_KEY:
+                    raise HTTPException(
+                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                        detail="Polygon API key not configured"
+                    )
+                
+                # Fetch current snapshots
+                snaps = fetch_snapshot_all(core.API_KEY)
+                
+                # Apply screener computation with custom parameters
+                results = await screener_service._compute(
+                    snaps,
+                    min_price=min_price,
+                    max_price=max_price,
+                    min_volume=min_volume,
+                    min_change_percent=min_change_percent,
+                    max_change_percent=max_change_percent,
+                    order_by=order_by,
+                    limit=limit,
+                    technical_filters=technical_filters,
+                    exclude_etfs=exclude_etfs,
+                    asset_types=asset_types
+                )
+            else:
+                # Historical mode: query TimescaleDB
+                logger.info(f"Running historical screener for criteria {criteria_id} at {timestamp}")
+                
+                results = await screener_service.compute_historical(
+                    timestamp=timestamp,
+                    min_price=min_price,
+                    max_price=max_price,
+                    min_volume=min_volume,
+                    min_change_percent=min_change_percent,
+                    max_change_percent=max_change_percent,
+                    order_by=order_by,
+                    limit=limit,
+                    technical_filters=technical_filters,
+                    exclude_etfs=exclude_etfs,
+                    asset_types=asset_types
+                )
         else:
             # Live mode: use existing flow
             from app.services.screener.screener import get_screener_service
@@ -311,36 +427,6 @@ async def health_check():
 # ============================================================================
 # Request/Response Models
 # ============================================================================
-
-class ScreeningCriteriaParams(BaseModel):
-    """Screening criteria parameters for filtering."""
-    # Database filters (asset metadata)
-    asset_types: Optional[List[str]] = None
-    market_cap_min: Optional[int] = None
-    market_cap_max: Optional[int] = None
-    sic_codes: Optional[List[str]] = None
-    
-    # Real-time screener filters (price/volume dynamics)
-    min_price: Optional[float] = None
-    max_price: Optional[float] = None
-    min_volume: Optional[float] = None
-    min_change_percent: Optional[float] = None
-    max_change_percent: Optional[float] = None
-    exclude_etfs: Optional[bool] = True  # Default to excluding ETFs
-    order_by: Optional[str] = None
-    limit: Optional[int] = None
-    
-    # Technical analysis filters
-    technical_filters: Optional[Dict[str, Any]] = None
-    # Contains:
-    # - near_resistance: Optional[bool]  # Price near resistance level
-    # - near_support: Optional[bool]     # Price near support level
-    # - has_equal_highs: Optional[bool]  # Double top pattern detected
-    # - has_equal_lows: Optional[bool]   # Double bottom pattern detected
-    # - above_90day_high: Optional[bool] # Above 90-day high
-    # - below_90day_low: Optional[bool]  # Below 90-day low
-    # - relative_volume_min: Optional[float]  # Minimum RV14 (e.g., 1.3)
-
 
 class CreateScreeningCriteriaRequest(BaseModel):
     """Request model for creating screening criteria."""

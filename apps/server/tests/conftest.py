@@ -13,6 +13,8 @@ import uuid
 
 from app.main import app
 from app.models.strategies import Base, Fund, ScreeningCriteria, Order, Transaction
+# Import all models to ensure all tables are created in test database
+from app.models import *  # noqa: F401, F403
 
 
 @pytest.fixture
