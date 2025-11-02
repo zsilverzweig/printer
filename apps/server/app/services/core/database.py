@@ -52,8 +52,8 @@ def get_async_engine() -> AsyncEngine:
         database_url,
         echo=False,  # Set to True for SQL query logging during development
         pool_pre_ping=True,  # Verify connections before using them
-        pool_size=5,
-        max_overflow=10,
+        pool_size=50,  # Increased for high-throughput backfill operations
+        max_overflow=100,  # Allow bursts up to 150 total connections
     )
     
     return _engine

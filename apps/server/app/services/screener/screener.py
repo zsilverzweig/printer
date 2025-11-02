@@ -71,27 +71,71 @@ class ScreenerService:
 
     async def start(self) -> None:
         """Start the screener service and begin periodic updates without blocking."""
-        self.logger.info("ScreenerService starting; scheduling background history load…")
-        # Initialize calculator with empty data so _compute can run immediately
-        self.volume_calculator = VolumeCalculator(self.volumes)
-        # Start periodic loop right away
+        self.logger.info("ScreenerService starting; loading data from TimescaleDB…")
+        # Initialize with TimescaleDB data
+        await self._load_from_timescale()
+        # Start periodic loop
         self.task = asyncio.create_task(self._loop())
-        # Kick off history loading in the background (non-blocking)
-        asyncio.create_task(self._load_history_background())
 
-    async def _load_history_background(self) -> None:
-        """Load historical data in a background task to avoid blocking startup."""
+    async def _load_from_timescale(self) -> None:
+        """Load historical data from TimescaleDB on startup."""
         try:
-            # Run blocking history load in a thread to avoid blocking the event loop
+            from app.services.screener.screener_volume import TimescaleVolumeCalculator
+            from sqlalchemy import text
+            from app.services.core.database import get_async_session
+            from datetime import date, timedelta
+            
+            # Initialize TimescaleDB volume calculator
+            ts_calc = TimescaleVolumeCalculator(lookback_days=30)
+            
+            # Get symbols with sufficient complete data
+            symbols = await ts_calc.get_symbols_with_complete_data(min_days=14)
+            self.logger.info(f"Found {len(symbols)} symbols with complete data")
+            
+            # Load yesterday's OHLCV for each symbol
+            yesterday = date.today() - timedelta(days=1)
+            async with get_async_session() as session:
+                result = await session.execute(
+                    text("""
+                        SELECT 
+                            symbol,
+                            open,
+                            high,
+                            low,
+                            close,
+                            volume
+                        FROM market_data_daily
+                        WHERE bucket::date = :yesterday
+                          AND symbol = ANY(:symbols)
+                    """),
+                    {"yesterday": yesterday, "symbols": symbols}
+                )
+                
+                for row in result:
+                    symbol = row[0]
+                    self.last_day_ohlc[symbol] = {
+                        "o": float(row[1]),
+                        "h": float(row[2]),
+                        "l": float(row[3]),
+                        "c": float(row[4]),
+                        "v": float(row[5])
+                    }
+            
+            # For backward compatibility, keep empty volume calculator
+            self.volume_calculator = VolumeCalculator(self.volumes)
+            
+            self.logger.info(f"Loaded OHLCV for {len(self.last_day_ohlc)} symbols from TimescaleDB")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to load from TimescaleDB: {e}", exc_info=True)
+            # Fallback to old method if TimescaleDB not available
+            self.logger.warning("Falling back to Polygon grouped daily API")
             volumes, last_day_ohlc, _ = await asyncio.to_thread(
                 load_history, core.API_KEY, 60, 14
             )
             self.volumes = volumes
             self.last_day_ohlc = last_day_ohlc
             self.volume_calculator = VolumeCalculator(self.volumes)
-            self.logger.info("ScreenerService history loaded in background (%s tickers)", len(self.volumes))
-        except Exception as e:
-            self.logger.error("Failed to load history in background: %s", e)
 
     async def stop(self) -> None:
         """Stop the screener service."""
@@ -123,7 +167,7 @@ class ScreenerService:
             # Update price history for all tickers
             self._update_price_history(snaps, current_time)
             
-            payload = self._compute(snaps)
+            payload = await self._compute(snaps)
         except Exception as e:
             # Fallback to client method if available
             try:
@@ -137,7 +181,7 @@ class ScreenerService:
                     # Update price history for all tickers
                     self._update_price_history(snaps, current_time)
                     
-                    payload = self._compute(snaps)
+                    payload = await self._compute(snaps)
                 else:
                     raise
             except Exception:
@@ -196,7 +240,7 @@ class ScreenerService:
                 except Exception:
                     pass
 
-    def _compute(
+    async def _compute(
         self,
         snaps: List[Any],
         min_price: float = 2.0,
@@ -214,7 +258,7 @@ class ScreenerService:
             max_price: Maximum price filter (for yesterday's close)
             min_volume: Minimum volume for liquidity
             min_change_percent: Minimum % change from yesterday's close
-            order_by: Field to sort by (rv14, rv30, rv60, avg_volume)
+            order_by: Field to sort by (rv14 or avg_volume)
             limit: Maximum number of results to return
         
         Returns:
@@ -292,13 +336,17 @@ class ScreenerService:
             if abs(change_close_pct) < min_change_percent:
                 continue
             
-            # Calculate relative volumes
-            if self.volume_calculator:
-                rv14 = self.volume_calculator.calculate_relative_volume(ticker, 14)
-                rv30 = self.volume_calculator.calculate_relative_volume(ticker, 30)
-                rv60 = self.volume_calculator.calculate_relative_volume(ticker, 60)
-            else:
-                rv14 = rv30 = rv60 = 0.0
+            # Calculate relative volume (rv14) from TimescaleDB
+            rv14 = 0.0
+            try:
+                from app.services.screener.screener_volume import TimescaleVolumeCalculator
+                ts_calc = TimescaleVolumeCalculator(lookback_days=30)
+                rv14 = await ts_calc.calculate_rv14(ticker)
+            except ValueError as e:
+                # Data incomplete - log but continue with rv14=0
+                self.logger.debug(f"Incomplete data for {ticker}: {e}")
+            except Exception as e:
+                self.logger.error(f"Error calculating rv14 for {ticker}: {e}")
             
             # Calculate percentage changes for different timeframes
             changes = self.price_tracker.calculate_all_changes(ticker)
@@ -313,8 +361,6 @@ class ScreenerService:
                 "today_vol": yesterday_vol,
                 "rv": rv14,
                 "rv14": rv14,
-                "rv30": rv30,
-                "rv60": rv60,
                 "change_1m": changes["change_1m"],
                 "change_5m": changes["change_5m"],
                 "change_1h": changes["change_1h"],
@@ -324,8 +370,6 @@ class ScreenerService:
         # Sort results
         sort_key = {
             "rv14": lambda x: x["rv14"],
-            "rv30": lambda x: x["rv30"],
-            "rv60": lambda x: x["rv60"],
             "avg_volume": lambda x: x["today_vol"],
         }.get(order_by, lambda x: x["rv14"])
         rows.sort(key=sort_key, reverse=True)

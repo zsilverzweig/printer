@@ -45,6 +45,7 @@ interface QueryResult {
   error?: string;
   sql_query?: string;
   explanation?: string;
+  execution_time_ms?: number;
 }
 
 export default function DatabaseAdminPage() {
@@ -83,6 +84,7 @@ export default function DatabaseAdminPage() {
       setExecutingSql(true);
       setQueryResult(null);
 
+      const startTime = performance.now();
       const response = await fetch("http://localhost:8000/api/db-admin/query", {
         method: "POST",
         headers: {
@@ -92,7 +94,13 @@ export default function DatabaseAdminPage() {
       });
 
       const data = await response.json();
-      setQueryResult(data);
+      const endTime = performance.now();
+      const executionTime = Math.round(endTime - startTime);
+
+      setQueryResult({
+        ...data,
+        execution_time_ms: data.execution_time_ms || executionTime,
+      });
     } catch (error) {
       setQueryResult({
         success: false,
@@ -110,6 +118,7 @@ export default function DatabaseAdminPage() {
       setExecutingNl(true);
       setNlQueryResult(null);
 
+      const startTime = performance.now();
       const response = await fetch(
         "http://localhost:8000/api/db-admin/nl-query",
         {
@@ -122,7 +131,13 @@ export default function DatabaseAdminPage() {
       );
 
       const data = await response.json();
-      setNlQueryResult(data);
+      const endTime = performance.now();
+      const executionTime = Math.round(endTime - startTime);
+
+      setNlQueryResult({
+        ...data,
+        execution_time_ms: data.execution_time_ms || executionTime,
+      });
     } catch (error) {
       setNlQueryResult({
         success: false,
@@ -131,6 +146,149 @@ export default function DatabaseAdminPage() {
     } finally {
       setExecutingNl(false);
     }
+  };
+
+  const formatSqlWithIndentation = (sql: string) => {
+    // Add line breaks and indentation for better readability
+    const formatted = sql
+      .replace(/\bSELECT\b/gi, "\nSELECT\n  ")
+      .replace(/\bFROM\b/gi, "\nFROM\n  ")
+      .replace(/\b(INNER|LEFT|RIGHT|OUTER)\s+JOIN\b/gi, "\n$1 JOIN\n  ")
+      .replace(/\bJOIN\b/gi, "\nJOIN\n  ")
+      .replace(/\bWHERE\b/gi, "\nWHERE\n  ")
+      .replace(/\bAND\b/gi, "\n  AND ")
+      .replace(/\bOR\b/gi, "\n  OR ")
+      .replace(/\bGROUP\s+BY\b/gi, "\nGROUP BY\n  ")
+      .replace(/\bORDER\s+BY\b/gi, "\nORDER BY\n  ")
+      .replace(/\bHAVING\b/gi, "\nHAVING\n  ")
+      .replace(/\bLIMIT\b/gi, "\nLIMIT ")
+      .replace(/\bOFFSET\b/gi, "\nOFFSET ")
+      .replace(/\bUNION\b/gi, "\n\nUNION\n\n")
+      .replace(/,\s*/g, ",\n  ") // Commas with newlines
+      .trim();
+
+    return formatted;
+  };
+
+  const formatSqlWithColors = (sql: string) => {
+    // First format with indentation
+    let formatted = formatSqlWithIndentation(sql);
+
+    // SQL syntax highlighting with colors
+    const keywords = [
+      "SELECT",
+      "FROM",
+      "WHERE",
+      "JOIN",
+      "LEFT",
+      "RIGHT",
+      "INNER",
+      "OUTER",
+      "ON",
+      "AND",
+      "OR",
+      "ORDER",
+      "BY",
+      "GROUP",
+      "HAVING",
+      "LIMIT",
+      "OFFSET",
+      "AS",
+      "DISTINCT",
+      "COUNT",
+      "SUM",
+      "AVG",
+      "MAX",
+      "MIN",
+      "IN",
+      "NOT",
+      "NULL",
+      "IS",
+      "LIKE",
+      "BETWEEN",
+      "INSERT",
+      "UPDATE",
+      "DELETE",
+      "CREATE",
+      "DROP",
+      "ALTER",
+      "TABLE",
+      "INDEX",
+      "VIEW",
+      "ASC",
+      "DESC",
+      "CASE",
+      "WHEN",
+      "THEN",
+      "ELSE",
+      "END",
+      "UNION",
+      "ALL",
+      "EXISTS",
+      "WITH",
+      "DATE",
+      "TIME",
+      "TIMESTAMP",
+    ];
+
+    // Use placeholders to protect strings
+    const stringPlaceholders: string[] = [];
+    formatted = formatted.replace(/'([^']*)'/g, (match) => {
+      const placeholder = `__STRING_${stringPlaceholders.length}__`;
+      stringPlaceholders.push(match);
+      return placeholder;
+    });
+
+    // Protect numbers with placeholders BEFORE creating any HTML
+    const numberPlaceholders: string[] = [];
+    formatted = formatted.replace(/\b(\d+)\b/g, (match) => {
+      const placeholder = `__NUMBER_${numberPlaceholders.length}__`;
+      numberPlaceholders.push(match);
+      return placeholder;
+    });
+
+    // Protect operators with placeholders BEFORE creating any HTML
+    const operatorPlaceholders: string[] = [];
+    formatted = formatted.replace(/([=<>!]+|,|\*)/g, (match) => {
+      const placeholder = `__OPERATOR_${operatorPlaceholders.length}__`;
+      operatorPlaceholders.push(match);
+      return placeholder;
+    });
+
+    // Now highlight SQL keywords (blue) - safe to add HTML now
+    keywords.forEach((keyword) => {
+      const regex = new RegExp(`\\b${keyword}\\b`, "gi");
+      formatted = formatted.replace(
+        regex,
+        `<span class="text-blue-400 font-semibold">${keyword.toUpperCase()}</span>`
+      );
+    });
+
+    // Restore numbers with orange highlighting
+    numberPlaceholders.forEach((num, index) => {
+      formatted = formatted.replace(
+        `__NUMBER_${index}__`,
+        `<span class="text-orange-400">${num}</span>`
+      );
+    });
+
+    // Restore operators with cyan highlighting
+    operatorPlaceholders.forEach((op, index) => {
+      formatted = formatted.replace(
+        `__OPERATOR_${index}__`,
+        `<span class="text-cyan-400">${op}</span>`
+      );
+    });
+
+    // Restore strings with green highlighting
+    stringPlaceholders.forEach((str, index) => {
+      formatted = formatted.replace(
+        `__STRING_${index}__`,
+        `<span class="text-green-400">${str}</span>`
+      );
+    });
+
+    return formatted;
   };
 
   const renderTable = (data: Record<string, any>[]) => {
@@ -282,7 +440,12 @@ export default function DatabaseAdminPage() {
                           <AlertTitle>Success</AlertTitle>
                           <AlertDescription>
                             Query executed successfully. Returned{" "}
-                            {queryResult.row_count} row(s).
+                            {queryResult.row_count} row(s)
+                            {queryResult.execution_time_ms && (
+                              <span className="ml-2 text-xs font-mono text-muted-foreground">
+                                ({queryResult.execution_time_ms}ms)
+                              </span>
+                            )}
                           </AlertDescription>
                         </Alert>
                       ) : (
@@ -357,7 +520,12 @@ export default function DatabaseAdminPage() {
                             <AlertTitle>Success</AlertTitle>
                             <AlertDescription>
                               Query executed successfully. Returned{" "}
-                              {nlQueryResult.row_count} row(s).
+                              {nlQueryResult.row_count} row(s)
+                              {nlQueryResult.execution_time_ms && (
+                                <span className="ml-2 text-xs font-mono text-muted-foreground">
+                                  ({nlQueryResult.execution_time_ms}ms)
+                                </span>
+                              )}
                             </AlertDescription>
                           </Alert>
 
@@ -373,13 +541,18 @@ export default function DatabaseAdminPage() {
                           )}
 
                           {nlQueryResult.sql_query && (
-                            <div className="p-3 bg-muted rounded-lg">
-                              <p className="text-sm font-medium mb-1">
+                            <div className="p-3 bg-slate-900 rounded-lg">
+                              <p className="text-sm font-medium mb-2 text-slate-300">
                                 Generated SQL:
                               </p>
-                              <pre className="text-xs font-mono overflow-x-auto">
-                                {nlQueryResult.sql_query}
-                              </pre>
+                              <pre
+                                className="text-xs font-mono whitespace-pre-wrap break-words text-slate-200"
+                                dangerouslySetInnerHTML={{
+                                  __html: formatSqlWithColors(
+                                    nlQueryResult.sql_query
+                                  ),
+                                }}
+                              />
                             </div>
                           )}
                         </>

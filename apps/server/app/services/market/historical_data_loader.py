@@ -14,6 +14,7 @@ Supports:
 
 import asyncio
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Set
 from decimal import Decimal
@@ -25,7 +26,7 @@ from sqlalchemy.dialects.postgresql import insert
 
 from app import core
 from app.models.assets import AssetLoadingStatus
-from app.models.market_data import MarketDataMinute
+from app.models.market_data import MarketDataMinute, SymbolDateValidation
 from app.services.core.database import get_async_session
 from app.services.screener.screener_snapshot import fetch_snapshot_all
 
@@ -35,10 +36,29 @@ logger = logging.getLogger("app.historical_data_loader")
 _current_task: Optional[asyncio.Task] = None
 _cancel_flag = False
 
-# Rate limiting: Single connection pool, process sequentially
-# Polygon Advanced allows 100 req/sec, but we use 1 connection to be safe
-CONCURRENT_REQUESTS = 1  # One at a time
-REQUEST_DELAY = 0.1  # 100ms delay between requests (~10 req/sec)
+# Custom thread pool for Polygon API calls (synchronous SDK)
+# Default ThreadPoolExecutor only has ~8-16 threads, which bottlenecks us
+_thread_pool: Optional[ThreadPoolExecutor] = None
+
+# Rate limiting: High parallelism balanced with database connection pool
+# With 100 concurrent requests, we match the database pool capacity (150 max connections)
+# and stay well under system resource limits while maximizing throughput
+CONCURRENT_REQUESTS = 100  # Allow 100 parallel requests
+REQUEST_DELAY = 0.0  # NO delay between requests
+
+
+def _get_thread_pool() -> ThreadPoolExecutor:
+    """Get or create the thread pool for Polygon API calls."""
+    global _thread_pool
+    if _thread_pool is None:
+        # Create a thread pool with as many threads as concurrent requests
+        # This allows the synchronous Polygon SDK to actually make concurrent HTTP calls
+        _thread_pool = ThreadPoolExecutor(
+            max_workers=CONCURRENT_REQUESTS,
+            thread_name_prefix="polygon_api"
+        )
+        logger.info(f"Created thread pool with {CONCURRENT_REQUESTS} workers")
+    return _thread_pool
 
 
 def detect_session_type(timestamp: datetime) -> str:
@@ -133,13 +153,18 @@ async def cancel_historical_load_task() -> bool:
     Returns:
         True if task was cancelled, False if no task was running
     """
-    global _cancel_flag, _current_task
+    global _cancel_flag, _current_task, _thread_pool
     
     if not _current_task or _current_task.done():
         return False
     
     _cancel_flag = True
     logger.info("Historical data loading task cancellation requested")
+    
+    # Cleanup thread pool on cancellation
+    if _thread_pool:
+        _thread_pool.shutdown(wait=False)
+        _thread_pool = None
     
     return True
 
@@ -271,11 +296,11 @@ async def _run_historical_load_task(
         total_bars_inserted = 0
         skipped_count = len(symbols_already_complete)
         
-        # Semaphore for rate limiting (1 concurrent request)
+        # Semaphore for rate limiting
         semaphore = asyncio.Semaphore(CONCURRENT_REQUESTS)
         
-        # Process in small batches since we're sequential
-        batch_size = 10
+        # Process in batches that match our concurrency
+        batch_size = 200
         symbols_to_process = len(symbols_needing_data)
         
         for i in range(0, symbols_to_process, batch_size):
@@ -315,9 +340,9 @@ async def _run_historical_load_task(
                         succeeded += 1
                         logger.debug(f"⚠️  {symbol}: No data available from Polygon")
                 
-                # Update progress every 10 symbols
+                # Update progress every 200 symbols (more efficient with ultra-high concurrency)
                 # Progress accounts for pre-skipped symbols
-                if processed % 10 == 0:
+                if processed % 200 == 0:
                     total_processed = processed + skipped_count
                     progress_pct = (total_processed / total_symbols) * 100
                     await _update_status(
@@ -364,6 +389,13 @@ async def _run_historical_load_task(
             status="failed",
             error_message=str(e)
         )
+    finally:
+        # Cleanup thread pool when task completes
+        global _thread_pool
+        if _thread_pool:
+            _thread_pool.shutdown(wait=True)
+            _thread_pool = None
+            logger.info("Thread pool cleaned up")
 
 
 async def _find_missing_date_ranges(symbol: str, start_date: datetime, end_date: datetime) -> List[tuple[datetime, datetime]]:
@@ -479,10 +511,12 @@ async def _load_symbol_data(
                 # Fetch 1-minute bars from Polygon
                 logger.debug(f"🔍 Fetching data for {symbol} from {from_date} to {to_date}")
             
-                # Run in thread pool since polygon client is synchronous
+                # Run in custom thread pool since polygon client is synchronous
+                # Using custom pool with CONCURRENT_REQUESTS threads instead of default 8-16
                 loop = asyncio.get_event_loop()
+                thread_pool = _get_thread_pool()
                 aggs = await loop.run_in_executor(
-                    None,
+                    thread_pool,
                     lambda: list(client.list_aggs(
                         ticker=symbol,
                         multiplier=1,
@@ -492,10 +526,6 @@ async def _load_symbol_data(
                         limit=50000  # Max allowed by Polygon
                     ))
                 )
-                
-                if not aggs:
-                    logger.debug(f"📭 No data returned from Polygon for {symbol} ({from_date} to {to_date})")
-                    continue  # Try next range
                 
                 # Convert to MarketDataMinute objects
                 bars = []
@@ -518,15 +548,21 @@ async def _load_symbol_data(
                     )
                     bars.append(bar)
                 
-                # Bulk insert with ON CONFLICT DO NOTHING
+                # Bulk insert bars if we got any
                 if bars:
                     logger.debug(f"💾 Inserting {len(bars)} bars for {symbol} ({from_date} to {to_date})")
                     await _bulk_insert_bars(bars)
                     logger.debug(f"✨ Successfully inserted {len(bars)} bars for {symbol}")
                     total_bars_inserted += len(bars)
                 
+                # CRITICAL: Create validation records for the ENTIRE date range we asked about,
+                # regardless of whether we got bars or not. This prevents infinite retries.
+                logger.debug(f"📝 Creating validation records for {symbol} ({from_date} to {to_date})")
+                await _create_validation_for_range(symbol, range_start, range_end, bars)
+                
                 # Delay between requests to avoid overwhelming connection pool
-                await asyncio.sleep(REQUEST_DELAY)
+                if REQUEST_DELAY > 0:
+                    await asyncio.sleep(REQUEST_DELAY)
                 
             except Exception as e:
                 logger.error(f"❌ Error loading data for {symbol} ({from_date} to {to_date}): {e}")
@@ -542,6 +578,8 @@ async def _bulk_insert_bars(bars: List[MarketDataMinute]) -> None:
     
     Chunks inserts to avoid PostgreSQL parameter limit (32767).
     With 10 fields per bar, we can safely insert ~3000 bars at once.
+    
+    Also creates/updates validation records for each symbol/date combination.
     
     Args:
         bars: List of MarketDataMinute objects to insert
@@ -587,10 +625,133 @@ async def _bulk_insert_bars(bars: List[MarketDataMinute]) -> None:
             
             await session.commit()
             
+            # Create/update validation records for the loaded data
+            await _update_validation_records(session, bars)
+            
         except Exception as e:
             logger.error(f"❌ Bulk insert failed: {e}")
             await session.rollback()
             raise
+
+
+async def _create_validation_for_range(
+    symbol: str,
+    start_date: datetime,
+    end_date: datetime,
+    bars: List[MarketDataMinute]
+) -> None:
+    """
+    Create validation records for an entire date range.
+    
+    This is called after fetching from Polygon to mark that we've asked for this range.
+    Creates records for EVERY date in the range, regardless of whether bars exist.
+    
+    Args:
+        symbol: Ticker symbol
+        start_date: Start of range (datetime)
+        end_date: End of range (datetime)
+        bars: List of bars returned (used to count bars per date)
+    """
+    from collections import defaultdict
+    from sqlalchemy.dialects.postgresql import insert
+    
+    async with get_async_session() as session:
+        # Group bars by date to count them
+        bars_by_date = defaultdict(list)
+        for bar in bars:
+            bar_date = bar.time.date()
+            bars_by_date[bar_date].append(bar)
+        
+        # Create validation record for EVERY date in range
+        current_date = start_date.date()
+        end_date_only = end_date.date()
+        
+        while current_date < end_date_only:
+            date_bars = bars_by_date.get(current_date, [])
+            bar_count = len(date_bars)
+            
+            # Calculate first/last bar times if we have bars
+            first_bar_time = min(b.time for b in date_bars) if date_bars else None
+            last_bar_time = max(b.time for b in date_bars) if date_bars else None
+            
+            stmt = insert(SymbolDateValidation).values(
+                symbol=symbol,
+                date=current_date,
+                is_complete=(bar_count >= 350),  # Arbitrary threshold
+                bar_count=bar_count,
+                expected_bars=390,
+                first_bar_time=first_bar_time,
+                last_bar_time=last_bar_time,
+                validated_at=datetime.now(timezone.utc)
+            )
+            stmt = stmt.on_conflict_do_update(
+                index_elements=["symbol", "date"],
+                set_={
+                    "bar_count": stmt.excluded.bar_count,
+                    "is_complete": stmt.excluded.is_complete,
+                    "first_bar_time": stmt.excluded.first_bar_time,
+                    "last_bar_time": stmt.excluded.last_bar_time,
+                    "validated_at": stmt.excluded.validated_at
+                }
+            )
+            await session.execute(stmt)
+            current_date += timedelta(days=1)
+        
+        await session.commit()
+        logger.debug(f"Created validation records for {symbol}: {start_date.date()} to {end_date.date()}")
+
+
+async def _update_validation_records(session, bars: List[MarketDataMinute]) -> None:
+    """
+    Update validation records after inserting bars.
+    
+    Groups bars by symbol and date, counts them, and creates/updates validation records.
+    """
+    from collections import defaultdict
+    from datetime import date as date_type
+    
+    # Group bars by symbol and date
+    bar_counts: Dict[tuple, List[MarketDataMinute]] = defaultdict(list)
+    for bar in bars:
+        bar_date = bar.time.date()
+        key = (bar.symbol, bar_date)
+        bar_counts[key].append(bar)
+    
+    # Create/update validation records
+    for (symbol, bar_date), date_bars in bar_counts.items():
+        bar_count = len(date_bars)
+        first_bar = min(b.time for b in date_bars)
+        last_bar = max(b.time for b in date_bars)
+        
+        # Determine if complete (simplified: >350 bars = complete)
+        expected_bars = 390
+        is_complete = bar_count >= 350
+        
+        # Upsert validation record
+        stmt = insert(SymbolDateValidation).values(
+            symbol=symbol,
+            date=bar_date,
+            is_complete=is_complete,
+            bar_count=bar_count,
+            expected_bars=expected_bars,
+            first_bar_time=first_bar,
+            last_bar_time=last_bar,
+            validated_at=datetime.now(timezone.utc)
+        )
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["symbol", "date"],
+            set_={
+                "bar_count": stmt.excluded.bar_count,
+                "is_complete": stmt.excluded.is_complete,
+                "first_bar_time": stmt.excluded.first_bar_time,
+                "last_bar_time": stmt.excluded.last_bar_time,
+                "validated_at": stmt.excluded.validated_at
+            }
+        )
+        await session.execute(stmt)
+    
+    await session.commit()
+    logger.debug(f"Updated {len(bar_counts)} validation records")
 
 
 async def _update_status(

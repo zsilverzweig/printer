@@ -332,6 +332,279 @@ async def debug_symbols_list(
         }
 
 
+# Gap detection and backfill endpoints
+@router.get("/gaps")
+async def get_gaps(
+    limit: int = Query(100, description="Maximum number of gaps to return")
+):
+    """
+    Get detected data gaps.
+    
+    Returns list of gaps sorted by priority (high priority first).
+    """
+    from app.services.market.gap_detector import get_gap_detector
+    
+    gap_detector = get_gap_detector()
+    if not gap_detector:
+        raise HTTPException(status_code=503, detail="Gap detector not initialized")
+    
+    gaps = gap_detector.get_queued_gaps(limit=limit)
+    summary = gap_detector.get_gap_summary()
+    
+    return {
+        "gaps": [gap.to_dict() for gap in gaps],
+        "summary": summary
+    }
+
+
+@router.post("/gaps/detect")
+async def trigger_gap_detection():
+    """
+    Manually trigger gap detection.
+    
+    Scans the database for missing or incomplete data and updates the gap queue.
+    """
+    from app.services.market.gap_detector import get_gap_detector
+    
+    gap_detector = get_gap_detector()
+    if not gap_detector:
+        raise HTTPException(status_code=503, detail="Gap detector not initialized")
+    
+    gaps = await gap_detector.detect_gaps()
+    summary = gap_detector.get_gap_summary()
+    
+    return {
+        "message": f"Gap detection complete: {len(gaps)} gaps found",
+        "summary": summary
+    }
+
+
+@router.post("/backfill/{symbol}")
+async def backfill_symbol(
+    symbol: str,
+    start_date: str = Query(..., description="Start date (YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)")
+):
+    """
+    Manually trigger backfill for a specific symbol.
+    
+    Args:
+        symbol: Ticker symbol
+        start_date: Start date (YYYY-MM-DD format)
+        end_date: End date (optional, defaults to start_date)
+        
+    Returns:
+        Success status
+    """
+    from app.services.market.smart_backfill import get_backfill_service
+    from datetime import date
+    
+    backfill_service = get_backfill_service()
+    if not backfill_service:
+        raise HTTPException(status_code=503, detail="Backfill service not initialized")
+    
+    try:
+        start = date.fromisoformat(start_date)
+        end = date.fromisoformat(end_date) if end_date else None
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid date format: {str(e)}")
+    
+    success = await backfill_service.backfill_symbol(symbol, start, end)
+    
+    if success:
+        return {
+            "message": f"Backfill complete for {symbol}",
+            "symbol": symbol,
+            "start_date": start_date,
+            "end_date": end_date or start_date
+        }
+    else:
+        raise HTTPException(status_code=500, detail="Backfill failed")
+
+
+@router.get("/backfill/status")
+async def get_backfill_status():
+    """Get current backfill service status and metrics."""
+    from app.services.market.smart_backfill import get_backfill_service
+    
+    backfill_service = get_backfill_service()
+    if not backfill_service:
+        return {
+            "initialized": False,
+            "is_running": False
+        }
+    
+    metrics = backfill_service.get_metrics()
+    return {
+        "initialized": True,
+        **metrics
+    }
+
+
+@router.get("/completeness/{symbol}")
+async def get_symbol_completeness(
+    symbol: str,
+    days: int = Query(30, description="Number of days to check")
+):
+    """
+    Check data completeness for a specific symbol.
+    
+    Returns validation status for the symbol over the specified date range.
+    """
+    from app.services.core.database import get_async_session
+    from sqlalchemy import text
+    from datetime import date, timedelta
+    
+    cutoff_date = date.today() - timedelta(days=days)
+    
+    async with get_async_session() as session:
+        result = await session.execute(
+            text("""
+                SELECT 
+                    date,
+                    is_complete,
+                    bar_count,
+                    expected_bars,
+                    validated_at
+                FROM symbol_date_validation
+                WHERE symbol = :symbol
+                  AND date >= :cutoff_date
+                ORDER BY date DESC
+            """),
+            {"symbol": symbol.upper(), "cutoff_date": cutoff_date}
+        )
+        
+        records = []
+        complete_count = 0
+        for row in result:
+            is_complete = row[1]
+            if is_complete:
+                complete_count += 1
+            
+            records.append({
+                "date": row[0].isoformat(),
+                "is_complete": is_complete,
+                "bar_count": row[2],
+                "expected_bars": row[3],
+                "validated_at": row[4].isoformat() if row[4] else None
+            })
+        
+        return {
+            "symbol": symbol.upper(),
+            "days_checked": days,
+            "total_records": len(records),
+            "complete_days": complete_count,
+            "completion_rate": (complete_count / len(records) * 100) if records else 0,
+            "records": records
+        }
+
+
+@router.get("/validation/progress")
+async def get_validation_progress():
+    """
+    Get validation-based progress for market data loading.
+    
+    Returns metrics based on symbol_date_validation table.
+    """
+    from sqlalchemy import text
+    from app.services.core.database import get_async_session
+    
+    async with get_async_session() as session:
+        # Get total target symbols (stocks + ETFs)
+        target_result = await session.execute(
+            text("""
+                SELECT COUNT(*) as total
+                FROM ticker_details 
+                WHERE type IN ('CS', 'ETF') AND active = true
+            """)
+        )
+        total_target_symbols = target_result.scalar() or 0
+        
+        # Get symbols with at least one validation
+        symbols_result = await session.execute(
+            text("""
+                SELECT COUNT(DISTINCT symbol) as count
+                FROM symbol_date_validation
+            """)
+        )
+        symbols_with_data = symbols_result.scalar() or 0
+        
+        # Get total validation records
+        total_validations_result = await session.execute(
+            text("SELECT COUNT(*) FROM symbol_date_validation")
+        )
+        total_validations = total_validations_result.scalar() or 0
+        
+        # Get date range
+        date_range_result = await session.execute(
+            text("""
+                SELECT MIN(date) as min_date, MAX(date) as max_date, COUNT(DISTINCT date) as unique_days
+                FROM symbol_date_validation
+            """)
+        )
+        date_range = date_range_result.first()
+        
+        # Get symbols with enough data for rv14 (at least 14 trading days)
+        ready_for_screening_result = await session.execute(
+            text("""
+                SELECT COUNT(*) as count
+                FROM (
+                    SELECT symbol, COUNT(DISTINCT date) as days
+                    FROM symbol_date_validation
+                    GROUP BY symbol
+                    HAVING COUNT(DISTINCT date) >= 14
+                ) as symbol_coverage
+            """)
+        )
+        ready_for_screening = ready_for_screening_result.scalar() or 0
+        
+        # Get recent validation activity
+        recent_result = await session.execute(
+            text("""
+                SELECT COUNT(*) as count
+                FROM symbol_date_validation
+                WHERE validated_at >= NOW() - INTERVAL '1 hour'
+            """)
+        )
+        recent_validations = recent_result.scalar() or 0
+        
+        return {
+            "target_symbols": total_target_symbols,
+            "symbols_with_data": symbols_with_data,
+            "symbols_ready_for_screening": ready_for_screening,
+            "total_validations": total_validations,
+            "coverage_percentage": round((symbols_with_data / total_target_symbols * 100) if total_target_symbols > 0 else 0, 1),
+            "screening_ready_percentage": round((ready_for_screening / total_target_symbols * 100) if total_target_symbols > 0 else 0, 1),
+            "date_range": {
+                "min_date": date_range[0].isoformat() if date_range and date_range[0] else None,
+                "max_date": date_range[1].isoformat() if date_range and date_range[1] else None,
+                "unique_days": date_range[2] if date_range else 0
+            },
+            "recent_activity": {
+                "last_hour_validations": recent_validations
+            }
+        }
+
+
+@router.get("/ingestion/status")
+async def get_ingestion_status():
+    """Get real-time ingestion service status and metrics."""
+    from app.services.market.realtime_ingestion import get_ingestion_service
+    
+    ingestion_service = get_ingestion_service()
+    if not ingestion_service:
+        return {
+            "initialized": False,
+            "is_running": False
+        }
+    
+    metrics = ingestion_service.get_metrics()
+    return {
+        "initialized": True,
+        **metrics
+    }
+
+
 @router.get("/bars/{symbol}")
 async def get_historical_bars(
     symbol: str,
