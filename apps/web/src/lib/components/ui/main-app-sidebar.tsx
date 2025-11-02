@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  BarChart3,
   Bot,
   Briefcase,
   Building2,
@@ -84,12 +83,6 @@ export function MainAppSidebar() {
           title: "Screener",
           href: "/screener",
           icon: <Target className="h-4 w-4" />,
-        },
-        {
-          id: "stock-chart",
-          title: "Stock Chart",
-          href: "/stocks/AAPL",
-          icon: <BarChart3 className="h-4 w-4" />,
         },
       ],
     },

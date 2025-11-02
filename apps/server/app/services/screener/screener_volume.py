@@ -215,10 +215,7 @@ class TimescaleVolumeCalculator:
                 rows = list(result)
                 
                 if len(rows) < 15:
-                    self.logger.warning(
-                        f"Insufficient data for {symbol}: only {len(rows)} days "
-                        f"(need 15 for rv14)"
-                    )
+                    # Insufficient data - just return 0, don't log (used for sorting only)
                     return 0.0
                 
                 # Check validation status for yesterday
@@ -235,10 +232,8 @@ class TimescaleVolumeCalculator:
                 validation_row = validation_result.fetchone()
                 
                 if not validation_row or not validation_row[0]:
-                    raise ValueError(
-                        f"Data incomplete for {symbol} on {yesterday}. "
-                        "Please wait for validation or trigger backfill."
-                    )
+                    # Data incomplete - just return 0, don't raise (used for sorting only)
+                    return 0.0
                 
                 # Extract volumes
                 volumes = [float(row[1]) for row in rows]
@@ -304,10 +299,8 @@ class TimescaleVolumeCalculator:
                 validation_row = validation_result.fetchone()
                 
                 if not validation_row or not validation_row[0]:
-                    raise ValueError(
-                        f"Data incomplete for {symbol} on {yesterday}. "
-                        "Please wait for validation or trigger backfill."
-                    )
+                    # Data incomplete - just return 0, don't raise (used for sorting only)
+                    return 0.0
                 
                 # Query yesterday's OHLCV
                 result = await session.execute(

@@ -50,16 +50,16 @@ def is_likely_etf(ticker: str) -> bool:
 def passes_price_filter(
     current_price: float,
     yesterday_close: float,
-    min_price: float = 2.0,
-    max_price: float = 20.0,
+    min_price: float = 0.0,
+    max_price: float = float('inf'),
 ) -> bool:
     """Check if stock passes price-based filters.
     
     Args:
         current_price: Current trading price
         yesterday_close: Previous day's closing price
-        min_price: Minimum price for yesterday's close
-        max_price: Maximum price for yesterday's close
+        min_price: Minimum price for yesterday's close (default: 0, no minimum)
+        max_price: Maximum price for yesterday's close (default: inf, no maximum)
     
     Returns:
         True if stock passes all price filters
@@ -68,13 +68,7 @@ def passes_price_filter(
     if not (min_price <= yesterday_close <= max_price):
         return False
     
-    # Filter out penny stocks (< $1)
-    if current_price < 1.0:
-        return False
-    
-    # Only include stocks that are 5% or more above yesterday's close
-    if current_price < yesterday_close * 1.05:
-        return False
+    # Note: Penny stock filter removed - can be controlled via min_price if needed
     
     return True
 

@@ -7,10 +7,10 @@ that can be used by multiple funds.
 
 import logging
 import uuid
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Query
 from pydantic import BaseModel
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,30 +31,25 @@ class ScreenerRunResult(BaseModel):
     """Result of running the screener."""
     ticker_count: int
     tickers: List[str]
+    results: Optional[List[Dict[str, Any]]] = None  # Full screener result data
 
 
 @router.post("/screening-criteria/{criteria_id}/run", response_model=ScreenerRunResult)
-async def run_screener_with_criteria(criteria_id: str) -> ScreenerRunResult:
+async def run_screener_with_criteria(
+    criteria_id: str,
+    timestamp: Optional[datetime] = Query(None, description="Historical timestamp for time-travel mode. None = live mode.")
+) -> ScreenerRunResult:
     """
     Run the screener with specific criteria and return matching tickers.
     
     Args:
         criteria_id: UUID of the screening criteria to use
+        timestamp: Optional datetime for historical mode. If None, uses live data.
         
     Returns:
         List of tickers matching the criteria and count
     """
     try:
-        # Get the global screener service
-        from app.services.screener.screener import get_screener_service
-        screener_service = get_screener_service()
-        
-        if not screener_service:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Screener service not available. Please ensure the server is fully started."
-            )
-        
         # Get screening criteria
         async with get_async_session() as session:
             result = await session.execute(
@@ -68,60 +63,104 @@ async def run_screener_with_criteria(criteria_id: str) -> ScreenerRunResult:
                     detail=f"Screening criteria {criteria_id} not found"
                 )
         
-        # Get latest snapshot data from screener service
-        if not screener_service.cached_payload:
-            # Try to fetch fresh data
-            try:
-                await screener_service._tick()
-            except Exception as e:
-                logger.warning(f"Failed to fetch fresh data: {e}")
-                if not screener_service.cached_payload:
-                    return ScreenerRunResult(ticker_count=0, tickers=[])
-        
-        # Use cached payload (which has already been filtered by default criteria)
-        # Now apply the fund-specific criteria on top
         params = criteria.criteria
+        technical_filters = params.get("technical_filters")
         
-        # Extract parameters with defaults
-        min_price = params.get("min_price", 2.0)
-        max_price = params.get("max_price", 20.0)
-        min_volume = params.get("min_volume", 50000.0)
-        min_change_percent = params.get("min_change_percent", 5.0)
+        # Extract parameters - use None to skip filters (more permissive)
+        min_price = params.get("min_price")
+        max_price = params.get("max_price")
+        min_volume = params.get("min_volume")
+        min_change_percent = params.get("min_change_percent")
+        max_change_percent = params.get("max_change_percent")
+        exclude_etfs = params.get("exclude_etfs", True)  # Default to True
+        asset_types = params.get("asset_types")  # Optional list of asset types to include
         order_by = params.get("order_by", "rv14")
         limit = params.get("limit", 200)
         
-        # Get the last snapshot and recompute with custom criteria
-        from app.services.screener.screener_snapshot import fetch_snapshot_all
-        import app.core as core
-        
-        if not core.API_KEY:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Polygon API key not configured"
+        # Determine if historical or live mode
+        if timestamp is not None:
+            # Historical mode: query TimescaleDB
+            logger.info(f"Running historical screener for criteria {criteria_id} at {timestamp}")
+            from app.services.screener.screener import get_screener_service
+            screener_service = get_screener_service()
+            
+            if not screener_service:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Screener service not available"
+                )
+            
+            results = await screener_service.compute_historical(
+                timestamp=timestamp,
+                min_price=min_price,
+                max_price=max_price,
+                min_volume=min_volume,
+                min_change_percent=min_change_percent,
+                max_change_percent=max_change_percent,
+                order_by=order_by,
+                limit=limit,
+                technical_filters=technical_filters,
+                exclude_etfs=exclude_etfs,
+                asset_types=asset_types
             )
-        
-        # Fetch current snapshots
-        snaps = fetch_snapshot_all(core.API_KEY)
-        
-        # Apply screener computation with custom parameters
-        results = screener_service._compute(
-            snaps,
-            min_price=min_price,
-            max_price=max_price,
-            min_volume=min_volume,
-            min_change_percent=min_change_percent,
-            order_by=order_by,
-            limit=limit
-        )
+        else:
+            # Live mode: use existing flow
+            from app.services.screener.screener import get_screener_service
+            screener_service = get_screener_service()
+            
+            if not screener_service:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Screener service not available. Please ensure the server is fully started."
+                )
+            
+            # Get latest snapshot data from screener service
+            if not screener_service.cached_payload:
+                # Try to fetch fresh data
+                try:
+                    await screener_service._tick()
+                except Exception as e:
+                    logger.warning(f"Failed to fetch fresh data: {e}")
+                    if not screener_service.cached_payload:
+                        return ScreenerRunResult(ticker_count=0, tickers=[])
+            
+            # Get the last snapshot and recompute with custom criteria
+            from app.services.screener.screener_snapshot import fetch_snapshot_all
+            import app.core as core
+            
+            if not core.API_KEY:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Polygon API key not configured"
+                )
+            
+            # Fetch current snapshots
+            snaps = fetch_snapshot_all(core.API_KEY)
+            
+            # Apply screener computation with custom parameters
+            results = await screener_service._compute(
+                snaps,
+                min_price=min_price,
+                max_price=max_price,
+                min_volume=min_volume,
+                min_change_percent=min_change_percent,
+                max_change_percent=max_change_percent,
+                order_by=order_by,
+                limit=limit,
+                technical_filters=technical_filters,
+                exclude_etfs=exclude_etfs,
+                asset_types=asset_types
+            )
         
         # Extract ticker symbols
         tickers = [r["ticker"] for r in results]
         
-        logger.info(f"Screener run for criteria {criteria_id}: {len(tickers)} tickers matched")
+        logger.info(f"Screener run for criteria {criteria_id}: {len(tickers)} tickers matched (timestamp={timestamp})")
         
         return ScreenerRunResult(
             ticker_count=len(tickers),
-            tickers=tickers
+            tickers=tickers,
+            results=results  # Include full result data
         )
         
     except HTTPException:
@@ -158,8 +197,21 @@ class ScreeningCriteriaParams(BaseModel):
     max_price: Optional[float] = None
     min_volume: Optional[float] = None
     min_change_percent: Optional[float] = None
+    max_change_percent: Optional[float] = None
+    exclude_etfs: Optional[bool] = True  # Default to excluding ETFs
     order_by: Optional[str] = None
     limit: Optional[int] = None
+    
+    # Technical analysis filters
+    technical_filters: Optional[Dict[str, Any]] = None
+    # Contains:
+    # - near_resistance: Optional[bool]  # Price near resistance level
+    # - near_support: Optional[bool]     # Price near support level
+    # - has_equal_highs: Optional[bool]  # Double top pattern detected
+    # - has_equal_lows: Optional[bool]   # Double bottom pattern detected
+    # - above_90day_high: Optional[bool] # Above 90-day high
+    # - below_90day_low: Optional[bool]  # Below 90-day low
+    # - relative_volume_min: Optional[float]  # Minimum RV14 (e.g., 1.3)
 
 
 class CreateScreeningCriteriaRequest(BaseModel):

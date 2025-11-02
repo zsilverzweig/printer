@@ -26,25 +26,6 @@ export function CommandPalette() {
     router.push(href);
   };
 
-  const trimmedQuery = query.trim();
-  const hasQuery = trimmedQuery.length > 0;
-  const knownLabels = [
-    "Company Research",
-    "Trading",
-    "Screener",
-    "Portfolios",
-    "Admin · AI Sandbox",
-  ];
-  const hasMatches = knownLabels.some((label) =>
-    label.toLowerCase().includes(trimmedQuery.toLowerCase())
-  );
-
-  const handleShowTicker = () => {
-    const symbol = trimmedQuery.toUpperCase();
-    if (!symbol) return;
-    navigate(`/stocks/${symbol}`);
-  };
-
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent className="p-0 overflow-hidden">
@@ -53,27 +34,9 @@ export function CommandPalette() {
             placeholder="Type a command or search..."
             value={query}
             onValueChange={setQuery}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && hasQuery && !hasMatches) {
-                e.preventDefault();
-                handleShowTicker();
-              }
-            }}
           />
           <CommandList>
-            <CommandEmpty>
-              {hasQuery ? (
-                <button
-                  type="button"
-                  className="w-full text-left px-3 py-2 text-sm"
-                  onClick={handleShowTicker}
-                >
-                  Show Ticker: {trimmedQuery.toUpperCase()}
-                </button>
-              ) : (
-                "No results found."
-              )}
-            </CommandEmpty>
+            <CommandEmpty>No results found.</CommandEmpty>
             <CommandGroup heading="Navigate">
               <CommandItem onSelect={() => navigate("/company-research")}>
                 Company Research
