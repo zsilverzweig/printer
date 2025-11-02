@@ -15,7 +15,7 @@ from polygon import WebSocketClient
 from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import insert
 
-from app.models.market_data import MarketDataMinute, SymbolDateValidation
+from app.models.market_data import MarketData, SymbolDateValidation
 from app.services.core.database import get_async_session
 
 logger = logging.getLogger("app.realtime_ingestion")
@@ -282,7 +282,7 @@ class RealtimeIngestionService:
         Returns:
             Number of bars inserted
         """
-        bars: List[MarketDataMinute] = []
+        bars: List[MarketData] = []
         
         for msg in messages:
             try:
@@ -312,9 +312,9 @@ class RealtimeIngestionService:
             self.metrics.errors += 1
             return 0
     
-    def _parse_polygon_message(self, msg: Dict) -> Optional[MarketDataMinute]:
+    def _parse_polygon_message(self, msg: Dict) -> Optional[MarketData]:
         """
-        Parse a Polygon WebSocket message into a MarketDataMinute object.
+        Parse a Polygon WebSocket message into a MarketData object.
         
         Polygon AM (minute aggregate) message format:
         {
@@ -338,7 +338,7 @@ class RealtimeIngestionService:
             msg: Raw Polygon message dict
             
         Returns:
-            MarketDataMinute object or None if invalid
+            MarketData object or None if invalid (timescale='1min')
         """
         try:
             # Check event type
@@ -375,9 +375,10 @@ class RealtimeIngestionService:
             # Detect session type (simplified - all as regular for now)
             session_type = "regular"
             
-            return MarketDataMinute(
+            return MarketData(
                 time=timestamp,
                 symbol=symbol.upper(),
+                timescale='1min',
                 open=float(open_price),
                 high=float(high_price),
                 low=float(low_price),
@@ -392,7 +393,7 @@ class RealtimeIngestionService:
             logger.error(f"Error parsing Polygon message: {e}, msg={msg}")
             return None
     
-    async def _bulk_insert_bars(self, bars: List[MarketDataMinute]) -> None:
+    async def _bulk_insert_bars(self, bars: List[MarketData]) -> None:
         """
         Bulk insert bars into TimescaleDB.
         
@@ -408,6 +409,7 @@ class RealtimeIngestionService:
                     {
                         "time": bar.time,
                         "symbol": bar.symbol,
+                        "timescale": bar.timescale,
                         "open": bar.open,
                         "high": bar.high,
                         "low": bar.low,
@@ -422,9 +424,9 @@ class RealtimeIngestionService:
                 
                 # Use PostgreSQL INSERT ... ON CONFLICT DO UPDATE
                 # This handles late/corrected bars by updating existing records
-                stmt = insert(MarketDataMinute).values(values)
+                stmt = insert(MarketData).values(values)
                 stmt = stmt.on_conflict_do_update(
-                    index_elements=["time", "symbol"],
+                    index_elements=["time", "symbol", "timescale"],
                     set_={
                         "open": stmt.excluded.open,
                         "high": stmt.excluded.high,
@@ -487,8 +489,9 @@ class RealtimeIngestionService:
                             COUNT(*) as bar_count,
                             MIN(time) as first_bar,
                             MAX(time) as last_bar
-                        FROM market_data_minute
-                        WHERE DATE(time) >= :cutoff_date
+                        FROM market_data
+                        WHERE timescale = '1min'
+                          AND DATE(time) >= :cutoff_date
                         GROUP BY symbol, DATE(time)
                     """),
                     {"cutoff_date": recent_cutoff}

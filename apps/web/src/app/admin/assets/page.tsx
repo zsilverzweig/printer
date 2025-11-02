@@ -29,6 +29,7 @@ import {
 import { useEffect, useState } from "react";
 
 import { TickerDatabaseManagement } from "@/features/admin/components/ticker-database-management";
+import { useUrlTabs } from "@/lib/hooks/use-url-tabs";
 
 interface AssetLoadingStatus {
   status: string;
@@ -80,6 +81,7 @@ interface AssetSummary {
 }
 
 export default function AdminAssetsPage() {
+  const [activeTab, setActiveTab] = useUrlTabs({ defaultTab: "ticker-details" });
   const [loadingStatus, setLoadingStatus] = useState<AssetLoadingStatus | null>(
     null
   );
@@ -254,7 +256,7 @@ export default function AdminAssetsPage() {
         </div>
       </div>
 
-      <Tabs defaultValue="ticker-details" className="w-full">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger
             value="ticker-details"

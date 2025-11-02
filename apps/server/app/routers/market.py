@@ -18,6 +18,7 @@ class HistoricalLoadRequest(BaseModel):
     days: int = 1
     symbols: Optional[List[str]] = None
     start_date: Optional[str] = None
+    timescales: Optional[List[str]] = None  # ['1min', '5min', '15min', '1hour', '1day']
 
 
 class HistoricalLoadResponse(BaseModel):
@@ -203,11 +204,12 @@ async def start_historical_load(request: HistoricalLoadRequest):
     """
     Start loading historical market data from Polygon into TimescaleDB.
     
-    Fetches 1-minute candlestick data for the specified symbols and date range.
+    Fetches candlestick data at specified timescales for the specified symbols and date range.
+    Supports multiple timescales: 1min, 5min, 15min, 1hour, 1day
     Returns a task ID that can be used to track progress.
     
     Args:
-        request: Load configuration (days, symbols, start_date)
+        request: Load configuration (days, symbols, start_date, timescales)
         
     Returns:
         HistoricalLoadResponse with status_id and message
@@ -224,7 +226,8 @@ async def start_historical_load(request: HistoricalLoadRequest):
         result = await historical_data_loader.start_historical_load_task(
             days=request.days,
             symbols=request.symbols,
-            start_date=start_date
+            start_date=start_date,
+            timescales=request.timescales
         )
         
         return HistoricalLoadResponse(
@@ -277,14 +280,19 @@ async def get_historical_load_status(status_id: int):
 
 
 @router.get("/historical/stats")
-async def get_database_stats():
+async def get_database_stats(
+    include_details: bool = Query(False, description="Include detailed 1min analysis (slower)")
+):
     """
     Get comprehensive statistics about the market data database.
     
+    Args:
+        include_details: If True, includes detailed symbol/date analysis for 1min data (slower)
+    
     Returns:
-        Dict with total bars, date range, storage size, coverage analysis, etc.
+        Dict with total bars, date range, storage size, per-timescale stats, and optional details
     """
-    return await historical_data_loader.get_database_stats()
+    return await historical_data_loader.get_database_stats(include_details=include_details)
 
 
 @router.get("/historical/debug/symbols")
@@ -308,7 +316,8 @@ async def debug_symbols_list(
                     MIN(time) as first_bar,
                     MAX(time) as last_bar,
                     COUNT(DISTINCT DATE(time)) as unique_days
-                FROM market_data_minute
+                FROM market_data
+                WHERE timescale = '1min'
                 GROUP BY symbol
                 ORDER BY bar_count DESC
                 LIMIT :limit
@@ -631,13 +640,13 @@ async def get_historical_bars(
     from app.services.core.database import get_async_session
     from sqlalchemy import text
     
-    # Map timeframe to table/view
+    # Map timeframe to timescale value
     timeframe_map = {
-        "1m": "market_data_minute",
-        "5m": "market_data_5m",
-        "15m": "market_data_15m",
-        "1h": "market_data_1h",
-        "1d": "market_data_daily"
+        "1m": "1min",
+        "5m": "5min",
+        "15m": "15min",
+        "1h": "1hour",
+        "1d": "1day"
     }
     
     if timeframe not in timeframe_map:
@@ -646,8 +655,7 @@ async def get_historical_bars(
             detail=f"Invalid timeframe. Must be one of: {', '.join(timeframe_map.keys())}"
         )
     
-    table = timeframe_map[timeframe]
-    time_column = "time" if timeframe == "1m" else "bucket"
+    timescale = timeframe_map[timeframe]
     
     try:
         from_dt = datetime.fromisoformat(from_time)
@@ -659,9 +667,9 @@ async def get_historical_bars(
         )
     
     async with get_async_session() as session:
-        query = text(f"""
+        query = text("""
             SELECT 
-                {time_column} as time,
+                time,
                 symbol,
                 open,
                 high,
@@ -670,11 +678,12 @@ async def get_historical_bars(
                 volume,
                 vwap,
                 trade_count
-            FROM {table}
+            FROM market_data
             WHERE symbol = :symbol
-              AND {time_column} >= :from_time
-              AND {time_column} <= :to_time
-            ORDER BY {time_column} DESC
+              AND timescale = :timescale
+              AND time >= :from_time
+              AND time <= :to_time
+            ORDER BY time DESC
             LIMIT :limit
         """)
         
@@ -682,6 +691,7 @@ async def get_historical_bars(
             query,
             {
                 "symbol": symbol.upper(),
+                "timescale": timescale,
                 "from_time": from_dt,
                 "to_time": to_dt,
                 "limit": limit

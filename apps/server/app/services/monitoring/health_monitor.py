@@ -14,7 +14,7 @@ from typing import Dict, List, Optional
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.market_data import SymbolDateValidation, MarketDataMinute
+from app.models.market_data import SymbolDateValidation, MarketData
 from app.services.core.database import get_async_session
 
 logger = logging.getLogger("app.health_monitor")
@@ -132,7 +132,7 @@ class MarketDataHealthCheck(BaseHealthCheck):
         try:
             # Get most recent bar timestamp
             result = await session.execute(
-                text("SELECT MAX(time) as last_bar FROM market_data_minute")
+                text("SELECT MAX(time) as last_bar FROM market_data WHERE timescale = '1min'")
             )
             row = result.fetchone()
             

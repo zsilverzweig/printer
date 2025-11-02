@@ -28,6 +28,9 @@ class ScreenerDataLoader:
         
         # Volume calculator (initialized after loading historical data)
         self.volume_calculator: VolumeCalculator | None = None
+        
+        # Cache for symbols with exchange info
+        self.symbol_exchanges: Dict[str, str] = {}
     
     async def load_from_timescale(self) -> None:
         """Load historical data from TimescaleDB on startup."""
@@ -54,8 +57,9 @@ class ScreenerDataLoader:
                             low,
                             close,
                             volume
-                        FROM market_data_daily
-                        WHERE bucket::date = :yesterday
+                        FROM market_data
+                        WHERE time::date = :yesterday
+                          AND timescale = '1day'
                           AND symbol = ANY(:symbols)
                     """),
                     {"yesterday": yesterday, "symbols": symbols}
@@ -104,4 +108,111 @@ class ScreenerDataLoader:
                         pass
             except Exception:
                 pass
+    
+    async def fetch_latest_from_timescale(self) -> List[Dict[str, Any]]:
+        """
+        Fetch the latest market data from TimescaleDB.
+        
+        Returns a list of snapshot-like dictionaries compatible with the existing compute logic.
+        Each snapshot contains:
+        - ticker: Symbol
+        - price: Latest close price from most recent 1min bar
+        - volume: Today's accumulated volume
+        - exchange: Exchange code (default 'XNYS')
+        - day: Yesterday's OHLC data
+        """
+        try:
+            from sqlalchemy import text
+            from app.services.core.database import get_async_session
+            from datetime import datetime, timezone
+            
+            snapshots = []
+            today = date.today()
+            yesterday = today - timedelta(days=1)
+            
+            async with get_async_session() as session:
+                # Query for the latest price and today's volume for each symbol
+                # Get the most recent 1min bar for each symbol from today
+                result = await session.execute(
+                    text("""
+                        WITH latest_bars AS (
+                            SELECT DISTINCT ON (symbol)
+                                symbol,
+                                close as current_price,
+                                time as bar_time
+                            FROM market_data
+                            WHERE timescale = '1min'
+                              AND time::date = :today
+                            ORDER BY symbol, time DESC
+                        ),
+                        today_volume AS (
+                            SELECT 
+                                symbol,
+                                SUM(volume) as total_volume
+                            FROM market_data
+                            WHERE timescale = '1min'
+                              AND time::date = :today
+                            GROUP BY symbol
+                        ),
+                        yesterday_ohlc AS (
+                            SELECT
+                                symbol,
+                                open as prev_open,
+                                high as prev_high,
+                                low as prev_low,
+                                close as prev_close,
+                                volume as prev_volume
+                            FROM market_data
+                            WHERE time::date = :yesterday
+                              AND timescale = '1day'
+                        )
+                        SELECT 
+                            lb.symbol,
+                            lb.current_price,
+                            lb.bar_time,
+                            COALESCE(tv.total_volume, 0) as today_volume,
+                            yo.prev_open,
+                            yo.prev_high,
+                            yo.prev_low,
+                            yo.prev_close,
+                            yo.prev_volume
+                        FROM latest_bars lb
+                        LEFT JOIN today_volume tv ON lb.symbol = tv.symbol
+                        LEFT JOIN yesterday_ohlc yo ON lb.symbol = yo.symbol
+                        WHERE yo.prev_close IS NOT NULL
+                        ORDER BY lb.symbol
+                    """),
+                    {"today": today, "yesterday": yesterday}
+                )
+                
+                for row in result:
+                    symbol = row[0]
+                    current_price = float(row[1])
+                    today_volume = int(row[3])
+                    
+                    # Get exchange (default to XNYS for now, could be enhanced later)
+                    exchange = self.symbol_exchanges.get(symbol, "XNYS")
+                    
+                    # Build snapshot-like dict
+                    snapshot = {
+                        "ticker": symbol,
+                        "price": current_price,
+                        "volume": today_volume,
+                        "exchange": exchange,
+                        "day": {
+                            "o": float(row[4]) if row[4] else None,
+                            "h": float(row[5]) if row[5] else None,
+                            "l": float(row[6]) if row[6] else None,
+                            "c": float(row[7]) if row[7] else None,
+                            "v": int(row[8]) if row[8] else None,
+                        }
+                    }
+                    snapshots.append(snapshot)
+                    
+                self.logger.info(f"Fetched {len(snapshots)} latest market data records from TimescaleDB")
+                return snapshots
+                
+        except Exception as e:
+            self.logger.error(f"Failed to fetch latest data from TimescaleDB: {e}", exc_info=True)
+            return []
 

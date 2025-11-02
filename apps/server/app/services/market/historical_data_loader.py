@@ -26,7 +26,7 @@ from sqlalchemy.dialects.postgresql import insert
 
 from app import core
 from app.models.assets import AssetLoadingStatus
-from app.models.market_data import MarketDataMinute, SymbolDateValidation
+from app.models.market_data import MarketData, SymbolDateValidation
 from app.services.core.database import get_async_session
 from app.services.screener.screener_snapshot import fetch_snapshot_all
 
@@ -40,11 +40,40 @@ _cancel_flag = False
 # Default ThreadPoolExecutor only has ~8-16 threads, which bottlenecks us
 _thread_pool: Optional[ThreadPoolExecutor] = None
 
-# Rate limiting: High parallelism balanced with database connection pool
-# With 100 concurrent requests, we match the database pool capacity (150 max connections)
-# and stay well under system resource limits while maximizing throughput
-CONCURRENT_REQUESTS = 100  # Allow 100 parallel requests
+# Rate limiting: Sequential requests to avoid connection pool warnings
+# 1 concurrent request eliminates urllib3 connection pool warnings
+# Still reasonably fast due to no delay between requests
+CONCURRENT_REQUESTS = 1  # Sequential requests (no connection pool issues)
 REQUEST_DELAY = 0.0  # NO delay between requests
+
+# Timescale configuration: lookback periods and Polygon API parameters
+TIMESCALE_CONFIG = {
+    '1min': {
+        'lookback_days': 30,
+        'multiplier': 1,
+        'timespan': 'minute'
+    },
+    '5min': {
+        'lookback_days': 60,  # 60 days - powers the screener
+        'multiplier': 5,
+        'timespan': 'minute'
+    },
+    '15min': {
+        'lookback_days': 60,  # 60 days
+        'multiplier': 15,
+        'timespan': 'minute'
+    },
+    '1hour': {
+        'lookback_days': 90,  # 3 months
+        'multiplier': 1,
+        'timespan': 'hour'
+    },
+    '1day': {
+        'lookback_days': 180,  # 6 months
+        'multiplier': 1,
+        'timespan': 'day'
+    }
+}
 
 
 def _get_thread_pool() -> ThreadPoolExecutor:
@@ -91,15 +120,17 @@ def detect_session_type(timestamp: datetime) -> str:
 async def start_historical_load_task(
     days: int = 1,
     symbols: Optional[List[str]] = None,
-    start_date: Optional[datetime] = None
+    start_date: Optional[datetime] = None,
+    timescales: Optional[List[str]] = None
 ) -> Dict[str, any]:
     """
     Start the historical data loading background task.
     
     Args:
-        days: Number of days of historical data to load
+        days: Number of days of historical data to load (ignored if timescales specified)
         symbols: List of symbols to load (None = all from snapshot)
-        start_date: Starting date for historical data (None = days ago from today)
+        start_date: Starting date for historical data (None = use default lookback per timescale)
+        timescales: List of timescales to load (None = ['1min']). Options: '1min', '5min', '15min', '1hour', '1day'
     
     Returns:
         Dict with status_id and message
@@ -114,6 +145,15 @@ async def start_historical_load_task(
     
     # Reset cancel flag
     _cancel_flag = False
+    
+    # Default to 1min if no timescales specified
+    if timescales is None:
+        timescales = ['1min']
+    
+    # Validate timescales
+    invalid_timescales = [ts for ts in timescales if ts not in TIMESCALE_CONFIG]
+    if invalid_timescales:
+        raise ValueError(f"Invalid timescales: {invalid_timescales}. Valid options: {list(TIMESCALE_CONFIG.keys())}")
     
     # Create new status record
     async with get_async_session() as session:
@@ -131,18 +171,19 @@ async def start_historical_load_task(
     
     # Start background task
     _current_task = asyncio.create_task(
-        _run_historical_load_task(status_id, days, symbols, start_date)
+        _run_historical_load_task(status_id, days, symbols, start_date, timescales)
     )
     
     symbol_count = len(symbols) if symbols else "all"
+    timescale_str = ", ".join(timescales)
     logger.info(
-        f"Started historical data loading task: {days} days, "
+        f"Started historical data loading task: {timescale_str} timescales, "
         f"{symbol_count} symbols, status_id={status_id}"
     )
     
     return {
         "status_id": status_id,
-        "message": f"Historical data loading started: {days} days for {symbol_count} symbols"
+        "message": f"Historical data loading started: {timescale_str} for {symbol_count} symbols"
     }
 
 
@@ -206,12 +247,13 @@ async def _run_historical_load_task(
     status_id: int,
     days: int,
     symbols: Optional[List[str]],
-    start_date: Optional[datetime]
+    start_date: Optional[datetime],
+    timescales: List[str]
 ):
     """
     Main worker function for historical data loading.
     
-    Fetches minute bars from Polygon and stores in TimescaleDB.
+    Fetches bars at specified timescales from Polygon and stores in TimescaleDB.
     """
     global _cancel_flag
     
@@ -221,12 +263,6 @@ async def _run_historical_load_task(
             raise ValueError("Polygon client not initialized")
         
         client = core.rest_client
-        
-        # Determine date range
-        if start_date is None:
-            start_date = datetime.now(timezone.utc) - timedelta(days=days)
-        
-        end_date = start_date + timedelta(days=days)
         
         # Get symbol list
         if symbols is None:
@@ -250,136 +286,142 @@ async def _run_historical_load_task(
             return
         
         total_symbols = len(symbols)
-        logger.info(f"🚀 Starting load: {total_symbols} symbols for {days} days")
-        logger.info(f"📅 Date range: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
+        timescale_str = ", ".join(timescales)
+        logger.info(f"🚀 Starting load: {total_symbols} symbols for timescales: {timescale_str}")
         
-        # Pre-check: Find which symbols actually need data
-        logger.info(f"🔍 Pre-checking existing data for {total_symbols} symbols...")
-        symbols_needing_data = []
-        symbols_already_complete = []
-        
-        for symbol in symbols:
+        # Process each timescale sequentially
+        for timescale_idx, timescale in enumerate(timescales):
             if _cancel_flag:
-                logger.info("Task cancelled during pre-check")
+                logger.info("Task cancelled before starting timescale")
                 await _update_status(status_id, status="cancelled")
                 return
             
-            missing_ranges = await _find_missing_date_ranges(symbol, start_date, end_date)
-            if missing_ranges:
-                symbols_needing_data.append(symbol)
+            config = TIMESCALE_CONFIG[timescale]
+            
+            # Determine date range for this timescale
+            if start_date is None:
+                ts_start_date = datetime.now(timezone.utc) - timedelta(days=config['lookback_days'])
             else:
-                symbols_already_complete.append(symbol)
-        
-        logger.info(
-            f"📊 Pre-check complete: {len(symbols_needing_data)} need data, "
-            f"{len(symbols_already_complete)} already complete"
-        )
-        
-        # If everything is already loaded, we're done
-        if not symbols_needing_data:
-            logger.info("✅ All symbols already have complete data!")
-            await _update_status(
-                status_id,
-                status="completed",
-                progress_pct=100.0,
-                tickers_processed=total_symbols,
-                tickers_succeeded=0,
-                tickers_failed=0
-            )
-            return
-        
-        # Process only symbols that need data
-        processed = 0
-        succeeded = 0
-        failed = 0
-        failed_symbols = []
-        total_bars_inserted = 0
-        skipped_count = len(symbols_already_complete)
-        
-        # Semaphore for rate limiting
-        semaphore = asyncio.Semaphore(CONCURRENT_REQUESTS)
-        
-        # Process in batches that match our concurrency
-        batch_size = 200
-        symbols_to_process = len(symbols_needing_data)
-        
-        for i in range(0, symbols_to_process, batch_size):
-            if _cancel_flag:
-                logger.info("Task cancelled by user")
-                await _update_status(status_id, status="cancelled")
-                return
+                ts_start_date = start_date
             
-            batch = symbols_needing_data[i:i + batch_size]
-            tasks = [
-                _load_symbol_data(
-                    client, symbol, start_date, end_date, semaphore
-                )
-                for symbol in batch
-            ]
+            ts_end_date = datetime.now(timezone.utc)
             
-            # Wait for batch to complete
-            results = await asyncio.gather(*tasks, return_exceptions=True)
+            logger.info(f"📅 [{timescale}] Date range: {ts_start_date.strftime('%Y-%m-%d')} to {ts_end_date.strftime('%Y-%m-%d')}")
             
-            # Update stats
-            for symbol, result in zip(batch, results):
-                processed += 1
-                if isinstance(result, Exception):
-                    failed += 1
-                    failed_symbols.append(symbol)
-                    logger.warning(f"❌ Failed to load {symbol}: {result}")
-                else:
-                    # Result is the number of bars inserted
-                    bars_count = result if isinstance(result, int) else 0
-                    
-                    if bars_count > 0:
-                        succeeded += 1
-                        total_bars_inserted += bars_count
-                        logger.info(f"✅ {symbol}: {bars_count} bars inserted")
-                    else:
-                        # No data available from Polygon for this date range
-                        succeeded += 1
-                        logger.debug(f"⚠️  {symbol}: No data available from Polygon")
+            # Pre-check: Find which symbols actually need data for this timescale
+            logger.info(f"🔍 [{timescale}] Pre-checking existing data for {total_symbols} symbols...")
+            symbols_needing_data = []
+            symbols_already_complete = []
+            
+            for symbol in symbols:
+                if _cancel_flag:
+                    logger.info("Task cancelled during pre-check")
+                    await _update_status(status_id, status="cancelled")
+                    return
                 
-                # Update progress every 200 symbols (more efficient with ultra-high concurrency)
-                # Progress accounts for pre-skipped symbols
-                if processed % 200 == 0:
-                    total_processed = processed + skipped_count
-                    progress_pct = (total_processed / total_symbols) * 100
-                    await _update_status(
-                        status_id,
-                        progress_pct=progress_pct,
-                        tickers_processed=processed,
-                        tickers_succeeded=succeeded,
-                        tickers_failed=failed
-                    )
-            
+                missing_ranges = await _find_missing_date_ranges(symbol, ts_start_date, ts_end_date, timescale)
+                if missing_ranges:
+                    symbols_needing_data.append(symbol)
+                else:
+                    symbols_already_complete.append(symbol)
+        
             logger.info(
-                f"📊 Batch complete: {processed}/{symbols_to_process} fetched "
-                f"({succeeded} succeeded, {failed} failed) + {skipped_count} pre-skipped | "
-                f"{total_bars_inserted} total bars inserted"
+                f"📊 [{timescale}] Pre-check complete: {len(symbols_needing_data)} need data, "
+                f"{len(symbols_already_complete)} already complete"
+            )
+            
+            # If everything is already loaded for this timescale, skip to next
+            if not symbols_needing_data:
+                logger.info(f"✅ [{timescale}] All symbols already have complete data!")
+                continue
+            
+            # Process only symbols that need data for this timescale
+            processed = 0
+            succeeded = 0
+            failed = 0
+            failed_symbols = []
+            total_bars_inserted = 0
+            skipped_count = len(symbols_already_complete)
+            
+            # Semaphore for rate limiting
+            semaphore = asyncio.Semaphore(CONCURRENT_REQUESTS)
+            
+            # Process in batches that match our concurrency
+            batch_size = 200
+            symbols_to_process = len(symbols_needing_data)
+            
+            for i in range(0, symbols_to_process, batch_size):
+                if _cancel_flag:
+                    logger.info("Task cancelled by user")
+                    await _update_status(status_id, status="cancelled")
+                    return
+                
+                batch = symbols_needing_data[i:i + batch_size]
+                tasks = [
+                    _load_symbol_data(
+                        client, symbol, ts_start_date, ts_end_date, timescale, config, semaphore
+                    )
+                    for symbol in batch
+                ]
+                
+                # Wait for batch to complete
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                
+                # Update stats
+                for symbol, result in zip(batch, results):
+                    processed += 1
+                    if isinstance(result, Exception):
+                        failed += 1
+                        failed_symbols.append(symbol)
+                        logger.warning(f"❌ [{timescale}] Failed to load {symbol}: {result}")
+                    else:
+                        # Result is the number of bars inserted
+                        bars_count = result if isinstance(result, int) else 0
+                        
+                        if bars_count > 0:
+                            succeeded += 1
+                            total_bars_inserted += bars_count
+                            logger.info(f"✅ [{timescale}] {symbol}: {bars_count} bars inserted")
+                        else:
+                            # No data available from Polygon for this date range
+                            succeeded += 1
+                            logger.debug(f"⚠️  [{timescale}] {symbol}: No data available from Polygon")
+                    
+                    # Update progress every 200 symbols (more efficient with ultra-high concurrency)
+                    # Progress accounts for pre-skipped symbols
+                    if processed % 200 == 0:
+                        total_processed = processed + skipped_count
+                        progress_pct = (total_processed / total_symbols) * 100
+                        await _update_status(
+                            status_id,
+                            progress_pct=progress_pct,
+                            tickers_processed=processed,
+                            tickers_succeeded=succeeded,
+                            tickers_failed=failed
+                        )
+                
+                logger.info(
+                    f"📊 [{timescale}] Batch complete: {processed}/{symbols_to_process} fetched "
+                    f"({succeeded} succeeded, {failed} failed) + {skipped_count} pre-skipped | "
+                    f"{total_bars_inserted} total bars inserted"
+                )
+            
+            # Timescale completed - log summary
+            logger.info(
+                f"🎉 [{timescale}] Completed: "
+                f"{succeeded} symbols fetched, {skipped_count} already complete, {failed} failed | "
+                f"💾 {total_bars_inserted} total bars inserted"
             )
         
-        # Final status update
-        error_msg = None
-        if failed > 0:
-            error_msg = f"Failed to load {failed} symbols: {', '.join(failed_symbols[:10])}"
-            if len(failed_symbols) > 10:
-                error_msg += f" and {len(failed_symbols) - 10} more"
-        
+        # All timescales completed - final status update
         await _update_status(
             status_id,
             status="completed",
-            progress_pct=100.0,
-            tickers_processed=processed,
-            tickers_succeeded=succeeded,
-            tickers_failed=failed,
-            error_message=error_msg
+            progress_pct=100.0
         )
         
         logger.info(
-            f"🎉 Historical data loading completed: "
-            f"{succeeded} symbols fetched, {skipped_count} already complete, {failed} failed | "
-            f"💾 {total_bars_inserted} total bars inserted into database"
+            f"🎉 All timescales completed for historical data loading"
         )
         
     except Exception as e:
@@ -398,14 +440,18 @@ async def _run_historical_load_task(
             logger.info("Thread pool cleaned up")
 
 
-async def _find_missing_date_ranges(symbol: str, start_date: datetime, end_date: datetime) -> List[tuple[datetime, datetime]]:
+async def _find_missing_date_ranges(symbol: str, start_date: datetime, end_date: datetime, timescale: str) -> List[tuple[datetime, datetime]]:
     """
-    Find date ranges where we're missing data for this symbol.
+    Find date ranges where we're missing data for this symbol at the specified timescale.
+    
+    Uses symbol_date_validation table to identify missing dates, not just edge gaps.
+    This ensures we detect gaps in the middle of date ranges.
     
     Args:
         symbol: Ticker symbol
         start_date: Start of desired date range
         end_date: End of desired date range
+        timescale: Timescale granularity ('1min', '5min', '15min', '1hour', '1day')
         
     Returns:
         List of (start, end) tuples representing date gaps to fetch
@@ -415,50 +461,84 @@ async def _find_missing_date_ranges(symbol: str, start_date: datetime, end_date:
     
     async with get_async_session() as session:
         try:
-            # Get the min and max dates we have for this symbol
+            # Get all dates that have validation records in the desired range
             result = await session.execute(
                 text("""
-                    SELECT 
-                        MIN(DATE(time)) as min_date,
-                        MAX(DATE(time)) as max_date,
-                        COUNT(*) as total_bars
-                    FROM market_data_minute 
+                    SELECT date
+                    FROM symbol_date_validation
                     WHERE symbol = :symbol
-                      AND time >= :start_date 
-                      AND time <= :end_date
+                      AND timescale = :timescale
+                      AND date >= :start_date
+                      AND date < :end_date
+                    ORDER BY date
                 """),
                 {
                     "symbol": symbol.upper(),
-                    "start_date": start_date,
-                    "end_date": end_date
+                    "timescale": timescale,
+                    "start_date": start_date.date(),
+                    "end_date": end_date.date()
                 }
             )
-            row = result.first()
+            validated_dates = {row[0] for row in result}
             
-            if not row or row[2] == 0:
-                # No data at all - need entire range
-                logger.debug(f"📭 {symbol}: No existing data, fetching entire range")
+            # If no validation records exist, we need the entire range
+            if not validated_dates:
+                logger.debug(f"📭 {symbol}: No validation records, fetching entire range")
                 return [(start_date, end_date)]
             
-            min_date, max_date, total_bars = row
+            # Generate expected date range (excluding weekends)
+            from datetime import date as date_type
+            expected_dates = []
+            current_date = start_date.date()
+            end_date_only = end_date.date()
             
-            # Check if we have gaps
+            while current_date < end_date_only:
+                # Skip weekends
+                if current_date.weekday() < 5:  # Monday=0, Friday=4
+                    expected_dates.append(current_date)
+                current_date += timedelta(days=1)
+            
+            # Find missing dates (excluding weekends)
+            missing_dates = [d for d in expected_dates if d not in validated_dates]
+            
+            if not missing_dates:
+                logger.debug(f"✓ {symbol}: All dates validated in range")
+                return []
+            
+            # Group consecutive missing dates into ranges for efficient API calls
             missing_ranges = []
-            
-            # Gap before our data
-            if min_date and start_date.date() < min_date:
-                gap_end = datetime.combine(min_date, datetime.min.time()).replace(tzinfo=timezone.utc) - timedelta(days=1)
-                missing_ranges.append((start_date, gap_end))
-                logger.debug(f"📊 {symbol}: Missing data before {min_date}")
-            
-            # Gap after our data
-            if max_date and end_date.date() > max_date:
-                gap_start = datetime.combine(max_date, datetime.min.time()).replace(tzinfo=timezone.utc) + timedelta(days=1)
-                missing_ranges.append((gap_start, end_date))
-                logger.debug(f"📊 {symbol}: Missing data after {max_date}")
-            
-            if not missing_ranges:
-                logger.debug(f"✓ {symbol}: Already have complete data ({total_bars} bars)")
+            if missing_dates:
+                range_start = missing_dates[0]
+                range_end = missing_dates[0]
+                
+                for d in missing_dates[1:]:
+                    # Check if this date is consecutive (accounting for weekends)
+                    next_trading_day = range_end
+                    while True:
+                        next_trading_day += timedelta(days=1)
+                        if next_trading_day.weekday() < 5:  # Skip weekends
+                            break
+                    
+                    if d == next_trading_day:
+                        # Consecutive date, extend range
+                        range_end = d
+                    else:
+                        # Non-consecutive, start new range
+                        # Add 1 day to end to make it exclusive (for _create_validation_for_range)
+                        missing_ranges.append((
+                            datetime.combine(range_start, datetime.min.time()).replace(tzinfo=timezone.utc),
+                            datetime.combine(range_end + timedelta(days=1), datetime.min.time()).replace(tzinfo=timezone.utc)
+                        ))
+                        range_start = d
+                        range_end = d
+                
+                # Add final range (end date + 1 day to make it exclusive)
+                missing_ranges.append((
+                    datetime.combine(range_start, datetime.min.time()).replace(tzinfo=timezone.utc),
+                    datetime.combine(range_end + timedelta(days=1), datetime.min.time()).replace(tzinfo=timezone.utc)
+                ))
+                
+                logger.debug(f"📊 {symbol}: Found {len(missing_dates)} missing dates in {len(missing_ranges)} ranges")
             
             return missing_ranges
             
@@ -472,10 +552,12 @@ async def _load_symbol_data(
     symbol: str,
     start_date: datetime,
     end_date: datetime,
+    timescale: str,
+    config: Dict,
     semaphore: asyncio.Semaphore
 ) -> int:
     """
-    Load historical data for a single symbol, fetching only missing date ranges.
+    Load historical data for a single symbol at specified timescale, fetching only missing date ranges.
     
     Note: This function assumes pre-checking has been done to determine that
     this symbol actually needs data. It will re-check for specific missing ranges.
@@ -485,18 +567,20 @@ async def _load_symbol_data(
         symbol: Ticker symbol
         start_date: Start date for data
         end_date: End date for data
+        timescale: Timescale granularity ('1min', '5min', '15min', '1hour', '1day')
+        config: Timescale configuration with multiplier and timespan
         semaphore: Rate limiting semaphore
         
     Returns:
         Number of bars inserted
     """
     async with semaphore:
-        # Find specific missing date ranges for this symbol
-        missing_ranges = await _find_missing_date_ranges(symbol, start_date, end_date)
+        # Find specific missing date ranges for this symbol at this timescale
+        missing_ranges = await _find_missing_date_ranges(symbol, start_date, end_date, timescale)
         
         if not missing_ranges:
             # Edge case: data was added between pre-check and now
-            logger.debug(f"⏭️  {symbol}: Data already complete (added since pre-check)")
+            logger.debug(f"⏭️  [{timescale}] {symbol}: Data already complete (added since pre-check)")
             return 0
         
         total_bars_inserted = 0
@@ -508,8 +592,8 @@ async def _load_symbol_data(
             to_date = range_end.strftime("%Y-%m-%d")
             
             try:
-                # Fetch 1-minute bars from Polygon
-                logger.debug(f"🔍 Fetching data for {symbol} from {from_date} to {to_date}")
+                # Fetch bars from Polygon at specified timescale
+                logger.debug(f"🔍 [{timescale}] Fetching data for {symbol} from {from_date} to {to_date}")
             
                 # Run in custom thread pool since polygon client is synchronous
                 # Using custom pool with CONCURRENT_REQUESTS threads instead of default 8-16
@@ -519,24 +603,25 @@ async def _load_symbol_data(
                     thread_pool,
                     lambda: list(client.list_aggs(
                         ticker=symbol,
-                        multiplier=1,
-                        timespan="minute",
+                        multiplier=config['multiplier'],
+                        timespan=config['timespan'],
                         from_=from_date,
                         to=to_date,
                         limit=50000  # Max allowed by Polygon
                     ))
                 )
                 
-                # Convert to MarketDataMinute objects
+                # Convert to MarketData objects
                 bars = []
                 for agg in aggs:
                     # Convert timestamp from milliseconds to datetime
                     timestamp = datetime.fromtimestamp(agg.timestamp / 1000, tz=timezone.utc)
                     session_type = detect_session_type(timestamp)
                     
-                    bar = MarketDataMinute(
+                    bar = MarketData(
                         time=timestamp,
                         symbol=symbol,
+                        timescale=timescale,
                         open=float(agg.open),
                         high=float(agg.high),
                         low=float(agg.low),
@@ -550,15 +635,15 @@ async def _load_symbol_data(
                 
                 # Bulk insert bars if we got any
                 if bars:
-                    logger.debug(f"💾 Inserting {len(bars)} bars for {symbol} ({from_date} to {to_date})")
+                    logger.debug(f"💾 [{timescale}] Inserting {len(bars)} bars for {symbol} ({from_date} to {to_date})")
                     await _bulk_insert_bars(bars)
-                    logger.debug(f"✨ Successfully inserted {len(bars)} bars for {symbol}")
+                    logger.debug(f"✨ [{timescale}] Successfully inserted {len(bars)} bars for {symbol}")
                     total_bars_inserted += len(bars)
                 
                 # CRITICAL: Create validation records for the ENTIRE date range we asked about,
                 # regardless of whether we got bars or not. This prevents infinite retries.
-                logger.debug(f"📝 Creating validation records for {symbol} ({from_date} to {to_date})")
-                await _create_validation_for_range(symbol, range_start, range_end, bars)
+                logger.debug(f"📝 [{timescale}] Creating validation records for {symbol} ({from_date} to {to_date})")
+                await _create_validation_for_range(symbol, timescale, range_start, range_end, bars)
                 
                 # Delay between requests to avoid overwhelming connection pool
                 if REQUEST_DELAY > 0:
@@ -572,24 +657,24 @@ async def _load_symbol_data(
         return total_bars_inserted
 
 
-async def _bulk_insert_bars(bars: List[MarketDataMinute]) -> None:
+async def _bulk_insert_bars(bars: List[MarketData]) -> None:
     """
     Bulk insert bars into TimescaleDB with ON CONFLICT DO NOTHING.
     
     Chunks inserts to avoid PostgreSQL parameter limit (32767).
-    With 10 fields per bar, we can safely insert ~3000 bars at once.
+    With 11 fields per bar (including timescale), we can safely insert ~2900 bars at once.
     
-    Also creates/updates validation records for each symbol/date combination.
+    Also creates/updates validation records for each symbol/date/timescale combination.
     
     Args:
-        bars: List of MarketDataMinute objects to insert
+        bars: List of MarketData objects to insert
     """
     if not bars:
         return
     
     # PostgreSQL has a limit of 32767 parameters per query
-    # Each bar has 10 fields, so we can insert ~3000 bars at once safely
-    CHUNK_SIZE = 3000
+    # Each bar has 11 fields (including timescale), so we can insert ~2900 bars at once safely
+    CHUNK_SIZE = 2900
     
     async with get_async_session() as session:
         try:
@@ -602,6 +687,7 @@ async def _bulk_insert_bars(bars: List[MarketDataMinute]) -> None:
                     {
                         "time": bar.time,
                         "symbol": bar.symbol,
+                        "timescale": bar.timescale,
                         "open": bar.open,
                         "high": bar.high,
                         "low": bar.low,
@@ -615,8 +701,8 @@ async def _bulk_insert_bars(bars: List[MarketDataMinute]) -> None:
                 ]
                 
                 # Use PostgreSQL INSERT ... ON CONFLICT DO NOTHING
-                stmt = insert(MarketDataMinute).values(values)
-                stmt = stmt.on_conflict_do_nothing(index_elements=["time", "symbol"])
+                stmt = insert(MarketData).values(values)
+                stmt = stmt.on_conflict_do_nothing(index_elements=["time", "symbol", "timescale"])
                 
                 await session.execute(stmt)
                 
@@ -636,18 +722,20 @@ async def _bulk_insert_bars(bars: List[MarketDataMinute]) -> None:
 
 async def _create_validation_for_range(
     symbol: str,
+    timescale: str,
     start_date: datetime,
     end_date: datetime,
-    bars: List[MarketDataMinute]
+    bars: List[MarketData]
 ) -> None:
     """
-    Create validation records for an entire date range.
+    Create validation records for an entire date range at a specific timescale.
     
     This is called after fetching from Polygon to mark that we've asked for this range.
     Creates records for EVERY date in the range, regardless of whether bars exist.
     
     Args:
         symbol: Ticker symbol
+        timescale: Timescale granularity ('1min', '5min', '15min', '1hour', '1day')
         start_date: Start of range (datetime)
         end_date: End of range (datetime)
         bars: List of bars returned (used to count bars per date)
@@ -674,18 +762,29 @@ async def _create_validation_for_range(
             first_bar_time = min(b.time for b in date_bars) if date_bars else None
             last_bar_time = max(b.time for b in date_bars) if date_bars else None
             
+            # Expected bars varies by timescale (rough estimates for regular trading day)
+            expected_bars_map = {
+                '1min': 390,
+                '5min': 78,
+                '15min': 26,
+                '1hour': 7,  # 6.5 hours
+                '1day': 1
+            }
+            expected_bars = expected_bars_map.get(timescale, 390)
+            
             stmt = insert(SymbolDateValidation).values(
                 symbol=symbol,
                 date=current_date,
-                is_complete=(bar_count >= 350),  # Arbitrary threshold
+                timescale=timescale,
+                is_complete=(bar_count >= expected_bars * 0.9),  # 90% threshold
                 bar_count=bar_count,
-                expected_bars=390,
+                expected_bars=expected_bars,
                 first_bar_time=first_bar_time,
                 last_bar_time=last_bar_time,
                 validated_at=datetime.now(timezone.utc)
             )
             stmt = stmt.on_conflict_do_update(
-                index_elements=["symbol", "date"],
+                index_elements=["symbol", "date", "timescale"],
                 set_={
                     "bar_count": stmt.excluded.bar_count,
                     "is_complete": stmt.excluded.is_complete,
@@ -701,36 +800,46 @@ async def _create_validation_for_range(
         logger.debug(f"Created validation records for {symbol}: {start_date.date()} to {end_date.date()}")
 
 
-async def _update_validation_records(session, bars: List[MarketDataMinute]) -> None:
+async def _update_validation_records(session, bars: List[MarketData]) -> None:
     """
     Update validation records after inserting bars.
     
-    Groups bars by symbol and date, counts them, and creates/updates validation records.
+    Groups bars by symbol, timescale, and date, counts them, and creates/updates validation records.
     """
     from collections import defaultdict
     from datetime import date as date_type
     
-    # Group bars by symbol and date
-    bar_counts: Dict[tuple, List[MarketDataMinute]] = defaultdict(list)
+    # Group bars by symbol, timescale, and date
+    bar_counts: Dict[tuple, List[MarketData]] = defaultdict(list)
     for bar in bars:
         bar_date = bar.time.date()
-        key = (bar.symbol, bar_date)
+        key = (bar.symbol, bar.timescale, bar_date)
         bar_counts[key].append(bar)
     
+    # Expected bars varies by timescale
+    expected_bars_map = {
+        '1min': 390,
+        '5min': 78,
+        '15min': 26,
+        '1hour': 7,
+        '1day': 1
+    }
+    
     # Create/update validation records
-    for (symbol, bar_date), date_bars in bar_counts.items():
+    for (symbol, timescale, bar_date), date_bars in bar_counts.items():
         bar_count = len(date_bars)
         first_bar = min(b.time for b in date_bars)
         last_bar = max(b.time for b in date_bars)
         
-        # Determine if complete (simplified: >350 bars = complete)
-        expected_bars = 390
-        is_complete = bar_count >= 350
+        # Determine if complete based on timescale
+        expected_bars = expected_bars_map.get(timescale, 390)
+        is_complete = bar_count >= expected_bars * 0.9  # 90% threshold
         
         # Upsert validation record
         stmt = insert(SymbolDateValidation).values(
             symbol=symbol,
             date=bar_date,
+            timescale=timescale,
             is_complete=is_complete,
             bar_count=bar_count,
             expected_bars=expected_bars,
@@ -739,7 +848,7 @@ async def _update_validation_records(session, bars: List[MarketDataMinute]) -> N
             validated_at=datetime.now(timezone.utc)
         )
         stmt = stmt.on_conflict_do_update(
-            index_elements=["symbol", "date"],
+            index_elements=["symbol", "date", "timescale"],
             set_={
                 "bar_count": stmt.excluded.bar_count,
                 "is_complete": stmt.excluded.is_complete,
@@ -810,125 +919,93 @@ async def _update_status(
         await session.commit()
 
 
-async def get_database_stats() -> Dict:
+async def get_database_stats(include_details: bool = False) -> Dict:
     """
     Get comprehensive statistics about the market data database.
     
+    Args:
+        include_details: If True, includes detailed 1min analysis (slower).
+                        If False, only returns fast summary stats.
+    
     Returns:
         Dict with total bars, date range, symbol count, coverage analysis, etc.
+        Now includes per-timescale statistics.
     """
     async with get_async_session() as session:
         try:
-            # Basic stats
+            # Overall stats (fast)
             result = await session.execute(
-                text("SELECT COUNT(*) FROM market_data_minute")
+                text("SELECT COUNT(*) FROM market_data")
             )
             total_bars = result.scalar() or 0
             
             result = await session.execute(
-                text("SELECT MIN(time), MAX(time) FROM market_data_minute")
+                text("SELECT MIN(time), MAX(time) FROM market_data")
             )
             date_range = result.first()
             min_date = date_range[0] if date_range else None
             max_date = date_range[1] if date_range else None
             
             result = await session.execute(
-                text("SELECT COUNT(DISTINCT symbol) FROM market_data_minute")
+                text("SELECT COUNT(DISTINCT symbol) FROM market_data")
             )
             symbol_count = result.scalar() or 0
             
-            # Storage size using TimescaleDB functions for accurate hypertable sizing
+            # Storage size using TimescaleDB functions for accurate hypertable sizing (fast)
             result = await session.execute(
                 text("""
                     SELECT 
-                        pg_size_pretty(hypertable_size('market_data_minute')) as total_size,
+                        pg_size_pretty(hypertable_size('market_data')) as total_size,
                         pg_size_pretty(
-                            (SELECT table_bytes FROM hypertable_detailed_size('market_data_minute'))
+                            (SELECT table_bytes FROM hypertable_detailed_size('market_data'))
                         ) as table_size,
                         pg_size_pretty(
-                            (SELECT index_bytes FROM hypertable_detailed_size('market_data_minute'))
+                            (SELECT index_bytes FROM hypertable_detailed_size('market_data'))
                         ) as index_size,
                         pg_size_pretty(
-                            (SELECT toast_bytes FROM hypertable_detailed_size('market_data_minute'))
+                            (SELECT toast_bytes FROM hypertable_detailed_size('market_data'))
                         ) as toast_size,
-                        (SELECT total_bytes FROM hypertable_detailed_size('market_data_minute')) as total_bytes_raw
+                        (SELECT total_bytes FROM hypertable_detailed_size('market_data')) as total_bytes_raw
                 """)
             )
             sizes = result.first()
             
-            # Detailed coverage analysis
+            # Per-timescale statistics (fast - just aggregates)
             result = await session.execute(
                 text("""
                     SELECT 
-                        symbol,
+                        timescale,
                         COUNT(*) as bar_count,
-                        MIN(DATE(time)) as first_date,
-                        MAX(DATE(time)) as last_date,
-                        COUNT(DISTINCT DATE(time)) as unique_days
-                    FROM market_data_minute
-                    GROUP BY symbol
-                    ORDER BY bar_count DESC
-                """)
-            )
-            symbol_details = []
-            for row in result:
-                symbol_details.append({
-                    "symbol": row[0],
-                    "bar_count": row[1],
-                    "first_date": row[2].isoformat() if row[2] else None,
-                    "last_date": row[3].isoformat() if row[3] else None,
-                    "unique_days": row[4]
-                })
-            
-            # Date coverage - how many symbols have data for each date
-            result = await session.execute(
-                text("""
-                    SELECT 
-                        DATE(time) as trade_date,
                         COUNT(DISTINCT symbol) as symbol_count,
-                        COUNT(*) as bar_count
-                    FROM market_data_minute
-                    GROUP BY DATE(time)
-                    ORDER BY trade_date DESC
+                        MIN(time) as min_time,
+                        MAX(time) as max_time,
+                        COUNT(DISTINCT DATE(time)) as unique_days
+                    FROM market_data
+                    GROUP BY timescale
+                    ORDER BY 
+                        CASE timescale
+                            WHEN '1min' THEN 1
+                            WHEN '5min' THEN 2
+                            WHEN '15min' THEN 3
+                            WHEN '1hour' THEN 4
+                            WHEN '1day' THEN 5
+                            ELSE 6
+                        END
                 """)
             )
-            date_coverage = []
+            timescale_stats = []
             for row in result:
-                date_coverage.append({
-                    "date": row[0].isoformat() if row[0] else None,
-                    "symbol_count": row[1],
-                    "bar_count": row[2]
+                timescale_stats.append({
+                    "timescale": row[0],
+                    "bar_count": row[1],
+                    "symbol_count": row[2],
+                    "min_time": row[3].isoformat() if row[3] else None,
+                    "max_time": row[4].isoformat() if row[4] else None,
+                    "unique_days": row[5]
                 })
             
-            # Distribution by bar count (how many symbols have X bars)
-            result = await session.execute(
-                text("""
-                    WITH symbol_counts AS (
-                        SELECT symbol, COUNT(*) as bars
-                        FROM market_data_minute
-                        GROUP BY symbol
-                    )
-                    SELECT 
-                        CASE 
-                            WHEN bars < 100 THEN '< 100 bars'
-                            WHEN bars < 500 THEN '100-500 bars'
-                            WHEN bars < 1000 THEN '500-1000 bars'
-                            ELSE '1000+ bars'
-                        END as range,
-                        COUNT(*) as symbol_count
-                    FROM symbol_counts
-                    GROUP BY range
-                    ORDER BY MIN(bars)
-                """)
-            )
-            bar_distribution = []
-            for row in result:
-                bar_distribution.append({
-                    "range": row[0],
-                    "count": row[1]
-                })
-            
-            return {
+            # Base response with fast stats
+            response = {
                 "total_bars": total_bars,
                 "min_date": min_date.isoformat() if min_date else None,
                 "max_date": max_date.isoformat() if max_date else None,
@@ -938,11 +1015,95 @@ async def get_database_stats() -> Dict:
                 "index_size": sizes[2] if sizes else "0 bytes",
                 "toast_size": sizes[3] if sizes else "0 bytes",
                 "total_bytes_raw": sizes[4] if sizes else 0,
-                "symbol_details": symbol_details[:100],  # Top 100 symbols
-                "date_coverage": date_coverage,
-                "bar_distribution": bar_distribution,
-                "total_symbols_analyzed": len(symbol_details)
+                "timescale_stats": timescale_stats,  # Per-timescale breakdown (fast)
             }
+            
+            # Only include detailed analysis if requested (SLOW queries on large datasets)
+            if include_details:
+                # Detailed coverage analysis for 1min (SLOW - scans all 1min data)
+                result = await session.execute(
+                    text("""
+                        SELECT 
+                            symbol,
+                            COUNT(*) as bar_count,
+                            MIN(DATE(time)) as first_date,
+                            MAX(DATE(time)) as last_date,
+                            COUNT(DISTINCT DATE(time)) as unique_days
+                        FROM market_data
+                        WHERE timescale = '1min'
+                        GROUP BY symbol
+                        ORDER BY bar_count DESC
+                    """)
+                )
+                symbol_details = []
+                for row in result:
+                    symbol_details.append({
+                        "symbol": row[0],
+                        "bar_count": row[1],
+                        "first_date": row[2].isoformat() if row[2] else None,
+                        "last_date": row[3].isoformat() if row[3] else None,
+                        "unique_days": row[4]
+                    })
+                
+                # Date coverage for 1min (SLOW - scans all 1min data)
+                result = await session.execute(
+                    text("""
+                        SELECT 
+                            DATE(time) as trade_date,
+                            COUNT(DISTINCT symbol) as symbol_count,
+                            COUNT(*) as bar_count
+                        FROM market_data
+                        WHERE timescale = '1min'
+                        GROUP BY DATE(time)
+                        ORDER BY trade_date DESC
+                    """)
+                )
+                date_coverage = []
+                for row in result:
+                    date_coverage.append({
+                        "date": row[0].isoformat() if row[0] else None,
+                        "symbol_count": row[1],
+                        "bar_count": row[2]
+                    })
+                
+                # Distribution by bar count for 1min (SLOW)
+                result = await session.execute(
+                    text("""
+                        WITH symbol_counts AS (
+                            SELECT symbol, COUNT(*) as bars
+                            FROM market_data
+                            WHERE timescale = '1min'
+                            GROUP BY symbol
+                        )
+                        SELECT 
+                            CASE 
+                                WHEN bars < 100 THEN '< 100 bars'
+                                WHEN bars < 500 THEN '100-500 bars'
+                                WHEN bars < 1000 THEN '500-1000 bars'
+                                ELSE '1000+ bars'
+                            END as range,
+                            COUNT(*) as symbol_count
+                        FROM symbol_counts
+                        GROUP BY range
+                        ORDER BY MIN(bars)
+                    """)
+                )
+                bar_distribution = []
+                for row in result:
+                    bar_distribution.append({
+                        "range": row[0],
+                        "count": row[1]
+                    })
+                
+                # Add detailed stats to response
+                response.update({
+                    "symbol_details": symbol_details[:100],  # Top 100 symbols (1min only)
+                    "date_coverage": date_coverage,  # 1min only
+                    "bar_distribution": bar_distribution,  # 1min only
+                    "total_symbols_analyzed": len(symbol_details)
+                })
+            
+            return response
             
         except Exception as e:
             logger.error(f"Failed to get database stats: {e}")

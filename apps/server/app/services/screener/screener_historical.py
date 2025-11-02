@@ -81,6 +81,10 @@ class ScreenerHistorical:
             
             if not snapshot:
                 self.logger.warning(f"[HISTORICAL SCREENER] No snapshot data found at {timestamp}")
+                self.logger.warning(
+                    "[HISTORICAL SCREENER] Historical mode requires data in TimescaleDB. "
+                    "Load data using: POST /api/market/historical/start-load?days=1"
+                )
                 return []
             
             rows: List[dict] = []

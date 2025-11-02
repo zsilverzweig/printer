@@ -160,10 +160,10 @@ def calculate_average_excluding_last(
 
 class TimescaleVolumeCalculator:
     """
-    Calculates volume metrics from TimescaleDB continuous aggregates.
+    Calculates volume metrics from TimescaleDB market data.
     
     This replaces the in-memory volume calculator with direct database queries
-    to the market_data_daily materialized view.
+    to the market_data table filtered by timescale='1day'.
     """
     
     def __init__(self, lookback_days: int = 30):
@@ -194,19 +194,20 @@ class TimescaleVolumeCalculator:
         """
         try:
             async with get_async_session() as session:
-                # Query last 16 days of data from continuous aggregate
+                # Query last 16 days of data from market_data table (1day timescale)
                 # (1 day for yesterday + 14 days for average + 1 buffer)
                 cutoff_date = date.today() - timedelta(days=16)
                 
                 result = await session.execute(
                     text("""
                         SELECT 
-                            bucket::date as date,
+                            time::date as date,
                             volume
-                        FROM market_data_daily
+                        FROM market_data
                         WHERE symbol = :symbol
-                          AND bucket >= :cutoff_date
-                        ORDER BY bucket DESC
+                          AND timescale = '1day'
+                          AND time >= :cutoff_date
+                        ORDER BY time DESC
                         LIMIT 16
                     """),
                     {"symbol": symbol.upper(), "cutoff_date": cutoff_date}
@@ -306,15 +307,16 @@ class TimescaleVolumeCalculator:
                 result = await session.execute(
                     text("""
                         SELECT 
-                            bucket::date as date,
+                            time::date as date,
                             open,
                             high,
                             low,
                             close,
                             volume
-                        FROM market_data_daily
+                        FROM market_data
                         WHERE symbol = :symbol
-                          AND bucket::date = :date
+                          AND timescale = '1day'
+                          AND time::date = :date
                     """),
                     {"symbol": symbol.upper(), "date": yesterday}
                 )

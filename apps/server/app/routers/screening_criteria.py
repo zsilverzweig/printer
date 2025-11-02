@@ -24,6 +24,80 @@ router = APIRouter()
 
 
 # ============================================================================
+# Diagnostic Endpoint
+# ============================================================================
+
+@router.get("/screening-criteria/diagnostics/historical-data")
+async def check_historical_data(
+    timestamp: Optional[datetime] = Query(None, description="Check if data exists at this timestamp")
+) -> dict:
+    """
+    Diagnostic endpoint to check if historical data exists in TimescaleDB.
+    
+    Returns information about what data is available.
+    """
+    from app.services.core.database import get_async_session
+    from sqlalchemy import text
+    from datetime import timezone
+    
+    try:
+        async with get_async_session() as session:
+            # Check if market_data table exists and has data (1day timescale)
+            result = await session.execute(text("""
+                SELECT 
+                    COUNT(*) as total_rows,
+                    MIN(time) as earliest_date,
+                    MAX(time) as latest_date,
+                    COUNT(DISTINCT symbol) as symbol_count,
+                    COUNT(DISTINCT timescale) as timescale_count
+                FROM market_data
+                WHERE timescale = '1day'
+            """))
+            stats = result.fetchone()
+            
+            response = {
+                "table_exists": True,
+                "total_rows": stats[0] if stats else 0,
+                "earliest_date": stats[1].isoformat() if stats and stats[1] else None,
+                "latest_date": stats[2].isoformat() if stats and stats[2] else None,
+                "symbol_count": stats[3] if stats else 0,
+                "timescale_count": stats[4] if stats else 0,
+            }
+            
+            # If a specific timestamp was provided, check for data near that time
+            if timestamp:
+                if timestamp.tzinfo is None:
+                    timestamp = timestamp.replace(tzinfo=timezone.utc)
+                
+                result = await session.execute(text("""
+                    SELECT 
+                        COUNT(*) as rows_at_timestamp,
+                        COUNT(DISTINCT symbol) as symbols_at_timestamp
+                    FROM market_data
+                    WHERE timescale = '1day'
+                      AND time <= :timestamp
+                      AND time >= :timestamp - INTERVAL '1 hour'
+                """), {"timestamp": timestamp})
+                
+                timestamp_stats = result.fetchone()
+                response["timestamp_check"] = {
+                    "requested_timestamp": timestamp.isoformat(),
+                    "rows_within_hour": timestamp_stats[0] if timestamp_stats else 0,
+                    "symbols_within_hour": timestamp_stats[1] if timestamp_stats else 0,
+                }
+            
+            return response
+            
+    except Exception as e:
+        logger.error(f"Error checking historical data: {e}", exc_info=True)
+        return {
+            "error": str(e),
+            "table_exists": False,
+            "message": "TimescaleDB table may not exist or there may be a connection issue"
+        }
+
+
+# ============================================================================
 # Request/Response Models
 # ============================================================================
 
@@ -220,6 +294,13 @@ async def run_screener_with_inline_criteria(
         tickers = [r["ticker"] for r in results]
         
         logger.info(f"Screener run with inline criteria: {len(tickers)} tickers matched (timestamp={timestamp})")
+        
+        # If historical mode returned no results and timestamp was provided, check if it's a data issue
+        if timestamp and len(results) == 0 and not use_live_for_recent:
+            logger.warning(
+                f"Historical screener returned 0 results for {timestamp}. "
+                "This may indicate no data in TimescaleDB. Check /api/screening-criteria/diagnostics/historical-data"
+            )
         
         return ScreenerRunResult(
             ticker_count=len(tickers),

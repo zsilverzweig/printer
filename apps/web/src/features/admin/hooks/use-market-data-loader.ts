@@ -40,6 +40,15 @@ export interface BarDistribution {
   count: number;
 }
 
+export interface TimescaleStats {
+  timescale: string;
+  bar_count: number;
+  symbol_count: number;
+  min_time: string | null;
+  max_time: string | null;
+  unique_days: number;
+}
+
 export interface DatabaseStats {
   total_bars: number;
   min_date: string | null;
@@ -50,6 +59,7 @@ export interface DatabaseStats {
   index_size?: string;
   toast_size?: string;
   total_bytes_raw?: number;
+  timescale_stats?: TimescaleStats[];
   symbol_details?: SymbolDetail[];
   date_coverage?: DateCoverage[];
   bar_distribution?: BarDistribution[];

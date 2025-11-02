@@ -27,6 +27,7 @@ import {
   TabsTrigger,
 } from "@/lib/components/ui/tabs";
 import { Textarea } from "@/lib/components/ui/textarea";
+import { useUrlTabs } from "@/lib/hooks/use-url-tabs";
 
 interface TableInfo {
   name: string;
@@ -49,6 +50,7 @@ interface QueryResult {
 }
 
 export default function DatabaseAdminPage() {
+  const [activeTab, setActiveTab] = useUrlTabs({ defaultTab: "sql" });
   const [tables, setTables] = useState<TableInfo[]>([]);
   const [loadingTables, setLoadingTables] = useState(true);
   const [sqlQuery, setSqlQuery] = useState("");
@@ -391,7 +393,7 @@ export default function DatabaseAdminPage() {
 
         {/* Right column: Query Interface */}
         <div className="lg:col-span-2 space-y-6">
-          <Tabs defaultValue="sql" className="w-full">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="sql">SQL Query</TabsTrigger>
               <TabsTrigger value="natural">Natural Language</TabsTrigger>

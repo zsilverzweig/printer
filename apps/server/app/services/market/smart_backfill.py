@@ -198,9 +198,8 @@ class SmartBackfillService:
             True if successful, False otherwise
         """
         try:
-            # Matrix loading indicator (cyan for active scanning)
-            loading_code = f"{MATRIX_CYAN}[⋯⋯⋯⋯]{RESET}"
-            logger.info(f"{loading_code} Backfilling gap: {gap}")
+            # Individual gap processing logged at debug level only
+            logger.debug(f"Backfilling gap: {gap}")
             
             # Determine symbols to backfill
             if gap.symbol == "*":
@@ -348,14 +347,14 @@ class SmartBackfillService:
                 is_etf=False  # Could enhance to detect ETF
             )
             
-            # Log results with Matrix encoding
+            # Individual symbol results logged at debug level only
             if improved_count == 0:
                 if gap.gap_type == 'no_data':
-                    logger.info(f"{matrix_code} Backfilled new symbol {gap.symbol} for {gap.date}: Polygon returned 0 bars (illiquid/delisted)")
+                    logger.debug(f"{matrix_code} Backfilled new symbol {gap.symbol} for {gap.date}: Polygon returned 0 bars (illiquid/delisted)")
                 else:
-                    logger.info(f"{matrix_code} Validated {gap.symbol} for {gap.date}: Polygon returned 0 bars (no data available)")
+                    logger.debug(f"{matrix_code} Validated {gap.symbol} for {gap.date}: Polygon returned 0 bars (no data available)")
             else:
-                logger.info(f"{matrix_code} Backfilled {gap.symbol} for {gap.date}: {improved_count}/{len(symbols)} symbols improved (+{total_bars_after:,} bars total)")
+                logger.debug(f"{matrix_code} Backfilled {gap.symbol} for {gap.date}: {improved_count}/{len(symbols)} symbols improved (+{total_bars_after:,} bars total)")
             
             return True
             
@@ -379,9 +378,9 @@ class SmartBackfillService:
             True if successful, False otherwise
         """
         try:
-            loading_code = f"{MATRIX_CYAN}[⋯⋯⋯⋯]{RESET}"
             days_count = (batch_end - batch_start).days + 1
-            logger.info(f"{loading_code} Backfilling batch: {gap.symbol} for {days_count} days ({batch_start} to {batch_end})")
+            # Removed individual batch log - will aggregate at higher level
+            logger.debug(f"Backfilling batch: {gap.symbol} for {days_count} days ({batch_start} to {batch_end})")
             
             # Verify symbol is valid
             async with get_async_session() as session:
@@ -458,10 +457,11 @@ class SmartBackfillService:
                 is_etf=False
             )
             
+            # Individual results logged at debug level only
             if improved_count > 0:
-                logger.info(f"{matrix_code} Backfilled batch {gap.symbol}: {improved_count}/{days_count} days improved (+{bars_inserted:,} bars)")
+                logger.debug(f"{matrix_code} Backfilled batch {gap.symbol}: {improved_count}/{days_count} days improved (+{bars_inserted:,} bars)")
             else:
-                logger.info(f"{matrix_code} Batch {gap.symbol}: Polygon returned 0 bars for {days_count} days")
+                logger.debug(f"{matrix_code} Batch {gap.symbol}: Polygon returned 0 bars for {days_count} days")
             
             self.gaps_succeeded += 1
             return True
@@ -498,7 +498,14 @@ class SmartBackfillService:
                     await asyncio.sleep(60)
                     continue
                 
-                logger.info(f"Processing {len(gaps)} gaps from queue")
+                # Aggregate logging: summarize what we're about to process
+                symbols_to_process = set(g.symbol for g in gaps if g.symbol != "*")
+                wildcard_gaps = [g for g in gaps if g.symbol == "*"]
+                
+                logger.info(
+                    f"{MATRIX_CYAN}[BACKFILL]{RESET} Processing {len(gaps)} gaps: "
+                    f"{len(symbols_to_process)} symbols, {len(wildcard_gaps)} wildcard gaps"
+                )
                 
                 # Group gaps by symbol and batch consecutive dates together (up to 30 days per API call)
                 gaps_by_symbol: Dict[str, List[DataGap]] = {}
@@ -518,6 +525,9 @@ class SmartBackfillService:
                         await self.backfill_gap(gap)
                 
                 # Process symbol-specific gaps in batches
+                total_batches_processed = 0
+                total_batches_succeeded = 0
+                
                 for symbol, symbol_gaps in gaps_by_symbol.items():
                     if self.should_stop:
                         break
@@ -567,7 +577,19 @@ class SmartBackfillService:
                             break
                         
                         # Backfill the entire batch range at once
-                        await self.backfill_gap_batch(batch_gap, batch_start, batch_end)
+                        success = await self.backfill_gap_batch(batch_gap, batch_start, batch_end)
+                        total_batches_processed += 1
+                        if success:
+                            total_batches_succeeded += 1
+                
+                # Aggregate summary after processing all batches
+                if total_batches_processed > 0:
+                    success_code = f"{MATRIX_BRIGHT}[✓✓✓✓]{RESET}" if total_batches_succeeded == total_batches_processed else f"{MATRIX_GREEN}[✓✓✓·]{RESET}"
+                    logger.info(
+                        f"{success_code} Completed backfill batch: "
+                        f"{total_batches_succeeded}/{total_batches_processed} batches succeeded, "
+                        f"{len(symbols_to_process)} symbols processed"
+                    )
                 
                 # After processing, trigger another gap detection
                 if not self.should_stop:

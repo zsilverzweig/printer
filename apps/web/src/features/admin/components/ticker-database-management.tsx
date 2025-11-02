@@ -261,7 +261,7 @@ export function TickerDatabaseManagement() {
                   {formatNumber(dbStats.total_bars)}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  1-minute candlesticks
+                  All timescales combined
                 </p>
               </div>
 
@@ -337,6 +337,128 @@ export function TickerDatabaseManagement() {
         </CardContent>
       </Card>
 
+      {/* Timescale Statistics */}
+      {dbStats && (
+        <Card className="border-primary/20">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <BarChart3 className="h-5 w-5 text-primary" />
+              Multi-Timescale Data
+            </CardTitle>
+            <CardDescription>
+              Data collection progress at different granularities
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {(() => {
+                // Define all expected timescales
+                const allTimescales = [
+                  { key: "1min", name: "1-Minute", color: "bg-blue-500" },
+                  { key: "5min", name: "5-Minute", color: "bg-green-500" },
+                  { key: "15min", name: "15-Minute", color: "bg-yellow-500" },
+                  { key: "1hour", name: "1-Hour", color: "bg-orange-500" },
+                  { key: "1day", name: "Daily", color: "bg-purple-500" },
+                ];
+
+                // Create a map of existing data
+                const dataMap = new Map(
+                  (dbStats.timescale_stats || []).map((ts) => [
+                    ts.timescale,
+                    ts,
+                  ])
+                );
+
+                return allTimescales.map((timescale) => {
+                  const data = dataMap.get(timescale.key);
+                  const hasData = data && data.bar_count > 0;
+
+                  return (
+                    <div
+                      key={timescale.key}
+                      className={`border rounded-lg p-4 space-y-3 ${
+                        !hasData ? "opacity-50 bg-muted/30" : ""
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div
+                            className={`w-3 h-3 rounded-full ${
+                              hasData ? timescale.color : "bg-gray-400"
+                            }`}
+                          />
+                          <span className="font-semibold text-base">
+                            {timescale.name}
+                          </span>
+                        </div>
+                        {hasData ? (
+                          <Badge variant="secondary">
+                            {formatNumber(data.bar_count)} bars
+                          </Badge>
+                        ) : (
+                          <Badge
+                            variant="outline"
+                            className="text-muted-foreground"
+                          >
+                            No data
+                          </Badge>
+                        )}
+                      </div>
+
+                      {hasData && data ? (
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                          <div>
+                            <div className="text-muted-foreground text-xs">
+                              Symbols
+                            </div>
+                            <div className="font-semibold">
+                              {formatNumber(data.symbol_count)}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-muted-foreground text-xs">
+                              Days
+                            </div>
+                            <div className="font-semibold">
+                              {formatNumber(data.unique_days)}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-muted-foreground text-xs">
+                              From
+                            </div>
+                            <div className="font-semibold text-xs">
+                              {data.min_time
+                                ? new Date(data.min_time).toLocaleDateString()
+                                : "N/A"}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-muted-foreground text-xs">
+                              To
+                            </div>
+                            <div className="font-semibold text-xs">
+                              {data.max_time
+                                ? new Date(data.max_time).toLocaleDateString()
+                                : "N/A"}
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">
+                          Not yet collected - use historical data loader to
+                          populate
+                        </p>
+                      )}
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Detailed Coverage Analysis */}
       {dbStats &&
         dbStats.symbol_details &&
@@ -351,14 +473,13 @@ export function TickerDatabaseManagement() {
           <div className="font-medium mb-2">About TimescaleDB Market Data</div>
           <ul className="text-sm space-y-1 ml-4">
             <li>
-              • 1-minute candlestick data with extended hours (4am-8pm ET)
+              • Multi-timescale storage: 1min, 5min, 15min, 1hour, and daily
+              bars
             </li>
+            <li>• Data sourced directly from Polygon at each granularity</li>
+            <li>• Extended hours support (4am-8pm ET) for intraday data</li>
             <li>• Automatic compression after 7 days (10x space savings)</li>
-            <li>
-              • Continuous aggregates for 5m, 15m, 1h, and daily timeframes
-            </li>
             <li>• All data retained indefinitely for backtesting</li>
-            <li>• ~190 MB per day for 10,000 tickers (compressed)</li>
           </ul>
         </AlertDescription>
       </Alert>
