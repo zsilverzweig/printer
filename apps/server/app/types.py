@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import TypedDict
+from typing import TypedDict, Optional, List, Dict, Any
+from pydantic import BaseModel
 
 
 class PolygonAggBar(TypedDict, total=False):
@@ -87,3 +88,28 @@ class NocStockData(TypedDict):
     bullFlag: bool
     flagSignal: str
 
+
+
+class ScreenerCriteria(BaseModel):
+    """Shared model for screener criteria used across services and routers.
+    Mirrors the JSON stored in ScreeningCriteria.criteria.
+    """
+    # Database filters (asset metadata)
+    asset_types: Optional[List[str]] = None
+    market_cap_min: Optional[int] = None
+    market_cap_max: Optional[int] = None
+    sic_codes: Optional[List[str]] = None
+
+    # Real-time screener filters (price/volume dynamics)
+    min_price: Optional[float] = None
+    max_price: Optional[float] = None
+    min_volume: Optional[float] = None
+    min_change_percent: Optional[float] = None
+    max_change_percent: Optional[float] = None
+    min_relative_volume: Optional[float] = None
+    exclude_etfs: Optional[bool] = True
+    order_by: Optional[str] = None
+    limit: Optional[int] = None
+
+    # Technical analysis filters
+    technical_filters: Optional[Dict[str, Any]] = None

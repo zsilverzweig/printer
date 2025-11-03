@@ -1,33 +1,9 @@
 import { log } from "@/lib/utils/logger";
+import type {
+  ScreeningCriteria,
+  ScreeningCriteriaParams,
+} from "@printer/shared";
 import { useCallback, useEffect, useState } from "react";
-
-export interface ScreeningCriteria {
-  id: string;
-  name: string;
-  description?: string;
-  criteria: {
-    min_price?: number;
-    max_price?: number;
-    min_volume?: number;
-    min_change_percent?: number;
-    max_change_percent?: number;
-    exclude_etfs?: boolean;
-    asset_types?: string[];
-    order_by?: string;
-    limit?: number;
-    technical_filters?: {
-      near_resistance?: boolean;
-      near_support?: boolean;
-      has_equal_highs?: boolean;
-      has_equal_lows?: boolean;
-      above_90day_high?: boolean;
-      below_90day_low?: boolean;
-      relative_volume_min?: number;
-    };
-  };
-  created_at: string;
-  updated_at: string;
-}
 
 export interface ScreenerRunResult {
   ticker_count: number;
@@ -57,7 +33,16 @@ export function useScreeners() {
       }
 
       const data = await response.json();
-      setScreeners(data);
+      // Map API snake_case to shared camelCase shape
+      const mapped: ScreeningCriteria[] = (data || []).map((c: any) => ({
+        id: c.id,
+        name: c.name,
+        description: c.description,
+        criteria: c.criteria as ScreeningCriteriaParams,
+        createdAt: c.created_at,
+        updatedAt: c.updated_at,
+      }));
+      setScreeners(mapped);
       log.debug("Loaded screeners", { count: data.length });
     } catch (err) {
       const message =
@@ -220,7 +205,15 @@ export function useScreeners() {
           );
         }
 
-        const saved = await response.json();
+        const savedResp = await response.json();
+        const saved: ScreeningCriteria = {
+          id: savedResp.id,
+          name: savedResp.name,
+          description: savedResp.description,
+          criteria: savedResp.criteria as ScreeningCriteriaParams,
+          createdAt: savedResp.created_at,
+          updatedAt: savedResp.updated_at,
+        };
 
         // Update local state
         if (isUpdate) {

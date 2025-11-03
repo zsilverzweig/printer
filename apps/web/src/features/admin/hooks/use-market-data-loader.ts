@@ -49,6 +49,18 @@ export interface TimescaleStats {
   unique_days: number;
 }
 
+interface DensityDay {
+  date: string;
+  complete_symbols: number;
+  symbol_count: number;
+  completion_rate: number;
+}
+
+interface TimescaleDensityRow {
+  timescale: string;
+  days: DensityDay[];
+}
+
 export interface DatabaseStats {
   total_bars: number;
   min_date: string | null;
@@ -64,6 +76,7 @@ export interface DatabaseStats {
   date_coverage?: DateCoverage[];
   bar_distribution?: BarDistribution[];
   total_symbols_analyzed?: number;
+  timescale_density?: TimescaleDensityRow[];
   error?: string;
 }
 

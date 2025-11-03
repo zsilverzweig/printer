@@ -958,14 +958,12 @@ async def get_database_stats(include_details: bool = False) -> Dict:
             min_date = date_range[0] if date_range and date_range[0] else None
             max_date = date_range[1] if date_range and date_range[1] else None
             
-            # Get symbol count from TimescaleDB dimension info (fast, no table scan)
-            # Approximate by querying just recent data instead of full table
+            # Get approximate symbol count from validation table over recent days (small, indexed)
             result = await session.execute(
                 text("""
-                    SELECT COUNT(DISTINCT symbol) 
-                    FROM market_data 
-                    WHERE time >= NOW() - INTERVAL '7 days'
-                      AND timescale = '1day'
+                    SELECT COUNT(DISTINCT symbol)
+                    FROM symbol_date_validation
+                    WHERE date >= CURRENT_DATE - INTERVAL '7 days'
                 """)
             )
             symbol_count = result.scalar() or 0
@@ -989,45 +987,75 @@ async def get_database_stats(include_details: bool = False) -> Dict:
             )
             sizes = result.first()
             
-            # Per-timescale statistics - use index-only scan with sampling
-            # Query timescale (indexed), MIN/MAX time (indexed) - should hit indexes
-            result = await session.execute(
+            # Per-timescale statistics - fast group over recent window, avoid DISTINCT on large tables
+            # 1) bars/min/max from market_data over last 30 days
+            md_result = await session.execute(
                 text("""
                     SELECT 
                         timescale,
-                        COUNT(*) as approximate_bars,
-                        COUNT(DISTINCT symbol) as symbol_count,
+                        COUNT(*) as bar_count,
                         MIN(time) as min_time,
                         MAX(time) as max_time
                     FROM market_data
-                    WHERE time >= NOW() - INTERVAL '90 days'
+                    WHERE time >= NOW() - INTERVAL '30 days'
                     GROUP BY timescale
-                    ORDER BY 
-                        CASE timescale
-                            WHEN '1min' THEN 1
-                            WHEN '5min' THEN 2
-                            WHEN '15min' THEN 3
-                            WHEN '1hour' THEN 4
-                            WHEN '1day' THEN 5
-                            ELSE 6
-                        END
                 """)
             )
+            md_stats = {row[0]: {"bar_count": int(row[1] or 0), "min_time": row[2], "max_time": row[3]} for row in md_result}
+
+            # 2) symbol_count per timescale from the much smaller validation table (last 30 days)
+            sv_result = await session.execute(
+                text("""
+                    SELECT timescale, COUNT(DISTINCT symbol) as symbol_count
+                    FROM symbol_date_validation
+                    WHERE date >= CURRENT_DATE - INTERVAL '30 days'
+                    GROUP BY timescale
+                """)
+            )
+            sv_symbol_counts = {row[0]: int(row[1] or 0) for row in sv_result}
+
+            # Assemble ordered timescale stats
+            order_map = {"1min": 1, "5min": 2, "15min": 3, "1hour": 4, "1day": 5}
             timescale_stats = []
-            for row in result:
-                # Calculate approximate unique days from date range
-                if row[3] and row[4]:  # min_time and max_time
-                    days_range = (row[4] - row[3]).days + 1
-                else:
-                    days_range = 0
-                    
+            for ts in sorted(md_stats.keys(), key=lambda k: order_map.get(k, 99)):
+                min_time = md_stats[ts]["min_time"]
+                max_time = md_stats[ts]["max_time"]
+                unique_days = ((max_time - min_time).days + 1) if (min_time and max_time) else 0
                 timescale_stats.append({
-                    "timescale": row[0],
-                    "bar_count": row[1],  # Count from last 90 days only
-                    "symbol_count": row[2],
-                    "min_time": row[3].isoformat() if row[3] else None,
-                    "max_time": row[4].isoformat() if row[4] else None,
-                    "unique_days": days_range
+                    "timescale": ts,
+                    "bar_count": md_stats[ts]["bar_count"],
+                    "symbol_count": sv_symbol_counts.get(ts, 0),
+                    "min_time": min_time.isoformat() if min_time else None,
+                    "max_time": max_time.isoformat() if max_time else None,
+                    "unique_days": unique_days
+                })
+
+            # Density data for GitHub-like heatmap using validation table (fast and indexed)
+            density_result = await session.execute(
+                text("""
+                    SELECT timescale,
+                           date,
+                           SUM(CASE WHEN is_complete THEN 1 ELSE 0 END) AS complete_symbols,
+                           COUNT(*) AS symbol_count
+                    FROM symbol_date_validation
+                    WHERE date >= CURRENT_DATE - INTERVAL '90 days'
+                    GROUP BY timescale, date
+                    ORDER BY date ASC
+                """)
+            )
+            density_by_ts: Dict[str, list] = {}
+            for row in density_result:
+                ts = row[0]
+                day = row[1]
+                complete = int(row[2] or 0)
+                total = int(row[3] or 0)
+                if ts not in density_by_ts:
+                    density_by_ts[ts] = []
+                density_by_ts[ts].append({
+                    "date": day.isoformat(),
+                    "complete_symbols": complete,
+                    "symbol_count": total,
+                    "completion_rate": (complete / total * 100.0) if total > 0 else 0.0
                 })
             
             # Base response with fast stats
@@ -1042,92 +1070,11 @@ async def get_database_stats(include_details: bool = False) -> Dict:
                 "toast_size": sizes[3] if sizes else "0 bytes",
                 "total_bytes_raw": sizes[4] if sizes else 0,
                 "timescale_stats": timescale_stats,  # Per-timescale breakdown (fast)
+                "timescale_density": [
+                    {"timescale": ts, "days": density_by_ts[ts]}
+                    for ts in sorted(density_by_ts.keys(), key=lambda k: order_map.get(k, 99))
+                ],
             }
-            
-            # Only include detailed analysis if requested (SLOW queries on large datasets)
-            if include_details:
-                # Detailed coverage analysis for 1min (SLOW - scans all 1min data)
-                result = await session.execute(
-                    text("""
-                        SELECT 
-                            symbol,
-                            COUNT(*) as bar_count,
-                            MIN(DATE(time)) as first_date,
-                            MAX(DATE(time)) as last_date,
-                            COUNT(DISTINCT DATE(time)) as unique_days
-                        FROM market_data
-                        WHERE timescale = '1min'
-                        GROUP BY symbol
-                        ORDER BY bar_count DESC
-                    """)
-                )
-                symbol_details = []
-                for row in result:
-                    symbol_details.append({
-                        "symbol": row[0],
-                        "bar_count": row[1],
-                        "first_date": row[2].isoformat() if row[2] else None,
-                        "last_date": row[3].isoformat() if row[3] else None,
-                        "unique_days": row[4]
-                    })
-                
-                # Date coverage for 1min (SLOW - scans all 1min data)
-                result = await session.execute(
-                    text("""
-                        SELECT 
-                            DATE(time) as trade_date,
-                            COUNT(DISTINCT symbol) as symbol_count,
-                            COUNT(*) as bar_count
-                        FROM market_data
-                        WHERE timescale = '1min'
-                        GROUP BY DATE(time)
-                        ORDER BY trade_date DESC
-                    """)
-                )
-                date_coverage = []
-                for row in result:
-                    date_coverage.append({
-                        "date": row[0].isoformat() if row[0] else None,
-                        "symbol_count": row[1],
-                        "bar_count": row[2]
-                    })
-                
-                # Distribution by bar count for 1min (SLOW)
-                result = await session.execute(
-                    text("""
-                        WITH symbol_counts AS (
-                            SELECT symbol, COUNT(*) as bars
-                            FROM market_data
-                            WHERE timescale = '1min'
-                            GROUP BY symbol
-                        )
-                        SELECT 
-                            CASE 
-                                WHEN bars < 100 THEN '< 100 bars'
-                                WHEN bars < 500 THEN '100-500 bars'
-                                WHEN bars < 1000 THEN '500-1000 bars'
-                                ELSE '1000+ bars'
-                            END as range,
-                            COUNT(*) as symbol_count
-                        FROM symbol_counts
-                        GROUP BY range
-                        ORDER BY MIN(bars)
-                    """)
-                )
-                bar_distribution = []
-                for row in result:
-                    bar_distribution.append({
-                        "range": row[0],
-                        "count": row[1]
-                    })
-                
-                # Add detailed stats to response
-                response.update({
-                    "symbol_details": symbol_details[:100],  # Top 100 symbols (1min only)
-                    "date_coverage": date_coverage,  # 1min only
-                    "bar_distribution": bar_distribution,  # 1min only
-                    "total_symbols_analyzed": len(symbol_details)
-                })
             
             return response
             

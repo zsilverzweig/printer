@@ -104,8 +104,22 @@ export interface ScreeningCriteriaParams {
   max_price?: number; // Max yesterday's close price
   min_volume?: number; // Min volume for liquidity
   min_change_percent?: number; // Min % change from yesterday's close
+  max_change_percent?: number; // Max % change from yesterday's close
+  min_relative_volume?: number; // Minimum RV14 filter
+  exclude_etfs?: boolean; // Whether to exclude ETFs (default true)
   order_by?: string; // Sort field: "rv14" | "rv30" | "rv60" | "avg_volume"
   limit?: number; // Max results to return
+
+  // Technical analysis filters
+  technical_filters?: {
+    near_resistance?: boolean;
+    near_support?: boolean;
+    has_equal_highs?: boolean;
+    has_equal_lows?: boolean;
+    above_90day_high?: boolean;
+    below_90day_low?: boolean;
+    relative_volume_min?: number;
+  };
 }
 
 /**

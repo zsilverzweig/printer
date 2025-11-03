@@ -13,6 +13,7 @@ from app.services.screener.screener_broadcast import ScreenerBroadcaster
 from app.services.screener.screener_compute import ScreenerCompute
 from app.services.screener.screener_data import ScreenerDataLoader
 from app.services.screener.screener_historical import ScreenerHistorical
+from app.types import ScreenerCriteria
 
 
 # Global screener service instance for strategy engines to access
@@ -187,6 +188,131 @@ class ScreenerService:
             asset_types=asset_types,
             market_cap_min=market_cap_min,
             market_cap_max=market_cap_max,
+        )
+    
+    async def compute_live(
+        self,
+        min_price: Optional[float] = None,
+        max_price: Optional[float] = None,
+        min_volume: Optional[float] = None,
+        min_change_percent: Optional[float] = None,
+        max_change_percent: Optional[float] = None,
+        min_relative_volume: Optional[float] = None,
+        order_by: str = "rv14",
+        limit: int = 200,
+        technical_filters: Optional[Dict[str, Any]] = None,
+        exclude_etfs: bool = True,
+        asset_types: Optional[List[str]] = None,
+        market_cap_min: Optional[int] = None,
+        market_cap_max: Optional[int] = None,
+    ) -> List[dict]:
+        """Compute screener results from the latest live data in TimescaleDB.
+        
+        Fetches the latest snapshots via ScreenerDataLoader and delegates to compute().
+        Keeps all filtering logic centralized in the screener service.
+        """
+        try:
+            snaps = await self.data_loader.fetch_latest_from_timescale()
+        except Exception:
+            # Fall back to empty if fetch fails
+            snaps = []
+        return await self.compute.compute(
+            snaps,
+            min_price=min_price,
+            max_price=max_price,
+            min_volume=min_volume,
+            min_change_percent=min_change_percent,
+            max_change_percent=max_change_percent,
+            min_relative_volume=min_relative_volume,
+            order_by=order_by,
+            limit=limit,
+            technical_filters=technical_filters,
+            exclude_etfs=exclude_etfs,
+            asset_types=asset_types,
+            market_cap_min=market_cap_min,
+            market_cap_max=market_cap_max,
+        )
+
+    async def compute_live_with_criteria(self, params: Dict[str, Any]) -> List[dict]:
+        """Compute live results using a criteria dict (same shape as ScreeningCriteria.criteria)."""
+        return await self.compute_live(
+            min_price=params.get("min_price"),
+            max_price=params.get("max_price"),
+            min_volume=params.get("min_volume"),
+            min_change_percent=params.get("min_change_percent"),
+            max_change_percent=params.get("max_change_percent"),
+            min_relative_volume=params.get("min_relative_volume"),
+            order_by=params.get("order_by", "rv14"),
+            limit=params.get("limit", 200),
+            technical_filters=params.get("technical_filters"),
+            exclude_etfs=params.get("exclude_etfs", True),
+            asset_types=params.get("asset_types"),
+            market_cap_min=params.get("market_cap_min"),
+            market_cap_max=params.get("market_cap_max"),
+        )
+
+    async def compute_historical_with_criteria(
+        self,
+        timestamp: datetime,
+        params: Dict[str, Any]
+    ) -> List[dict]:
+        """Compute historical results using a criteria dict (same shape as ScreeningCriteria.criteria)."""
+        return await self.compute_historical(
+            timestamp=timestamp,
+            min_price=params.get("min_price"),
+            max_price=params.get("max_price"),
+            min_volume=params.get("min_volume"),
+            min_change_percent=params.get("min_change_percent"),
+            max_change_percent=params.get("max_change_percent"),
+            min_relative_volume=params.get("min_relative_volume"),
+            order_by=params.get("order_by", "rv14"),
+            limit=params.get("limit", 200),
+            technical_filters=params.get("technical_filters"),
+            exclude_etfs=params.get("exclude_etfs", True),
+            asset_types=params.get("asset_types"),
+            market_cap_min=params.get("market_cap_min"),
+            market_cap_max=params.get("market_cap_max"),
+        )
+
+    async def compute_live_from_criteria(self, criteria: ScreenerCriteria) -> List[dict]:
+        """Typed variant: Compute live results from ScreenerCriteria model."""
+        return await self.compute_live(
+            min_price=criteria.min_price,
+            max_price=criteria.max_price,
+            min_volume=criteria.min_volume,
+            min_change_percent=criteria.min_change_percent,
+            max_change_percent=criteria.max_change_percent,
+            min_relative_volume=criteria.min_relative_volume,
+            order_by=criteria.order_by or "rv14",
+            limit=criteria.limit or 200,
+            technical_filters=criteria.technical_filters,
+            exclude_etfs=True if criteria.exclude_etfs is None else criteria.exclude_etfs,
+            asset_types=criteria.asset_types,
+            market_cap_min=criteria.market_cap_min,
+            market_cap_max=criteria.market_cap_max,
+        )
+
+    async def compute_historical_from_criteria(
+        self,
+        timestamp: datetime,
+        criteria: ScreenerCriteria
+    ) -> List[dict]:
+        """Typed variant: Compute historical results from ScreenerCriteria model."""
+        return await self.compute_historical(
+            timestamp=timestamp,
+            min_price=criteria.min_price,
+            max_price=criteria.max_price,
+            min_volume=criteria.min_volume,
+            min_change_percent=criteria.min_change_percent,
+            max_change_percent=criteria.max_change_percent,
+            min_relative_volume=criteria.min_relative_volume,
+            order_by=criteria.order_by or "rv14",
+            limit=criteria.limit or 200,
+            technical_filters=criteria.technical_filters,
+            exclude_etfs=True if criteria.exclude_etfs is None else criteria.exclude_etfs,
+            asset_types=criteria.asset_types,
+            market_cap_min=criteria.market_cap_min,
+            market_cap_max=criteria.market_cap_max,
         )
     
     # WebSocket subscriber management

@@ -101,35 +101,7 @@ async def check_historical_data(
 # Request/Response Models
 # ============================================================================
 
-class ScreeningCriteriaParams(BaseModel):
-    """Screening criteria parameters for filtering."""
-    # Database filters (asset metadata)
-    asset_types: Optional[List[str]] = None
-    market_cap_min: Optional[int] = None
-    market_cap_max: Optional[int] = None
-    sic_codes: Optional[List[str]] = None
-    
-    # Real-time screener filters (price/volume dynamics)
-    min_price: Optional[float] = None
-    max_price: Optional[float] = None
-    min_volume: Optional[float] = None
-    min_change_percent: Optional[float] = None
-    max_change_percent: Optional[float] = None
-    min_relative_volume: Optional[float] = None  # Minimum RV14 value
-    exclude_etfs: Optional[bool] = True  # Default to excluding ETFs
-    order_by: Optional[str] = None
-    limit: Optional[int] = None
-    
-    # Technical analysis filters
-    technical_filters: Optional[Dict[str, Any]] = None
-    # Contains:
-    # - near_resistance: Optional[bool]  # Price near resistance level
-    # - near_support: Optional[bool]     # Price near support level
-    # - has_equal_highs: Optional[bool]  # Double top pattern detected
-    # - has_equal_lows: Optional[bool]   # Double bottom pattern detected
-    # - above_90day_high: Optional[bool] # Above 90-day high
-    # - below_90day_low: Optional[bool]  # Below 90-day low
-    # - relative_volume_min: Optional[float]  # Minimum RV14 (e.g., 1.3)
+from app.types import ScreenerCriteria  # Use shared criteria model
 
 
 class ScreenerRunResult(BaseModel):
@@ -145,7 +117,7 @@ class ScreenerRunResult(BaseModel):
 
 @router.post("/screening-criteria/run", response_model=ScreenerRunResult)
 async def run_screener_with_inline_criteria(
-    criteria: ScreeningCriteriaParams,
+    criteria: ScreenerCriteria,
     timestamp: Optional[datetime] = Query(None, description="Historical timestamp for time-travel mode. None = live mode.")
 ) -> ScreenerRunResult:
     """
@@ -163,7 +135,7 @@ async def run_screener_with_inline_criteria(
     """
     import time
     request_start = time.time()
-    logger.info(f"[ENDPOINT] POST /screening-criteria/run called - timestamp={timestamp}, criteria={criteria.dict()}")
+    logger.info(f"[ENDPOINT] POST /screening-criteria/run called - timestamp={timestamp}, criteria={criteria.model_dump(exclude_none=True)}")
     
     try:
         technical_filters = criteria.technical_filters
@@ -175,7 +147,7 @@ async def run_screener_with_inline_criteria(
         min_change_percent = criteria.min_change_percent
         max_change_percent = criteria.max_change_percent
         min_relative_volume = criteria.min_relative_volume
-        exclude_etfs = criteria.exclude_etfs if criteria.exclude_etfs is not None else True
+        exclude_etfs = True if criteria.exclude_etfs is None else criteria.exclude_etfs
         asset_types = criteria.asset_types
         market_cap_min = criteria.market_cap_min
         market_cap_max = criteria.market_cap_max
@@ -376,22 +348,23 @@ async def run_screener_with_criteria(
                     detail=f"Screening criteria {criteria_id} not found"
                 )
         
-        params = criteria.criteria
-        technical_filters = params.get("technical_filters")
+        params = ScreenerCriteria(**(criteria.criteria or {}))
+        technical_filters = params.technical_filters
         
         # Extract parameters - use None to skip filters (more permissive)
-        min_price = params.get("min_price")
-        max_price = params.get("max_price")
-        min_volume = params.get("min_volume")
-        min_change_percent = params.get("min_change_percent")
-        max_change_percent = params.get("max_change_percent")
-        exclude_etfs = params.get("exclude_etfs", True)  # Default to True
-        asset_types = params.get("asset_types")  # Optional list of asset types to include
-        market_cap_min = params.get("market_cap_min")
-        market_cap_max = params.get("market_cap_max")
-        order_by = params.get("order_by", "rv14")
-        limit = params.get("limit", 200)
-        
+        min_price = params.min_price
+        max_price = params.max_price
+        min_volume = params.min_volume
+        min_change_percent = params.min_change_percent
+        max_change_percent = params.max_change_percent
+        exclude_etfs = True if params.exclude_etfs is None else params.exclude_etfs
+        asset_types = params.asset_types
+        market_cap_min = params.market_cap_min
+        market_cap_max = params.market_cap_max
+        order_by = params.order_by or "rv14"
+        limit = params.limit or 200
+        min_relative_volume = params.min_relative_volume
+
         # Determine if historical or live mode
         if timestamp is not None:
             from datetime import timezone, timedelta
@@ -553,14 +526,14 @@ class CreateScreeningCriteriaRequest(BaseModel):
     """Request model for creating screening criteria."""
     name: str
     description: Optional[str] = None
-    criteria: ScreeningCriteriaParams
+    criteria: ScreenerCriteria
 
 
 class UpdateScreeningCriteriaRequest(BaseModel):
     """Request model for updating screening criteria."""
     name: Optional[str] = None
     description: Optional[str] = None
-    criteria: Optional[ScreeningCriteriaParams] = None
+    criteria: Optional[ScreenerCriteria] = None
 
 
 class ScreeningCriteriaResponse(BaseModel):

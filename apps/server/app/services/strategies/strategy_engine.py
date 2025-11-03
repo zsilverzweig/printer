@@ -41,6 +41,7 @@ from app.services.events.event_broadcasting import (
 from app.models.strategies import Fund, Order, Transaction
 from app.services.core.database import get_async_session
 from sqlalchemy import select, and_
+from app.types import ScreenerCriteria
 
 logger = logging.getLogger(__name__)
 
@@ -478,6 +479,8 @@ class StrategyEngine:
         """Update list of monitored symbols from screener."""
         try:
             from app.services.screener.screener import get_screener_service
+            from app.types import ScreenerCriteria
+            from app.types import ScreenerCriteria
             
             # Get global screener service
             screener = get_screener_service()
@@ -1450,6 +1453,7 @@ class StrategyEngine:
             # Load criteria from database
             from app.services.core.database import get_async_session
             from app.models.strategies import ScreeningCriteria
+            from app.services.screener.screener import get_screener_service
             
             async with get_async_session() as session:
                 criteria = await session.get(ScreeningCriteria, self.fund.screening_criteria_id)
@@ -1457,30 +1461,29 @@ class StrategyEngine:
                 if not criteria:
                     logger.warning(f"ScreeningCriteria {self.fund.screening_criteria_id} not found")
                     return candidates
-                
-                filtered = []
-                for candidate in candidates:
-                    # Apply filters from criteria.criteria dict
-                    if "min_volume" in criteria.criteria:
-                        if candidate.get("today_vol", 0) < criteria.criteria["min_volume"]:
-                            continue
-                    
-                    if "min_price" in criteria.criteria:
-                        if candidate.get("price", 0) < criteria.criteria["min_price"]:
-                            continue
-                    
-                    if "max_price" in criteria.criteria:
-                        if candidate.get("price", 999999) > criteria.criteria["max_price"]:
-                            continue
-                    
-                    if "min_relative_volume" in criteria.criteria:
-                        if candidate.get("rv14", 0) < criteria.criteria["min_relative_volume"]:
-                            continue
-                    
-                    filtered.append(candidate)
-                
-                logger.info(f"Screening filters applied: {len(filtered)} of {len(candidates)} candidates passed")
-                return filtered
+                params = criteria.criteria or {}
+
+                # Use screener service to compute live results with the same logic as the UI/API
+                screener = get_screener_service()
+                if not screener:
+                    logger.warning("Screener service not available; returning unfiltered candidates")
+                    return candidates
+
+                try:
+                    criteria_model = ScreenerCriteria(**params)
+                except Exception:
+                    # If validation fails, fallback to dict-based path
+                    criteria_model = None
+
+                if criteria_model is not None:
+                    results = await screener.compute_live_from_criteria(criteria_model)
+                else:
+                    results = await screener.compute_live_with_criteria(params)
+
+                logger.info(
+                    f"Screening filters applied by ScreenerService: {len(results)} result(s)"
+                )
+                return results
         
         except Exception as e:
             logger.error(f"Error applying screening filters: {e}")

@@ -4,7 +4,6 @@ import {
   AlertCircle,
   BarChart3,
   Calendar,
-  CheckCircle,
   Database,
   HardDrive,
   RefreshCw,
@@ -23,55 +22,15 @@ import {
   CardHeader,
   CardTitle,
 } from "@/lib/components/ui/card";
-import { Progress } from "@/lib/components/ui/progress";
+ 
 
 import { useMarketDataLoader } from "../hooks/use-market-data-loader";
 import { MarketDataCoverage } from "./market-data-coverage";
-
-interface ValidationProgress {
-  target_symbols: number;
-  symbols_with_data: number;
-  symbols_ready_for_screening: number;
-  total_validations: number;
-  coverage_percentage: number;
-  screening_ready_percentage: number;
-  date_range: {
-    min_date: string | null;
-    max_date: string | null;
-    unique_days: number;
-  };
-  recent_activity: {
-    last_hour_validations: number;
-  };
-}
+import { TimescaleDensityHeatmap } from "./timescale-density-heatmap";
 
 export function TickerDatabaseManagement() {
   const { dbStats, loading, error, refreshStats } = useMarketDataLoader();
 
-  const [validationProgress, setValidationProgress] =
-    useState<ValidationProgress | null>(null);
-
-  // Fetch validation progress
-  const fetchValidationProgress = async () => {
-    try {
-      const response = await fetch(
-        "http://localhost:8000/api/market/validation/progress"
-      );
-      if (response.ok) {
-        const data = await response.json();
-        setValidationProgress(data);
-      }
-    } catch (err) {
-      console.error("Failed to fetch validation progress:", err);
-    }
-  };
-
-  // Refresh validation progress every 10 seconds
-  React.useEffect(() => {
-    fetchValidationProgress();
-    const interval = setInterval(fetchValidationProgress, 10000);
-    return () => clearInterval(interval);
-  }, []);
 
   const formatNumber = (num: number): string => {
     return new Intl.NumberFormat().format(num);
@@ -458,6 +417,13 @@ export function TickerDatabaseManagement() {
           </CardContent>
         </Card>
       )}
+
+      {/* Density Heatmap */}
+      {dbStats &&
+        dbStats.timescale_density &&
+        dbStats.timescale_density.length > 0 && (
+          <TimescaleDensityHeatmap density={dbStats.timescale_density} />
+        )}
 
       {/* Detailed Coverage Analysis */}
       {dbStats &&

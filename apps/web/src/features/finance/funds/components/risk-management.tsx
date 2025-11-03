@@ -8,7 +8,7 @@
 "use client";
 
 import { AlertCircle, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Fund } from "@printer/shared";
 
