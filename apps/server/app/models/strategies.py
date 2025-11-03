@@ -42,6 +42,8 @@ class Fund(Base):
     # UI customization
     icon: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # Lucide icon name
     icon_color: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # Tailwind color class
+    ticker: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)  # Display ticker (e.g., "5GUYS")
+    emoji: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)  # Display emoji (e.g., "🍔")
     
     # Strategy configuration
     strategy_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # e.g., "monkey_darts"

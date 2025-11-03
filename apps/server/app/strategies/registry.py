@@ -99,10 +99,6 @@ def get_strategy_metadata(strategy_id: Optional[str] = None) -> Dict[str, Any]:
             "id": temp_instance.id,
             "name": temp_instance.name,
             "description": temp_instance.description,
-            "strategyType": temp_instance.strategy_type,
-            "expectedTimeframe": temp_instance.expected_timeframe,
-            "requiredIndicators": temp_instance.required_indicators,
-            "configSchema": temp_instance.config_schema,
         }
     else:
         # Return metadata for all strategies
@@ -117,7 +113,13 @@ def _auto_register_strategies() -> None:
     Automatically register all strategy implementations.
     Called on module import to populate the registry.
     """
-    # Import strategy implementations here to trigger registration
+    # Import new simplified strategies
+    try:
+        from app.strategies.gpt_5min import GPTFiveGuyStrategy
+        register_strategy(GPTFiveGuyStrategy)
+    except ImportError as e:
+        logger.warning(f"Failed to import GPTFiveGuyStrategy: {e}")
+    
     try:
         from app.strategies.bull_flag import BullFlagStrategy
         register_strategy(BullFlagStrategy)
@@ -130,36 +132,14 @@ def _auto_register_strategies() -> None:
     except ImportError as e:
         logger.warning(f"Failed to import MonkeyDartsStrategy: {e}")
     
-    try:
-        from app.strategies.failed_equal_highs import FailedEqualHighsBreakoutStrategy
-        register_strategy(FailedEqualHighsBreakoutStrategy)
-    except ImportError as e:
-        logger.warning(f"Failed to import FailedEqualHighsBreakoutStrategy: {e}")
-    
-    try:
-        from app.strategies.gpt_candlestick import GPTCandlestickStrategy
-        register_strategy(GPTCandlestickStrategy)
-    except ImportError as e:
-        logger.warning(f"Failed to import GPTCandlestickStrategy: {e}")
-    
-    try:
-        from app.strategies.wyckoff import WyckoffStrategy
-        register_strategy(WyckoffStrategy)
-    except ImportError as e:
-        logger.warning(f"Failed to import WyckoffStrategy: {e}")
-    
-    try:
-        from app.strategies.gpt_5min import GPTFiveGuyStrategy
-        register_strategy(GPTFiveGuyStrategy)
-    except ImportError as e:
-        logger.warning(f"Failed to import GPTFiveGuyStrategy: {e}")
-
-    # Future strategies can be added here
+    # Old strategies archived - uncomment when needed
     # try:
-    #     from app.strategies.chart_analysis import ChartAnalysisStrategy
-    #     register_strategy(ChartAnalysisStrategy)
+    #     from app.strategies.archived.failed_equal_highs_old import FailedEqualHighsBreakoutStrategy
+    #     register_strategy(FailedEqualHighsBreakoutStrategy)
     # except ImportError as e:
-    #     logger.warning(f"Failed to import ChartAnalysisStrategy: {e}")
+    #     logger.warning(f"Failed to import FailedEqualHighsBreakoutStrategy: {e}")
+    
+    # Future strategies can be added here
 
 
 # Auto-register strategies on module import

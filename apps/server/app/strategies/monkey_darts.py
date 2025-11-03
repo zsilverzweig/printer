@@ -1,30 +1,19 @@
 """
 Monkey Throwing Darts Strategy
 
-A simple random trading strategy for testing the execution engine:
-- Randomly select a stock from screener results
-- Buy with limit order at current price
-- Hold for ~30 minutes
-- Exit all positions ~30 minutes before market close
- - Sell
-- Repeat
-
-This strategy is intentionally simple to test the plumbing without
-complex entry/exit logic.
+Simple random trading strategy for testing the execution engine.
+Randomly selects stocks and buys them with basic stop loss.
 """
 
 import random
-from typing import Any, Dict, List, Optional
-from datetime import datetime, time as dt_time
 import logging
-import pytz
+from typing import Any, Dict, List, Optional
 
 from app.strategies.base import (
     ExecutionStrategy,
-    EntrySignal,
-    ExitSignal,
-    ScaleSignal,
-    MarketData,
+    EntryLevel,
+    StopUpdate,
+    MarketDataSnapshot,
     PositionContext,
 )
 
@@ -34,13 +23,12 @@ logger = logging.getLogger(__name__)
 class MonkeyDartsStrategy(ExecutionStrategy):
     """Random stock selection strategy for testing."""
     
-    def __init__(self, config: Dict[str, Any]):
-        super().__init__(config)
+    def __init__(self, config: Dict[str, Any], fund_id: Optional[str] = None):
+        super().__init__(config, fund_id=fund_id)
         
-        # Configuration parameters with defaults
-        self.hold_time_seconds = config.get("hold_time_seconds", 30 * 60)  # default 30 minutes
-        self.max_positions = config.get("max_positions", 5)  # Hold up to 5 positions
-        self.random_seed = config.get("random_seed")  # Optional for reproducibility
+        self.entry_probability = config.get("entry_probability", 0.1)  # 10% chance
+        self.stop_loss_percent = config.get("stop_loss_percent", 2.0)  # 2% stop
+        self.random_seed = config.get("random_seed")
         
         if self.random_seed:
             random.seed(self.random_seed)
@@ -56,263 +44,44 @@ class MonkeyDartsStrategy(ExecutionStrategy):
     @property
     def description(self) -> str:
         return (
-            "Random stock selection strategy for testing. "
-            "Randomly picks stocks, buys them with limit orders at current price, "
-            f"holds up to {self.max_positions} positions for {self.hold_time_seconds} seconds each, then sells. "
-            "This generates high trading volume for paper trading testing."
+            f"Random stock selection strategy. "
+            f"{self.entry_probability*100:.0f}% chance to buy at current price. "
+            f"{self.stop_loss_percent:.0f}% stop loss. "
+            "Lets engine's 50% profit protection handle exits."
         )
     
     @property
-    def strategy_type(self) -> str:
-        return "math-based"  # Well, "random-based" but we'll call it math
+    def requires_setup(self) -> bool:
+        return False
     
-    @property
-    def expected_timeframe(self) -> str:
-        return f"{self.hold_time_seconds} seconds"
-    
-    @property
-    def required_indicators(self) -> List[str]:
-        return []  # No indicators needed
-    
-    @property
-    def config_schema(self) -> Dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {
-                "hold_time_seconds": {
-                    "type": "integer",
-                    "minimum": 30,
-                    "maximum": 7200,
-                    "default": 1800,
-                    "description": "How long to hold each position (seconds)",
-                },
-                "max_positions": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "maximum": 10,
-                    "default": 5,
-                    "description": "Maximum number of concurrent positions",
-                },
-                "random_seed": {
-                    "type": "integer",
-                    "description": "Optional random seed for reproducibility",
-                },
-            },
-        }
-    
-    async def get_monitored_symbols(
+    async def analyze_entry(
         self,
-        candidates: List[Dict[str, Any]],
-        active_position_count: int = 0,
-        active_order_count: int = 0
-    ) -> List[str]:
-        """
-        Random selection: pick stocks up to max_positions limit.
-        
-        Monkey Darts can hold multiple positions:
-        - Calculate how many more positions we can open
-        - Randomly select that many candidates
-        - Keep rotating through positions rapidly for high volume testing
-        
-        Note: All volume/price filtering should already be done by ScreeningCriteria.
-        We accept any candidates that made it through the screener.
-        """
-        total_active = active_position_count + active_order_count
-        
-        logger.info(
-            f"🐵 Monkey selection called: "
-            f"candidates={len(candidates)}, active_positions={active_position_count}, "
-            f"pending_orders={active_order_count}, max_positions={self.max_positions}"
-        )
-        
-        # Check if we're at capacity
-        if total_active >= self.max_positions:
-            logger.info(f"🐵 Monkey at capacity ({total_active}/{self.max_positions})")
-            return []
-        
-        # Need candidates to pick from
-        if not candidates:
-            logger.info("🐵 Monkey has no candidates to choose from")
-            return []
-        
-        # Calculate how many new positions we can open
-        slots_available = self.max_positions - total_active
-        num_to_pick = min(slots_available, len(candidates))
-        
-        # Randomly pick multiple candidates
-        selected_candidates = random.sample(candidates, num_to_pick)
-        symbols = [c.get("ticker") for c in selected_candidates if c.get("ticker")]
-        
-        logger.info(
-            f"🐵 Monkey threw {num_to_pick} darts at: {symbols} "
-            f"(from {len(candidates)} candidates, {slots_available} slots available)"
-        )
-        return symbols
-    
-    async def should_enter(self, symbol: str, market_data: MarketData) -> EntrySignal:
-        """
-        Always enter! That's the monkey way.
-        
-        We're called with a symbol, so if we're being asked, we should enter.
-        Uses market orders for immediate execution.
-        """
-        logger.info(f"🐵 Monkey selecting: {symbol} @ ${market_data.price:.2f} (market order)")
-        
-        return EntrySignal(
-            should_enter=True,
-            entry_price=market_data.price,
-            stop_loss=None,  # No stop loss, we rely on time exit
-            take_profit=None,  # No take profit, we rely on time exit
-            confidence=1.0,  # 100% confident in random selection!
-            reason="random_dart_throw",
-            order_type="market",  # Use market orders for instant fills
-            metadata={
-                "entry_time": datetime.now().isoformat(),
-                "hold_time_seconds": self.hold_time_seconds,
-            }
-        )
-    
-    async def should_exit(
-        self, 
-        position: PositionContext, 
-        market_data: MarketData
-    ) -> ExitSignal:
-        """
-        Exit after hold time expires or ~30 minutes before market close.
-        """
-        # Exit approximately 30 minutes before regular market close (4:00 PM ET)
-        try:
-            tz = pytz.timezone("America/New_York")
-            now_et = datetime.now(tz)
-            current_time = now_et.time()
-            pre_close_cutoff = dt_time(15, 30)
-            if current_time >= pre_close_cutoff:
-                logger.info(
-                    f"🐵 Pre-close exit: {position.symbol} exiting at {now_et.strftime('%H:%M:%S %Z')} ET"
-                )
-                return ExitSignal(
-                    should_exit=True,
-                    exit_price=market_data.price,
-                    reason="pre_close_exit",
-                )
-        except Exception:
-            # If timezone logic fails, ignore and proceed with time-based exit
-            pass
-        
-        # Calculate time in position
-        time_in_position = position.time_in_position_minutes() * 60  # Convert to seconds
-        
-        # Exit after hold time
-        if time_in_position >= self.hold_time_seconds:
-            pnl = position.unrealized_pnl
-            pnl_pct = position.unrealized_pnl_percent
+        ticker: str,
+        market_data: MarketDataSnapshot
+    ) -> Optional[EntryLevel]:
+        """Randomly decide to buy at current price."""
+        if random.random() < self.entry_probability:
+            entry_price = market_data.price
+            stop_loss = entry_price * (1 - self.stop_loss_percent / 100)
             
-            logger.info(
-                f"🐵 Monkey exit time! {position.symbol} held for {time_in_position:.0f}s, "
-                f"P&L: ${pnl:.2f} ({pnl_pct:+.2f}%)"
-            )
+            logger.info(f"🎲 Monkey Darts: randomly selected {ticker} @ ${entry_price:.2f}")
             
-            return ExitSignal(
-                should_exit=True,
-                exit_price=market_data.price,
-                reason="time_limit_reached",
+            return EntryLevel(
+                entry_price=entry_price,
+                stop_loss=stop_loss,
+                confidence=1.0,
+                order_type="market",
+                metadata={"method": "random"}
             )
         
-        # Not time yet
-        return ExitSignal(should_exit=False)
-    
-    async def should_scale_in(
-        self, 
-        position: PositionContext,
-        market_data: MarketData
-    ) -> Optional[ScaleSignal]:
-        """Monkeys don't scale in - one dart at a time!"""
         return None
     
-    async def should_scale_out(
-        self, 
+    async def manage_position(
+        self,
         position: PositionContext,
-        market_data: MarketData
-    ) -> Optional[ScaleSignal]:
-        """Monkeys don't scale out - all or nothing!"""
-        return None
-    
-    async def position_sizing(
-        self, 
-        signal: EntrySignal,
-        fund_balance: float,
-        risk_params: Dict[str, Any]
-    ) -> float:
-        """
-        Use the configured size per trade.
-        
-        Monkeys use consistent bet sizes.
-        """
-        size_per_trade = risk_params.get("size_per_trade", 1000.0)
-        max_bet_percent = risk_params.get("max_bet_percent")
-        min_bet_percent = risk_params.get("min_bet_percent")
-        
-        logger.info(
-            f"🐵 Monkey position sizing inputs: "
-            f"fund_balance=${fund_balance:.2f}, "
-            f"size_per_trade=${size_per_trade:.2f}, "
-            f"max_bet_percent={max_bet_percent}, "
-            f"min_bet_percent={min_bet_percent}"
-        )
-        
-        # Use configured size
-        position_size = size_per_trade
-        logger.info(f"🐵 Initial position size (from size_per_trade): ${position_size:.2f}")
-        
-        # If max_bet_percent is set and > 0, respect it
-        # Treat 0.0 as "no limit" just like None
-        if max_bet_percent is not None and max_bet_percent > 0:
-            max_position = fund_balance * (max_bet_percent / 100.0)
-            logger.info(
-                f"🐵 max_bet_percent is set: {max_bet_percent}% of ${fund_balance:.2f} = ${max_position:.2f}"
-            )
-            
-            old_size = position_size
-            position_size = min(position_size, max_position)
-            
-            if position_size != old_size:
-                logger.info(
-                    f"🐵 Position size LIMITED by max_bet_percent: "
-                    f"${old_size:.2f} → ${position_size:.2f}"
-                )
-            else:
-                logger.info(f"🐵 Position size unchanged (within max_bet_percent limit)")
-        else:
-            if max_bet_percent == 0.0:
-                logger.info("🐵 max_bet_percent is 0.0 - treating as no limit")
-            else:
-                logger.info("🐵 No max_bet_percent limit set")
-        
-        # If min_bet_percent is set and > 0, enforce minimum position size
-        # Use the minimum as a floor (not a rejection criterion)
-        if min_bet_percent is not None and min_bet_percent > 0:
-            min_position = fund_balance * (min_bet_percent / 100.0)
-            logger.info(
-                f"🐵 min_bet_percent is set: {min_bet_percent}% of ${fund_balance:.2f} = ${min_position:.2f}"
-            )
-            
-            if position_size < min_position:
-                old_size = position_size
-                position_size = min_position
-                logger.info(
-                    f"🐵 Position size INCREASED to minimum: "
-                    f"${old_size:.2f} → ${min_position:.2f}"
-                )
-            else:
-                logger.info(f"🐵 Position size meets minimum requirement")
-        else:
-            if min_bet_percent == 0.0:
-                logger.info("🐵 min_bet_percent is 0.0 - treating as no limit")
-            else:
-                logger.info("🐵 No min_bet_percent limit set")
-        
-        logger.info(f"🐵 Final monkey bet size: ${position_size:.2f}")
-        
-        return position_size
-    
+        market_data: MarketDataSnapshot
+    ) -> StopUpdate:
+        """Don't touch stop - let engine's 50% profit protection do the work."""
+        current_stop = position.strategy_state.get("stop_loss", position.entry_price * 0.98)
+        return StopUpdate(current_stop=current_stop)
 
