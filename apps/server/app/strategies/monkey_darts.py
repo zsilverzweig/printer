@@ -4,8 +4,9 @@ Monkey Throwing Darts Strategy
 A simple random trading strategy for testing the execution engine:
 - Randomly select a stock from screener results
 - Buy with limit order at current price
-- Hold for exactly 1 minute
-- Sell
+- Hold for ~30 minutes
+- Exit all positions ~30 minutes before market close
+ - Sell
 - Repeat
 
 This strategy is intentionally simple to test the plumbing without
@@ -14,8 +15,9 @@ complex entry/exit logic.
 
 import random
 from typing import Any, Dict, List, Optional
-from datetime import datetime
+from datetime import datetime, time as dt_time
 import logging
+import pytz
 
 from app.strategies.base import (
     ExecutionStrategy,
@@ -36,7 +38,7 @@ class MonkeyDartsStrategy(ExecutionStrategy):
         super().__init__(config)
         
         # Configuration parameters with defaults
-        self.hold_time_seconds = config.get("hold_time_seconds", 45)  # 45 seconds for faster rotation
+        self.hold_time_seconds = config.get("hold_time_seconds", 30 * 60)  # default 30 minutes
         self.max_positions = config.get("max_positions", 5)  # Hold up to 5 positions
         self.random_seed = config.get("random_seed")  # Optional for reproducibility
         
@@ -80,8 +82,8 @@ class MonkeyDartsStrategy(ExecutionStrategy):
                 "hold_time_seconds": {
                     "type": "integer",
                     "minimum": 30,
-                    "maximum": 300,
-                    "default": 45,
+                    "maximum": 7200,
+                    "default": 1800,
                     "description": "How long to hold each position (seconds)",
                 },
                 "max_positions": {
@@ -176,8 +178,27 @@ class MonkeyDartsStrategy(ExecutionStrategy):
         market_data: MarketData
     ) -> ExitSignal:
         """
-        Exit after hold time expires.
+        Exit after hold time expires or ~30 minutes before market close.
         """
+        # Exit approximately 30 minutes before regular market close (4:00 PM ET)
+        try:
+            tz = pytz.timezone("America/New_York")
+            now_et = datetime.now(tz)
+            current_time = now_et.time()
+            pre_close_cutoff = dt_time(15, 30)
+            if current_time >= pre_close_cutoff:
+                logger.info(
+                    f"🐵 Pre-close exit: {position.symbol} exiting at {now_et.strftime('%H:%M:%S %Z')} ET"
+                )
+                return ExitSignal(
+                    should_exit=True,
+                    exit_price=market_data.price,
+                    reason="pre_close_exit",
+                )
+        except Exception:
+            # If timezone logic fails, ignore and proceed with time-based exit
+            pass
+        
         # Calculate time in position
         time_in_position = position.time_in_position_minutes() * 60  # Convert to seconds
         
