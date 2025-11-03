@@ -7,7 +7,7 @@
 "use client";
 
 import { Fund, UpdateFundInput } from "@shared/types";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Button } from "@/lib/components/ui/button";
 import {
@@ -41,7 +41,6 @@ export function FundBasicInfoEditor({
   const [selectedColor, setSelectedColor] = useState(fund.iconColor || "blue");
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const debounceRef = useRef<number | null>(null);
 
   // Sync local state with fund prop when it changes
   useEffect(() => {
@@ -57,65 +56,50 @@ export function FundBasicInfoEditor({
     selectedIcon !== (fund.icon || "Wallet") ||
     selectedColor !== (fund.iconColor || "blue");
 
-  // Debounced autosave on change
-  useEffect(() => {
-    if (!name.trim()) {
-      return;
-    }
+  const saveIfChanged = async (
+    overrides?: Partial<{
+      name: string;
+      description: string;
+      selectedIcon: string;
+      selectedColor: string;
+    }>
+  ) => {
+    const nextName = (overrides?.name ?? name).trim();
+    const nextDescription = (overrides?.description ?? description).trim();
+    const nextIcon = overrides?.selectedIcon ?? selectedIcon;
+    const nextColor = overrides?.selectedColor ?? selectedColor;
+
+    if (!nextName) return;
 
     const hasChanges =
-      name !== fund.name ||
-      description !== (fund.description || "") ||
-      selectedIcon !== (fund.icon || "Wallet") ||
-      selectedColor !== (fund.iconColor || "blue");
+      nextName !== fund.name ||
+      nextDescription !== (fund.description || "") ||
+      nextIcon !== (fund.icon || "Wallet") ||
+      nextColor !== (fund.iconColor || "blue");
 
     if (!hasChanges) return;
 
-    if (debounceRef.current) {
-      window.clearTimeout(debounceRef.current);
+    try {
+      setIsSaving(true);
+      onSavingChange?.(true);
+      setError(null);
+
+      const input: UpdateFundInput = {
+        name: nextName,
+        description: nextDescription || undefined,
+        icon: nextIcon,
+        iconColor: nextColor,
+      };
+
+      await fundService.updateFund(fund.id, input);
+      onUpdate();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update fund");
+    } finally {
+      setIsSaving(false);
+      onSavingChange?.(false);
     }
-
-    debounceRef.current = window.setTimeout(async () => {
-      try {
-        setIsSaving(true);
-        onSavingChange?.(true);
-        setError(null);
-
-        const input: UpdateFundInput = {
-          name: name.trim(),
-          description: description.trim() || undefined,
-          icon: selectedIcon,
-          iconColor: selectedColor,
-        };
-
-        await fundService.updateFund(fund.id, input);
-        onUpdate();
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to update fund");
-      } finally {
-        setIsSaving(false);
-        onSavingChange?.(false);
-      }
-    }, 1500);
-
-    return () => {
-      if (debounceRef.current) {
-        window.clearTimeout(debounceRef.current);
-      }
-    };
-  }, [
-    name,
-    description,
-    selectedIcon,
-    selectedColor,
-    fund.id,
-    fund.name,
-    fund.description,
-    fund.icon,
-    fund.iconColor,
-    onSavingChange,
-    onUpdate,
-  ]);
+  };
 
   const handleReset = () => {
     setName(fund.name);
@@ -148,14 +132,23 @@ export function FundBasicInfoEditor({
               <IconColorPicker
                 selectedIcon={selectedIcon}
                 selectedColor={selectedColor}
-                onIconChange={setSelectedIcon}
-                onColorChange={setSelectedColor}
+                onIconChange={(val) => {
+                  setSelectedIcon(val);
+                  void saveIfChanged({ selectedIcon: val });
+                }}
+                onColorChange={(val) => {
+                  setSelectedColor(val);
+                  void saveIfChanged({ selectedColor: val });
+                }}
                 disabled={isSaving}
               />
               <Input
                 id="name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
+                onBlur={() => {
+                  void saveIfChanged();
+                }}
                 disabled={isSaving}
                 placeholder="e.g., Momentum Breakout Fund"
                 className="flex-1"
@@ -169,6 +162,9 @@ export function FundBasicInfoEditor({
               id="description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
+              onBlur={() => {
+                void saveIfChanged();
+              }}
               disabled={isSaving}
               placeholder="Brief description of the fund's strategy or purpose"
               rows={3}

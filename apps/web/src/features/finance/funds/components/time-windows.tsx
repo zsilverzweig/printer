@@ -6,7 +6,7 @@
 
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Fund } from "@printer/shared";
 
@@ -47,7 +47,6 @@ export function TimeWindows({
   const [timezone, setTimezone] = useState("America/New_York");
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const debounceRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (fund) {
@@ -57,52 +56,43 @@ export function TimeWindows({
     }
   }, [fund]);
 
-  // Debounced autosave on change
-  useEffect(() => {
+  const saveIfChanged = async (
+    overrides?: Partial<{
+      tradingStartTime: string;
+      tradingEndTime: string;
+      timezone: string;
+    }>
+  ) => {
+    const nextStart = overrides?.tradingStartTime ?? tradingStartTime;
+    const nextEnd = overrides?.tradingEndTime ?? tradingEndTime;
+    const nextTz = overrides?.timezone ?? timezone;
+
     const differs =
-      (fund.tradingStartTime || "") !== tradingStartTime ||
-      (fund.tradingEndTime || "") !== tradingEndTime ||
-      (fund.timezone || "America/New_York") !== timezone;
+      (fund.tradingStartTime || "") !== nextStart ||
+      (fund.tradingEndTime || "") !== nextEnd ||
+      (fund.timezone || "America/New_York") !== nextTz;
 
     if (!differs) return;
 
-    if (debounceRef.current) window.clearTimeout(debounceRef.current);
-    debounceRef.current = window.setTimeout(async () => {
-      try {
-        setIsSaving(true);
-        onSavingChange?.(true);
-        setError(null);
-        await fundService.updateFund(fundId, {
-          tradingStartTime,
-          tradingEndTime,
-          timezone,
-        });
-        onUpdate();
-      } catch (err) {
-        setError(
-          err instanceof Error ? err.message : "Failed to save time windows"
-        );
-      } finally {
-        setIsSaving(false);
-        onSavingChange?.(false);
-      }
-    }, 1500);
-
-    return () => {
-      if (debounceRef.current) window.clearTimeout(debounceRef.current);
-      debounceRef.current = null;
-    };
-  }, [
-    fundId,
-    onSavingChange,
-    onUpdate,
-    tradingStartTime,
-    tradingEndTime,
-    timezone,
-    fund.tradingStartTime,
-    fund.tradingEndTime,
-    fund.timezone,
-  ]);
+    try {
+      setIsSaving(true);
+      onSavingChange?.(true);
+      setError(null);
+      await fundService.updateFund(fundId, {
+        tradingStartTime: nextStart,
+        tradingEndTime: nextEnd,
+        timezone: nextTz,
+      });
+      onUpdate();
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to save time windows"
+      );
+    } finally {
+      setIsSaving(false);
+      onSavingChange?.(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -130,6 +120,9 @@ export function TimeWindows({
                 type="time"
                 value={tradingStartTime}
                 onChange={(e) => setTradingStartTime(e.target.value)}
+                onBlur={() => {
+                  void saveIfChanged();
+                }}
                 disabled={isSaving}
               />
               <p className="text-sm text-muted-foreground">
@@ -144,6 +137,9 @@ export function TimeWindows({
                 type="time"
                 value={tradingEndTime}
                 onChange={(e) => setTradingEndTime(e.target.value)}
+                onBlur={() => {
+                  void saveIfChanged();
+                }}
                 disabled={isSaving}
               />
               <p className="text-sm text-muted-foreground">
@@ -155,7 +151,10 @@ export function TimeWindows({
               <Label htmlFor="timezone">Timezone</Label>
               <Select
                 value={timezone}
-                onValueChange={setTimezone}
+                onValueChange={(value) => {
+                  setTimezone(value);
+                  void saveIfChanged({ timezone: value });
+                }}
                 disabled={isSaving}
               >
                 <SelectTrigger id="timezone">

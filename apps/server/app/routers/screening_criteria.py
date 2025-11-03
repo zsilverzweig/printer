@@ -184,22 +184,8 @@ async def run_screener_with_inline_criteria(
             
             if use_live_for_recent:
                 logger.info(f"[ENDPOINT] Using LIVE mode (timestamp is recent: {time_diff:.0f}s ago)")
-                # Fetch current snapshots from Polygon (same as live mode)
-                from app.services.screener.screener_snapshot import fetch_snapshot_all
-                import app.core as core
-                
-                if not core.API_KEY:
-                    raise HTTPException(
-                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                        detail="Polygon API key not configured"
-                    )
-                
-                # Fetch current snapshots
-                snaps = fetch_snapshot_all(core.API_KEY)
-                
-                # Apply screener computation with custom parameters
-                results = await screener_service._compute(
-                    snaps,
+                # Use centralized compute_live method (same as pure live mode)
+                results = await screener_service.compute_live(
                     min_price=min_price,
                     max_price=max_price,
                     min_volume=min_volume,
@@ -239,7 +225,7 @@ async def run_screener_with_inline_criteria(
                 
                 logger.info(f"[ENDPOINT] compute_historical returned {len(results)} results")
         else:
-            # Live mode: use existing flow
+            # Live mode: use same code path as strategy engine
             from app.services.screener.screener import get_screener_service
             screener_service = get_screener_service()
             
@@ -249,32 +235,9 @@ async def run_screener_with_inline_criteria(
                     detail="Screener service not available. Please ensure the server is fully started."
                 )
             
-            # Get latest snapshot data from screener service
-            if not screener_service.cached_payload:
-                # Try to fetch fresh data
-                try:
-                    await screener_service._tick()
-                except Exception as e:
-                    logger.warning(f"Failed to fetch fresh data: {e}")
-                    if not screener_service.cached_payload:
-                        return ScreenerRunResult(ticker_count=0, tickers=[])
-            
-            # Get the last snapshot and recompute with custom criteria
-            from app.services.screener.screener_snapshot import fetch_snapshot_all
-            import app.core as core
-            
-            if not core.API_KEY:
-                raise HTTPException(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail="Polygon API key not configured"
-                )
-            
-            # Fetch current snapshots
-            snaps = fetch_snapshot_all(core.API_KEY)
-            
-            # Apply screener computation with custom parameters
-            results = await screener_service._compute(
-                snaps,
+            # Use the same method as strategy engine - fetch from TimescaleDB and compute
+            # This ensures UI and strategies see the exact same results
+            results = await screener_service.compute_live(
                 min_price=min_price,
                 max_price=max_price,
                 min_volume=min_volume,
@@ -388,22 +351,8 @@ async def run_screener_with_criteria(
             
             if use_live_for_recent:
                 logger.info(f"Timestamp {timestamp} is recent ({time_diff:.0f}s ago), using live mode instead of historical")
-                # Fetch current snapshots from Polygon (same as live mode)
-                from app.services.screener.screener_snapshot import fetch_snapshot_all
-                import app.core as core
-                
-                if not core.API_KEY:
-                    raise HTTPException(
-                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                        detail="Polygon API key not configured"
-                    )
-                
-                # Fetch current snapshots
-                snaps = fetch_snapshot_all(core.API_KEY)
-                
-                # Apply screener computation with custom parameters
-                results = await screener_service._compute(
-                    snaps,
+                # Use centralized compute_live method (same as pure live mode)
+                results = await screener_service.compute_live(
                     min_price=min_price,
                     max_price=max_price,
                     min_volume=min_volume,
@@ -439,7 +388,7 @@ async def run_screener_with_criteria(
                     market_cap_max=market_cap_max
                 )
         else:
-            # Live mode: use existing flow
+            # Live mode: use same code path as strategy engine
             from app.services.screener.screener import get_screener_service
             screener_service = get_screener_service()
             
@@ -449,32 +398,8 @@ async def run_screener_with_criteria(
                     detail="Screener service not available. Please ensure the server is fully started."
                 )
             
-            # Get latest snapshot data from screener service
-            if not screener_service.cached_payload:
-                # Try to fetch fresh data
-                try:
-                    await screener_service._tick()
-                except Exception as e:
-                    logger.warning(f"Failed to fetch fresh data: {e}")
-                    if not screener_service.cached_payload:
-                        return ScreenerRunResult(ticker_count=0, tickers=[])
-            
-            # Get the last snapshot and recompute with custom criteria
-            from app.services.screener.screener_snapshot import fetch_snapshot_all
-            import app.core as core
-            
-            if not core.API_KEY:
-                raise HTTPException(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail="Polygon API key not configured"
-                )
-            
-            # Fetch current snapshots
-            snaps = fetch_snapshot_all(core.API_KEY)
-            
-            # Apply screener computation with custom parameters
-            results = await screener_service._compute(
-                snaps,
+            # Use centralized compute_live method
+            results = await screener_service.compute_live(
                 min_price=min_price,
                 max_price=max_price,
                 min_volume=min_volume,

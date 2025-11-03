@@ -112,52 +112,7 @@ export default function ScreenerPage() {
     return () => clearTimeout(timer);
   }, [selectedScreenerId]);
 
-  // Auto-apply filters when they change (debounced)
-  React.useEffect(() => {
-    // Don't auto-run if:
-    // - Currently running a screener
-    // - In historical mode (requires timestamp)
-    // - Just loaded a screener (avoid immediate run)
-    if (
-      runningScreener ||
-      mode === "historical" ||
-      isLoadingScreenerRef.current
-    ) {
-      return;
-    }
-
-    // Debounce the auto-run
-    const timeoutId = setTimeout(async () => {
-      // Skip if we just loaded a screener (avoid immediate run)
-      if (isLoadingScreenerRef.current) {
-        return;
-      }
-
-      const hasFilters =
-        currentFilters && Object.keys(currentFilters).length > 0;
-      if (!hasFilters) {
-        return;
-      }
-
-      setRunningScreener(true);
-      try {
-        // Use inline criteria API - no database save needed
-        const result = await runScreenerWithCriteria(currentFilters);
-        if (result?.results) {
-          setLiveFilteredResults(result.results);
-        } else {
-          setLiveFilteredResults([]);
-        }
-      } catch (err) {
-        // Silently handle errors for auto-runs
-        console.error("Auto-run screener error:", err);
-      } finally {
-        setRunningScreener(false);
-      }
-    }, 500); // 500ms debounce
-
-    return () => clearTimeout(timeoutId);
-  }, [currentFilters, mode, runScreenerWithCriteria]);
+  // Removed debounce-driven auto-run. Runs are triggered onBlur/change from controls.
 
   // Compute display data
   const displayData: StockData[] = React.useMemo(() => {

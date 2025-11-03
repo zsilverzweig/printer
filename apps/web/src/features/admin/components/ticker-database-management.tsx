@@ -9,8 +9,6 @@ import {
   RefreshCw,
   TrendingUp,
 } from "lucide-react";
-import * as React from "react";
-import { useState } from "react";
 
 import { Alert, AlertDescription } from "@/lib/components/ui/alert";
 import { Badge } from "@/lib/components/ui/badge";
@@ -22,7 +20,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/lib/components/ui/card";
- 
 
 import { useMarketDataLoader } from "../hooks/use-market-data-loader";
 import { MarketDataCoverage } from "./market-data-coverage";
@@ -30,7 +27,6 @@ import { TimescaleDensityHeatmap } from "./timescale-density-heatmap";
 
 export function TickerDatabaseManagement() {
   const { dbStats, loading, error, refreshStats } = useMarketDataLoader();
-
 
   const formatNumber = (num: number): string => {
     return new Intl.NumberFormat().format(num);
@@ -55,132 +51,6 @@ export function TickerDatabaseManagement() {
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>{error}</AlertDescription>
         </Alert>
-      )}
-
-      {/* Validation Progress Card */}
-      {validationProgress && (
-        <Card className="border-primary/20">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="flex items-center gap-2">
-                  <CheckCircle className="h-5 w-5 text-primary" />
-                  Data Loading Progress
-                </CardTitle>
-                <CardDescription>
-                  Validation-based progress tracking (
-                  {validationProgress.date_range.unique_days} days covered)
-                </CardDescription>
-              </div>
-              <Button
-                onClick={fetchValidationProgress}
-                variant="ghost"
-                size="sm"
-              >
-                <RefreshCw className="h-4 w-4" />
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-6">
-              {/* Main Progress Metrics */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium">Coverage</span>
-                    <Badge variant="default" className="text-lg">
-                      {validationProgress.coverage_percentage}%
-                    </Badge>
-                  </div>
-                  <Progress
-                    value={validationProgress.coverage_percentage}
-                    className="h-3"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    {validationProgress.symbols_with_data.toLocaleString()} /{" "}
-                    {validationProgress.target_symbols.toLocaleString()} symbols
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium">Screening Ready</span>
-                    <Badge variant="default" className="text-lg">
-                      {validationProgress.screening_ready_percentage}%
-                    </Badge>
-                  </div>
-                  <Progress
-                    value={validationProgress.screening_ready_percentage}
-                    className="h-3"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    {validationProgress.symbols_ready_for_screening.toLocaleString()}{" "}
-                    symbols with 14+ days
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium">
-                      Total Validations
-                    </span>
-                    <span className="text-2xl font-bold">
-                      {validationProgress.total_validations.toLocaleString()}
-                    </span>
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-2">
-                    Date records confirmed with Polygon
-                  </p>
-                  {validationProgress.recent_activity.last_hour_validations >
-                    0 && (
-                    <Badge variant="secondary" className="mt-2">
-                      +
-                      {validationProgress.recent_activity.last_hour_validations.toLocaleString()}{" "}
-                      in last hour
-                    </Badge>
-                  )}
-                </div>
-              </div>
-
-              {/* Date Range */}
-              {validationProgress.date_range.min_date &&
-                validationProgress.date_range.max_date && (
-                  <div className="pt-4 border-t">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-                      <div>
-                        <span className="text-muted-foreground">
-                          Earliest Date:
-                        </span>
-                        <div className="font-semibold mt-1">
-                          {new Date(
-                            validationProgress.date_range.min_date
-                          ).toLocaleDateString()}
-                        </div>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">
-                          Latest Date:
-                        </span>
-                        <div className="font-semibold mt-1">
-                          {new Date(
-                            validationProgress.date_range.max_date
-                          ).toLocaleDateString()}
-                        </div>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">
-                          Days of Coverage:
-                        </span>
-                        <div className="font-semibold mt-1">
-                          {validationProgress.date_range.unique_days} days
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-            </div>
-          </CardContent>
-        </Card>
       )}
 
       {/* Database Stats Card */}

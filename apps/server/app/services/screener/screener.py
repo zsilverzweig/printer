@@ -206,16 +206,27 @@ class ScreenerService:
         market_cap_min: Optional[int] = None,
         market_cap_max: Optional[int] = None,
     ) -> List[dict]:
-        """Compute screener results from the latest live data in TimescaleDB.
+        """Compute screener results from the latest live data.
         
-        Fetches the latest snapshots via ScreenerDataLoader and delegates to compute().
-        Keeps all filtering logic centralized in the screener service.
+        Uses Polygon snapshot API as the source of truth for "present" data,
+        since it's the freshest available. TimescaleDB is always slightly behind.
+        
+        This centralized method ensures both UI and strategy engine see identical results.
         """
+        from app.services.screener.screener_snapshot import fetch_snapshot_all
+        
+        if not core.API_KEY:
+            self.logger.warning("Polygon API key not configured, cannot fetch live snapshots")
+            return []
+        
         try:
-            snaps = await self.data_loader.fetch_latest_from_timescale()
-        except Exception:
+            # Fetch current snapshots from Polygon (freshest data available)
+            snaps = fetch_snapshot_all(core.API_KEY)
+        except Exception as e:
+            self.logger.error(f"Failed to fetch live snapshots: {e}", exc_info=True)
             # Fall back to empty if fetch fails
             snaps = []
+        
         return await self.compute.compute(
             snaps,
             min_price=min_price,

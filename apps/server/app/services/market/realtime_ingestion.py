@@ -341,31 +341,46 @@ class RealtimeIngestionService:
             MarketData object or None if invalid (timescale='1min')
         """
         try:
+            # Helper function to get value from either dict or object
+            def get_value(obj, *keys):
+                """Try to get value from dict keys or object attributes."""
+                for key in keys:
+                    if isinstance(obj, dict):
+                        val = obj.get(key)
+                        if val is not None:
+                            return val
+                    else:
+                        # Try as object attribute
+                        val = getattr(obj, key, None)
+                        if val is not None:
+                            return val
+                return None
+            
             # Check event type
-            event_type = msg.get("ev") or msg.get("event_type")
+            event_type = get_value(msg, "ev", "event_type")
             if event_type not in ["AM", "A.M"]:
                 return None
             
             # Extract fields
-            symbol = msg.get("sym") or msg.get("symbol")
+            symbol = get_value(msg, "sym", "symbol")
             if not symbol:
                 return None
             
             # Timestamp - use start time (s) or end time (e)
-            timestamp_ms = msg.get("s") or msg.get("e") or msg.get("t")
+            timestamp_ms = get_value(msg, "s", "start_timestamp", "e", "end_timestamp", "t")
             if not timestamp_ms:
                 return None
             
             timestamp = datetime.fromtimestamp(timestamp_ms / 1000, tz=timezone.utc)
             
             # OHLCV data
-            open_price = msg.get("o") or msg.get("op")
-            high_price = msg.get("h")
-            low_price = msg.get("l")
-            close_price = msg.get("c")
-            volume = msg.get("v")
-            vwap = msg.get("vw") or msg.get("a")
-            trade_count = msg.get("n")
+            open_price = get_value(msg, "o", "open", "op")
+            high_price = get_value(msg, "h", "high")
+            low_price = get_value(msg, "l", "low")
+            close_price = get_value(msg, "c", "close")
+            volume = get_value(msg, "v", "volume")
+            vwap = get_value(msg, "vw", "vwap", "a")
+            trade_count = get_value(msg, "n", "trade_count")
             
             # Validate required fields
             if None in [open_price, high_price, low_price, close_price, volume]:

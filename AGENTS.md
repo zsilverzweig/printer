@@ -12,6 +12,12 @@ When working in IDE modes, never commit files unless explicitly directed to.
 
 Assume that there is a pattern already in place to solve problems, don't create a new one. If you can't find a pattern, ask the user for more guidance.
 
+### UI Interaction Standards
+
+- Prefer blur-based apply over keystroke debouncing for form edits. Specifically:
+  - Fund configuration editors should save on `onBlur` rather than on individual keystrokes.
+  - Screener filters should run/apply on `onBlur` for text/number inputs; selects/switches may apply immediately on change.
+
 ## Testing and Development Workflow
 
 **CRITICAL: Always test endpoints with curl before assuming they work!**

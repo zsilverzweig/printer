@@ -1447,7 +1447,10 @@ class StrategyEngine:
     ) -> List[Dict[str, Any]]:
         """Apply ScreeningCriteria filters if configured."""
         if not self.fund.screening_criteria_id:
+            logger.debug(f"[FUND {self.fund.id}] No screening criteria configured, using {len(candidates)} candidates as-is")
             return candidates
+        
+        logger.info(f"[FUND {self.fund.id}] 🔍 Applying screening filters to {len(candidates)} candidates...")
         
         try:
             # Load criteria from database
@@ -1461,12 +1464,36 @@ class StrategyEngine:
                 if not criteria:
                     logger.warning(f"ScreeningCriteria {self.fund.screening_criteria_id} not found")
                     return candidates
+                
+                # Log which screener is being used
+                screener_name = criteria.name or "Unnamed"
+                logger.info(
+                    f"[FUND {self.fund.id}] Using screener: '{screener_name}' (ID: {criteria.id})"
+                )
+                
                 params = criteria.criteria or {}
+                
+                # Log key filter parameters for visibility
+                key_filters = []
+                if params.get("min_price") or params.get("max_price"):
+                    price_range = f"${params.get('min_price', 0):.2f}-${params.get('max_price', '∞')}"
+                    key_filters.append(f"price={price_range}")
+                if params.get("min_volume"):
+                    key_filters.append(f"vol>={params['min_volume']:,}")
+                if params.get("min_relative_volume"):
+                    key_filters.append(f"RV>={params['min_relative_volume']:.1f}x")
+                if params.get("limit"):
+                    key_filters.append(f"limit={params['limit']}")
+                
+                if key_filters:
+                    logger.info(
+                        f"[FUND {self.fund.id}] Screener filters: {', '.join(key_filters)}"
+                    )
 
                 # Use screener service to compute live results with the same logic as the UI/API
                 screener = get_screener_service()
                 if not screener:
-                    logger.warning("Screener service not available; returning unfiltered candidates")
+                    logger.warning(f"[FUND {self.fund.id}] Screener service not available; returning unfiltered candidates")
                     return candidates
 
                 try:
@@ -1481,11 +1508,11 @@ class StrategyEngine:
                     results = await screener.compute_live_with_criteria(params)
 
                 logger.info(
-                    f"Screening filters applied by ScreenerService: {len(results)} result(s)"
+                    f"[FUND {self.fund.id}] Screener '{screener_name}' returned {len(results)} matching stocks (from {len(candidates)} candidates)"
                 )
                 return results
         
         except Exception as e:
-            logger.error(f"Error applying screening filters: {e}")
+            logger.error(f"[FUND {self.fund.id}] Error applying screening filters: {e}", exc_info=True)
             return candidates  # Return unfiltered on error
 

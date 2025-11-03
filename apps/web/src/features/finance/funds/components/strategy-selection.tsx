@@ -7,7 +7,7 @@
 "use client";
 
 import { ExecutionStrategy, Fund } from "@printer/shared";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 import {
   Card,
@@ -54,7 +54,6 @@ export function StrategySelection({
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
-  const debounceRef = useRef<number | null>(null);
 
   useEffect(() => {
     const fetchStrategies = async () => {
@@ -82,54 +81,41 @@ export function StrategySelection({
     (s) => s.id === executionStrategyId
   );
 
-  // Debounced autosave when strategy or config changes
-  useEffect(() => {
+  const saveIfChanged = async (
+    overrides?: Partial<{
+      executionStrategyId: string;
+      executionConfig: Record<string, any>;
+    }>
+  ) => {
+    const nextId = overrides?.executionStrategyId ?? executionStrategyId;
+    const nextConfig = overrides?.executionConfig ?? executionConfig;
+
     const hasChanges =
-      executionStrategyId !== fund?.strategyId ||
-      JSON.stringify(executionConfig) !==
-        JSON.stringify(fund?.strategyConfig || {});
+      nextId !== fund?.strategyId ||
+      JSON.stringify(nextConfig) !== JSON.stringify(fund?.strategyConfig || {});
 
     if (!hasChanges) return;
 
-    if (debounceRef.current) window.clearTimeout(debounceRef.current);
+    try {
+      setIsSaving(true);
+      onSavingChange?.(true);
+      setError(null);
+      setSuccess(false);
 
-    debounceRef.current = window.setTimeout(async () => {
-      try {
-        setIsSaving(true);
-        onSavingChange?.(true);
-        setError(null);
-        setSuccess(false);
+      await fundService.updateFund(fundId, {
+        strategyId: nextId,
+        strategyConfig: nextConfig,
+      });
 
-        await fundService.updateFund(fundId, {
-          strategyId: executionStrategyId,
-          strategyConfig: executionConfig,
-        });
-
-        onUpdate();
-      } catch (err) {
-        console.error("Error saving strategy:", err);
-        setError(
-          err instanceof Error ? err.message : "Failed to save strategy"
-        );
-      } finally {
-        setIsSaving(false);
-        onSavingChange?.(false);
-      }
-    }, 1500);
-    return () => {
-      if (debounceRef.current) window.clearTimeout(debounceRef.current);
-      debounceRef.current = null;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    executionStrategyId,
-    JSON.stringify(executionConfig),
-    fund?.strategyId,
-    JSON.stringify(fund?.strategyConfig || {}),
-    fundId,
-    onSavingChange,
-    onUpdate,
-  ]);
+      onUpdate();
+    } catch (err) {
+      console.error("Error saving strategy:", err);
+      setError(err instanceof Error ? err.message : "Failed to save strategy");
+    } finally {
+      setIsSaving(false);
+      onSavingChange?.(false);
+    }
+  };
 
   const hasChanges =
     executionStrategyId !== fund?.strategyId ||
@@ -156,7 +142,10 @@ export function StrategySelection({
             <Label htmlFor="executionStrategy">Strategy Type</Label>
             <Select
               value={executionStrategyId}
-              onValueChange={setExecutionStrategyId}
+              onValueChange={(val) => {
+                setExecutionStrategyId(val);
+                void saveIfChanged({ executionStrategyId: val });
+              }}
               disabled={isSaving}
             >
               <SelectTrigger id="executionStrategy">
@@ -222,6 +211,9 @@ export function StrategySelection({
                             ...executionConfig,
                             [key]: value,
                           });
+                        }}
+                        onBlur={() => {
+                          void saveIfChanged();
                         }}
                         placeholder={
                           schema.default

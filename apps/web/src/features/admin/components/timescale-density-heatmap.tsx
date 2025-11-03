@@ -55,7 +55,7 @@ export function TimescaleDensityHeatmap({
                 {row.timescale}
               </div>
               <div className="grid grid-flow-col auto-cols-max gap-1">
-                {row.days.map((d) => (
+                {row.days.map((d, idx) => (
                   <div
                     key={`${row.timescale}-${d.date}`}
                     title={`${new Date(d.date).toLocaleDateString()}: ${
@@ -66,6 +66,7 @@ export function TimescaleDensityHeatmap({
                     className={`w-3 h-3 rounded-sm ${colorForRate(
                       d.completion_rate
                     )}`}
+                    style={{ marginRight: (idx + 1) % 7 === 0 ? 6 : undefined }}
                   />
                 ))}
               </div>

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from app.services.screener.screener_compute import ScreenerCompute
@@ -83,6 +83,13 @@ class ScreenerHistorical:
                 self.logger.warning("[HISTORICAL SCREENER] No snapshots returned from unified fetcher")
                 return []
             
+            # Fetch accumulated intraday volume for all symbols
+            step_start = time.time()
+            symbols_list = [s["ticker"] for s in snapshots]
+            intraday_volume = await self._get_accumulated_intraday_volume(symbols_list, timestamp)
+            step_time = time.time() - step_start
+            self.logger.info(f"[HISTORICAL SCREENER] ✓ Got intraday volume for {len(intraday_volume)} symbols ({step_time:.2f}s)")
+            
             rows: List[dict] = []
             processed_count = 0
             filtered_count = 0
@@ -106,7 +113,9 @@ class ScreenerHistorical:
                 processed_count += 1
                 
                 yesterday_close = day["c"]
-                yesterday_vol = day["v"]
+                # Use accumulated intraday volume (from market open to timestamp)
+                # This is the actual volume "as of" the timestamp, not the full day's volume
+                current_volume = intraday_volume.get(symbol, day["v"])  # Fallback to daily if not available
                 
                 # Apply optional basic filters
                 if min_price is not None or max_price is not None:
@@ -117,7 +126,8 @@ class ScreenerHistorical:
                         continue
                 
                 if min_volume is not None:
-                    if not passes_volume_filter(yesterday_vol, min_volume):
+                    # Volume filter uses current accumulated volume, not yesterday's full daily volume
+                    if not passes_volume_filter(current_volume, min_volume):
                         filtered_count += 1
                         continue
                 
@@ -171,7 +181,7 @@ class ScreenerHistorical:
                     "low": day["l"],
                     "close": yesterday_close,
                     "price": current_price,
-                    "today_vol": yesterday_vol,
+                    "today_vol": current_volume,  # Accumulated intraday volume up to timestamp
                     "rv": rv14,
                     "rv14": rv14,
                     "change_close": change_close_pct,
@@ -241,4 +251,65 @@ class ScreenerHistorical:
         """Get historical bars for technical analysis."""
         from app.lib.market_queries import get_historical_bars
         return await get_historical_bars(symbol, "5m", timestamp, lookback_bars)
+    
+    async def _get_accumulated_intraday_volume(
+        self,
+        symbols: List[str],
+        timestamp: datetime
+    ) -> Dict[str, int]:
+        """
+        Get accumulated intraday volume from 5min bars.
+        
+        Sums volume from market open (9:30 AM ET) to the target timestamp.
+        This gives accurate volume as if we were screening at that exact moment.
+        
+        Args:
+            symbols: List of symbols to fetch volume for
+            timestamp: Target datetime
+            
+        Returns:
+            Dict mapping symbol to accumulated volume
+        """
+        from sqlalchemy import text
+        from app.services.core.database import get_async_session
+        
+        # Get market open time for the timestamp date (9:30 AM ET = 13:30 UTC)
+        timestamp_date = timestamp.date()
+        market_open = datetime.combine(timestamp_date, datetime.min.time(), tzinfo=timestamp.tzinfo or timezone.utc).replace(hour=13, minute=30)
+        
+        self.logger.info(f"[HISTORICAL VOLUME] Fetching accumulated volume for {len(symbols)} symbols from {market_open} to {timestamp}")
+        
+        try:
+            async with get_async_session() as session:
+                # Query in batches for performance
+                batch_size = 2000
+                volume_data = {}
+                
+                for i in range(0, len(symbols), batch_size):
+                    batch = symbols[i:i + batch_size]
+                    
+                    result = await session.execute(
+                        text("""
+                            SELECT 
+                                symbol,
+                                SUM(volume) as accumulated_volume
+                            FROM market_data
+                            WHERE symbol = ANY(:symbols)
+                              AND timescale = '5min'
+                              AND time >= :market_open
+                              AND time <= :timestamp
+                            GROUP BY symbol
+                        """),
+                        {"symbols": batch, "market_open": market_open, "timestamp": timestamp}
+                    )
+                    
+                    for row in result:
+                        volume_data[row[0]] = int(row[1]) if row[1] else 0
+                
+                self.logger.info(f"[HISTORICAL VOLUME] Got accumulated volume for {len(volume_data)} symbols")
+                return volume_data
+                
+        except Exception as e:
+            self.logger.error(f"[HISTORICAL VOLUME] Error fetching accumulated volume: {e}", exc_info=True)
+            return {}
 

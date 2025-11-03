@@ -59,7 +59,6 @@ export function RiskManagement({
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [warnings, setWarnings] = useState<ValidationWarning[]>([]);
-  const debounceRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (fund) {
@@ -184,8 +183,7 @@ export function RiskManagement({
     fundBalance,
   ]);
 
-  // Debounced autosave on change without blocking errors
-  useEffect(() => {
+  const saveIfChanged = async () => {
     const hasBlockingErrors = warnings.some((w) => w.severity === "error");
     if (hasBlockingErrors) {
       return;
@@ -218,49 +216,20 @@ export function RiskManagement({
 
     if (!differs) return;
 
-    if (debounceRef.current) window.clearTimeout(debounceRef.current);
-    debounceRef.current = window.setTimeout(async () => {
-      try {
-        setIsSaving(true);
-        onSavingChange?.(true);
-        setError(null);
-        await fundService.updateFund(fundId, parsed);
-        onUpdate();
-      } catch (err) {
-        console.error("Error saving risk management:", err);
-        setError(err instanceof Error ? err.message : "Failed to save");
-      } finally {
-        setIsSaving(false);
-        onSavingChange?.(false);
-      }
-    }, 1500);
-
-    return () => {
-      if (debounceRef.current) window.clearTimeout(debounceRef.current);
-      debounceRef.current = null;
-    };
-  }, [
-    fundId,
-    onSavingChange,
-    onUpdate,
-    warnings,
-    maxLossPercent,
-    maxLossDollars,
-    maxGivebackPercent,
-    maxOrderAgeSeconds,
-    sizePerTrade,
-    minBetPercent,
-    maxBetPercent,
-    maxTotalExposure,
-    fund.maxLossPercent,
-    fund.maxLossDollars,
-    fund.maxGivebackPercent,
-    fund.maxOrderAgeSeconds,
-    fund.sizePerTrade,
-    fund.minBetPercent,
-    fund.maxBetPercent,
-    fund.maxTotalExposure,
-  ]);
+    try {
+      setIsSaving(true);
+      onSavingChange?.(true);
+      setError(null);
+      await fundService.updateFund(fundId, parsed);
+      onUpdate();
+    } catch (err) {
+      console.error("Error saving risk management:", err);
+      setError(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setIsSaving(false);
+      onSavingChange?.(false);
+    }
+  };
 
   const getWarningsForField = (field: string) =>
     warnings.filter((w) => w.field === field);
@@ -306,6 +275,7 @@ export function RiskManagement({
                 step="0.1"
                 value={maxLossPercent}
                 onChange={(e) => setMaxLossPercent(e.target.value)}
+                onBlur={saveIfChanged}
                 disabled={isSaving}
                 placeholder="2.0 (optional)"
               />
@@ -335,6 +305,7 @@ export function RiskManagement({
                 step="1"
                 value={maxLossDollars}
                 onChange={(e) => setMaxLossDollars(e.target.value)}
+                onBlur={saveIfChanged}
                 disabled={isSaving}
                 placeholder="500 (optional)"
               />
@@ -377,6 +348,7 @@ export function RiskManagement({
                 step="0.1"
                 value={maxGivebackPercent}
                 onChange={(e) => setMaxGivebackPercent(e.target.value)}
+                onBlur={saveIfChanged}
                 disabled={isSaving}
                 placeholder="30.0 (optional)"
               />
@@ -407,6 +379,7 @@ export function RiskManagement({
                 min="10"
                 value={maxOrderAgeSeconds}
                 onChange={(e) => setMaxOrderAgeSeconds(e.target.value)}
+                onBlur={saveIfChanged}
                 disabled={isSaving}
                 placeholder="60 (default)"
               />
@@ -438,6 +411,7 @@ export function RiskManagement({
                 step="100"
                 value={sizePerTrade}
                 onChange={(e) => setSizePerTrade(e.target.value)}
+                onBlur={saveIfChanged}
                 disabled={isSaving}
                 placeholder="1000"
                 required
@@ -481,6 +455,7 @@ export function RiskManagement({
                 step="1000"
                 value={maxTotalExposure}
                 onChange={(e) => setMaxTotalExposure(e.target.value)}
+                onBlur={saveIfChanged}
                 disabled={isSaving}
                 placeholder="5000 (optional)"
               />
@@ -523,6 +498,7 @@ export function RiskManagement({
                 step="0.1"
                 value={minBetPercent}
                 onChange={(e) => setMinBetPercent(e.target.value)}
+                onBlur={saveIfChanged}
                 disabled={isSaving}
                 placeholder="1.0 (optional)"
               />
@@ -552,6 +528,7 @@ export function RiskManagement({
                 step="0.1"
                 value={maxBetPercent}
                 onChange={(e) => setMaxBetPercent(e.target.value)}
+                onBlur={saveIfChanged}
                 disabled={isSaving}
                 placeholder="5.0 (optional)"
               />

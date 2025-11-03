@@ -22,7 +22,6 @@ import { useUrlTabs } from "@/lib/hooks/use-url-tabs";
 
 import { useFundDetails } from "../hooks/use-fund-details";
 import { useFundLedger } from "../hooks/use-fund-ledger";
-import { useFundRealtime } from "../hooks/use-fund-realtime";
 import { setupService } from "../services/setup-service";
 import { CreateSetupInput } from "../types";
 
@@ -54,14 +53,7 @@ export function FundDetailView({ fundId }: FundDetailViewProps) {
     refresh: refreshLedger,
   } = useFundLedger(fundId);
 
-  // Real-time WebSocket connection
-  const {
-    data: realtimeData,
-    isConnected,
-    isConnecting,
-    error: wsError,
-    reconnect,
-  } = useFundRealtime(fundId);
+  // Real-time WebSocket connection removed to prevent auto-refresh
 
   const [selectedSetupId, setSelectedSetupId] = useState<string | null>(null);
   const [showSetupEditor, setShowSetupEditor] = useState(false);
@@ -111,29 +103,13 @@ export function FundDetailView({ fundId }: FundDetailViewProps) {
 
   const { setup } = details;
 
-  // Use real-time data if connected, fallback to fetched data
-  // This is safe because we've already checked that details exists above
-  const fund = realtimeData.fund || details.fund;
-  const orders =
-    realtimeData.orders.length > 0 ? realtimeData.orders : fallbackOrders;
-  const transactions =
-    realtimeData.transactions.length > 0
-      ? realtimeData.transactions
-      : fallbackTransactions;
-  const transfers =
-    realtimeData.transfers.length > 0
-      ? realtimeData.transfers
-      : fallbackTransfers;
-
-  // Use realtime positions (updated every 30s via WebSocket!)
-  const positions =
-    realtimeData.positions.length > 0
-      ? realtimeData.positions
-      : fallbackPositions;
-  const positionsSummary =
-    realtimeData.positions.length > 0
-      ? realtimeData.positionsSummary
-      : fallbackPositionsSummary;
+  // Use fetched data only (no auto-refresh)
+  const fund = details.fund;
+  const orders = fallbackOrders;
+  const transactions = fallbackTransactions;
+  const transfers = fallbackTransfers;
+  const positions = fallbackPositions;
+  const positionsSummary = fallbackPositionsSummary;
 
   const handleSaveSetup = async (input: CreateSetupInput) => {
     const newSetup = await setupService.createSetup(input);
@@ -145,23 +121,12 @@ export function FundDetailView({ fundId }: FundDetailViewProps) {
     const debugInfo = {
       fund,
       fundKeys: fund ? Object.keys(fund) : [],
-      realtimeData: {
-        fund: realtimeData.fund ? "Present" : "Null/Undefined",
-        fundKeys: realtimeData.fund ? Object.keys(realtimeData.fund) : [],
-        ordersCount: realtimeData.orders.length,
-        transactionsCount: realtimeData.transactions.length,
-        transfersCount: realtimeData.transfers.length,
-      },
       details: {
         fund: details?.fund ? "Present" : "Null/Undefined",
         fundKeys: details?.fund ? Object.keys(details.fund) : [],
         setup: details?.setup ? "Present" : "Null/Undefined",
       },
-      connection: {
-        isConnected,
-        isConnecting,
-        error: wsError,
-      },
+      connection: "disabled",
     };
 
     await navigator.clipboard.writeText(JSON.stringify(debugInfo, null, 2));
@@ -199,23 +164,10 @@ export function FundDetailView({ fundId }: FundDetailViewProps) {
             </span>
           ) : null}
 
-          {/* Debug button with connection status color */}
           <button
             onClick={copyDebugInfoToClipboard}
-            className={`p-1.5 rounded-md transition-colors ${
-              isConnected && !isConnecting
-                ? "text-green-600 hover:bg-green-50"
-                : isConnecting
-                ? "text-gray-400 hover:bg-gray-50"
-                : "text-orange-600 hover:bg-orange-50"
-            }`}
-            title={
-              isConnected && !isConnecting
-                ? "Live - Click to copy debug info"
-                : isConnecting
-                ? "Connecting... Click to copy debug info"
-                : "Disconnected - Click to copy debug info"
-            }
+            className="p-1.5 rounded-md transition-colors text-muted-foreground hover:bg-muted/20"
+            title="Copy debug info"
           >
             <Bug className="h-4 w-4" />
           </button>
