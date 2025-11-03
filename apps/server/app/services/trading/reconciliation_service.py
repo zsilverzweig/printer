@@ -190,31 +190,100 @@ class ReconciliationService:
                     }
                 )
                 
-                # If this is the last attempt, try to auto-correct
-                if attempt == total_attempts:
-                    logger.info(f"🔧 Attempting auto-correction for {symbol}...")
-                    
-                    await self.auto_correct_from_activities(
-                        fund_id=fund_id,
-                        symbol=symbol,
-                        order_id=order_id,
-                        expected_qty=alpaca_quantity,
-                        actual_qty=db_quantity
-                    )
-                    
-                    # Check again after correction
+                # If this is NOT the last attempt, return False to trigger retry
+                if attempt != total_attempts:
+                    return False
+                
+                # Last attempt - try to auto-correct
+                logger.info(f"🔧 Attempting auto-correction for {symbol}...")
+                
+                await self.auto_correct_from_activities(
+                    fund_id=fund_id,
+                    symbol=symbol,
+                    order_id=order_id,
+                    expected_qty=alpaca_quantity,
+                    actual_qty=db_quantity
+                )
+            
+            # After auto-correction, verify with a fresh session
+            # This is important because auto_correct_from_activities uses its own session
+            # and commits transactions - we need a fresh session to see those changes
+            if attempt == total_attempts:
+                async with get_async_session() as fresh_session:
                     db_quantity_after = await get_position_quantity_from_transactions(
-                        session, fund_id, symbol
+                        fresh_session, fund_id, symbol
                     )
                     
                     if abs(db_quantity_after - alpaca_quantity) <= 0.01:
                         logger.info(f"✅ Auto-correction successful for {symbol}")
+                        
+                        await event_service.log_strategy_engine_event(
+                            fund_id=fund_id,
+                            event_category="position_sync",
+                            symbol=symbol,
+                            severity="info",
+                            message=f"Position successfully reconciled for {symbol}",
+                            event_data={
+                                "order_id": order_id,
+                                "db_quantity_before": float(db_quantity),
+                                "db_quantity_after": float(db_quantity_after),
+                                "alpaca_quantity": float(alpaca_quantity),
+                                "attempt": attempt,
+                            }
+                        )
+                        
                         return True
                     else:
-                        logger.error(f"❌ Auto-correction failed for {symbol}")
+                        # Position still out of sync - get diagnostic info
+                        from sqlalchemy import select
+                        from app.models.strategies import Transaction, Order
+                        
+                        txns_stmt = select(Transaction).join(Order).where(
+                            Transaction.symbol == symbol,
+                            Order.fund_id == fund_id
+                        ).order_by(Transaction.timestamp)
+                        txns_result = await fresh_session.execute(txns_stmt)
+                        transactions = txns_result.scalars().all()
+                        
+                        # Log transaction details for debugging
+                        txn_details = [
+                            {
+                                "id": txn.id,
+                                "side": txn.side,
+                                "quantity": float(txn.quantity),
+                                "price": float(txn.price),
+                                "timestamp": txn.timestamp.isoformat(),
+                                "alpaca_fill_id": txn.alpaca_fill_id,
+                            }
+                            for txn in transactions
+                        ]
+                        
+                        logger.error(
+                            f"❌ Auto-correction incomplete for {symbol}: "
+                            f"DB={db_quantity_after:.6f}, Alpaca={alpaca_quantity:.6f}, "
+                            f"diff={abs(db_quantity_after - alpaca_quantity):.6f}. "
+                            f"Found {len(transactions)} transactions in DB."
+                        )
+                        
+                        await event_service.log_strategy_engine_event(
+                            fund_id=fund_id,
+                            event_category="position_sync",
+                            symbol=symbol,
+                            severity="error",
+                            message=f"Auto-correction incomplete for {symbol} - position still out of sync",
+                            event_data={
+                                "order_id": order_id,
+                                "db_quantity_before": float(db_quantity),
+                                "db_quantity_after": float(db_quantity_after),
+                                "alpaca_quantity": float(alpaca_quantity),
+                                "remaining_discrepancy": float(abs(db_quantity_after - alpaca_quantity)),
+                                "attempt": attempt,
+                                "transactions_count": len(transactions),
+                                "transactions": txn_details,
+                            }
+                        )
+                        
                         return False
-                
-                return False
                 
         except Exception as e:
             logger.error(f"Error reconciling {symbol}: {e}", exc_info=True)
@@ -231,7 +300,8 @@ class ReconciliationService:
         """
         Auto-correct position by querying Alpaca's Activities API.
         
-        Finds missing transactions by comparing Activities API with our records.
+        Finds missing transactions by comparing Activities API with our records
+        and creates the missing transactions.
         
         Args:
             fund_id: Fund UUID
@@ -241,7 +311,8 @@ class ReconciliationService:
             actual_qty: What our DB says we have
         """
         logger.info(
-            f"🔍 Querying Activities API for {symbol} to find missing transactions..."
+            f"🔍 Auto-correcting {symbol} using Activities API: "
+            f"expected={expected_qty:.6f}, actual={actual_qty:.6f}"
         )
         
         await event_service.log_strategy_engine_event(
@@ -259,35 +330,81 @@ class ReconciliationService:
         )
         
         async with get_async_session() as session:
-            # Use ActivitySyncService to fetch and process fills
-            fills = await self.activity_sync.get_missing_fills(
-                session, fund_id, lookback_hours=24
-            )
-            
-            # Filter to this symbol only
-            symbol_fills = [f for f in fills if f["symbol"] == symbol]
-            
-            if not symbol_fills:
-                logger.warning(f"No fills found for {symbol} in Activities API")
-                return
-            
-            logger.info(f"📊 Found {len(symbol_fills)} fills for {symbol} from Activities API")
-            
-            # TODO: Compare fills with transactions and create missing ones
-            # For now, just log what we found
-            for fill in symbol_fills:
+            # Use ActivitySyncService's auto_correct_position method
+            # This method properly creates missing transactions from fills
+            try:
+                result = await self.activity_sync.auto_correct_position(
+                    session=session,
+                    fund_id=fund_id,
+                    symbol=symbol,
+                    expected_qty=expected_qty,
+                    actual_qty=actual_qty
+                )
+                
+                if result["success"]:
+                    logger.info(
+                        f"✅ Auto-correction successful for {symbol}: "
+                        f"created {result['transactions_created']} transactions"
+                    )
+                else:
+                    logger.warning(
+                        f"⚠️  Auto-correction returned unsuccessful for {symbol}: "
+                        f"{result.get('reason', 'unknown')}"
+                    )
+                    
+                    # CORNER CASE: If Alpaca shows position is closed (qty=0) but DB shows open,
+                    # and we can't find fills to reconcile, trust Alpaca and force-close the position
+                    if expected_qty == 0.0 and actual_qty != 0.0 and result.get("reason") == "no_fills_found":
+                        logger.warning(
+                            f"⚠️  CORNER CASE: Alpaca shows {symbol} closed but DB shows open. "
+                            f"Force-closing position to match Alpaca (closing {actual_qty} shares)."
+                        )
+                        
+                        await event_service.log_strategy_engine_event(
+                            fund_id=fund_id,
+                            event_category="position_sync",
+                            symbol=symbol,
+                            severity="warning",
+                            message=f"Force-closing orphaned position for {symbol} (Alpaca shows closed, no fills found)",
+                            event_data={
+                                "order_id": order_id,
+                                "db_quantity": float(actual_qty),
+                                "alpaca_quantity": float(expected_qty),
+                                "action": "force_close",
+                                "reason": "alpaca_shows_closed_no_activities_found",
+                            }
+                        )
+                        
+                        # Import here to avoid circular dependency
+                        from app.services.trading.transaction_service import create_transaction
+                        
+                        # Create a synthetic closing transaction to zero out the position
+                        # Use a nominal price since we're just reconciling the position
+                        await create_transaction(
+                            session=session,
+                            fund_id=fund_id,
+                            symbol=symbol,
+                            transaction_type="sell",
+                            quantity=abs(actual_qty),
+                            price=1.0,  # Nominal price - position is already closed in Alpaca
+                            order_id=f"reconciliation_{symbol}_{datetime.utcnow().isoformat()}",
+                            notes=f"Force-close reconciliation: Alpaca closed, DB had {actual_qty} shares"
+                        )
+                        
+                        logger.info(f"✅ Force-closed {symbol} position in DB to match Alpaca")
+                
+            except Exception as e:
+                logger.error(f"Failed to auto-correct {symbol}: {e}", exc_info=True)
+                
                 await event_service.log_strategy_engine_event(
                     fund_id=fund_id,
-                    event_category="fill_tracking",
+                    event_category="position_sync",
                     symbol=symbol,
-                    severity="info",
-                    message=f"Found fill activity for {symbol}",
+                    severity="error",
+                    message=f"Auto-correction failed for {symbol}",
                     event_data={
-                        "fill_id": fill["id"],
-                        "fill_qty": fill["qty"],
-                        "fill_price": fill["price"],
-                        "fill_side": fill["side"],
-                        "fill_time": fill["transaction_time"],
+                        "order_id": order_id,
+                        "error": str(e),
                     }
                 )
 

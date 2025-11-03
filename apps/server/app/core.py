@@ -36,66 +36,56 @@ async def startup_init() -> None:
         logger.error("POLYGON_API_KEY not set")
         raise RuntimeError("POLYGON_API_KEY not set")
     
-    logger.info(f"Initializing Polygon client with API key: {api_key[:10]}...")
     API_KEY = api_key
     rest_client = RESTClient(api_key=API_KEY)
-    logger.info("Polygon client initialized successfully")
+    logger.info(f"✓ Polygon API connected ({api_key[:10]}...)")
     
     # Initialize database
     from app.services.core.database import init_db
-    logger.info("Initializing database...")
     await init_db()
-    logger.info("Database initialized successfully")
+    logger.info("✓ Database ready")
     
     # Initialize health monitor
     from app.services.monitoring.health_monitor import initialize_health_monitor
     health_check_interval = int(os.getenv("MARKET_DATA_HEALTH_CHECK_INTERVAL", "300"))
     health_monitor = initialize_health_monitor(interval_seconds=health_check_interval)
     await health_monitor.start()
-    logger.info(f"Health monitor started (interval: {health_check_interval}s)")
+    logger.info(f"✓ Health monitor ({health_check_interval}s)")
     
     # Initialize gap detector
     from app.services.market.gap_detector import initialize_gap_detector
     lookback_days = int(os.getenv("MARKET_DATA_LOOKBACK_DAYS", "30"))
     gap_detector = initialize_gap_detector(lookback_days=lookback_days)
-    # Run initial gap detection
-    logger.info(f"Running initial gap detection (lookback: {lookback_days} days)...")
+    # Run initial gap detection (silent unless gaps found)
     await gap_detector.detect_gaps()
     
     # Initialize snapshot ingestion service (for real-time pricing and gap filling)
     snapshot_ingestion_enabled = os.getenv("SNAPSHOT_INGESTION_ENABLED", "true").lower() == "true"
     if snapshot_ingestion_enabled:
         from app.services.market.snapshot_ingestion import initialize_snapshot_service
-        logger.info("Initializing snapshot ingestion service...")
         snapshot_service = initialize_snapshot_service(
             api_key=API_KEY,
             fetch_interval_seconds=5
         )
         await snapshot_service.start()
-        logger.info("✓ Snapshot ingestion service started (fetching every 5s)")
-    else:
-        logger.info("Snapshot ingestion disabled (set SNAPSHOT_INGESTION_ENABLED=true to enable)")
+        logger.info("✓ Snapshot ingestion (5s)")
     
     # Initialize real-time ingestion (if enabled)
     ingestion_enabled = os.getenv("MARKET_DATA_INGESTION_ENABLED", "false").lower() == "true"
     if ingestion_enabled:
         from app.services.market.realtime_ingestion import initialize_ingestion_service
-        logger.info("Initializing real-time ingestion service...")
         ingestion_service = initialize_ingestion_service(
             api_key=API_KEY,
             batch_interval_seconds=10,
             enable_validation=True
         )
         await ingestion_service.start()
-        logger.info("Real-time ingestion service started")
-    else:
-        logger.info("Real-time ingestion disabled (set MARKET_DATA_INGESTION_ENABLED=true to enable)")
+        logger.info("✓ Real-time ingestion")
     
     # Initialize backfill service (if enabled)
     backfill_enabled = os.getenv("MARKET_DATA_BACKFILL_ENABLED", "false").lower() == "true"
     if backfill_enabled:
         from app.services.market.smart_backfill import initialize_backfill_service
-        logger.info("Initializing smart backfill service...")
         backfill_service = initialize_backfill_service(
             api_key=API_KEY,
             concurrent_requests=100,  # Process 100 symbols concurrently

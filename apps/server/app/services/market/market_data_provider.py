@@ -95,7 +95,10 @@ class MarketDataProvider:
         lookback_minutes: int = 60
     ) -> List[Dict[str, Any]]:
         """
-        Get historical price bars for pattern detection.
+        Get historical price bars - DATABASE FIRST via MarketDataService.
+        
+        Maintains backward compatibility with existing strategy code while
+        leveraging centralized database-first query logic.
         
         Args:
             symbol: Stock symbol
@@ -106,98 +109,21 @@ class MarketDataProvider:
             List of bars with OHLCV data
         """
         try:
-            if not self.alpaca_data_client:
-                logger.warning(f"Alpaca data client not available for {symbol}, using Polygon")
-                return await self._get_polygon_bars(symbol, timeframe, lookback_minutes)
+            # Use centralized MarketDataService
+            from app.services.market.market_data_service import get_market_data_service
+            service = get_market_data_service()
             
-            # Convert timeframe string to Alpaca TimeFrame
-            if timeframe == "1Min":
-                tf = TimeFrame.Minute
-            elif timeframe == "5Min":
-                tf = TimeFrame(5, "Min")
-            elif timeframe == "15Min":
-                tf = TimeFrame(15, "Min")
-            else:
-                tf = TimeFrame.Minute
-            
-            start_time = datetime.now() - timedelta(minutes=lookback_minutes)
-            
-            request = StockBarsRequest(
-                symbol_or_symbols=symbol,
-                timeframe=tf,
-                start=start_time,
+            return await service.get_bars(
+                symbol=symbol,
+                timeframe=timeframe,
+                lookback_minutes=lookback_minutes
             )
             
-            bars = self.alpaca_data_client.get_stock_bars(request)
-            
-            if symbol not in bars:
-                return []
-            
-            result = []
-            for bar in bars[symbol]:
-                result.append({
-                    "timestamp": bar.timestamp,
-                    "open": float(bar.open),
-                    "high": float(bar.high),
-                    "low": float(bar.low),
-                    "close": float(bar.close),
-                    "volume": bar.volume,
-                })
-            
-            return result
-        
         except Exception as e:
             logger.error(f"Error getting historical bars for {symbol}: {e}")
-            # Try fallback
-            try:
-                return await self._get_polygon_bars(symbol, timeframe, lookback_minutes)
-            except:
-                return []
-    
-    async def _get_polygon_bars(
-        self,
-        symbol: str,
-        timeframe: str,
-        lookback_minutes: int
-    ) -> List[Dict[str, Any]]:
-        """Fallback method to get bars from Polygon."""
-        try:
-            from_date = (datetime.now() - timedelta(minutes=lookback_minutes)).strftime("%Y-%m-%d")
-            to_date = datetime.now().strftime("%Y-%m-%d")
-            
-            # Parse timeframe
-            if timeframe == "1Min":
-                multiplier, span = 1, "minute"
-            elif timeframe == "5Min":
-                multiplier, span = 5, "minute"
-            else:
-                multiplier, span = 1, "minute"
-            
-            aggs = list(self.polygon_client.list_aggs(
-                ticker=symbol,
-                multiplier=multiplier,
-                timespan=span,
-                from_=from_date,
-                to=to_date,
-                limit=5000
-            ))
-            
-            result = []
-            for agg in aggs:
-                result.append({
-                    "timestamp": datetime.fromtimestamp(agg.timestamp / 1000),
-                    "open": float(agg.open),
-                    "high": float(agg.high),
-                    "low": float(agg.low),
-                    "close": float(agg.close),
-                    "volume": agg.volume,
-                })
-            
-            return result
-        
-        except Exception as e:
-            logger.error(f"Error getting Polygon bars for {symbol}: {e}")
             return []
+    
+    # _get_polygon_bars removed - now handled by MarketDataService
     
     async def get_indicators(
         self, 
@@ -205,7 +131,7 @@ class MarketDataProvider:
         indicators: List[str]
     ) -> Dict[str, Any]:
         """
-        Calculate technical indicators.
+        Calculate technical indicators using database-first bar queries.
         
         Args:
             symbol: Stock symbol
@@ -217,7 +143,7 @@ class MarketDataProvider:
         result = {}
         
         try:
-            # Get bars for indicator calculation
+            # Get bars for indicator calculation (via MarketDataService -> database first)
             bars = await self.get_historical_bars(symbol, lookback_minutes=120)
             
             if not bars or len(bars) < 26:  # Need at least 26 bars for MACD
@@ -288,6 +214,72 @@ class MarketDataProvider:
         rsi = 100 - (100 / (1 + rs))
         
         return rsi
+    
+    async def get_current_prices_batch(self, symbols: List[str]) -> Dict[str, float]:
+        """
+        Get current prices for multiple symbols in a single batch call.
+        
+        This is much more efficient than calling get_realtime_quote for each symbol individually.
+        Uses Polygon's snapshot API which returns data for all requested symbols.
+        
+        Args:
+            symbols: List of stock symbols
+            
+        Returns:
+            Dictionary mapping symbol to current price. Missing symbols will be omitted.
+        """
+        if not symbols:
+            return {}
+        
+        try:
+            # Use Polygon snapshot API for batch price fetching
+            # Format: /v2/snapshot/locale/us/markets/stocks/tickers/{comma-separated symbols}
+            symbols_str = ",".join(symbols)
+            
+            # Run synchronous API call in thread pool
+            def fetch_snapshots():
+                import urllib.request
+                import urllib.parse
+                import json
+                
+                base = f"https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/tickers"
+                query = urllib.parse.urlencode({"tickers": symbols_str, "apiKey": core.API_KEY})
+                url = f"{base}?{query}"
+                
+                with urllib.request.urlopen(url, timeout=10) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    return data.get("tickers", [])
+            
+            snapshots = await asyncio.to_thread(fetch_snapshots)
+            
+            # Extract prices from snapshots
+            prices = {}
+            for snapshot in snapshots:
+                ticker = snapshot.get("ticker")
+                if not ticker:
+                    continue
+                
+                # Try to get price from lastTrade
+                last_trade = snapshot.get("lastTrade")
+                if last_trade and isinstance(last_trade, dict):
+                    price = last_trade.get("p") or last_trade.get("price")
+                    if price:
+                        prices[ticker] = float(price)
+                        continue
+                
+                # Fallback: try prevDay close
+                prev_day = snapshot.get("prevDay")
+                if prev_day and isinstance(prev_day, dict):
+                    close = prev_day.get("c")
+                    if close:
+                        prices[ticker] = float(close)
+            
+            logger.debug(f"Fetched {len(prices)} prices for {len(symbols)} symbols in batch")
+            return prices
+            
+        except Exception as e:
+            logger.error(f"Error fetching batch prices for {len(symbols)} symbols: {e}")
+            return {}
     
     async def get_news_sentiment(self, symbol: str) -> Dict[str, Any]:
         """

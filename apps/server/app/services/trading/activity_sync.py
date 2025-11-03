@@ -7,6 +7,7 @@ and partial fills, which is more reliable than polling order status.
 """
 
 import logging
+import uuid
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
@@ -143,8 +144,8 @@ class ActivitySyncService:
         - Fills that occurred during downtime
         - Fractional share adjustments
         """
-        if not self.alpaca_service.client:
-            logger.warning("Alpaca client not available, cannot fetch activities")
+        if not self.alpaca_service.is_available():
+            logger.warning("Alpaca service not available, cannot fetch activities")
             return []
         
         try:
@@ -154,12 +155,11 @@ class ActivitySyncService:
             
             logger.info(f"📥 Fetching FILL activities since {after_str}")
             
-            # Get fill activities from Alpaca
-            # Note: This requires adding get_activities method to AlpacaService
-            activities = self.alpaca_service.client.get_activities(
+            # Get fill activities from Alpaca using the service method
+            activities = await self.alpaca_service.get_account_activities(
                 activity_types="FILL",
                 after=after_str,
-                page_size=100
+                limit=100
             )
             
             logger.info(f"📥 Retrieved {len(activities)} fill activities from Alpaca")
@@ -172,17 +172,18 @@ class ActivitySyncService:
             # Find fills that match our orders
             relevant_fills = []
             for activity in activities:
-                order_id = str(activity.order_id)
+                # Activities are already dicts from get_account_activities
+                order_id = activity.get("order_id")
                 
-                if order_id in fund_orders:
+                if order_id and order_id in fund_orders:
                     fill_data = {
-                        "id": activity.id,
+                        "id": activity["id"],
                         "order_id": order_id,
-                        "symbol": activity.symbol,
-                        "side": activity.side,
-                        "qty": float(activity.qty),
-                        "price": float(activity.price),
-                        "transaction_time": activity.transaction_time.isoformat() if activity.transaction_time else None,
+                        "symbol": activity["symbol"],
+                        "side": activity["side"],
+                        "qty": activity["qty"],
+                        "price": activity["price"],
+                        "transaction_time": activity["transaction_time"],
                     }
                     relevant_fills.append(fill_data)
             
@@ -293,14 +294,32 @@ class ActivitySyncService:
                 continue
             
             # Create transaction for this fill
+            # Parse transaction time - it's an ISO format string from get_account_activities
+            transaction_time = fill.get("transaction_time")
+            if transaction_time:
+                if isinstance(transaction_time, str):
+                    timestamp = datetime.fromisoformat(transaction_time)
+                else:
+                    timestamp = transaction_time
+            else:
+                # Fallback to current time if not provided
+                timestamp = datetime.now(timezone.utc)
+                logger.warning(f"No transaction_time for fill {fill_id}, using current time")
+            
             transaction = Transaction(
+                id=str(uuid.uuid4()),
                 order_id=order.id,
+                alpaca_order_id=order.alpaca_order_id,
+                alpaca_fill_id=fill_id,
+                fund_id=fund_id,
                 symbol=fill["symbol"],
+                side=fill["side"],
                 quantity=fill["qty"],
                 price=fill["price"],
-                side=fill["side"],
-                timestamp=datetime.fromisoformat(fill["transaction_time"]),
-                alpaca_fill_id=fill_id,
+                total_value=fill["qty"] * fill["price"],
+                timestamp=timestamp,
+                high_water_mark=fill["price"] if fill["side"] == "buy" else None,
+                strategy_state={},
             )
             
             session.add(transaction)
@@ -339,17 +358,56 @@ class ActivitySyncService:
                 message=f"Auto-correction completed for {symbol}",
                 event_data={
                     "transactions_created": transactions_created,
+                    "fills_found": len(symbol_fills),
+                    "fills_already_in_db": len(existing_fill_ids),
                     "expected_quantity": float(expected_qty),
                     "previous_quantity": float(actual_qty),
                 }
             )
         else:
-            logger.warning(f"No missing transactions found for {symbol}")
+            # No new transactions created - all fills were already in DB
+            # Log details of what we found for diagnostic purposes
+            fill_details = [
+                {
+                    "fill_id": fill["id"],
+                    "side": fill["side"],
+                    "qty": fill["qty"],
+                    "price": fill["price"],
+                    "time": fill["transaction_time"],
+                    "already_in_db": fill["id"] in existing_fill_ids,
+                }
+                for fill in symbol_fills
+            ]
+            
+            logger.warning(
+                f"⚠️  No missing transactions found for {symbol}: "
+                f"all {len(symbol_fills)} fills already exist in DB. "
+                f"Position may be out of sync due to transaction calculation or data corruption. "
+                f"Fills: {fill_details}"
+            )
+            
+            await event_service.log_strategy_engine_event(
+                fund_id=fund_id,
+                event_category="position_sync",
+                symbol=symbol,
+                severity="warning",
+                message=f"All fills for {symbol} already exist in DB but position still out of sync",
+                event_data={
+                    "fills_found": len(symbol_fills),
+                    "fills_already_in_db": len(existing_fill_ids),
+                    "expected_quantity": float(expected_qty),
+                    "actual_quantity": float(actual_qty),
+                    "discrepancy": float(expected_qty - actual_qty),
+                    "fills": fill_details,
+                    "suggestion": "Check transaction ledger calculation or data integrity"
+                }
+            )
         
         return {
             "success": True,
             "transactions_created": transactions_created,
             "fills_checked": len(symbol_fills),
+            "fills_already_existed": len(symbol_fills) - transactions_created,
         }
     
     async def sync_from_activities(

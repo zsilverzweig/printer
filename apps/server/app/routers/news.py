@@ -52,7 +52,7 @@ async def list_news(
 @router.get("/analyze/{ticker}")
 async def analyze_news(ticker: str, days: int = 7):
     """Analyze news for a ticker using AI to extract key events and provide objective summary."""
-    logger.info(f"Starting news analysis - ticker: {ticker}, days: {days}")
+    # Only log if we'll actually process news (reduces spam when no news found)
     
     try:
         # Initialize services
@@ -61,8 +61,6 @@ async def analyze_news(ticker: str, days: int = 7):
         # Calculate date range for filtering
         end_date = datetime.now(timezone.utc)
         start_date = end_date - timedelta(days=days)
-        
-        logger.info(f"Fetching news from last {days} days")
         
         # Fetch news from Polygon Benzinga endpoint
         try:
@@ -90,7 +88,9 @@ async def analyze_news(ticker: str, days: int = 7):
                         # Include article if we can't parse date
                         filtered_news.append(article)
                 
-                logger.info(f"Filtered to {len(filtered_news)} articles within date range")
+                # Only log if we have news to process
+                if filtered_news:
+                    logger.debug(f"{ticker}: {len(filtered_news)} articles in date range")
                 news_data = filtered_news
             
         except urllib.error.HTTPError as e:
@@ -102,7 +102,7 @@ async def analyze_news(ticker: str, days: int = 7):
             raise HTTPException(status_code=int(status), detail=detail)
         
         if not news_data:
-            logger.info("No news data returned, returning empty response")
+            # Silent return for no news (reduces spam)
             return {
                 "ticker": ticker,
                 "analyzed_at": ai_service._get_current_utc_timestamp(),
@@ -112,7 +112,8 @@ async def analyze_news(ticker: str, days: int = 7):
                 "raw_news": []
             }
         
-        logger.info(f"Processing {len(news_data)} news articles for {ticker}")
+        # Only log when we have news to process
+        logger.info(f"Analyzing {len(news_data)} articles for {ticker}")
         
         # Extract key events using AI
         key_events = await ai_service.extract_key_events(ticker, news_data)
@@ -140,7 +141,9 @@ async def analyze_news(ticker: str, days: int = 7):
             raw_news=news_data
         )
         
-        logger.info(f"News analysis completed for {ticker}: {len(key_events)} events")
+        # Only log if we found events
+        if key_events:
+            logger.info(f"{ticker}: {len(key_events)} events found")
         return response
         
     except HTTPException:

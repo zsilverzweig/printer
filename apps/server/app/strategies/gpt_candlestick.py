@@ -29,15 +29,14 @@ from app.services.ai.gpt_helper import get_gpt_helper
 from app.services.core.validation import validate_entry_prices, validate_stop_update
 from app.services.market.market_formatting import format_candlesticks_table
 from app.services.news.news_service import NewsService
-from app.services.core.database import get_sync_session
 
 logger = logging.getLogger(__name__)
 
 
 class GPTTradeSignal(BaseModel):
     """Structured output from GPT for trade decisions."""
-    entry_price: float = Field(gt=0, description="Price at which to enter the trade")
-    stop_loss: float = Field(gt=0, description="Stop loss price")
+    entry_price: float = Field(ge=0, description="Price at which to enter the trade (0 means no setup)")
+    stop_loss: float = Field(ge=0, description="Stop loss price (0 means no setup)")
     confidence: float = Field(ge=0, le=1, description="Confidence level (0-1)")
     reasoning: str = Field(description="Explanation of the decision")
     
@@ -118,7 +117,6 @@ class GPTCandlestickStrategy(ExecutionStrategy):
         self.evaluation_interval_minutes = config.get("evaluation_interval_minutes", 15)
         self.lookback_hours_1h = config.get("lookback_hours_1h", 48)
         self.lookback_hours_15m = config.get("lookback_hours_15m", 6)
-        self.min_confidence = config.get("min_confidence", 0.5)
         self.update_stop_interval_minutes = config.get("update_stop_interval_minutes", 15)
         
         # Initialize GPT helper (without DB session here, will pass per call)
@@ -144,15 +142,7 @@ class GPTCandlestickStrategy(ExecutionStrategy):
     
     def _get_gpt_helper(self):
         """Get GPT helper with cost tracking if fund_id is available."""
-        if self.fund_id:
-            try:
-                db = get_sync_session()
-                return get_gpt_helper(model="gpt-4o-mini", db=db, fund_id=self.fund_id)
-            except Exception as e:
-                logger.warning(f"Failed to initialize cost tracking: {e}, falling back to non-tracked GPT")
-                return get_gpt_helper(model="gpt-4o-mini")
-        else:
-            return get_gpt_helper(model="gpt-4o-mini")
+        return get_gpt_helper(model="gpt-4o-mini", fund_id=self.fund_id)
     
     @property
     def id(self) -> str:
@@ -207,13 +197,6 @@ class GPTCandlestickStrategy(ExecutionStrategy):
                     "maximum": 24,
                     "default": 6,
                     "description": "Hours of 15min candlestick data to analyze",
-                },
-                "min_confidence": {
-                    "type": "number",
-                    "minimum": 0,
-                    "maximum": 1,
-                    "default": 0.5,
-                    "description": "Minimum AI confidence to enter trade",
                 },
                 "update_stop_interval_minutes": {
                     "type": "integer",
@@ -371,7 +354,7 @@ class GPTCandlestickStrategy(ExecutionStrategy):
                 data_15m = self._format_candlesticks(bars_15m, "15min")
                 
                 # Build prompt for GPT
-                prompt = f"""You are a DAY TRADER analyzing {symbol} for an INTRADAY LONG entry. This is DAY TRADING - we'll exit before market close.
+                prompt = f"""You are a SELECTIVE DAY TRADER analyzing {symbol} for an INTRADAY LONG entry. This is DAY TRADING - we'll exit before market close.
 
 Current Price: ${current_price:.2f}
 
@@ -379,25 +362,35 @@ Current Price: ${current_price:.2f}
 
 {data_15m}
 
-Based on this candlestick data, determine if there is a good INTRADAY entry opportunity.
+Based on this candlestick data, determine if there is a HIGH-QUALITY INTRADAY entry opportunity.
 
-DAY TRADING Considerations:
-- Trend direction and momentum (intraday timeframe)
-- Support and resistance levels
-- Recent price action and patterns
-- Volume confirmation
-- Risk/reward for a day trade (realistic intraday targets)
-- Time of day (avoid entries late in session)
+DAY TRADING Evaluation Criteria:
+✅ REQUIRED for entry consideration:
+- Clear intraday trend direction with momentum
+- Strong volume confirmation (not just price movement alone)
+- Well-defined support/resistance levels
+- Favorable risk/reward ratio (at least 2:1 intraday target)
+- Reasonable time of day (avoid late session entries)
+- Multiple timeframes confirming the setup
 
-If you see a valid DAY TRADE setup:
-- Provide an entry price (where we buy if price crosses it)
-- Set stop loss to protect against adverse moves
-- Confidence should reflect likelihood of intraday success
-  * Rank confidence on a scale from A+ setup (0.9-1.0) to monkey throwing darts (0.0-0.3)
-  * 0.8-1.0: High-probability setup with multiple confirming factors
-  * 0.6-0.8: Decent setup with some supporting evidence
-  * 0.4-0.6: Mediocre setup, coin flip odds
-  * 0.0-0.4: Weak/speculative setup, avoid unless exceptional
+❌ REJECT if:
+- Choppy, sideways, or unclear price action
+- Low volume or volume declining
+- No clear support/resistance structure
+- Too late in the trading day
+- Mixed signals between timeframes
+- Setup requires "hoping" price will do something
+
+Confidence Scale (be honest and conservative):
+- 0.8-1.0: A+ setup - Multiple confirming factors, high probability
+- 0.6-0.8: B+ setup - Decent evidence, some supporting factors
+- 0.4-0.6: C setup - Coin flip, unclear
+- 0.0-0.4: D/F setup - Weak/speculative
+
+IMPORTANT: ALWAYS provide an entry_price and stop_loss, even for weak setups.
+- For HIGH-QUALITY setups (confidence >= 0.6): Suggest an aggressive entry at current levels
+- For WEAK setups (confidence < 0.6): Suggest a CONSERVATIVE entry price well below current price (e.g., at strong support, 5-10% below current)
+- This allows the strategy to wait for better prices on uncertain setups
 
 Respond ONLY with a JSON object in this exact format:
 {{
@@ -407,7 +400,7 @@ Respond ONLY with a JSON object in this exact format:
   "reasoning": "Clear intraday uptrend with volume, breaking above resistance at $123.45. Stop below recent support at $120."
 }}
 
-If there is NO clear DAY TRADE setup, set entry_price and stop_loss to 0 and confidence to 0.
+Be conservative with confidence but ALWAYS provide realistic prices based on technical levels.
 """
                 
                 # Get GPT response
@@ -416,11 +409,11 @@ If there is NO clear DAY TRADE setup, set entry_price and stop_loss to 0 and con
                 response = await gpt_helper.get_structured_response(
                     prompt=prompt,
                     response_model=GPTTradeSignal,
-                    system_prompt="You are an expert intraday trader analyzing candlestick patterns for day trading entry signals. Focus on realistic intraday setups that can play out in hours, not days. Respond only with valid JSON.",
+                    system_prompt="You are an expert intraday trader analyzing chart patterns. For high-quality setups, suggest aggressive entry prices near current levels. For weak/uncertain setups, suggest conservative entry prices well below current price at strong support levels. This allows the strategy to wait for better prices on uncertain setups. Focus on realistic intraday setups that can play out in hours, not days. Respond only with valid JSON.",
                     temperature=0.2,
                     operation="entry_analysis",
                     symbol=symbol,
-                    metadata={"strategy": "gpt_candlestick", "confidence_threshold": self.min_confidence},
+                    metadata={"strategy": "gpt_candlestick"},
                 )
                 
                 logger.info(
@@ -450,22 +443,6 @@ If there is NO clear DAY TRADE setup, set entry_price and stop_loss to 0 and con
                         reason="invalid_gpt_response",
                         metadata={
                             "error": error_msg,
-                            "gpt_reasoning": response.reasoning
-                        }
-                    )
-                
-                # Check confidence threshold
-                if response.confidence < self.min_confidence:
-                    # Clear monitored level
-                    self.cleanup_symbol(symbol)
-                    logger.info(
-                        f"⚠️ GPT confidence too low for {symbol}: {response.confidence:.2f} < {self.min_confidence:.2f}"
-                    )
-                    return EntrySignal(
-                        should_enter=False,
-                        reason="low_confidence",
-                        metadata={
-                            "confidence": response.confidence,
                             "gpt_reasoning": response.reasoning
                         }
                     )

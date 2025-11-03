@@ -8,13 +8,18 @@ export type WebSocketMessageType =
   | "screener_update"
   | "market_data"
   | "connection_status"
-  | "trading_activity";
+  | "trading_activity"
+  | "fund_snapshot"
+  | "fund_update";
 
 export interface WebSocketMessage<T = unknown> {
   type: WebSocketMessageType;
   data: T;
   timestamp: number;
   symbol?: string; // for market_data type
+  fund_id?: string; // for fund_snapshot and fund_update types
+  category?: string; // for fund_update type
+  event_type?: string; // for fund_update type
 }
 
 export interface ConnectionStatus {
@@ -42,12 +47,36 @@ export interface TradingActivityEvent {
   limit_price?: number; // Limit price for limit orders
 }
 
+export interface FundRealtimeData {
+  fund: any | null;
+  orders: any[];
+  transactions: any[];
+  transfers: any[];
+  positions: any[];
+  positionsSummary: {
+    positionCount: number;
+    totalMarketValue: number;
+    totalUnrealizedPl: number;
+  };
+  performance: {
+    cashBalance: number;
+    positionValue: number;
+    aum: number;
+    dayChange: number;
+    dayChangePercent: number;
+    totalReturn: number;
+    totalReturnPercent: number;
+    unrealizedPl: number;
+  } | null;
+}
+
 export interface WebSocketContextValue {
   // Data
   nocData: import("@printer/shared").StockIndicators[] | null;
   screenerData: ScreenedStockPreview[] | null;
   marketData: Map<string, unknown>;
   tradingActivity: TradingActivityEvent[];
+  fundData: Map<string, FundRealtimeData>;
 
   // Connection state
   isConnected: boolean;
@@ -59,4 +88,8 @@ export interface WebSocketContextValue {
   subscribeToSymbol: (symbol: string) => void;
   unsubscribeFromSymbol: (symbol: string) => void;
   subscribedSymbols: Set<string>;
+
+  // Fund subscriptions
+  subscribeToFund: (fundId: string) => void;
+  unsubscribeFromFund: (fundId: string) => void;
 }

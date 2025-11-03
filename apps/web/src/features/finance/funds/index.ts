@@ -20,6 +20,7 @@ export { FundOverview } from "./components/fund-overview";
 export { FundPerformanceCard } from "./components/fund-performance-card";
 export { FundPerformanceOverview } from "./components/fund-performance-overview";
 export { FundTransferForm } from "./components/fund-transfer-form";
+export { FundsTable } from "./components/funds-table";
 export { RiskManagement } from "./components/risk-management";
 export { ScreenerLink } from "./components/screener-link";
 export { ScreeningCriteriaForm } from "./components/screening-criteria-form";

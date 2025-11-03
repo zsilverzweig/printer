@@ -319,8 +319,8 @@ async def _run_historical_load_task(
                     await _update_status(status_id, status="cancelled")
                     return
                 
-                missing_ranges = await _find_missing_date_ranges(symbol, ts_start_date, ts_end_date, timescale)
-                if missing_ranges:
+                needs_data = await _needs_data(symbol, ts_start_date, ts_end_date, timescale)
+                if needs_data:
                     symbols_needing_data.append(symbol)
                 else:
                     symbols_already_complete.append(symbol)
@@ -440,12 +440,12 @@ async def _run_historical_load_task(
             logger.info("Thread pool cleaned up")
 
 
-async def _find_missing_date_ranges(symbol: str, start_date: datetime, end_date: datetime, timescale: str) -> List[tuple[datetime, datetime]]:
+async def _needs_data(symbol: str, start_date: datetime, end_date: datetime, timescale: str) -> bool:
     """
-    Find date ranges where we're missing data for this symbol at the specified timescale.
+    Check if a symbol needs data for the given range and timescale.
     
-    Uses symbol_date_validation table to identify missing dates, not just edge gaps.
-    This ensures we detect gaps in the middle of date ranges.
+    Simplified: Just check if validation records exist and are complete.
+    Returns True if we need to fetch data, False if already complete.
     
     Args:
         symbol: Ticker symbol
@@ -454,24 +454,39 @@ async def _find_missing_date_ranges(symbol: str, start_date: datetime, end_date:
         timescale: Timescale granularity ('1min', '5min', '15min', '1hour', '1day')
         
     Returns:
-        List of (start, end) tuples representing date gaps to fetch
+        True if data needed, False if already complete
     """
     from app.services.core.database import get_async_session
     from sqlalchemy import text
     
     async with get_async_session() as session:
         try:
-            # Get all dates that have validation records in the desired range
+            # Check if we have complete validation records for the date range
+            # Cast dates before passing to avoid parameter binding issues
+            from sqlalchemy import bindparam, Date, String
+            
             result = await session.execute(
                 text("""
-                    SELECT date
-                    FROM symbol_date_validation
-                    WHERE symbol = :symbol
-                      AND timescale = :timescale
-                      AND date >= :start_date
-                      AND date < :end_date
-                    ORDER BY date
-                """),
+                    SELECT COUNT(*) as missing_count
+                    FROM generate_series(
+                        CAST(:start_date AS date), 
+                        CAST(:end_date AS date) - interval '1 day', 
+                        '1 day'::interval
+                    ) AS d(date)
+                    WHERE EXTRACT(DOW FROM d.date) NOT IN (0, 6)  -- Exclude weekends
+                      AND NOT EXISTS (
+                        SELECT 1 FROM symbol_date_validation
+                        WHERE symbol = :symbol
+                          AND timescale = :timescale
+                          AND date = d.date::date
+                          AND is_complete = true
+                      )
+                """).bindparams(
+                    bindparam("symbol", type_=String),
+                    bindparam("timescale", type_=String),
+                    bindparam("start_date", type_=Date),
+                    bindparam("end_date", type_=Date)
+                ),
                 {
                     "symbol": symbol.upper(),
                     "timescale": timescale,
@@ -479,72 +494,12 @@ async def _find_missing_date_ranges(symbol: str, start_date: datetime, end_date:
                     "end_date": end_date.date()
                 }
             )
-            validated_dates = {row[0] for row in result}
-            
-            # If no validation records exist, we need the entire range
-            if not validated_dates:
-                logger.debug(f"📭 {symbol}: No validation records, fetching entire range")
-                return [(start_date, end_date)]
-            
-            # Generate expected date range (excluding weekends)
-            from datetime import date as date_type
-            expected_dates = []
-            current_date = start_date.date()
-            end_date_only = end_date.date()
-            
-            while current_date < end_date_only:
-                # Skip weekends
-                if current_date.weekday() < 5:  # Monday=0, Friday=4
-                    expected_dates.append(current_date)
-                current_date += timedelta(days=1)
-            
-            # Find missing dates (excluding weekends)
-            missing_dates = [d for d in expected_dates if d not in validated_dates]
-            
-            if not missing_dates:
-                logger.debug(f"✓ {symbol}: All dates validated in range")
-                return []
-            
-            # Group consecutive missing dates into ranges for efficient API calls
-            missing_ranges = []
-            if missing_dates:
-                range_start = missing_dates[0]
-                range_end = missing_dates[0]
-                
-                for d in missing_dates[1:]:
-                    # Check if this date is consecutive (accounting for weekends)
-                    next_trading_day = range_end
-                    while True:
-                        next_trading_day += timedelta(days=1)
-                        if next_trading_day.weekday() < 5:  # Skip weekends
-                            break
-                    
-                    if d == next_trading_day:
-                        # Consecutive date, extend range
-                        range_end = d
-                    else:
-                        # Non-consecutive, start new range
-                        # Add 1 day to end to make it exclusive (for _create_validation_for_range)
-                        missing_ranges.append((
-                            datetime.combine(range_start, datetime.min.time()).replace(tzinfo=timezone.utc),
-                            datetime.combine(range_end + timedelta(days=1), datetime.min.time()).replace(tzinfo=timezone.utc)
-                        ))
-                        range_start = d
-                        range_end = d
-                
-                # Add final range (end date + 1 day to make it exclusive)
-                missing_ranges.append((
-                    datetime.combine(range_start, datetime.min.time()).replace(tzinfo=timezone.utc),
-                    datetime.combine(range_end + timedelta(days=1), datetime.min.time()).replace(tzinfo=timezone.utc)
-                ))
-                
-                logger.debug(f"📊 {symbol}: Found {len(missing_dates)} missing dates in {len(missing_ranges)} ranges")
-            
-            return missing_ranges
+            missing_count = result.scalar()
+            return missing_count > 0
             
         except Exception as e:
-            logger.error(f"Error checking existing data for {symbol}: {e}")
-            return [(start_date, end_date)]  # On error, fetch entire range
+            logger.error(f"Error checking if {symbol} needs data: {e}")
+            return True  # On error, assume we need data
 
 
 async def _load_symbol_data(
@@ -557,10 +512,10 @@ async def _load_symbol_data(
     semaphore: asyncio.Semaphore
 ) -> int:
     """
-    Load historical data for a single symbol at specified timescale, fetching only missing date ranges.
+    Load historical data for a single symbol at specified timescale.
     
-    Note: This function assumes pre-checking has been done to determine that
-    this symbol actually needs data. It will re-check for specific missing ranges.
+    Simplified: Just fetch the entire date range and let Polygon return what's available.
+    Create validation records for the entire range to mark it as done.
     
     Args:
         client: Polygon REST client
@@ -575,86 +530,70 @@ async def _load_symbol_data(
         Number of bars inserted
     """
     async with semaphore:
-        # Find specific missing date ranges for this symbol at this timescale
-        missing_ranges = await _find_missing_date_ranges(symbol, start_date, end_date, timescale)
+        # Format dates for Polygon API (YYYY-MM-DD)
+        from_date = start_date.strftime("%Y-%m-%d")
+        to_date = end_date.strftime("%Y-%m-%d")
         
-        if not missing_ranges:
-            # Edge case: data was added between pre-check and now
-            logger.debug(f"⏭️  [{timescale}] {symbol}: Data already complete (added since pre-check)")
-            return 0
+        try:
+            logger.debug(f"🔍 [{timescale}] Fetching {symbol} from {from_date} to {to_date}")
         
-        total_bars_inserted = 0
-        
-        # Fetch each missing range
-        for range_start, range_end in missing_ranges:
-            # Format dates for Polygon API (YYYY-MM-DD)
-            from_date = range_start.strftime("%Y-%m-%d")
-            to_date = range_end.strftime("%Y-%m-%d")
+            # Run in custom thread pool since polygon client is synchronous
+            loop = asyncio.get_event_loop()
+            thread_pool = _get_thread_pool()
+            aggs = await loop.run_in_executor(
+                thread_pool,
+                lambda: list(client.list_aggs(
+                    ticker=symbol,
+                    multiplier=config['multiplier'],
+                    timespan=config['timespan'],
+                    from_=from_date,
+                    to=to_date,
+                    limit=50000  # Max allowed by Polygon
+                ))
+            )
             
-            try:
-                # Fetch bars from Polygon at specified timescale
-                logger.debug(f"🔍 [{timescale}] Fetching data for {symbol} from {from_date} to {to_date}")
-            
-                # Run in custom thread pool since polygon client is synchronous
-                # Using custom pool with CONCURRENT_REQUESTS threads instead of default 8-16
-                loop = asyncio.get_event_loop()
-                thread_pool = _get_thread_pool()
-                aggs = await loop.run_in_executor(
-                    thread_pool,
-                    lambda: list(client.list_aggs(
-                        ticker=symbol,
-                        multiplier=config['multiplier'],
-                        timespan=config['timespan'],
-                        from_=from_date,
-                        to=to_date,
-                        limit=50000  # Max allowed by Polygon
-                    ))
+            # Convert to MarketData objects
+            bars = []
+            for agg in aggs:
+                # Convert timestamp from milliseconds to datetime
+                timestamp = datetime.fromtimestamp(agg.timestamp / 1000, tz=timezone.utc)
+                session_type = detect_session_type(timestamp)
+                
+                bar = MarketData(
+                    time=timestamp,
+                    symbol=symbol,
+                    timescale=timescale,
+                    open=float(agg.open),
+                    high=float(agg.high),
+                    low=float(agg.low),
+                    close=float(agg.close),
+                    volume=int(agg.volume),
+                    vwap=float(agg.vwap) if hasattr(agg, 'vwap') and agg.vwap else None,
+                    trade_count=int(agg.transactions) if hasattr(agg, 'transactions') and agg.transactions else None,
+                    session_type=session_type
                 )
-                
-                # Convert to MarketData objects
-                bars = []
-                for agg in aggs:
-                    # Convert timestamp from milliseconds to datetime
-                    timestamp = datetime.fromtimestamp(agg.timestamp / 1000, tz=timezone.utc)
-                    session_type = detect_session_type(timestamp)
-                    
-                    bar = MarketData(
-                        time=timestamp,
-                        symbol=symbol,
-                        timescale=timescale,
-                        open=float(agg.open),
-                        high=float(agg.high),
-                        low=float(agg.low),
-                        close=float(agg.close),
-                        volume=int(agg.volume),
-                        vwap=float(agg.vwap) if hasattr(agg, 'vwap') and agg.vwap else None,
-                        trade_count=int(agg.transactions) if hasattr(agg, 'transactions') and agg.transactions else None,
-                        session_type=session_type
-                    )
-                    bars.append(bar)
-                
-                # Bulk insert bars if we got any
-                if bars:
-                    logger.debug(f"💾 [{timescale}] Inserting {len(bars)} bars for {symbol} ({from_date} to {to_date})")
-                    await _bulk_insert_bars(bars)
-                    logger.debug(f"✨ [{timescale}] Successfully inserted {len(bars)} bars for {symbol}")
-                    total_bars_inserted += len(bars)
-                
-                # CRITICAL: Create validation records for the ENTIRE date range we asked about,
-                # regardless of whether we got bars or not. This prevents infinite retries.
-                logger.debug(f"📝 [{timescale}] Creating validation records for {symbol} ({from_date} to {to_date})")
-                await _create_validation_for_range(symbol, timescale, range_start, range_end, bars)
-                
-                # Delay between requests to avoid overwhelming connection pool
-                if REQUEST_DELAY > 0:
-                    await asyncio.sleep(REQUEST_DELAY)
-                
-            except Exception as e:
-                logger.error(f"❌ Error loading data for {symbol} ({from_date} to {to_date}): {e}")
-                # Continue with other ranges even if one fails
-                continue
-        
-        return total_bars_inserted
+                bars.append(bar)
+            
+            # Bulk insert bars if we got any
+            if bars:
+                logger.debug(f"💾 [{timescale}] Inserting {len(bars)} bars for {symbol}")
+                await _bulk_insert_bars(bars)
+                logger.debug(f"✨ [{timescale}] Inserted {len(bars)} bars for {symbol}")
+            
+            # Create validation records for the ENTIRE date range we asked about,
+            # regardless of whether we got bars or not. This prevents re-fetching.
+            logger.debug(f"📝 [{timescale}] Creating validation records for {symbol}")
+            await _create_validation_for_range(symbol, timescale, start_date, end_date, bars)
+            
+            # Delay between requests if configured
+            if REQUEST_DELAY > 0:
+                await asyncio.sleep(REQUEST_DELAY)
+            
+            return len(bars)
+            
+        except Exception as e:
+            logger.error(f"❌ Error loading {symbol}: {e}")
+            raise
 
 
 async def _bulk_insert_bars(bars: List[MarketData]) -> None:
@@ -664,6 +603,15 @@ async def _bulk_insert_bars(bars: List[MarketData]) -> None:
     Chunks inserts to avoid PostgreSQL parameter limit (32767).
     With 11 fields per bar (including timescale), we can safely insert ~2900 bars at once.
     
+    DEADLOCK PREVENTION:
+    - Sorts bars by (time, symbol, timescale) before insertion to ensure consistent lock ordering
+    - Implements exponential backoff retry for deadlock detection errors
+    
+    DEDUPLICATION:
+    - Removes duplicate bars with the same (time, symbol, timescale) within the batch
+    - Keeps the last occurrence of each duplicate (most recent data)
+    - Reduces unnecessary DB operations
+    
     Also creates/updates validation records for each symbol/date/timescale combination.
     
     Args:
@@ -672,52 +620,91 @@ async def _bulk_insert_bars(bars: List[MarketData]) -> None:
     if not bars:
         return
     
+    # Deduplicate bars by (time, symbol, timescale) - keep the last occurrence
+    seen_keys = {}
+    for bar in bars:
+        key = (bar.time, bar.symbol, bar.timescale)
+        seen_keys[key] = bar
+    
+    bars = list(seen_keys.values())
+    
+    if not bars:
+        return
+    
+    # CRITICAL: Sort bars by (time, symbol, timescale) to ensure consistent lock acquisition order
+    # This prevents deadlocks when multiple processes insert overlapping data
+    bars = sorted(bars, key=lambda b: (b.time, b.symbol, b.timescale))
+    
     # PostgreSQL has a limit of 32767 parameters per query
     # Each bar has 11 fields (including timescale), so we can insert ~2900 bars at once safely
     CHUNK_SIZE = 2900
     
+    # Deadlock retry configuration
+    MAX_RETRIES = 3
+    INITIAL_BACKOFF = 0.1  # 100ms
+    
     async with get_async_session() as session:
-        try:
-            # Process in chunks
-            for i in range(0, len(bars), CHUNK_SIZE):
-                chunk = bars[i:i + CHUNK_SIZE]
+        for retry_attempt in range(MAX_RETRIES):
+            try:
+                # Process in chunks
+                for i in range(0, len(bars), CHUNK_SIZE):
+                    chunk = bars[i:i + CHUNK_SIZE]
+                    
+                    # Convert objects to dicts for bulk insert
+                    values = [
+                        {
+                            "time": bar.time,
+                            "symbol": bar.symbol,
+                            "timescale": bar.timescale,
+                            "open": bar.open,
+                            "high": bar.high,
+                            "low": bar.low,
+                            "close": bar.close,
+                            "volume": bar.volume,
+                            "vwap": bar.vwap,
+                            "trade_count": bar.trade_count,
+                            "session_type": bar.session_type
+                        }
+                        for bar in chunk
+                    ]
+                    
+                    # Use PostgreSQL INSERT ... ON CONFLICT DO NOTHING
+                    stmt = insert(MarketData).values(values)
+                    stmt = stmt.on_conflict_do_nothing(index_elements=["time", "symbol", "timescale"])
+                    
+                    await session.execute(stmt)
+                    
+                    if len(bars) > CHUNK_SIZE:
+                        logger.debug(f"   Inserted chunk {i//CHUNK_SIZE + 1}: {len(chunk)} bars")
                 
-                # Convert objects to dicts for bulk insert
-                values = [
-                    {
-                        "time": bar.time,
-                        "symbol": bar.symbol,
-                        "timescale": bar.timescale,
-                        "open": bar.open,
-                        "high": bar.high,
-                        "low": bar.low,
-                        "close": bar.close,
-                        "volume": bar.volume,
-                        "vwap": bar.vwap,
-                        "trade_count": bar.trade_count,
-                        "session_type": bar.session_type
-                    }
-                    for bar in chunk
-                ]
+                await session.commit()
                 
-                # Use PostgreSQL INSERT ... ON CONFLICT DO NOTHING
-                stmt = insert(MarketData).values(values)
-                stmt = stmt.on_conflict_do_nothing(index_elements=["time", "symbol", "timescale"])
+                # Create/update validation records for the loaded data
+                await _update_validation_records(session, bars)
                 
-                await session.execute(stmt)
+                # Success - break out of retry loop
+                break
                 
-                if len(bars) > CHUNK_SIZE:
-                    logger.debug(f"   Inserted chunk {i//CHUNK_SIZE + 1}: {len(chunk)} bars")
-            
-            await session.commit()
-            
-            # Create/update validation records for the loaded data
-            await _update_validation_records(session, bars)
-            
-        except Exception as e:
-            logger.error(f"❌ Bulk insert failed: {e}")
-            await session.rollback()
-            raise
+            except Exception as e:
+                await session.rollback()
+                
+                # Check if this is a deadlock error (psycopg error code 40P01)
+                error_msg = str(e).lower()
+                is_deadlock = "deadlock detected" in error_msg or "40p01" in error_msg
+                
+                if is_deadlock and retry_attempt < MAX_RETRIES - 1:
+                    # Exponential backoff: 100ms, 200ms, 400ms
+                    backoff_time = INITIAL_BACKOFF * (2 ** retry_attempt)
+                    logger.warning(
+                        f"⚠️  Deadlock detected on attempt {retry_attempt + 1}/{MAX_RETRIES}, "
+                        f"retrying in {backoff_time:.1f}s..."
+                    )
+                    await asyncio.sleep(backoff_time)
+                    continue
+                else:
+                    # Not a deadlock or out of retries
+                    logger.error(f"❌ Bulk insert failed after {retry_attempt + 1} attempts: {e}")
+                    raise
 
 
 async def _create_validation_for_range(

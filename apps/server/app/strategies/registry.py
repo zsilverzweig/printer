@@ -147,6 +147,12 @@ def _auto_register_strategies() -> None:
         register_strategy(WyckoffStrategy)
     except ImportError as e:
         logger.warning(f"Failed to import WyckoffStrategy: {e}")
+    
+    try:
+        from app.strategies.gpt_5min import GPTFiveGuyStrategy
+        register_strategy(GPTFiveGuyStrategy)
+    except ImportError as e:
+        logger.warning(f"Failed to import GPTFiveGuyStrategy: {e}")
 
     # Future strategies can be added here
     # try:

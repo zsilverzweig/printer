@@ -4,6 +4,7 @@ import { useWebSocket } from "@/lib/hooks/use-websocket";
 import type { ScreenedStockPreview } from "@/lib/types/market";
 import type {
   ConnectionStatus,
+  FundRealtimeData,
   StockIndicators,
   TradingActivityEvent,
   WebSocketContextValue,
@@ -36,6 +37,9 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
   const [tradingActivity, setTradingActivity] = useState<
     TradingActivityEvent[]
   >([]);
+  const [fundData, setFundData] = useState<Map<string, FundRealtimeData>>(
+    new Map()
+  );
 
   // Connection state
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>({
@@ -53,6 +57,13 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
   const pendingSubscriptions = useRef<Set<string>>(new Set());
   const pendingUnsubscriptions = useRef<Set<string>>(new Set());
 
+  // Fund subscriptions
+  const [subscribedFundIds, setSubscribedFundIds] = useState<Set<string>>(
+    new Set()
+  );
+  const pendingFundSubscriptions = useRef<Set<string>>(new Set());
+  const pendingFundUnsubscriptions = useRef<Set<string>>(new Set());
+
   // Extract symbol from market data message
   const extractSymbolFromMarketData = (data: unknown): string | null => {
     if (data && typeof data === "object") {
@@ -60,6 +71,90 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
       return ((obj.sym || obj.symbol || obj.T) as string) || null;
     }
     return null;
+  };
+
+  // Transform fund snapshot data from snake_case to camelCase
+  const transformFundSnapshot = (snapshot: any): FundRealtimeData => {
+    return {
+      fund: snapshot.fund || null,
+      orders: snapshot.orders || [],
+      transactions: snapshot.transactions || [],
+      transfers: snapshot.transfers || [],
+      positions: snapshot.positions || [],
+      positionsSummary: snapshot.positions_summary || {
+        positionCount: 0,
+        totalMarketValue: 0,
+        totalUnrealizedPl: 0,
+      },
+      performance: snapshot.performance || null,
+    };
+  };
+
+  // Apply incremental update to fund data
+  const applyFundUpdate = (
+    existing: FundRealtimeData,
+    message: WebSocketMessage
+  ): FundRealtimeData => {
+    const updated = { ...existing };
+
+    switch (message.category) {
+      case "orders":
+        // Handle order updates
+        if (message.event_type === "order_created") {
+          updated.orders = [message.data, ...existing.orders];
+        } else if (message.event_type === "order_updated") {
+          updated.orders = existing.orders.map((order: any) =>
+            order.id === message.data.id ? { ...order, ...message.data } : order
+          );
+        } else if (message.event_type === "order_deleted") {
+          updated.orders = existing.orders.filter(
+            (order: any) => order.id !== message.data.id
+          );
+        }
+        break;
+
+      case "transactions":
+        // Handle transaction updates
+        if (message.event_type === "transaction_created") {
+          updated.transactions = [message.data, ...existing.transactions];
+        }
+        break;
+
+      case "transfers":
+        // Handle transfer updates
+        if (message.event_type === "transfer_created") {
+          updated.transfers = [message.data, ...existing.transfers];
+        }
+        break;
+
+      case "balance":
+        // Handle balance updates
+        if (message.event_type === "balance_changed" && existing.fund) {
+          updated.fund = { ...existing.fund, balance: message.data.balance };
+        }
+        break;
+
+      case "positions":
+        // Handle position updates
+        if (message.event_type === "positions_updated") {
+          updated.positions = message.data.positions || [];
+          updated.positionsSummary = message.data.summary || {
+            positionCount: 0,
+            totalMarketValue: 0,
+            totalUnrealizedPl: 0,
+          };
+        }
+        break;
+
+      case "performance":
+        // Handle performance updates
+        if (message.event_type === "performance_updated") {
+          updated.performance = message.data;
+        }
+        break;
+    }
+
+    return updated;
   };
 
   // Handle incoming messages
@@ -129,6 +224,31 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
           [message.data as TradingActivityEvent, ...prev].slice(0, 100)
         ); // Keep last 100 events
         log.debug("[WebSocket] Trading activity received", message.data);
+        break;
+
+      case "fund_snapshot":
+        if (message.fund_id) {
+          setFundData((prev) => {
+            const newMap = new Map(prev);
+            newMap.set(message.fund_id!, transformFundSnapshot(message.data));
+            return newMap;
+          });
+          // Snapshot received - no need to log, reduces noise
+        }
+        break;
+
+      case "fund_update":
+        if (message.fund_id) {
+          setFundData((prev) => {
+            const newMap = new Map(prev);
+            const existing = newMap.get(message.fund_id!);
+            if (existing) {
+              newMap.set(message.fund_id!, applyFundUpdate(existing, message));
+            }
+            return newMap;
+          });
+          // Update received - no need to log, reduces noise
+        }
         break;
 
       default:
@@ -247,6 +367,48 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
     [subscribedSymbols, sendJson]
   );
 
+  // Subscribe to fund updates
+  const subscribeToFund = useCallback(
+    (fundId: string) => {
+      if (subscribedFundIds.has(fundId)) return;
+
+      pendingFundSubscriptions.current.add(fundId);
+      setSubscribedFundIds((prev) => new Set([...prev, fundId]));
+
+      // Send subscription request
+      sendJson({
+        action: "subscribe_funds",
+        fund_ids: [fundId],
+      });
+
+      // Removed verbose log - subscription is tracked server-side
+    },
+    [subscribedFundIds, sendJson]
+  );
+
+  // Unsubscribe from fund updates
+  const unsubscribeFromFund = useCallback(
+    (fundId: string) => {
+      if (!subscribedFundIds.has(fundId)) return;
+
+      pendingFundUnsubscriptions.current.add(fundId);
+      setSubscribedFundIds((prev) => {
+        const newSet = new Set(prev);
+        newSet.delete(fundId);
+        return newSet;
+      });
+
+      // Send unsubscription request
+      sendJson({
+        action: "unsubscribe_funds",
+        fund_ids: [fundId],
+      });
+
+      // Removed verbose log - unsubscription is tracked server-side
+    },
+    [subscribedFundIds, sendJson]
+  );
+
   // Send ping messages for connection health and monitor connection state
   useEffect(() => {
     if (!isConnected) return;
@@ -284,6 +446,8 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
 
     const pendingSubs = Array.from(pendingSubscriptions.current);
     const pendingUnsubs = Array.from(pendingUnsubscriptions.current);
+    const pendingFundSubs = Array.from(pendingFundSubscriptions.current);
+    const pendingFundUnsubs = Array.from(pendingFundUnsubscriptions.current);
 
     if (pendingSubs.length > 0) {
       sendJson({
@@ -300,6 +464,22 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
       });
       pendingUnsubscriptions.current.clear();
     }
+
+    if (pendingFundSubs.length > 0) {
+      sendJson({
+        action: "subscribe_funds",
+        fund_ids: pendingFundSubs,
+      });
+      pendingFundSubscriptions.current.clear();
+    }
+
+    if (pendingFundUnsubs.length > 0) {
+      sendJson({
+        action: "unsubscribe_funds",
+        fund_ids: pendingFundUnsubs,
+      });
+      pendingFundUnsubscriptions.current.clear();
+    }
   }, [isConnected, sendJson]);
 
   const contextValue: WebSocketContextValue = {
@@ -308,6 +488,7 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
     screenerData,
     marketData,
     tradingActivity,
+    fundData,
 
     // Connection state
     isConnected,
@@ -319,6 +500,10 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
     subscribeToSymbol,
     unsubscribeFromSymbol,
     subscribedSymbols,
+
+    // Fund subscriptions
+    subscribeToFund,
+    unsubscribeFromFund,
   };
 
   return (

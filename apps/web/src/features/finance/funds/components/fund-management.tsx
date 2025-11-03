@@ -28,8 +28,8 @@ import { useFunds } from "../hooks/use-funds";
 
 import { AlpacaBalanceSummary } from "./alpaca-balance-summary";
 import { CreateFundDialog } from "./create-fund-dialog";
-import { FundList } from "./fund-list";
 import { FundPerformanceOverview } from "./fund-performance-overview";
+import { FundsTable } from "./funds-table";
 
 export function FundManagement() {
   const { funds, loading, error, createFund, refresh } = useFunds();
@@ -169,8 +169,8 @@ export function FundManagement() {
             </Card>
           </div>
 
-          {/* Fund List */}
-          <FundList funds={funds} />
+          {/* Fund Table */}
+          <FundsTable funds={funds} onRefresh={refresh} />
         </TabsContent>
 
         <TabsContent value="performance" className="space-y-6">

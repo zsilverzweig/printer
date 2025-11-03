@@ -106,7 +106,7 @@ class GapDetectorService:
         Returns:
             List of detected gaps, sorted by priority
         """
-        self.logger.info(f"Starting gap detection (lookback: {self.lookback_days} days)")
+        self.logger.debug(f"Starting gap detection (lookback: {self.lookback_days} days)")
         
         gaps: List[DataGap] = []
         
@@ -136,10 +136,14 @@ class GapDetectorService:
             # Update queue
             self.gap_queue = gaps
             
-            self.logger.info(
-                f"Gap detection complete: {len(gaps)} gaps found "
-                f"({len([g for g in gaps if g.priority == 1])} high priority)"
-            )
+            # Only log if gaps found
+            if gaps:
+                self.logger.info(
+                    f"Gap detection: {len(gaps)} gaps found "
+                    f"({len([g for g in gaps if g.priority == 1])} high priority)"
+                )
+            else:
+                self.logger.debug("Gap detection: no gaps found")
             
             return gaps
             
@@ -472,7 +476,7 @@ def initialize_gap_detector(lookback_days: int = 30) -> GapDetectorService:
     
     if _gap_detector is None:
         _gap_detector = GapDetectorService(lookback_days=lookback_days)
-        logger.info(f"Gap detector initialized (lookback: {lookback_days} days)")
+        logger.debug(f"Gap detector initialized (lookback: {lookback_days} days)")
     
     return _gap_detector
 

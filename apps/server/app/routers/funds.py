@@ -277,7 +277,7 @@ async def get_fund_snapshot(fund_id: str, limit: int = 100) -> dict:
     """
     Get a complete snapshot of fund data for real-time WebSocket connections.
     
-    Returns fund details, recent orders, transactions, transfers, and current positions.
+    Returns fund details, recent orders, transactions, transfers, current positions, and performance metrics.
     """
     async with get_async_session() as session:
         # Get fund
@@ -318,6 +318,9 @@ async def get_fund_snapshot(fund_id: str, limit: int = 100) -> dict:
     # Get current positions with prices (outside session to avoid blocking)
     positions_data = await _get_positions_for_websocket(fund_id)
     
+    # Get performance metrics
+    performance_data = await _calculate_fund_performance(fund_id)
+    
     return {
         "fund": serialize_fund(fund),
         "orders": orders,
@@ -325,6 +328,7 @@ async def get_fund_snapshot(fund_id: str, limit: int = 100) -> dict:
         "transfers": transfers,
         "positions": positions_data["positions"],
         "positions_summary": positions_data["summary"],
+        "performance": performance_data,
     }
 
 
@@ -380,24 +384,32 @@ async def _get_positions_for_websocket(fund_id: str) -> dict:
                         "cost_basis": data["total_cost"],
                     })
         
-        # Fetch current market prices (outside session)
-        from app.services.market.market_data_provider import MarketDataProvider
-        market_provider = MarketDataProvider()
+        # Fetch current market prices in a single batch call (outside session)
+        from app.services.market.price_service import get_price_service
+        price_service = get_price_service()
+        
+        # Get all symbols to fetch prices for
+        symbols = [p["symbol"] for p in current_positions]
+        
+        # Batch fetch all prices at once from database (much faster than API calls)
+        current_prices = await price_service.get_latest_prices_batch(symbols)
         
         positions_with_prices = []
         total_market_value = 0.0
         total_unrealized_pl = 0.0
         
         for position in current_positions:
-            try:
-                # Get current price
-                current_price = await market_provider.get_current_price(position["symbol"])
+            symbol = position["symbol"]
+            current_price = current_prices.get(symbol)
+            
+            if current_price is not None:
+                # We have a current price - calculate P&L
                 market_value = position["quantity"] * current_price
                 unrealized_pl = market_value - position["cost_basis"]
                 unrealized_plpc = (unrealized_pl / position["cost_basis"] * 100) if position["cost_basis"] > 0 else 0
                 
                 positions_with_prices.append({
-                    "symbol": position["symbol"],
+                    "symbol": symbol,
                     "quantity": position["quantity"],
                     "avg_entry_price": position["avg_entry_price"],
                     "current_price": current_price,
@@ -409,11 +421,11 @@ async def _get_positions_for_websocket(fund_id: str) -> dict:
                 
                 total_market_value += market_value
                 total_unrealized_pl += unrealized_pl
-            except Exception as e:
-                logger.warning(f"Could not fetch price for {position['symbol']}: {e}")
-                # Fallback: Use cost basis as market value
+            else:
+                # No current price available - use cost basis as fallback
+                logger.warning(f"No current price available for {symbol}, using cost basis")
                 positions_with_prices.append({
-                    "symbol": position["symbol"],
+                    "symbol": symbol,
                     "quantity": position["quantity"],
                     "avg_entry_price": position["avg_entry_price"],
                     "current_price": None,
@@ -441,6 +453,160 @@ async def _get_positions_for_websocket(fund_id: str) -> dict:
                 "total_market_value": 0.0,
                 "total_unrealized_pl": 0.0,
             },
+        }
+
+
+async def _calculate_fund_performance(fund_id: str) -> dict:
+    """
+    Calculate fund performance metrics including day performance.
+    
+    Returns:
+        dict with keys:
+        - cash_balance: Current cash balance
+        - position_value: Current market value of positions
+        - aum: Assets under management (cash + positions)
+        - day_change: Dollar change since start of day
+        - day_change_percent: Percentage change since start of day
+        - total_return: Total return since fund inception
+        - total_return_percent: Total return percentage since fund inception
+    """
+    try:
+        from datetime import timedelta
+        
+        async with get_async_session() as session:
+            # Get all transfers and transactions
+            transfers_stmt = select(Transfer).where(Transfer.fund_id == fund_id).order_by(Transfer.timestamp.asc())
+            transactions_stmt = select(Transaction).where(Transaction.fund_id == fund_id).order_by(Transaction.timestamp.asc())
+            
+            transfers_result = await session.execute(transfers_stmt)
+            transactions_result = await session.execute(transactions_stmt)
+            
+            transfers = list(transfers_result.scalars().all())
+            transactions = list(transactions_result.scalars().all())
+        
+        # Calculate current cash balance
+        total_deposits = sum(t.amount for t in transfers if t.transfer_type == "deposit")
+        total_withdrawals = sum(t.amount for t in transfers if t.transfer_type == "withdrawal")
+        total_buys = sum(t.total_value for t in transactions if t.side == "buy")
+        total_sells = sum(t.total_value for t in transactions if t.side == "sell")
+        cash_balance = total_deposits - total_withdrawals - total_buys + total_sells
+        
+        # Get current position value
+        positions_data = await _get_positions_for_websocket(fund_id)
+        position_value = positions_data["summary"]["total_market_value"]
+        unrealized_pl = positions_data["summary"]["total_unrealized_pl"]
+        
+        # Current AUM
+        current_aum = cash_balance + position_value
+        
+        # Total net deposits (for calculating total return %)
+        total_net_deposits = total_deposits - total_withdrawals
+        
+        # Calculate day performance
+        now = datetime.now(timezone.utc)
+        # Use 24 hours ago for simplicity (could be enhanced to use market open time)
+        day_start = now - timedelta(hours=24)
+        
+        # Get transfers and transactions before day start
+        # Handle timezone-naive timestamps from database by converting to UTC
+        def make_aware(dt: datetime) -> datetime:
+            """Convert naive datetime to UTC-aware if needed."""
+            if dt.tzinfo is None:
+                return dt.replace(tzinfo=timezone.utc)
+            return dt
+        
+        day_start_transfers = [t for t in transfers if make_aware(t.timestamp) < day_start]
+        day_start_transactions = [t for t in transactions if make_aware(t.timestamp) < day_start]
+        
+        # Calculate starting cash balance (24 hours ago)
+        day_start_deposits = sum(t.amount for t in day_start_transfers if t.transfer_type == "deposit")
+        day_start_withdrawals = sum(t.amount for t in day_start_transfers if t.transfer_type == "withdrawal")
+        day_start_buys = sum(t.total_value for t in day_start_transactions if t.side == "buy")
+        day_start_sells = sum(t.total_value for t in day_start_transactions if t.side == "sell")
+        day_start_cash = day_start_deposits - day_start_withdrawals - day_start_buys + day_start_sells
+        
+        # Calculate starting position value (24 hours ago)
+        # Build position tracker at day start
+        day_start_position_tracker = {}
+        for txn in day_start_transactions:
+            if txn.symbol not in day_start_position_tracker:
+                day_start_position_tracker[txn.symbol] = {
+                    "quantity": 0.0,
+                    "total_cost": 0.0,
+                }
+            
+            if txn.side == "buy":
+                day_start_position_tracker[txn.symbol]["quantity"] += txn.quantity
+                day_start_position_tracker[txn.symbol]["total_cost"] += txn.total_value
+            else:  # sell
+                if day_start_position_tracker[txn.symbol]["quantity"] > 0:
+                    avg_cost_per_share = day_start_position_tracker[txn.symbol]["total_cost"] / day_start_position_tracker[txn.symbol]["quantity"]
+                    day_start_position_tracker[txn.symbol]["quantity"] -= txn.quantity
+                    day_start_position_tracker[txn.symbol]["total_cost"] -= (txn.quantity * avg_cost_per_share)
+        
+        # Get current prices for positions held at day start
+        from app.services.market.price_service import get_price_service
+        price_service = get_price_service()
+        
+        # Get all symbols we need prices for
+        day_start_symbols = [s for s, d in day_start_position_tracker.items() if d["quantity"] > 0.001]
+        day_start_prices = await price_service.get_latest_prices_batch(day_start_symbols)
+        
+        day_start_position_value = 0.0
+        for symbol, data in day_start_position_tracker.items():
+            if data["quantity"] > 0.001:
+                # Use current price as proxy for day-start price
+                # (In a production system, you'd want to fetch historical intraday prices)
+                current_price = day_start_prices.get(symbol)
+                if current_price:
+                    day_start_position_value += data["quantity"] * current_price
+                else:
+                    logger.warning(f"Could not fetch price for {symbol} for day performance")
+                    # Fallback to cost basis
+                    day_start_position_value += data["total_cost"]
+        
+        day_start_aum = day_start_cash + day_start_position_value
+        
+        # Calculate net transfers during the day
+        day_transfers = [t for t in transfers if make_aware(t.timestamp) >= day_start]
+        net_day_transfers = sum(t.amount for t in day_transfers if t.transfer_type == "deposit") - \
+                           sum(t.amount for t in day_transfers if t.transfer_type == "withdrawal")
+        
+        # Day performance = Current AUM - Starting AUM - Net Transfers
+        day_change = current_aum - day_start_aum - net_day_transfers
+        
+        # Day performance percentage (based on starting AUM, excluding new deposits)
+        day_change_percent = 0.0
+        if day_start_aum > 0:
+            day_change_percent = (day_change / day_start_aum) * 100
+        
+        # Total return since inception
+        total_return = current_aum - total_net_deposits
+        total_return_percent = 0.0
+        if total_net_deposits > 0:
+            total_return_percent = (total_return / total_net_deposits) * 100
+        
+        return {
+            "cash_balance": cash_balance,
+            "position_value": position_value,
+            "aum": current_aum,
+            "day_change": day_change,
+            "day_change_percent": day_change_percent,
+            "total_return": total_return,
+            "total_return_percent": total_return_percent,
+            "unrealized_pl": unrealized_pl,
+        }
+    except Exception as e:
+        logger.error(f"Error calculating fund performance: {e}", exc_info=True)
+        return {
+            "cash_balance": 0.0,
+            "position_value": 0.0,
+            "aum": 0.0,
+            "day_change": 0.0,
+            "day_change_percent": 0.0,
+            "total_return": 0.0,
+            "total_return_percent": 0.0,
+            "unrealized_pl": 0.0,
         }
 
 
@@ -1086,18 +1252,22 @@ async def get_fund_positions_summary(fund_id: str) -> dict:
                         "cost_basis": data["total_cost"],
                     })
             
-            # Fetch current market prices
-            from app.services.market.market_data_provider import MarketDataProvider
-            market_provider = MarketDataProvider()
+            # Fetch current market prices in batch
+            from app.services.market.price_service import get_price_service
+            price_service = get_price_service()
+            
+            symbols = [p["symbol"] for p in current_positions]
+            current_prices = await price_service.get_latest_prices_batch(symbols)
             
             positions_with_prices = []
             total_market_value = 0.0
             total_unrealized_pl = 0.0
             
             for position in current_positions:
-                try:
-                    # Get current price
-                    current_price = await market_provider.get_current_price(position["symbol"])
+                current_price = current_prices.get(position["symbol"])
+                
+                if current_price is not None:
+                    # We have a current price - calculate P&L
                     market_value = position["quantity"] * current_price
                     unrealized_pl = market_value - position["cost_basis"]
                     unrealized_plpc = (unrealized_pl / position["cost_basis"] * 100) if position["cost_basis"] > 0 else 0
@@ -1115,10 +1285,9 @@ async def get_fund_positions_summary(fund_id: str) -> dict:
                     
                     total_market_value += market_value
                     total_unrealized_pl += unrealized_pl
-                except Exception as e:
-                    logger.warning(f"Could not fetch price for {position['symbol']}: {e}")
-                    # Fallback: Use cost basis as market value when price unavailable
-                    # This is better than showing $0 - at least shows position exists
+                else:
+                    # No current price available - use cost basis as fallback
+                    logger.warning(f"Could not fetch price for {position['symbol']}, using cost basis")
                     positions_with_prices.append({
                         "symbol": position["symbol"],
                         "quantity": position["quantity"],
@@ -1834,6 +2003,235 @@ async def close_orphaned_position(fund_id: str, symbol: str) -> dict:
         raise
     except Exception as e:
         logger.error(f"Error closing orphaned position {symbol} for fund {fund_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/funds/{fund_id}/positions/close-all-orphaned")
+async def close_all_orphaned_positions(fund_id: str) -> dict:
+    """
+    Close all orphaned positions that exist in the database but not in Alpaca.
+    
+    This is a batch operation that:
+    1. Identifies all database positions not in Alpaca
+    2. Closes each one by creating matching sell transactions
+    3. Returns a summary of all positions closed
+    
+    This is useful for cleaning up multiple sync issues at once after a
+    fund was stopped or when multiple positions were manually closed in Alpaca.
+    """
+    try:
+        async with get_async_session() as session:
+            # Get fund
+            fund = await session.get(Fund, fund_id)
+            if not fund:
+                raise HTTPException(status_code=404, detail="Fund not found")
+            
+            # Get list of orphaned positions (in DB but not in Alpaca)
+            from sqlalchemy import select, and_
+            
+            # Calculate all database positions from transactions
+            stmt = select(
+                Transaction.symbol,
+                Transaction.side,
+                Transaction.quantity,
+                Transaction.price
+            ).where(
+                Transaction.fund_id == fund_id
+            ).order_by(Transaction.timestamp.asc())
+            
+            result = await session.execute(stmt)
+            transactions = result.all()
+            
+            # Calculate net positions
+            position_tracker = {}
+            for symbol, side, quantity, price in transactions:
+                if symbol not in position_tracker:
+                    position_tracker[symbol] = {"quantity": 0.0, "total_cost": 0.0}
+                
+                if side == "buy":
+                    position_tracker[symbol]["quantity"] += quantity
+                    position_tracker[symbol]["total_cost"] += (quantity * price)
+                else:  # sell
+                    if position_tracker[symbol]["quantity"] > 0:
+                        avg_cost = position_tracker[symbol]["total_cost"] / position_tracker[symbol]["quantity"]
+                        position_tracker[symbol]["quantity"] -= quantity
+                        position_tracker[symbol]["total_cost"] -= (quantity * avg_cost)
+            
+            # Filter to positions with non-zero quantity
+            db_positions = {
+                symbol: data 
+                for symbol, data in position_tracker.items() 
+                if data["quantity"] > 0.001
+            }
+            
+            if not db_positions:
+                return {
+                    "success": True,
+                    "message": "No database positions to close",
+                    "positions_closed": [],
+                    "total_closed": 0,
+                }
+            
+            # Get Alpaca positions to identify orphans
+            alpaca_symbols = set()
+            engine = get_engine(fund_id)
+            if engine:
+                try:
+                    alpaca_positions = await engine.alpaca_service.get_positions()
+                    alpaca_symbols = {p["symbol"] for p in alpaca_positions}
+                except Exception as e:
+                    logger.warning(f"Could not fetch Alpaca positions: {e}")
+                    # If we can't get Alpaca positions, we'll close all DB positions
+            
+            # Identify orphaned positions (in DB but not in Alpaca)
+            orphaned_symbols = [
+                symbol for symbol in db_positions.keys()
+                if symbol not in alpaca_symbols
+            ]
+            
+            if not orphaned_symbols:
+                return {
+                    "success": True,
+                    "message": "No orphaned positions found (all database positions exist in Alpaca)",
+                    "positions_closed": [],
+                    "total_closed": 0,
+                }
+            
+            # Close each orphaned position
+            closed_positions = []
+            total_pl = 0.0
+            total_proceeds = 0.0
+            
+            for symbol in orphaned_symbols:
+                try:
+                    data = db_positions[symbol]
+                    net_quantity = data["quantity"]
+                    total_cost = data["total_cost"]
+                    avg_entry_price = total_cost / net_quantity if net_quantity > 0 else 0.0
+                    
+                    # Try to find matching Alpaca sell order for actual exit price
+                    exit_price = avg_entry_price  # Default to breakeven
+                    alpaca_sell_order_id = None
+                    
+                    if engine:
+                        try:
+                            alpaca_orders = await engine.alpaca_service.get_orders(
+                                symbol=symbol,
+                                status="closed",
+                                limit=50
+                            )
+                            
+                            # Find matching sell order
+                            for order in alpaca_orders:
+                                if (order.get("side") == "sell" and 
+                                    order.get("symbol") == symbol and
+                                    order.get("filled_qty") and
+                                    abs(float(order.get("filled_qty", 0)) - net_quantity) < 0.01):
+                                    
+                                    exit_price = float(order.get("filled_avg_price", avg_entry_price))
+                                    alpaca_sell_order_id = order.get("id")
+                                    logger.info(
+                                        f"Found matching sell order for {symbol}: "
+                                        f"order_id={alpaca_sell_order_id}, price=${exit_price:.2f}"
+                                    )
+                                    break
+                        except Exception as e:
+                            logger.warning(f"Could not fetch Alpaca orders for {symbol}: {e}")
+                    
+                    # Calculate P&L
+                    realized_pl = (exit_price - avg_entry_price) * net_quantity
+                    total_pl += realized_pl
+                    
+                    # Create closing transaction
+                    closing_transaction = Transaction(
+                        id=str(uuid.uuid4()),
+                        order_id=str(uuid.uuid4()),
+                        alpaca_order_id=alpaca_sell_order_id,
+                        fund_id=fund_id,
+                        symbol=symbol,
+                        side="sell",
+                        quantity=net_quantity,
+                        price=exit_price,
+                        total_value=net_quantity * exit_price,
+                        timestamp=datetime.utcnow(),
+                        high_water_mark=None,
+                        strategy_state={
+                            "source": "orphaned_cleanup_batch",
+                            "reason": "Position closed via Close All Orphaned action",
+                            "matched_alpaca_order": alpaca_sell_order_id if alpaca_sell_order_id else None,
+                            "price_source": "alpaca_order" if alpaca_sell_order_id else "breakeven",
+                            "realized_pl": realized_pl,
+                        },
+                    )
+                    
+                    # Create order record
+                    closing_order = Order(
+                        id=closing_transaction.order_id,
+                        alpaca_order_id="",
+                        fund_id=fund_id,
+                        symbol=symbol,
+                        side="sell",
+                        quantity=net_quantity,
+                        order_type="manual_cleanup",
+                        status="filled",
+                        submitted_at=datetime.utcnow(),
+                        filled_at=datetime.utcnow(),
+                        filled_qty=net_quantity,
+                        filled_avg_price=avg_entry_price,
+                    )
+                    
+                    session.add(closing_order)
+                    session.add(closing_transaction)
+                    
+                    # Update fund balance
+                    fund.balance += closing_transaction.total_value
+                    total_proceeds += closing_transaction.total_value
+                    
+                    closed_positions.append({
+                        "symbol": symbol,
+                        "quantity_closed": net_quantity,
+                        "avg_entry_price": avg_entry_price,
+                        "exit_price": exit_price,
+                        "realized_pl": realized_pl,
+                        "proceeds": closing_transaction.total_value,
+                        "price_source": "alpaca_order" if alpaca_sell_order_id else "breakeven",
+                    })
+                    
+                    logger.info(
+                        f"Closed orphaned position: {symbol} - {net_quantity} shares "
+                        f"@ ${exit_price:.2f} (P&L: ${realized_pl:+.2f})"
+                    )
+                    
+                except Exception as e:
+                    logger.error(f"Error closing orphaned position {symbol}: {e}")
+                    # Continue with other positions even if one fails
+                    closed_positions.append({
+                        "symbol": symbol,
+                        "error": str(e),
+                    })
+            
+            await session.commit()
+            
+            logger.info(
+                f"Closed {len(closed_positions)} orphaned positions for fund {fund_id}: "
+                f"Total P&L: ${total_pl:+.2f}, Total proceeds: ${total_proceeds:.2f}"
+            )
+            
+            return {
+                "success": True,
+                "message": f"Successfully closed {len(closed_positions)} orphaned position(s)",
+                "fund_id": fund_id,
+                "positions_closed": closed_positions,
+                "total_closed": len(closed_positions),
+                "total_pl": total_pl,
+                "total_proceeds": total_proceeds,
+                "new_balance": fund.balance,
+            }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error closing all orphaned positions for fund {fund_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 

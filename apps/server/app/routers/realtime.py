@@ -13,13 +13,12 @@ from polygon import WebSocketClient
 
 import app.core as core
 from app.core import rest_client
-from app.services.screener.screener import ScreenerService
+from app.services.screener.screener import get_screener_service
 from app.services.noc.noc import NocService
 from app.services.realtime.db_listener import get_db_listener_service
 
 
 router = APIRouter()
-service: ScreenerService | None = None
 noc_service: NocService | None = None
 
 # Trading activity subscribers
@@ -29,31 +28,26 @@ trading_activity_subscribers: Set[WebSocket] = set()
 @router.websocket("/noc/ws")
 async def noc_ws(websocket: WebSocket):
     """WebSocket endpoint for NOC (Network Operations Center) real-time data."""
-    global noc_service, service
+    global noc_service
     import logging
     logger = logging.getLogger("app.realtime")
     
     await websocket.accept()
     logger.info("NOC WebSocket connection accepted")
     
-    # Ensure screener service is running (NOC depends on it)
-    if service is None:
-        logger.info("Initializing ScreenerService (required by NOC)")
-        service = ScreenerService(rest_client)
+    # Get the global screener service (started in main.py)
+    screener_service = get_screener_service()
+    if screener_service is None:
+        logger.error("Global screener service not available")
         try:
-            await service.start()
-        except Exception as e:
-            service = None
-            logger.error("Screener service failed to start: %s", e)
-            try:
-                await websocket.close()
-            finally:
-                return
+            await websocket.close()
+        finally:
+            return
     
     # Lazy init: create and start NOC service on first connection
     if noc_service is None:
         logger.info("Initializing NocService for first time")
-        noc_service = NocService(rest_client, service)
+        noc_service = NocService(rest_client, screener_service)
         try:
             await noc_service.start()
         except Exception as e:
@@ -118,63 +112,9 @@ async def noc_ws(websocket: WebSocket):
         logger.info("Removed NOC subscriber, remaining subscribers=%s", len(noc_service.subscribers))
 
 
-@router.websocket("/screener/ws")
-async def screener_ws(websocket: WebSocket):
-    global service
-    import logging
-    logger = logging.getLogger("app.realtime")
-    
-    await websocket.accept()
-    logger.info("Screener WebSocket connection accepted")
-    
-    # Lazy init: create and start service on first connection
-    if service is None:
-        logger.info("Initializing ScreenerService for first time")
-        service = ScreenerService(rest_client)
-        try:
-            await service.start()
-        except Exception as e:
-            service = None
-            logger.error("Screener service failed to start: %s", e)
-            try:
-                await websocket.close()
-            finally:
-                return
-    
-    # Attach to screener service broadcast list and send last cached payload
-    service.subscribers.add(websocket)
-    logger.info("Added subscriber, total subscribers=%s", len(service.subscribers))
-    if service.cached_payload:
-        logger.info("Sending cached payload with %s results", len(service.cached_payload))
-        await websocket.send_json(service.cached_payload)
-    else:
-        logger.info("No cached payload to send yet")
-    try:
-        while True:
-            # Keep-alive; wait for client messages or disconnection
-            message = await websocket.receive_text()
-            
-            # Handle ping/pong for connection keep-alive
-            try:
-                data = json.loads(message)
-                if isinstance(data, dict) and data.get("type") == "ping":
-                    # Respond to ping with pong
-                    await websocket.send_json({"type": "pong", "timestamp": data.get("timestamp")})
-                    if logger.isEnabledFor(logging.DEBUG):
-                        logger.debug("Sent pong response to screener client")
-            except (json.JSONDecodeError, Exception):
-                # Not JSON or other error, ignore and continue
-                pass
-    except Exception as e:
-        logger.info("WebSocket connection closed: %s", e)
-    finally:
-        service.subscribers.discard(websocket)
-        logger.info("Removed subscriber, remaining subscribers=%s", len(service.subscribers))
-
-
 @router.websocket("/ws")
 async def ws_proxy(websocket: WebSocket, subs: str = ""):
-    global service
+    """WebSocket proxy for Polygon market data streams."""
     import logging
     logger = logging.getLogger("app.realtime")
     
@@ -190,53 +130,6 @@ async def ws_proxy(websocket: WebSocket, subs: str = ""):
     queue: asyncio.Queue = asyncio.Queue()
 
     loop = asyncio.get_event_loop()
-
-    # Route special screener subscription through the ScreenerService rather than Polygon WS
-    if any(s.upper() == "SCREENER" for s in subscriptions):
-        logger.info("SCREENER subscription detected, setting up service")
-        # Lazy init: create and start service on first connection
-        if service is None:
-            logger.info("Initializing ScreenerService for first time")
-            service = ScreenerService(rest_client)
-            try:
-                await service.start()
-            except Exception as e:
-                service = None
-                logging.getLogger("app.screener").error("Screener service failed to start: %s", e)
-                try:
-                    await websocket.close()
-                finally:
-                    return
-        # Attach to screener service broadcast list and send last cached payload
-        service.subscribers.add(websocket)
-        logger.info("Added subscriber, total subscribers=%s", len(service.subscribers))
-        if service.cached_payload:
-            logger.info("Sending cached payload with %s results", len(service.cached_payload))
-            await websocket.send_json(service.cached_payload)
-        else:
-            logger.info("No cached payload to send yet")
-        try:
-            while True:
-                # Keep-alive; wait for client messages or disconnection
-                message = await websocket.receive_text()
-                
-                # Handle ping/pong for connection keep-alive
-                try:
-                    data = json.loads(message)
-                    if isinstance(data, dict) and data.get("type") == "ping":
-                        # Respond to ping with pong
-                        await websocket.send_json({"type": "pong", "timestamp": data.get("timestamp")})
-                        if logger.isEnabledFor(logging.DEBUG):
-                            logger.debug("Sent pong response to ws_proxy client")
-                except (json.JSONDecodeError, Exception):
-                    # Not JSON or other error, ignore and continue
-                    pass
-        except Exception as e:
-            logger.info("WebSocket connection closed: %s", e)
-        finally:
-            service.subscribers.discard(websocket)
-            logger.info("Removed subscriber, remaining subscribers=%s", len(service.subscribers))
-        return
 
     def handle_msg(msgs):
         for m in msgs:
@@ -290,8 +183,8 @@ async def ws_proxy(websocket: WebSocket, subs: str = ""):
 
 @router.websocket("/realtime")
 async def unified_realtime(websocket: WebSocket):
-    """Unified WebSocket endpoint for all real-time data (NOC, screener, market)."""
-    global service, noc_service
+    """Unified WebSocket endpoint for all real-time data (NOC, screener, market, funds)."""
+    global noc_service
     logger = logging.getLogger("app.realtime")
     
     await websocket.accept()
@@ -302,6 +195,11 @@ async def unified_realtime(websocket: WebSocket):
     polygon_ws = None
     polygon_thread = None
     polygon_queue = None
+    
+    # Track this client's fund subscriptions
+    client_fund_subscriptions: Set[str] = set()
+    last_fund_price_refresh = time.time()
+    fund_price_refresh_interval = 30  # Refresh fund prices every 30 seconds
     
     # Define helper functions first (before try block)
     async def start_polygon_websocket():
@@ -391,21 +289,17 @@ async def unified_realtime(websocket: WebSocket):
                 break
     
     try:
-        # Ensure services are running
-        if service is None:
-            logger.info("Initializing ScreenerService for unified connection")
-            service = ScreenerService(rest_client)
-            try:
-                await service.start()
-            except Exception as e:
-                service = None
-                logger.error("Screener service failed to start: %s", e)
-                await websocket.close()
-                return
+        # Get the global screener service (started in main.py)
+        screener_service = get_screener_service()
+        if screener_service is None:
+            logger.error("Global screener service not available")
+            await websocket.close()
+            return
         
+        # Ensure NOC service is running
         if noc_service is None:
             logger.info("Initializing NocService for unified connection")
-            noc_service = NocService(rest_client, service)
+            noc_service = NocService(rest_client, screener_service)
             try:
                 await noc_service.start()
             except Exception as e:
@@ -414,9 +308,18 @@ async def unified_realtime(websocket: WebSocket):
                 await websocket.close()
                 return
         
+        # Get database listener service for fund updates
+        db_listener = get_db_listener_service()
+        if not db_listener.running:
+            try:
+                await db_listener.start()
+            except Exception as e:
+                logger.error("Failed to start DatabaseListenerService: %s", e)
+                # Continue anyway - fund updates just won't work
+        
         # Subscribe to NOC, Screener, and Trading Activity broadcasts
         noc_service.subscribers.add(websocket)
-        service.subscribers.add(websocket)
+        screener_service.subscribers.add(websocket)
         trading_activity_subscribers.add(websocket)
         
         # Send initial connection status
@@ -439,10 +342,10 @@ async def unified_realtime(websocket: WebSocket):
                     "timestamp": int(time.time() * 1000)
                 })
             
-            if service.cached_payload:
+            if screener_service.cached_payload:
                 await websocket.send_json({
                     "type": "screener_update",
-                    "data": service.cached_payload,
+                    "data": screener_service.cached_payload,
                     "timestamp": int(time.time() * 1000)
                 })
         except Exception as e:
@@ -450,10 +353,20 @@ async def unified_realtime(websocket: WebSocket):
             await websocket.close()
             return
         
-        # Handle client messages (market subscriptions, ping/pong)
+        # Handle client messages (market subscriptions, ping/pong, fund subscriptions)
         while True:
             try:
-                message = await websocket.receive_text()
+                # Check websocket state before attempting to receive
+                from starlette.websockets import WebSocketState
+                if websocket.client_state != WebSocketState.CONNECTED:
+                    logger.warning("WebSocket not connected (state=%s), closing connection", websocket.client_state)
+                    break
+                
+                # Use timeout so we can periodically refresh fund prices
+                message = await asyncio.wait_for(
+                    websocket.receive_text(),
+                    timeout=1.0  # Check every second
+                )
                 data = json.loads(message)
                 
                 # Handle ping/pong
@@ -488,12 +401,104 @@ async def unified_realtime(websocket: WebSocket):
                         if not client_market_subscriptions and polygon_ws is not None:
                             await stop_polygon_websocket()
                 
+                # Handle fund subscriptions
+                elif data.get("action") == "subscribe_funds":
+                    fund_ids = data.get("fund_ids", [])
+                    if isinstance(fund_ids, list):
+                        # Only process funds that aren't already subscribed
+                        new_subscriptions = [fid for fid in fund_ids if fid not in client_fund_subscriptions]
+                        if new_subscriptions:
+                            logger.debug(f"Subscribing to funds: {new_subscriptions}")
+                            for fund_id in new_subscriptions:
+                                client_fund_subscriptions.add(fund_id)
+                                # Subscribe to PostgreSQL NOTIFY for this fund
+                                db_listener.subscribe(fund_id, websocket)
+                                
+                                # Send immediate snapshot
+                                from app.routers.funds import get_fund_snapshot
+                                snapshot = await get_fund_snapshot(fund_id)
+                                
+                                if snapshot:
+                                    await websocket.send_json({
+                                        "type": "fund_snapshot",
+                                        "fund_id": fund_id,
+                                        "data": snapshot,
+                                        "timestamp": int(time.time() * 1000)
+                                    })
+                                    logger.debug(f"Sent fund snapshot for {fund_id}")
+                                else:
+                                    logger.warning(f"Fund {fund_id} not found for snapshot")
+                
+                elif data.get("action") == "unsubscribe_funds":
+                    fund_ids = data.get("fund_ids", [])
+                    if isinstance(fund_ids, list):
+                        # Only process funds that are actually subscribed
+                        valid_unsubscriptions = [fid for fid in fund_ids if fid in client_fund_subscriptions]
+                        if valid_unsubscriptions:
+                            logger.debug(f"Unsubscribing from funds: {valid_unsubscriptions}")
+                            for fund_id in valid_unsubscriptions:
+                                client_fund_subscriptions.discard(fund_id)
+                                # Unsubscribe from PostgreSQL NOTIFY
+                                db_listener.unsubscribe(fund_id, websocket)
+                
+            except asyncio.TimeoutError:
+                # No message received - check if we need to refresh fund prices
+                if client_fund_subscriptions and time.time() - last_fund_price_refresh >= fund_price_refresh_interval:
+                    try:
+                        # Refresh prices and performance for all subscribed funds
+                        from app.routers.funds import _get_positions_for_websocket, _calculate_fund_performance
+                        
+                        for fund_id in client_fund_subscriptions:
+                            # Fetch updated position prices
+                            positions_data = await _get_positions_for_websocket(fund_id)
+                            
+                            # Calculate performance metrics
+                            performance_data = await _calculate_fund_performance(fund_id)
+                            
+                            # Broadcast positions update
+                            await websocket.send_json({
+                                "type": "fund_update",
+                                "fund_id": fund_id,
+                                "category": "positions",
+                                "event_type": "positions_updated",
+                                "timestamp": int(time.time() * 1000),
+                                "data": {
+                                    "positions": positions_data["positions"],
+                                    "summary": positions_data["summary"]
+                                }
+                            })
+                            
+                            # Send separate performance update
+                            await websocket.send_json({
+                                "type": "fund_update",
+                                "fund_id": fund_id,
+                                "category": "performance",
+                                "event_type": "performance_updated",
+                                "timestamp": int(time.time() * 1000),
+                                "data": performance_data
+                            })
+                        
+                        last_fund_price_refresh = time.time()
+                        logger.debug(f"Refreshed prices for {len(client_fund_subscriptions)} subscribed funds")
+                        
+                    except Exception as e:
+                        logger.warning(f"Error refreshing fund prices: {e}")
+                
+                # Continue waiting
+                continue
+                
             except json.JSONDecodeError:
                 logger.warning("Received invalid JSON from client")
             except Exception as e:
                 logger.error("Error handling client message: %s", e)
-                # Break on WebSocket disconnect errors
-                if "disconnect" in str(e).lower() or "closed" in str(e).lower():
+                # Break on WebSocket errors (disconnect, closed, not connected, etc.)
+                error_str = str(e).lower()
+                if any(keyword in error_str for keyword in ["disconnect", "closed", "not connected", "invalid state"]):
+                    break
+                # Also break if we can't receive messages (websocket in bad state)
+                from starlette.websockets import WebSocketState
+                if websocket.client_state != WebSocketState.CONNECTED:
+                    logger.warning("WebSocket not in CONNECTED state, breaking loop")
                     break
     
     except Exception as e:
@@ -502,9 +507,14 @@ async def unified_realtime(websocket: WebSocket):
         # Cleanup
         if noc_service:
             noc_service.subscribers.discard(websocket)
-        if service:
-            service.subscribers.discard(websocket)
+        screener_service = get_screener_service()
+        if screener_service:
+            screener_service.subscribers.discard(websocket)
         trading_activity_subscribers.discard(websocket)
+        
+        # Clean up fund subscriptions
+        for fund_id in client_fund_subscriptions:
+            db_listener.unsubscribe(fund_id, websocket)
         
         if polygon_ws:
             await stop_polygon_websocket()
@@ -546,138 +556,6 @@ async def broadcast_trading_activity(event: dict) -> None:
     logger.debug(f"Broadcasted trading activity to {len(trading_activity_subscribers)} subscribers")
 
 
-@router.websocket("/funds/{fund_id}/ws")
-async def fund_realtime(websocket: WebSocket, fund_id: str):
-    """
-    WebSocket endpoint for real-time fund updates.
-    
-    Subscribes to PostgreSQL NOTIFY events for orders, transactions, transfers,
-    and balance changes for a specific fund. Also broadcasts position price
-    updates every 30 seconds.
-    
-    Connection flow:
-    1. Client connects
-    2. Server sends initial snapshot of fund data (including positions)
-    3. Server streams real-time updates as they occur in the database
-    4. Server broadcasts position price updates every 30 seconds
-    5. Client sends ping every 5s, server responds with pong
-    6. Server closes if no ping received in 15s
-    """
-    logger = logging.getLogger("app.realtime")
-    
-    await websocket.accept()
-    logger.info(f"Fund WebSocket connection accepted for fund {fund_id}")
-    
-    # Get or create the database listener service
-    db_listener = get_db_listener_service()
-    
-    # Start the listener if not already running
-    if not db_listener.running:
-        try:
-            await db_listener.start()
-        except Exception as e:
-            logger.error(f"Failed to start DatabaseListenerService: {e}")
-            await websocket.close()
-            return
-    
-    # Subscribe this WebSocket to fund updates
-    db_listener.subscribe(fund_id, websocket)
-    
-    # Import the positions helper
-    from app.routers.funds import get_fund_snapshot, _get_positions_for_websocket
-    
-    try:
-        # Send initial snapshot
-        snapshot = await get_fund_snapshot(fund_id)
-        
-        if snapshot:
-            await websocket.send_json({
-                "type": "snapshot",
-                "fund_id": fund_id,
-                "snapshot": snapshot,
-                "timestamp": time.time()
-            })
-            logger.info(f"Sent initial snapshot to fund {fund_id} WebSocket")
-        else:
-            logger.warning(f"Fund {fund_id} not found, closing connection")
-            await websocket.close()
-            return
-        
-        # Track last ping time and last position refresh
-        last_ping_time = time.time()
-        last_position_refresh = time.time()
-        ping_timeout = 15  # 3x the 5s ping interval
-        position_refresh_interval = 30  # Refresh positions every 30 seconds
-        
-        # Keep connection alive and handle client messages
-        while True:
-            try:
-                # Wait for message with timeout
-                message = await asyncio.wait_for(
-                    websocket.receive_text(),
-                    timeout=1.0  # Check every second
-                )
-                
-                # Parse message
-                try:
-                    data = json.loads(message)
-                    
-                    # Handle ping messages
-                    if isinstance(data, dict) and data.get("type") == "ping":
-                        last_ping_time = time.time()
-                        await websocket.send_json({
-                            "type": "pong",
-                            "timestamp": data.get("timestamp", time.time())
-                        })
-                        logger.debug(f"Sent pong to fund {fund_id} WebSocket")
-                        
-                except (json.JSONDecodeError, Exception) as e:
-                    logger.warning(f"Invalid message from fund {fund_id} WebSocket: {e}")
-                    
-            except asyncio.TimeoutError:
-                # Check if client has timed out (no ping received)
-                if time.time() - last_ping_time > ping_timeout:
-                    logger.warning(f"Fund {fund_id} WebSocket timed out (no ping in {ping_timeout}s)")
-                    break
-                
-                # Check if it's time to refresh position prices
-                if time.time() - last_position_refresh >= position_refresh_interval:
-                    try:
-                        # Fetch updated position prices
-                        positions_data = await _get_positions_for_websocket(fund_id)
-                        
-                        # Only broadcast if there are positions
-                        if positions_data["positions"]:
-                            await websocket.send_json({
-                                "type": "update",
-                                "category": "positions",
-                                "event_type": "positions_updated",
-                                "timestamp": time.time(),
-                                "data": {
-                                    "positions": positions_data["positions"],
-                                    "summary": positions_data["summary"]
-                                }
-                            })
-                            logger.debug(f"Sent position price update to fund {fund_id} WebSocket")
-                        
-                        last_position_refresh = time.time()
-                    except Exception as e:
-                        logger.warning(f"Error refreshing positions for fund {fund_id}: {e}")
-                
-                # Continue waiting
-                continue
-                
-            except WebSocketDisconnect:
-                logger.info(f"Fund {fund_id} WebSocket disconnected by client")
-                break
-                
-            except Exception as e:
-                logger.error(f"Error in fund {fund_id} WebSocket loop: {e}")
-                break
-    
-    finally:
-        # Unsubscribe from updates
-        db_listener.unsubscribe(fund_id, websocket)
-        logger.info(f"Fund {fund_id} WebSocket connection closed")
+# Old individual fund WebSocket endpoint removed - fund updates now go through /realtime endpoint
 
 

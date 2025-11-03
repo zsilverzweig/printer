@@ -223,6 +223,9 @@ export function FundPositions({ fundId }: FundPositionsProps) {
   const [data, setData] = useState<PositionsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isClosingAll, setIsClosingAll] = useState(false);
+  const [closeAllError, setCloseAllError] = useState<string | null>(null);
+  const [showCloseAllDialog, setShowCloseAllDialog] = useState(false);
 
   const fetchPositions = async () => {
     try {
@@ -240,6 +243,37 @@ export function FundPositions({ fundId }: FundPositionsProps) {
       );
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCloseAll = async () => {
+    try {
+      setIsClosingAll(true);
+      setCloseAllError(null);
+
+      const response = await fetch(
+        `http://localhost:8000/api/funds/${fundId}/positions/close-all-orphaned`,
+        { method: "POST" }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || "Failed to close all positions");
+      }
+
+      const result = await response.json();
+      console.log("All positions closed:", result);
+
+      // Close dialog and refresh positions
+      setShowCloseAllDialog(false);
+      await fetchPositions();
+    } catch (err) {
+      setCloseAllError(
+        err instanceof Error ? err.message : "Failed to close all positions"
+      );
+      console.error("Error closing all positions:", err);
+    } finally {
+      setIsClosingAll(false);
     }
   };
 
@@ -456,10 +490,101 @@ export function FundPositions({ fundId }: FundPositionsProps) {
       {/* Database Positions */}
       <Card>
         <CardHeader>
-          <CardTitle>Database Positions</CardTitle>
-          <CardDescription>
-            Positions calculated from transaction history
-          </CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Database Positions</CardTitle>
+              <CardDescription>
+                Positions calculated from transaction history
+              </CardDescription>
+            </div>
+            {data.sync_issues.in_db_not_alpaca.length > 0 && (
+              <AlertDialog
+                open={showCloseAllDialog}
+                onOpenChange={setShowCloseAllDialog}
+              >
+                <AlertDialogTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="border-orange-500 text-orange-600 hover:bg-orange-50 hover:text-orange-700 dark:border-orange-700 dark:text-orange-400 dark:hover:bg-orange-950/30"
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Close All Orphaned
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle className="flex items-center gap-2">
+                      <AlertTriangle className="h-5 w-5 text-orange-600" />
+                      Close All Orphaned Positions?
+                    </AlertDialogTitle>
+                    <AlertDialogDescription className="space-y-3">
+                      <p>
+                        This will create closing transactions for{" "}
+                        <strong>
+                          {data.sync_issues.in_db_not_alpaca.length} orphaned
+                          position(s)
+                        </strong>{" "}
+                        to zero them out in the database.
+                      </p>
+                      <div className="rounded-md bg-orange-50 dark:bg-orange-950/30 p-3 text-sm">
+                        <p className="font-semibold text-orange-900 dark:text-orange-200 mb-2">
+                          Positions to close:
+                        </p>
+                        <ul className="list-disc list-inside space-y-1 text-orange-800 dark:text-orange-300">
+                          {data.sync_issues.in_db_not_alpaca.map((symbol) => (
+                            <li key={symbol}>{symbol}</li>
+                          ))}
+                        </ul>
+                      </div>
+                      <div className="rounded-md bg-blue-50 dark:bg-blue-950/30 p-3 text-sm space-y-2">
+                        <p className="font-semibold text-blue-900 dark:text-blue-200">
+                          What this does:
+                        </p>
+                        <ul className="list-disc list-inside space-y-1 text-blue-800 dark:text-blue-300">
+                          <li>
+                            Creates matching sell transactions for each position
+                          </li>
+                          <li>
+                            Tries to find matching Alpaca orders for actual exit
+                            prices
+                          </li>
+                          <li>
+                            Falls back to breakeven pricing if orders not found
+                          </li>
+                          <li>Returns sale proceeds to your fund balance</li>
+                          <li>Creates a complete audit trail</li>
+                        </ul>
+                      </div>
+                      {closeAllError && (
+                        <div className="rounded-md bg-red-50 dark:bg-red-950/30 p-3 text-sm text-red-800 dark:text-red-300">
+                          <p className="font-semibold mb-1">Error:</p>
+                          <p>{closeAllError}</p>
+                        </div>
+                      )}
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel disabled={isClosingAll}>
+                      Cancel
+                    </AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={(e) => {
+                        e.preventDefault();
+                        handleCloseAll();
+                      }}
+                      disabled={isClosingAll}
+                      className="bg-orange-600 hover:bg-orange-700 text-white"
+                    >
+                      {isClosingAll
+                        ? "Closing..."
+                        : `Close ${data.sync_issues.in_db_not_alpaca.length} Position(s)`}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           {data.database_positions.length === 0 ? (

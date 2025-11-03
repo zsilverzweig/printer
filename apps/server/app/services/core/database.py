@@ -53,7 +53,7 @@ def get_async_engine() -> AsyncEngine:
             "Please configure PostgreSQL connection string in env.local"
         )
     
-    logger.info(f"Initializing database engine: {database_url.split('@')[-1] if '@' in database_url else 'localhost'}")
+    logger.debug(f"Initializing database engine: {database_url.split('@')[-1] if '@' in database_url else 'localhost'}")
     
     _engine = create_async_engine(
         database_url,
@@ -125,14 +125,11 @@ async def init_db() -> None:
     """
     engine = get_async_engine()
     
-    logger.info("Creating database tables...")
-    
+    # Create tables silently
     try:
         async with engine.begin() as conn:
             # Create all tables defined in Base metadata
             await conn.run_sync(Base.metadata.create_all)
-        
-        logger.info("✅ Database tables created successfully")
         
     except Exception as e:
         logger.error(f"❌ Failed to create database tables: {e}")

@@ -675,29 +675,38 @@ class AlpacaService:
             raise ValueError("Alpaca client not initialized. Check API credentials.")
         
         try:
-            # Get activities from Alpaca
-            activities = self.client.get_activities(
-                activity_types=activity_types,
-                after=after,
-                page_size=limit
-            )
+            # Build query parameters
+            params = {
+                "activity_types": activity_types,
+                "page_size": limit,
+            }
+            if after:
+                params["after"] = after
             
-            # Serialize activities to dictionaries
+            # Make direct REST API call since alpaca-py doesn't have get_activities
+            # Using the underlying REST client
+            # Note: client already adds /v2 prefix, so just use /account/activities
+            response = self.client.get(f"/account/activities", params)
+            
+            # Response is already a list of dicts
+            activities = response if isinstance(response, list) else []
+            
+            # Normalize the activity data
             activity_list = []
             for activity in activities:
                 activity_dict = {
-                    "id": activity.id,
-                    "activity_type": activity.activity_type,
-                    "transaction_time": activity.transaction_time.isoformat() if activity.transaction_time else None,
-                    "type": getattr(activity, 'type', None),
-                    "price": float(activity.price) if hasattr(activity, 'price') and activity.price else None,
-                    "qty": float(activity.qty) if hasattr(activity, 'qty') and activity.qty else None,
-                    "side": activity.side if hasattr(activity, 'side') else None,
-                    "symbol": activity.symbol if hasattr(activity, 'symbol') else None,
-                    "leaves_qty": float(activity.leaves_qty) if hasattr(activity, 'leaves_qty') and activity.leaves_qty else None,
-                    "order_id": str(activity.order_id) if hasattr(activity, 'order_id') else None,
-                    "cum_qty": float(activity.cum_qty) if hasattr(activity, 'cum_qty') and activity.cum_qty else None,
-                    "order_status": activity.order_status if hasattr(activity, 'order_status') else None,
+                    "id": activity.get("id"),
+                    "activity_type": activity.get("activity_type"),
+                    "transaction_time": activity.get("transaction_time"),
+                    "type": activity.get("type"),
+                    "price": float(activity.get("price")) if activity.get("price") else None,
+                    "qty": float(activity.get("qty")) if activity.get("qty") else None,
+                    "side": activity.get("side"),
+                    "symbol": activity.get("symbol"),
+                    "leaves_qty": float(activity.get("leaves_qty")) if activity.get("leaves_qty") else None,
+                    "order_id": activity.get("order_id"),
+                    "cum_qty": float(activity.get("cum_qty")) if activity.get("cum_qty") else None,
+                    "order_status": activity.get("order_status"),
                 }
                 activity_list.append(activity_dict)
             

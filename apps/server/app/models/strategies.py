@@ -178,6 +178,7 @@ class Transaction(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     order_id: Mapped[str] = mapped_column(String(36), ForeignKey("orders.id"), nullable=False, index=True)
     alpaca_order_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
+    alpaca_fill_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
     fund_id: Mapped[str] = mapped_column(String(36), ForeignKey("funds.id"), nullable=False, index=True)
     
     # Transaction details

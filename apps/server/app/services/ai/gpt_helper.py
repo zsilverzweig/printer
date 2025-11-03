@@ -13,9 +13,8 @@ from typing import Type, TypeVar, Optional, Dict, Any
 
 import openai
 from pydantic import BaseModel, ValidationError
-from sqlalchemy.orm import Session
 
-from app.services.ai.cost_tracker import record_ai_cost
+from app.services.ai.cost_tracker import record_ai_cost_async
 
 logger = logging.getLogger(__name__)
 
@@ -25,13 +24,12 @@ T = TypeVar('T', bound=BaseModel)
 class GPTHelper:
     """Simple helper for GPT API calls with structured outputs."""
     
-    def __init__(self, model: str = "gpt-4o-mini", db: Optional[Session] = None, fund_id: Optional[str] = None):
+    def __init__(self, model: str = "gpt-4o-mini", fund_id: Optional[str] = None):
         """
         Initialize GPT helper.
         
         Args:
             model: OpenAI model to use (default: gpt-4o-mini)
-            db: Optional database session for cost tracking
             fund_id: Optional fund ID for cost tracking
         """
         api_key = os.getenv("OPENAI_API_KEY")
@@ -40,7 +38,6 @@ class GPTHelper:
         
         self.client = openai.AsyncOpenAI(api_key=api_key)
         self.model = model
-        self.db = db
         self.fund_id = fund_id
     
     async def get_structured_response(
@@ -85,12 +82,11 @@ class GPTHelper:
             )
             
             # Record cost if tracking is enabled
-            if self.db and self.fund_id and operation:
+            if self.fund_id and operation:
                 usage = response.usage
                 if usage:
                     try:
-                        record_ai_cost(
-                            db=self.db,
+                        await record_ai_cost_async(
                             fund_id=self.fund_id,
                             model=self.model,
                             prompt_tokens=usage.prompt_tokens,
@@ -99,11 +95,9 @@ class GPTHelper:
                             symbol=symbol,
                             metadata=metadata,
                         )
-                        self.db.commit()
                     except Exception as e:
                         logger.error(f"Failed to record AI cost: {e}", exc_info=True)
                         # Don't fail the request if cost tracking fails
-                        self.db.rollback()
             
             # Parse JSON response
             content = response.choices[0].message.content
@@ -133,32 +127,30 @@ class GPTHelper:
             raise ValueError(f"Failed to get GPT response: {e}")
 
 
-# Global instance for convenience (without DB tracking)
+# Global instance for convenience (without cost tracking)
 _gpt_helper: GPTHelper | None = None
 
 
 def get_gpt_helper(
     model: str = "gpt-4o-mini",
-    db: Optional[Session] = None,
     fund_id: Optional[str] = None,
 ) -> GPTHelper:
     """
     Get or create GPT helper instance.
     
-    If db and fund_id are provided, creates a new instance with cost tracking enabled.
+    If fund_id is provided, creates a new instance with cost tracking enabled.
     Otherwise, returns global instance without cost tracking.
     
     Args:
         model: OpenAI model to use
-        db: Optional database session for cost tracking
         fund_id: Optional fund ID for cost tracking
         
     Returns:
         GPTHelper instance
     """
     # If cost tracking is needed, create new instance
-    if db and fund_id:
-        return GPTHelper(model=model, db=db, fund_id=fund_id)
+    if fund_id:
+        return GPTHelper(model=model, fund_id=fund_id)
     
     # Otherwise use global instance
     global _gpt_helper

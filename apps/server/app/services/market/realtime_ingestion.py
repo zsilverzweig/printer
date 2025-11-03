@@ -131,7 +131,7 @@ class RealtimeIngestionService:
         if self.enable_validation:
             self.validation_task = asyncio.create_task(self._validation_processor())
         
-        logger.info("Real-time ingestion service started")
+        logger.debug("Real-time ingestion service started")
     
     async def stop(self) -> None:
         """Stop the ingestion service."""
@@ -180,7 +180,7 @@ class RealtimeIngestionService:
         def run_websocket():
             """Run WebSocket client in thread."""
             try:
-                logger.info("Starting Polygon WebSocket connection (AM.* subscription)")
+                logger.debug("Starting Polygon WebSocket connection (AM.* subscription)")
                 
                 # Create WebSocket client
                 self.ws_client = WebSocketClient(
@@ -221,7 +221,7 @@ class RealtimeIngestionService:
         self.ws_thread = threading.Thread(target=run_websocket, daemon=True)
         self.ws_thread.start()
         
-        logger.info("WebSocket thread started")
+        logger.debug("WebSocket thread started")
     
     async def _batch_processor(self) -> None:
         """
@@ -413,54 +413,126 @@ class RealtimeIngestionService:
         Bulk insert bars into TimescaleDB.
         
         Uses ON CONFLICT DO UPDATE to handle late/corrected data.
+        
+        DEADLOCK PREVENTION:
+        - Sorts bars by (time, symbol, timescale) before insertion to ensure consistent lock ordering
+        - Implements exponential backoff retry for deadlock detection errors
+        
+        DEDUPLICATION:
+        - Removes duplicate bars with the same (time, symbol, timescale) within the batch
+        - Keeps the last occurrence of each duplicate (most recent data)
+        - Prevents "ON CONFLICT DO UPDATE command cannot affect row a second time" error
+        
+        PARAMETER LIMIT HANDLING:
+        - PostgreSQL has a 32,767 parameter limit
+        - With 11 fields per record, we chunk inserts to stay under this limit
+        - Max chunk size: 2000 records (2000 * 11 = 22,000 parameters, safe margin)
         """
         if not bars:
             return
         
+        # CRITICAL: Deduplicate bars by (time, symbol, timescale) to prevent ON CONFLICT errors
+        # Keep the last occurrence of each duplicate (most recent/corrected data)
+        seen_keys = {}
+        for bar in bars:
+            key = (bar.time, bar.symbol, bar.timescale)
+            seen_keys[key] = bar  # This overwrites earlier duplicates with later ones
+        
+        # Convert back to list after deduplication
+        bars = list(seen_keys.values())
+        
+        if not bars:
+            return
+        
+        # CRITICAL: Sort bars by (time, symbol, timescale) to ensure consistent lock acquisition order
+        # This prevents deadlocks when multiple processes insert overlapping data
+        bars = sorted(bars, key=lambda b: (b.time, b.symbol, b.timescale))
+        
+        # Chunk size to avoid PostgreSQL's 32,767 parameter limit
+        # With 11 fields per record: 2000 * 11 = 22,000 parameters (safe margin)
+        CHUNK_SIZE = 2000
+        
+        # Process bars in chunks
+        for chunk_start in range(0, len(bars), CHUNK_SIZE):
+            chunk_end = min(chunk_start + CHUNK_SIZE, len(bars))
+            bars_chunk = bars[chunk_start:chunk_end]
+            
+            await self._insert_bar_chunk(bars_chunk)
+    
+    async def _insert_bar_chunk(self, bars: List[MarketData]) -> None:
+        """
+        Insert a single chunk of bars (helper for _bulk_insert_bars).
+        
+        Handles deadlock retries for the chunk.
+        """
+        # Deadlock retry configuration
+        MAX_RETRIES = 3
+        INITIAL_BACKOFF = 0.1  # 100ms
+        
         async with get_async_session() as session:
-            try:
-                # Convert to dicts for bulk insert
-                values = [
-                    {
-                        "time": bar.time,
-                        "symbol": bar.symbol,
-                        "timescale": bar.timescale,
-                        "open": bar.open,
-                        "high": bar.high,
-                        "low": bar.low,
-                        "close": bar.close,
-                        "volume": bar.volume,
-                        "vwap": bar.vwap,
-                        "trade_count": bar.trade_count,
-                        "session_type": bar.session_type
-                    }
-                    for bar in bars
-                ]
-                
-                # Use PostgreSQL INSERT ... ON CONFLICT DO UPDATE
-                # This handles late/corrected bars by updating existing records
-                stmt = insert(MarketData).values(values)
-                stmt = stmt.on_conflict_do_update(
-                    index_elements=["time", "symbol", "timescale"],
-                    set_={
-                        "open": stmt.excluded.open,
-                        "high": stmt.excluded.high,
-                        "low": stmt.excluded.low,
-                        "close": stmt.excluded.close,
-                        "volume": stmt.excluded.volume,
-                        "vwap": stmt.excluded.vwap,
-                        "trade_count": stmt.excluded.trade_count,
-                        "session_type": stmt.excluded.session_type
-                    }
-                )
-                
-                await session.execute(stmt)
-                await session.commit()
-                
-            except Exception as e:
-                logger.error(f"Bulk insert failed: {e}")
-                await session.rollback()
-                raise
+            for retry_attempt in range(MAX_RETRIES):
+                try:
+                    # Convert to dicts for bulk insert
+                    values = [
+                        {
+                            "time": bar.time,
+                            "symbol": bar.symbol,
+                            "timescale": bar.timescale,
+                            "open": bar.open,
+                            "high": bar.high,
+                            "low": bar.low,
+                            "close": bar.close,
+                            "volume": bar.volume,
+                            "vwap": bar.vwap,
+                            "trade_count": bar.trade_count,
+                            "session_type": bar.session_type
+                        }
+                        for bar in bars
+                    ]
+                    
+                    # Use PostgreSQL INSERT ... ON CONFLICT DO UPDATE
+                    # This handles late/corrected bars by updating existing records
+                    stmt = insert(MarketData).values(values)
+                    stmt = stmt.on_conflict_do_update(
+                        index_elements=["time", "symbol", "timescale"],
+                        set_={
+                            "open": stmt.excluded.open,
+                            "high": stmt.excluded.high,
+                            "low": stmt.excluded.low,
+                            "close": stmt.excluded.close,
+                            "volume": stmt.excluded.volume,
+                            "vwap": stmt.excluded.vwap,
+                            "trade_count": stmt.excluded.trade_count,
+                            "session_type": stmt.excluded.session_type
+                        }
+                    )
+                    
+                    await session.execute(stmt)
+                    await session.commit()
+                    
+                    # Success - break out of retry loop
+                    break
+                    
+                except Exception as e:
+                    await session.rollback()
+                    
+                    # Check if this is a deadlock error (psycopg error code 40P01)
+                    error_msg = str(e).lower()
+                    is_deadlock = "deadlock detected" in error_msg or "40p01" in error_msg
+                    
+                    if is_deadlock and retry_attempt < MAX_RETRIES - 1:
+                        # Exponential backoff: 100ms, 200ms, 400ms
+                        backoff_time = INITIAL_BACKOFF * (2 ** retry_attempt)
+                        logger.warning(
+                            f"⚠️  Deadlock detected on attempt {retry_attempt + 1}/{MAX_RETRIES}, "
+                            f"retrying in {backoff_time:.1f}s..."
+                        )
+                        await asyncio.sleep(backoff_time)
+                        continue
+                    else:
+                        # Not a deadlock or out of retries
+                        logger.error(f"Bulk insert failed after {retry_attempt + 1} attempts: {e}")
+                        raise
     
     async def _validation_processor(self) -> None:
         """
@@ -591,7 +663,7 @@ def initialize_ingestion_service(
             batch_interval_seconds=batch_interval_seconds,
             enable_validation=enable_validation
         )
-        logger.info("Real-time ingestion service initialized")
+        logger.debug("Real-time ingestion service initialized")
     
     return _ingestion_service
 

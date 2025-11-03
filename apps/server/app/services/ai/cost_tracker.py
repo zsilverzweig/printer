@@ -6,9 +6,11 @@ Tracks AI service usage costs and associates them with funds for performance imp
 
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Optional, Dict, Any
 from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from app.models.strategies import AICost, Fund
 
@@ -101,7 +103,7 @@ def record_ai_cost(
         completion_tokens=completion_tokens,
         total_tokens=total_tokens,
         cost=cost,
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.utcnow(),
         extra_data=metadata or {},
     )
     
@@ -121,6 +123,78 @@ def record_ai_cost(
         )
     else:
         logger.warning(f"Fund {fund_id} not found when recording AI cost")
+    
+    return ai_cost
+
+
+async def record_ai_cost_async(
+    fund_id: str,
+    model: str,
+    prompt_tokens: int,
+    completion_tokens: int,
+    operation: str,
+    symbol: Optional[str] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> AICost:
+    """
+    Async version: Record an AI service cost to the database and update fund totals.
+    
+    Args:
+        fund_id: Fund ID that incurred the cost
+        model: AI model used
+        prompt_tokens: Number of input tokens
+        completion_tokens: Number of output tokens
+        operation: Type of operation (e.g., "entry_analysis", "stop_update")
+        symbol: Optional ticker symbol related to the operation
+        metadata: Optional additional context
+        
+    Returns:
+        Created AICost record
+    """
+    from app.services.core.database import get_async_session
+    
+    # Calculate cost
+    total_tokens = prompt_tokens + completion_tokens
+    cost = calculate_cost(model, prompt_tokens, completion_tokens)
+    
+    # Create AI cost record
+    ai_cost = AICost(
+        id=str(uuid.uuid4()),
+        fund_id=fund_id,
+        symbol=symbol,
+        operation=operation,
+        model=model,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        total_tokens=total_tokens,
+        cost=cost,
+        timestamp=datetime.utcnow(),
+        extra_data=metadata or {},
+    )
+    
+    async with get_async_session() as session:
+        session.add(ai_cost)
+        
+        # Update fund AI cost totals
+        result = await session.execute(
+            select(Fund).where(Fund.id == fund_id)
+        )
+        fund = result.scalar_one_or_none()
+        
+        if fund:
+            fund.total_ai_cost += cost
+            fund.ai_cost_mtd += cost
+            fund.ai_cost_ytd += cost
+            
+            logger.info(
+                f"💰 AI cost recorded: {operation} for {symbol or 'N/A'} - "
+                f"${cost:.6f} ({prompt_tokens} + {completion_tokens} tokens, {model}). "
+                f"Fund total: ${fund.total_ai_cost:.4f}"
+            )
+        else:
+            logger.warning(f"Fund {fund_id} not found when recording AI cost")
+        
+        await session.commit()
     
     return ai_cost
 
@@ -237,7 +311,7 @@ def reset_periodic_costs(db: Session, period: str = 'month') -> None:
             fund.ai_cost_mtd = 0.0
             logger.info(f"Reset YTD AI costs for fund {fund.id} ({fund.name})")
         
-        fund.last_ai_cost_reset = datetime.now(timezone.utc)
+        fund.last_ai_cost_reset = datetime.utcnow()
     
     db.commit()
 

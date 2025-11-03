@@ -39,7 +39,6 @@ from app.services.wyckoff.detection import (
 )
 from app.services.market.market_formatting import format_candlesticks_table
 from app.services.news.news_service import NewsService
-from app.services.core.database import get_sync_session
 from app.services.ai.gpt_helper import get_gpt_helper
 from pydantic import BaseModel, Field
 
@@ -469,13 +468,7 @@ class WyckoffStrategy(ExecutionStrategy):
     # ---------------------------- Internals -------------------------------
 
     def _get_gpt_helper(self):
-        if self.fund_id:
-            try:
-                db = get_sync_session()
-                return get_gpt_helper(model=self._gpt_model, db=db, fund_id=self.fund_id)
-            except Exception as e:
-                logger.warning(f"[Wyckoff] Cost tracking init failed: {e}; proceeding without DB tracking")
-        return get_gpt_helper(model=self._gpt_model)
+        return get_gpt_helper(model=self._gpt_model, fund_id=self.fund_id)
 
     async def _get_candlesticks(
         self,
@@ -487,11 +480,26 @@ class WyckoffStrategy(ExecutionStrategy):
             from app.services.market.market_data_provider import MarketDataProvider
             from app.core import get_client
             provider = MarketDataProvider(polygon_client=get_client())
-            return await provider.get_historical_bars(
+            bars = await provider.get_historical_bars(
                 symbol=symbol,
                 timeframe=timeframe,
                 lookback_minutes=lookback_minutes,
             )
+            
+            # Convert bar format from long keys (open/high/low/close/volume) 
+            # to short keys (o/h/l/c/v) expected by Wyckoff detection code
+            converted_bars = []
+            for bar in bars:
+                converted_bars.append({
+                    "t": bar.get("timestamp"),
+                    "o": float(bar.get("open", 0)),
+                    "h": float(bar.get("high", 0)),
+                    "l": float(bar.get("low", 0)),
+                    "c": float(bar.get("close", 0)),
+                    "v": float(bar.get("volume", 0)),
+                })
+            
+            return converted_bars
         except Exception as e:
             logger.error(f"[Wyckoff] Error fetching {timeframe} bars for {symbol}: {e}")
             return []

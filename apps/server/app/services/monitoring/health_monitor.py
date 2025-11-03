@@ -378,7 +378,7 @@ class HealthMonitorService:
     def register_check(self, check: BaseHealthCheck) -> None:
         """Register a health check to run periodically."""
         self.checks.append(check)
-        self.logger.info(f"Registered health check: {check.name}")
+        self.logger.debug(f"Registered health check: {check.name}")
     
     async def run_all_checks(self) -> List[HealthCheckResult]:
         """Run all registered health checks and return results."""
@@ -388,10 +388,8 @@ class HealthMonitorService:
                 result = await check.check()
                 results.append(result)
                 
-                # Log results
-                if result.is_healthy:
-                    self.logger.info(f"✅ {result.check_name}: {result.message}")
-                else:
+                # Log results (only warnings, not successes)
+                if not result.is_healthy:
                     self.logger.warning(f"❌ {result.check_name}: {result.message}")
                     if result.details:
                         self.logger.warning(f"   Details: {result.details}")
@@ -413,7 +411,7 @@ class HealthMonitorService:
             self.logger.warning("Health monitor already running")
             return
         
-        self.logger.info(f"Starting health monitor (interval: {self.interval_seconds}s)")
+        self.logger.debug(f"Starting health monitor (interval: {self.interval_seconds}s)")
         self.task = asyncio.create_task(self._monitor_loop())
     
     async def stop(self) -> None:
@@ -465,7 +463,7 @@ def initialize_health_monitor(interval_seconds: int = 300) -> HealthMonitorServi
         _health_monitor.register_check(MarketDataHealthCheck(lookback_days=30))
         _health_monitor.register_check(RiskManagementHealthCheck())
         
-        logger.info("Health monitor initialized with default checks")
+        logger.debug("Health monitor initialized with default checks")
     
     return _health_monitor
 

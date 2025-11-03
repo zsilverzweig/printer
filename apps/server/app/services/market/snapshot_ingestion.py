@@ -99,15 +99,13 @@ class SnapshotIngestionService:
             logger.warning("Snapshot ingestion service already running")
             return
         
-        logger.info(f"Starting snapshot ingestion service (interval: {self.fetch_interval_seconds}s)")
+        # Start silently
         self.is_running = True
         self.should_stop = False
         self.metrics.reset()
         
         # Start fetch loop
         self.fetch_task = asyncio.create_task(self._fetch_loop())
-        
-        logger.info("Snapshot ingestion service started")
     
     async def stop(self) -> None:
         """Stop the snapshot ingestion service."""
@@ -276,6 +274,10 @@ class SnapshotIngestionService:
         Batch insert minute bars into market_data table.
         Only inserts if the (time, symbol, timescale) combination doesn't exist.
         
+        DEADLOCK PREVENTION:
+        - Sorts bars by (time, symbol, timescale) before insertion to ensure consistent lock ordering
+        - Implements exponential backoff retry for deadlock detection errors
+        
         Note: PostgreSQL has a limit of 32767 parameters per query.
         With 11 columns per row, we can insert ~2900 rows per batch.
         We use 1000 rows per batch for safety.
@@ -283,26 +285,59 @@ class SnapshotIngestionService:
         if not bars:
             return
         
+        # CRITICAL: Sort bars by (time, symbol, timescale) to ensure consistent lock acquisition order
+        # This prevents deadlocks when multiple processes insert overlapping data
+        bars = sorted(bars, key=lambda b: (b.get("time"), b.get("symbol"), b.get("timescale")))
+        
         # Batch size: 1000 rows per insert (11 columns = 11,000 parameters, well under 32,767 limit)
         BATCH_SIZE = 1000
         total_inserted = 0
+        
+        # Deadlock retry configuration
+        MAX_RETRIES = 3
+        INITIAL_BACKOFF = 0.1  # 100ms
         
         try:
             for i in range(0, len(bars), BATCH_SIZE):
                 batch = bars[i:i + BATCH_SIZE]
                 
-                async with get_async_session() as session:
-                    # Use PostgreSQL INSERT ... ON CONFLICT DO NOTHING
-                    stmt = insert(MarketData).values(batch)
-                    stmt = stmt.on_conflict_do_nothing(
-                        index_elements=['time', 'symbol', 'timescale']
-                    )
-                    
-                    result = await session.execute(stmt)
-                    await session.commit()
-                    
-                    inserted = result.rowcount
-                    total_inserted += inserted
+                for retry_attempt in range(MAX_RETRIES):
+                    try:
+                        async with get_async_session() as session:
+                            # Use PostgreSQL INSERT ... ON CONFLICT DO NOTHING
+                            stmt = insert(MarketData).values(batch)
+                            stmt = stmt.on_conflict_do_nothing(
+                                index_elements=['time', 'symbol', 'timescale']
+                            )
+                            
+                            result = await session.execute(stmt)
+                            await session.commit()
+                            
+                            inserted = result.rowcount
+                            total_inserted += inserted
+                        
+                        # Success - break out of retry loop
+                        break
+                        
+                    except Exception as e:
+                        # Check if this is a deadlock error (psycopg error code 40P01)
+                        error_msg = str(e).lower()
+                        is_deadlock = "deadlock detected" in error_msg or "40p01" in error_msg
+                        
+                        if is_deadlock and retry_attempt < MAX_RETRIES - 1:
+                            # Exponential backoff: 100ms, 200ms, 400ms
+                            backoff_time = INITIAL_BACKOFF * (2 ** retry_attempt)
+                            logger.warning(
+                                f"⚠️  Deadlock detected on attempt {retry_attempt + 1}/{MAX_RETRIES}, "
+                                f"retrying in {backoff_time:.1f}s..."
+                            )
+                            await asyncio.sleep(backoff_time)
+                            continue
+                        else:
+                            # Not a deadlock or out of retries
+                            logger.error(f"Error inserting minute bars after {retry_attempt + 1} attempts: {e}", exc_info=True)
+                            self.metrics.errors += 1
+                            raise
             
             self.metrics.minute_bars_inserted += total_inserted
             
@@ -321,7 +356,23 @@ class SnapshotIngestionService:
         Note: PostgreSQL has a limit of 32767 parameters per query.
         With 7 columns per row, we can upsert ~4600 rows per batch.
         We use 2000 rows per batch for safety.
+        
+        DEDUPLICATION:
+        - Removes duplicate trades for the same symbol within the batch
+        - Keeps the last occurrence (most recent data)
+        - Prevents "ON CONFLICT DO UPDATE command cannot affect row a second time" error
         """
+        if not trades:
+            return
+        
+        # Deduplicate trades by symbol - keep the last occurrence
+        seen_symbols = {}
+        for trade in trades:
+            symbol = trade['symbol']
+            seen_symbols[symbol] = trade
+        
+        trades = list(seen_symbols.values())
+        
         if not trades:
             return
         

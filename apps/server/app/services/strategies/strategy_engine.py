@@ -248,6 +248,20 @@ class StrategyEngine:
             
             self._last_position_refresh = datetime.utcnow()
             
+            # Check for positions closed in Alpaca but still in our transaction ledger
+            alpaca_symbols = {pos["symbol"] for pos in alpaca_positions}
+            closed_in_alpaca = fund_symbols - alpaca_symbols
+            
+            if closed_in_alpaca:
+                logger.warning(
+                    f"⚠️  Found {len(closed_in_alpaca)} position(s) closed in Alpaca but still in transaction ledger: "
+                    f"{closed_in_alpaca}"
+                )
+                
+                # Trigger reconciliation for each closed position
+                for symbol in closed_in_alpaca:
+                    await self._reconcile_closed_position(symbol)
+            
             if self._position_cache:
                 logger.info(
                     f"📊 Synced {len(self._position_cache)} position(s) from Alpaca for this fund: "
@@ -258,6 +272,109 @@ class StrategyEngine:
         
         except Exception as e:
             logger.error(f"Error refreshing positions from Alpaca: {e}", exc_info=True)
+    
+    async def _reconcile_closed_position(self, symbol: str) -> None:
+        """
+        Reconcile a position that is closed in Alpaca but still shows in our transaction ledger.
+        
+        This situation occurs when:
+        - A position was manually closed in Alpaca
+        - An order filled but we missed recording the transaction
+        - A partial fill closed the position and we didn't capture it
+        
+        We resolve it by:
+        1. Checking Alpaca's Activities API for missing transactions
+        2. Using the reconciliation service to auto-correct
+        3. Creating missing sell transactions to sync our ledger
+        
+        Args:
+            symbol: The symbol that's closed in Alpaca but still in our ledger
+        """
+        try:
+            logger.warning(
+                f"🔧 Reconciling closed position for {symbol} - "
+                f"Alpaca shows 0 shares but transaction ledger shows open position"
+            )
+            
+            # Broadcast diagnostic event
+            await _broadcast_trading_event({
+                "fund_id": str(self.fund_id),
+                "fund_name": self.fund.name,
+                "event_type": "diagnostic",
+                "symbol": symbol,
+                "timestamp": _get_utc_timestamp(),
+                "reason": "Position sync check",
+                "message": f"Position {symbol} is closed in Alpaca but still in transaction ledger - triggering reconciliation",
+            })
+            
+            # Get the reconciliation service
+            reconciliation_service = get_reconciliation_service()
+            
+            if not reconciliation_service:
+                logger.error(
+                    f"❌ Cannot reconcile {symbol} - reconciliation service not available"
+                )
+                return
+            
+            # Use the reconciliation service to check and auto-correct
+            # This will query Activities API and create missing transactions
+            is_synced = await reconciliation_service.reconcile_symbol(
+                fund_id=str(self.fund_id),
+                symbol=symbol,
+                order_id=None,  # Not tied to a specific order
+                attempt=1,
+                total_attempts=1
+            )
+            
+            if is_synced:
+                logger.info(
+                    f"✅ Successfully reconciled {symbol} - "
+                    f"position now synced with Alpaca"
+                )
+                
+                # Broadcast success event
+                await _broadcast_trading_event({
+                    "fund_id": str(self.fund_id),
+                    "fund_name": self.fund.name,
+                    "event_type": "position_synced",
+                    "symbol": symbol,
+                    "timestamp": _get_utc_timestamp(),
+                    "reason": "Auto-correction successful",
+                    "message": f"Position {symbol} successfully reconciled with Alpaca",
+                })
+            else:
+                logger.error(
+                    f"❌ Failed to reconcile {symbol} - "
+                    f"manual intervention may be required"
+                )
+                
+                # Broadcast error event
+                await _broadcast_trading_event({
+                    "fund_id": str(self.fund_id),
+                    "fund_name": self.fund.name,
+                    "event_type": "error",
+                    "symbol": symbol,
+                    "timestamp": _get_utc_timestamp(),
+                    "reason": "Position sync failed",
+                    "message": f"Failed to reconcile {symbol} - manual intervention may be required",
+                })
+        
+        except Exception as e:
+            logger.error(
+                f"Error reconciling closed position for {symbol}: {e}",
+                exc_info=True
+            )
+            
+            # Broadcast error event
+            await _broadcast_trading_event({
+                "fund_id": str(self.fund_id),
+                "fund_name": self.fund.name,
+                "event_type": "error",
+                "symbol": symbol,
+                "timestamp": _get_utc_timestamp(),
+                "reason": "Reconciliation error",
+                "message": f"Error reconciling {symbol}: {str(e)}",
+            })
     
     async def _get_fund_symbols(self) -> set[str]:
         """
@@ -1193,6 +1310,23 @@ class StrategyEngine:
         try:
             # Safety check: Verify we're still in the correct trading mode
             self._verify_trading_mode()
+            
+            # If position is 1 share or less, just sell it all instead of scaling
+            if position.quantity <= 1.0:
+                logger.info(
+                    f"[{self.fund.mode.upper()}] Position {position.symbol} has {position.quantity:.4f} shares "
+                    f"(<= 1), selling entire position instead of scaling out"
+                )
+                # Convert to full exit signal
+                exit_signal = ExitSignal(
+                    should_exit=True,
+                    exit_price=market_data.price,
+                    reason=f"{signal.reason} (full exit - position <= 1 share)",
+                    partial_exit=False,
+                    exit_percent=100.0
+                )
+                await self._exit_position(position, exit_signal, market_data)
+                return
             
             scale_quantity = position.quantity * (signal.percent / 100.0)
             

@@ -123,7 +123,7 @@ class DatabaseListenerService:
             self.subscribers[fund_id] = set()
         
         self.subscribers[fund_id].add(websocket)
-        logger.info(f"WebSocket subscribed to fund {fund_id}. Total subscribers: {len(self.subscribers[fund_id])}")
+        logger.debug(f"WebSocket subscribed to fund {fund_id}. Total subscribers: {len(self.subscribers[fund_id])}")
     
     def unsubscribe(self, fund_id: str, websocket: WebSocket):
         """Unsubscribe a WebSocket from updates for a specific fund."""
@@ -134,7 +134,7 @@ class DatabaseListenerService:
             if not self.subscribers[fund_id]:
                 del self.subscribers[fund_id]
             
-            logger.info(f"WebSocket unsubscribed from fund {fund_id}. Remaining: {len(self.subscribers.get(fund_id, []))}")
+            logger.debug(f"WebSocket unsubscribed from fund {fund_id}. Remaining: {len(self.subscribers.get(fund_id, []))}")
     
     async def _broadcast_to_fund(self, fund_id: str, message: dict):
         """Broadcast a message to all WebSocket subscribers for a fund."""

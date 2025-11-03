@@ -1,7 +1,7 @@
 /**
  * FundCard Component
  *
- * Displays a fund with its key information.
+ * Displays a fund with its key information using real-time WebSocket updates.
  */
 
 import { TrendingDown, TrendingUp } from "lucide-react";
@@ -16,7 +16,7 @@ import {
   CardTitle,
 } from "@/lib/components/ui/card";
 
-import { useFundSummary } from "../hooks/use-fund-summary";
+import { useFundRealtime } from "../hooks/use-fund-realtime";
 import { Fund } from "../types";
 
 interface FundCardProps {
@@ -27,10 +27,19 @@ export function FundCard({ fund }: FundCardProps) {
   const modeColor = fund.mode === "sim" ? "bg-blue-500" : "bg-green-500";
   const modeLabel = fund.mode === "sim" ? "SIM" : "REAL";
 
-  // Fetch real fund summary data (AUM, performance)
-  const summary = useFundSummary(fund.id);
+  // Connect to real-time WebSocket for fund data
+  const { data, isConnecting, error } = useFundRealtime(fund.id);
+  const performance = data.performance;
 
-  const isPositive = summary.dayChange >= 0;
+  // Calculate display values
+  const loading = isConnecting || !performance;
+  const hasError = !!error;
+  const aum = performance?.aum ?? 0;
+  const cashBalance = performance?.cashBalance ?? 0;
+  const positionValue = performance?.positionValue ?? 0;
+  const dayChange = performance?.dayChange ?? 0;
+  const dayChangePercent = performance?.dayChangePercent ?? 0;
+  const isPositive = dayChange >= 0;
 
   return (
     <Link href={`/funds/${fund.id}`}>
@@ -55,29 +64,29 @@ export function FundCard({ fund }: FundCardProps) {
               <p className="text-sm text-muted-foreground">
                 Assets Under Management
               </p>
-              {summary.loading ? (
+              {loading ? (
                 <p className="text-2xl font-bold text-muted-foreground">
                   Loading...
                 </p>
-              ) : summary.error ? (
+              ) : hasError ? (
                 <p className="text-2xl font-bold text-red-600">Error</p>
               ) : (
                 <>
                   <p className="text-2xl font-bold">
                     $
-                    {summary.aum.toLocaleString("en-US", {
+                    {aum.toLocaleString("en-US", {
                       minimumFractionDigits: 2,
                       maximumFractionDigits: 2,
                     })}
                   </p>
                   <p className="text-xs text-muted-foreground mt-1">
                     Cash: $
-                    {summary.cashBalance.toLocaleString("en-US", {
+                    {cashBalance.toLocaleString("en-US", {
                       minimumFractionDigits: 2,
                       maximumFractionDigits: 2,
                     })}{" "}
                     • Positions: $
-                    {summary.positionValue.toLocaleString("en-US", {
+                    {positionValue.toLocaleString("en-US", {
                       minimumFractionDigits: 2,
                       maximumFractionDigits: 2,
                     })}
@@ -87,7 +96,7 @@ export function FundCard({ fund }: FundCardProps) {
             </div>
 
             {/* Performance */}
-            {!summary.loading && !summary.error && (
+            {!loading && !hasError && (
               <div className="flex items-center justify-between pt-4 border-t">
                 <span className="text-sm text-muted-foreground">Today</span>
                 <div
@@ -101,9 +110,8 @@ export function FundCard({ fund }: FundCardProps) {
                     <TrendingDown className="h-4 w-4" />
                   )}
                   <span className="font-medium">
-                    ${Math.abs(summary.dayChange).toFixed(2)} (
-                    {isPositive ? "+" : ""}
-                    {summary.dayChangePercent.toFixed(2)}%)
+                    ${Math.abs(dayChange).toFixed(2)} ({isPositive ? "+" : ""}
+                    {dayChangePercent.toFixed(2)}%)
                   </span>
                 </div>
               </div>

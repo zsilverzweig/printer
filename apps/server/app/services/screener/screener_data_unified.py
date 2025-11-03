@@ -58,9 +58,7 @@ async def fetch_screener_data_unified(
         ]
     """
     
-    logger.info(f"[UNIFIED] fetch_screener_data_unified called: target_timestamp={target_timestamp}, min_rv={min_relative_volume}")
-    
-    # Determine mode and dates
+    # Determine mode and dates (silent unless debug)
     if target_timestamp:
         # Historical mode
         mode = "historical"
@@ -69,7 +67,7 @@ async def fetch_screener_data_unified(
         # If previous day was weekend, go back further
         while prev_trading_day.weekday() >= 5:  # Saturday=5, Sunday=6
             prev_trading_day -= timedelta(days=1)
-        logger.info(f"[UNIFIED] Historical mode: timestamp={target_timestamp}, prev_day={prev_trading_day}")
+        logger.debug(f"[UNIFIED] Historical: {target_timestamp.date()}")
     else:
         # Live mode - use most recent daily data
         mode = "live"
@@ -88,7 +86,7 @@ async def fetch_screener_data_unified(
                 row = result.fetchone()
                 prev_trading_day = row[0] if row and row[0] else (datetime.now(timezone.utc).date() - timedelta(days=1))
         
-        logger.info(f"[UNIFIED] Live mode: prev_day={prev_trading_day}")
+        logger.debug(f"[UNIFIED] Live: {prev_trading_day}")
     
     try:
         async with get_async_session() as session:
@@ -127,10 +125,10 @@ async def fetch_screener_data_unified(
                 }
             
             daily_time = (datetime.now() - start_time).total_seconds()
-            logger.info(f"[UNIFIED] Got {len(daily_data)} symbols with daily data ({daily_time:.2f}s)")
+            logger.debug(f"[UNIFIED] Daily: {len(daily_data)} symbols ({daily_time:.2f}s)")
             
             if not daily_data:
-                logger.warning(f"[UNIFIED] No daily data found for {prev_trading_day}")
+                logger.warning(f"[UNIFIED] No daily data for {prev_trading_day}")
                 return []
             
             # STEP 1.5: Apply market cap filtering if specified
@@ -169,43 +167,23 @@ async def fetch_screener_data_unified(
             # STEP 2: Get current price data (mode-specific, also ONE query)
             start_time = datetime.now()
             if mode == "historical":
-                # Historical: Get 5min bars at timestamp
-                # OPTIMIZED: Use batched queries to avoid scanning millions of rows
-                # Query in batches of 2000 symbols at a time for better performance
+                # Historical: Get 5min bars at timestamp via MarketDataService
+                from app.services.market.market_data_service import get_market_data_service
+                market_service = get_market_data_service()
+                
                 symbols_list = list(daily_data.keys())
-                batch_size = 2000
-                num_batches = (len(symbols_list) + batch_size - 1) // batch_size
-                price_data = {}
                 
-                logger.info(f"[UNIFIED] Fetching 5min data for {len(symbols_list)} symbols in {num_batches} batches...")
+                logger.info(f"[UNIFIED] Fetching 5min data for {len(symbols_list)} symbols via MarketDataService...")
                 
-                for batch_idx, i in enumerate(range(0, len(symbols_list), batch_size), 1):
-                    batch = symbols_list[i:i + batch_size]
-                    batch_start = datetime.now()
-                    
-                    result = await session.execute(
-                        text("""
-                            SELECT DISTINCT ON (symbol)
-                                symbol,
-                                close as current_price
-                            FROM market_data
-                            WHERE symbol = ANY(:symbols)
-                              AND timescale = '5min'
-                              AND time <= :timestamp
-                            ORDER BY symbol, time DESC
-                        """),
-                        {"symbols": batch, "timestamp": target_timestamp}
-                    )
-                    
-                    for row in result:
-                        price_data[row[0]] = float(row[1]) if row[1] else None
-                    
-                    batch_time = (datetime.now() - batch_start).total_seconds()
-                    if batch_idx % 2 == 0 or batch_idx == num_batches:
-                        logger.info(f"[UNIFIED] Batch {batch_idx}/{num_batches}: {len(price_data)} total symbols ({batch_time:.2f}s this batch)")
+                # Use MarketDataService batch query
+                price_data = await market_service.get_latest_prices_batch(
+                    symbols=symbols_list,
+                    timeframe="5min",
+                    at_timestamp=target_timestamp
+                )
                 
                 price_time = (datetime.now() - start_time).total_seconds()
-                logger.info(f"[UNIFIED] Got {len(price_data)} symbols with 5min data ({price_time:.2f}s, {num_batches} batches)")
+                logger.info(f"[UNIFIED] Got {len(price_data)} symbols with 5min data ({price_time:.2f}s)")
             else:
                 # Live: Get latest trades
                 result = await session.execute(
@@ -316,9 +294,11 @@ async def fetch_screener_data_unified(
                 snapshots.append(snapshot)
             
             if min_relative_volume is not None:
-                logger.info(f"[UNIFIED] RV filter (>={min_relative_volume}): filtered out {filtered_by_rv} symbols")
+                if filtered_by_rv > 100:  # Only log if significant filtering
+                    logger.debug(f"[UNIFIED] RV filter: {filtered_by_rv} symbols removed")
             
-            logger.info(f"[UNIFIED] Returning {len(snapshots)} complete snapshots")
+            # Single summary log
+            logger.info(f"[UNIFIED] → {len(snapshots)} snapshots ready")
             return snapshots
             
     except Exception as e:
