@@ -101,7 +101,7 @@ async def test_pending_order_cost_uses_correct_prices(async_session, mock_market
     )
     
     # Mock get_async_session
-    with patch('app.services.strategy_engine.get_async_session') as mock_get_session:
+    with patch('app.services.strategies.strategy_engine.get_async_session') as mock_get_session:
         mock_get_session.return_value.__aenter__.return_value = async_session
         
         # Try to enter position - should be BLOCKED because:
@@ -186,7 +186,7 @@ async def test_cash_validation_without_estimated_price(async_session, mock_marke
     )
     
     # Mock get_async_session
-    with patch('app.services.strategy_engine.get_async_session') as mock_get_session:
+    with patch('app.services.strategies.strategy_engine.get_async_session') as mock_get_session:
         mock_get_session.return_value.__aenter__.return_value = async_session
         
         # Try to enter position
@@ -272,7 +272,7 @@ async def test_sufficient_balance_allows_order(async_session, mock_market_data, 
     )
     
     # Mock get_async_session
-    with patch('app.services.strategy_engine.get_async_session') as mock_get_session:
+    with patch('app.services.strategies.strategy_engine.get_async_session') as mock_get_session:
         mock_get_session.return_value.__aenter__.return_value = async_session
         
         # Try to enter position - should SUCCEED
@@ -388,7 +388,7 @@ async def test_multiple_pending_orders_different_prices(async_session, mock_mark
     )
     
     # Mock get_async_session
-    with patch('app.services.strategy_engine.get_async_session') as mock_get_session:
+    with patch('app.services.strategies.strategy_engine.get_async_session') as mock_get_session:
         mock_get_session.return_value.__aenter__.return_value = async_session
         
         await engine._enter_position("TSLA", entry_signal, market_data)
@@ -481,7 +481,7 @@ async def test_sell_orders_not_counted_in_pending_cost(async_session, mock_marke
     )
     
     # Mock get_async_session
-    with patch('app.services.strategy_engine.get_async_session') as mock_get_session:
+    with patch('app.services.strategies.strategy_engine.get_async_session') as mock_get_session:
         mock_get_session.return_value.__aenter__.return_value = async_session
         
         await engine._enter_position("TSLA", entry_signal, market_data)

@@ -71,7 +71,7 @@ async def test_balance_not_reduced_until_order_fills(async_session, mock_market_
     
     mock_alpaca.place_market_order = track_order
     
-    with patch('app.services.strategy_engine.get_async_session') as mock_get_session:
+    with patch('app.services.strategies.strategy_engine.get_async_session') as mock_get_session:
         mock_get_session.return_value.__aenter__.return_value = async_session
         
         # Place order
@@ -200,7 +200,7 @@ async def test_multiple_orders_exceed_balance(async_session, mock_market_data, m
     
     mock_alpaca.place_market_order = track_order
     
-    with patch('app.services.strategy_engine.get_async_session') as mock_get_session:
+    with patch('app.services.strategies.strategy_engine.get_async_session') as mock_get_session:
         mock_get_session.return_value.__aenter__.return_value = async_session
         
         # Place 8 orders (should only be able to place 6 with $10,000)
@@ -293,7 +293,7 @@ async def test_balance_tracking_with_stop_start(async_session, mock_market_data,
     
     mock_alpaca.place_market_order = track_order
     
-    with patch('app.services.strategy_engine.get_async_session') as mock_get_session:
+    with patch('app.services.strategies.strategy_engine.get_async_session') as mock_get_session:
         mock_get_session.return_value.__aenter__.return_value = async_session
         
         # Place order

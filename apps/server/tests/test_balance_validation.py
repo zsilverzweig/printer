@@ -132,7 +132,7 @@ async def test_insufficient_balance_prevents_order(
 
 
 @pytest.mark.asyncio
-@patch('app.services.strategy_engine.get_async_session')
+@patch('app.services.strategies.strategy_engine.get_async_session')
 async def test_sufficient_balance_allows_order(
     mock_get_session,
     mock_execution_strategy,
@@ -207,7 +207,7 @@ async def test_sufficient_balance_allows_order(
 
 
 @pytest.mark.asyncio
-@patch('app.services.strategy_engine.get_async_session')
+@patch('app.services.strategies.strategy_engine.get_async_session')
 async def test_exact_balance_match_allows_order(
     mock_get_session,
     mock_execution_strategy,

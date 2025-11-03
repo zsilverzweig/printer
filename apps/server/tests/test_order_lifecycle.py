@@ -72,7 +72,7 @@ async def test_pending_order_prevents_new_order(async_session, mock_market_data,
     )
     
     # Mock the strategy engine's database session
-    with patch('app.services.strategy_engine.get_async_session') as mock_get_session:
+    with patch('app.services.strategies.strategy_engine.get_async_session') as mock_get_session:
         mock_get_session.return_value.__aenter__.return_value = async_session
         
         # ASSERTION 1: get_pending_orders() should return the pending order
@@ -146,7 +146,7 @@ async def test_multiple_pending_orders_all_counted(async_session, mock_market_da
         alpaca_service=mock_alpaca,
     )
     
-    with patch('app.services.strategy_engine.get_async_session') as mock_get_session:
+    with patch('app.services.strategies.strategy_engine.get_async_session') as mock_get_session:
         mock_get_session.return_value.__aenter__.return_value = async_session
         
         # ASSERTION 1: get_pending_orders() should return all 3 pending orders
@@ -240,7 +240,7 @@ async def test_filled_order_counts_as_position(async_session, mock_market_data, 
         unrealized_plpc=0.025,
     )
     
-    with patch('app.services.strategy_engine.get_async_session') as mock_get_session:
+    with patch('app.services.strategies.strategy_engine.get_async_session') as mock_get_session:
         mock_get_session.return_value.__aenter__.return_value = async_session
         
         # ASSERTION 1: get_pending_orders() should return 0 (order is filled)
@@ -311,7 +311,7 @@ async def test_stale_order_cancellation(async_session, mock_market_data, mock_al
         side=order.side,
     )
     
-    with patch('app.services.strategy_engine.get_async_session') as mock_get_session:
+    with patch('app.services.strategies.strategy_engine.get_async_session') as mock_get_session:
         mock_get_session.return_value.__aenter__.return_value = async_session
         
         # Call stale order cancellation
@@ -412,7 +412,7 @@ async def test_order_lifecycle_full_flow(async_session, mock_market_data, mock_a
         alpaca_service=mock_alpaca,
     )
     
-    with patch('app.services.strategy_engine.get_async_session') as mock_get_session:
+    with patch('app.services.strategies.strategy_engine.get_async_session') as mock_get_session:
         mock_get_session.return_value.__aenter__.return_value = async_session
         
         # ASSERTION 4: Order is no longer pending
@@ -460,7 +460,7 @@ async def test_rapid_strategy_ticks_dont_create_multiple_orders(async_session, m
         alpaca_service=mock_alpaca,
     )
     
-    with patch('app.services.strategy_engine.get_async_session') as mock_get_session:
+    with patch('app.services.strategies.strategy_engine.get_async_session') as mock_get_session:
         mock_get_session.return_value.__aenter__.return_value = async_session
         
         # Simulate first tick - places order
@@ -543,7 +543,7 @@ async def test_cancelled_order_doesnt_count_as_active(async_session, mock_market
         alpaca_service=mock_alpaca,
     )
     
-    with patch('app.services.strategy_engine.get_async_session') as mock_get_session:
+    with patch('app.services.strategies.strategy_engine.get_async_session') as mock_get_session:
         mock_get_session.return_value.__aenter__.return_value = async_session
         
         # ASSERTION 1: Cancelled order should NOT show in pending orders

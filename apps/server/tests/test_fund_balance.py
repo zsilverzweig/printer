@@ -149,7 +149,7 @@ async def test_balance_check_before_alpaca_submission(fund_factory, mock_market_
     # Try to enter position
     signal = EntrySignal(should_enter=True, entry_price=10.0, reason="test")
     
-    with patch('app.services.strategy_engine.get_async_session') as mock_get_session:
+    with patch('app.services.strategies.strategy_engine.get_async_session') as mock_get_session:
         mock_session = AsyncMock()
         mock_session.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session.__aexit__ = AsyncMock()

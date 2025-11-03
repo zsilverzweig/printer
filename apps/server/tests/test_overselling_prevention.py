@@ -354,7 +354,7 @@ async def test_exit_position_validates_before_order(async_session, mock_market_d
     )
     
     # Mock get_async_session to use our test session
-    with patch('app.services.strategy_engine.get_async_session') as mock_get_session:
+    with patch('app.services.strategies.strategy_engine.get_async_session') as mock_get_session:
         mock_get_session.return_value.__aenter__.return_value = async_session
         
         # Call _exit_position - should return early without placing order
@@ -433,7 +433,7 @@ async def test_normal_sell_proceeds(async_session, mock_market_data, mock_alpaca
     )
     
     # Mock get_async_session to use our test session
-    with patch('app.services.strategy_engine.get_async_session') as mock_get_session:
+    with patch('app.services.strategies.strategy_engine.get_async_session') as mock_get_session:
         mock_get_session.return_value.__aenter__.return_value = async_session
         
         # Call _exit_position - should place order successfully

@@ -171,7 +171,7 @@ async def test_strategy_engine_respects_trading_hours():
     )
     
     # Test with mocked time
-    with patch('app.services.strategy_engine.datetime') as mock_datetime:
+    with patch('app.services.strategies.strategy_engine.datetime') as mock_datetime:
         ny_tz = pytz.timezone("America/New_York")
         
         # Test during trading hours (10:30 AM ET)
@@ -363,7 +363,7 @@ async def test_monitor_entries_skips_outside_hours():
     engine.monitored_symbols = ["AAPL"]
     
     # Mock time to be outside trading hours (8:00 AM ET)
-    with patch('app.services.strategy_engine.datetime') as mock_datetime:
+    with patch('app.services.strategies.strategy_engine.datetime') as mock_datetime:
         ny_tz = pytz.timezone("America/New_York")
         mock_datetime.now.return_value = ny_tz.localize(datetime(2024, 1, 15, 8, 0))
         

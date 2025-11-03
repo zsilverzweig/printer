@@ -104,7 +104,7 @@ async def test_position_sync_after_fund_restart(async_session, mock_market_data,
         alpaca_service=mock_alpaca,
     )
     
-    with patch('app.services.strategy_engine.get_async_session') as mock_get_session:
+    with patch('app.services.strategies.strategy_engine.get_async_session') as mock_get_session:
         mock_get_session.return_value.__aenter__.return_value = async_session
         
         # Refresh positions (happens on fund start)
@@ -218,7 +218,7 @@ async def test_order_fills_while_fund_stopped(async_session, mock_market_data, m
         alpaca_service=mock_alpaca,
     )
     
-    with patch('app.services.strategy_engine.get_async_session') as mock_get_session:
+    with patch('app.services.strategies.strategy_engine.get_async_session') as mock_get_session:
         mock_get_session.return_value.__aenter__.return_value = async_session
         
         # Refresh positions (happens on fund start)
@@ -335,7 +335,7 @@ async def test_position_in_alpaca_but_no_transaction(async_session, mock_market_
         alpaca_service=mock_alpaca,
     )
     
-    with patch('app.services.strategy_engine.get_async_session') as mock_get_session:
+    with patch('app.services.strategies.strategy_engine.get_async_session') as mock_get_session:
         mock_get_session.return_value.__aenter__.return_value = async_session
         
         # Refresh positions from Alpaca
@@ -396,7 +396,7 @@ async def test_concurrent_orders_before_pending_count_updates(async_session, moc
     
     mock_alpaca.place_market_order = track_order
     
-    with patch('app.services.strategy_engine.get_async_session') as mock_get_session:
+    with patch('app.services.strategies.strategy_engine.get_async_session') as mock_get_session:
         mock_get_session.return_value.__aenter__.return_value = async_session
         
         # Simulate rapid entry signal processing
@@ -534,7 +534,7 @@ async def test_stop_trading_with_pending_orders(async_session, mock_market_data,
         alpaca_service=mock_alpaca,
     )
     
-    with patch('app.services.strategy_engine.get_async_session') as mock_get_session:
+    with patch('app.services.strategies.strategy_engine.get_async_session') as mock_get_session:
         mock_get_session.return_value.__aenter__.return_value = async_session
         
         await engine._refresh_positions_from_alpaca()
@@ -659,7 +659,7 @@ async def test_partial_position_sale_tracking(async_session, mock_market_data, m
         alpaca_service=mock_alpaca,
     )
     
-    with patch('app.services.strategy_engine.get_async_session') as mock_get_session:
+    with patch('app.services.strategies.strategy_engine.get_async_session') as mock_get_session:
         mock_get_session.return_value.__aenter__.return_value = async_session
         
         await engine._refresh_positions_from_alpaca()
@@ -782,7 +782,7 @@ async def test_complete_position_sale_removes_from_tracking(async_session, mock_
         alpaca_service=mock_alpaca,
     )
     
-    with patch('app.services.strategy_engine.get_async_session') as mock_get_session:
+    with patch('app.services.strategies.strategy_engine.get_async_session') as mock_get_session:
         mock_get_session.return_value.__aenter__.return_value = async_session
         
         await engine._refresh_positions_from_alpaca()

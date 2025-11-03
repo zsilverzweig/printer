@@ -97,7 +97,7 @@ async def test_stale_orders_are_cancelled(async_session, fund_factory, mock_mark
     )
     
     # Patch get_async_session to return our test session
-    with patch('app.services.strategy_engine.get_async_session') as mock_get_session:
+    with patch('app.services.strategies.strategy_engine.get_async_session') as mock_get_session:
         mock_get_session.return_value.__aenter__.return_value = async_session
         
         # Cancel stale orders
@@ -222,7 +222,7 @@ async def test_monkey_darts_doesnt_place_multiple_orders(async_session, fund_fac
         alpaca_service=mock_alpaca,
     )
     
-    with patch('app.services.strategy_engine.get_async_session') as mock_get_session:
+    with patch('app.services.strategies.strategy_engine.get_async_session') as mock_get_session:
         mock_get_session.return_value.__aenter__.return_value = async_session
         
         # Get pending orders
@@ -279,7 +279,7 @@ async def test_multiple_pending_orders_all_counted(async_session, fund_factory, 
         alpaca_service=mock_alpaca,
     )
     
-    with patch('app.services.strategy_engine.get_async_session') as mock_get_session:
+    with patch('app.services.strategies.strategy_engine.get_async_session') as mock_get_session:
         mock_get_session.return_value.__aenter__.return_value = async_session
         
         # Get pending orders
@@ -363,7 +363,7 @@ async def test_rapid_ticks_dont_create_duplicates(async_session, fund_factory, m
         alpaca_service=mock_alpaca,
     )
     
-    with patch('app.services.strategy_engine.get_async_session') as mock_get_session:
+    with patch('app.services.strategies.strategy_engine.get_async_session') as mock_get_session:
         mock_get_session.return_value.__aenter__.return_value = async_session
         
         # Simulate tick 1: Place order
@@ -424,7 +424,7 @@ async def test_filled_order_removes_from_pending(async_session, fund_factory, mo
         alpaca_service=mock_alpaca,
     )
     
-    with patch('app.services.strategy_engine.get_async_session') as mock_get_session:
+    with patch('app.services.strategies.strategy_engine.get_async_session') as mock_get_session:
         mock_get_session.return_value.__aenter__.return_value = async_session
         
         # Should have 1 pending order
@@ -473,7 +473,7 @@ async def test_cancelled_order_removes_from_pending(async_session, fund_factory,
         alpaca_service=mock_alpaca,
     )
     
-    with patch('app.services.strategy_engine.get_async_session') as mock_get_session:
+    with patch('app.services.strategies.strategy_engine.get_async_session') as mock_get_session:
         mock_get_session.return_value.__aenter__.return_value = async_session
         
         # Should have 1 pending order
