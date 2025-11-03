@@ -245,7 +245,8 @@ async def run_screener_with_inline_criteria(
             else:
                 # Historical mode: query TimescaleDB
                 hist_start = time.time()
-                logger.info(f"[ENDPOINT] Running historical screener with inline criteria at {timestamp}")
+                logger.info(f"[ENDPOINT] Using HISTORICAL mode at {timestamp}")
+                logger.info(f"[ENDPOINT] Calling compute_historical with min_rv={min_relative_volume}...")
                 
                 results = await screener_service.compute_historical(
                     timestamp=timestamp,
@@ -263,6 +264,8 @@ async def run_screener_with_inline_criteria(
                     market_cap_min=market_cap_min,
                     market_cap_max=market_cap_max
                 )
+                
+                logger.info(f"[ENDPOINT] compute_historical returned {len(results)} results")
         else:
             # Live mode: use existing flow
             from app.services.screener.screener import get_screener_service

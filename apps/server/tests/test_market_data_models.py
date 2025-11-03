@@ -6,12 +6,12 @@ Tests the basic model structure and validation tracking.
 import pytest
 from datetime import date, datetime, timezone
 
-from app.models.market_data import MarketDataMinute, SymbolDateValidation
+from app.models.market_data import MarketData, SymbolDateValidation
 
 
 def test_market_data_minute_creation():
-    """Test creating a MarketDataMinute instance."""
-    bar = MarketDataMinute(
+    """Test creating a MarketData instance."""
+    bar = MarketData(
         time=datetime(2025, 11, 1, 9, 30, 0, tzinfo=timezone.utc),
         symbol="AAPL",
         open=150.0,

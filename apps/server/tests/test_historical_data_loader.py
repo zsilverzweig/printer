@@ -19,7 +19,7 @@ from unittest.mock import Mock, patch, AsyncMock
 from decimal import Decimal
 
 from app.models.assets import AssetLoadingStatus
-from app.models.market_data import MarketDataMinute
+from app.models.market_data import MarketData
 from app.services.market.historical_data_loader import (
     start_historical_load_task,
     cancel_historical_load_task,
@@ -65,7 +65,7 @@ class TestDatabaseStats:
         # Insert test data
         now = datetime.now(timezone.utc)
         bars = [
-            MarketDataMinute(
+            MarketData(
                 time=now - timedelta(hours=i),
                 symbol=f"TEST{i % 3}",  # 3 unique symbols
                 open=100.0,
@@ -255,7 +255,7 @@ class TestBulkInsert:
         """Test inserting multiple bars at once."""
         now = datetime.now(timezone.utc)
         bars = [
-            MarketDataMinute(
+            MarketData(
                 time=now - timedelta(minutes=i),
                 symbol="AAPL",
                 open=150.0 + i,
@@ -283,7 +283,7 @@ class TestBulkInsert:
     async def test_bulk_insert_conflict_handling(self, async_session, clean_market_data):
         """Test that duplicate bars are ignored (ON CONFLICT DO NOTHING)."""
         now = datetime.now(timezone.utc)
-        bar = MarketDataMinute(
+        bar = MarketData(
             time=now,
             symbol="TSLA",
             open=200.0,

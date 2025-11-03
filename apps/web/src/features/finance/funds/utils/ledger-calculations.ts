@@ -2,7 +2,7 @@
  * Ledger Calculation Utilities - FIXED VERSION
  *
  * Calculate fund balances and performance metrics from ledger data.
- * 
+ *
  * FIXES:
  * 1. Proper EST timezone handling
  * 2. Correct position valuation over time windows
@@ -74,14 +74,16 @@ function getDateDaysAgoEST(days: number): Date {
   // Get current time in EST
   const now = new Date();
   const estOffset = -5 * 60; // EST is UTC-5 (in minutes)
-  const nowEST = new Date(now.getTime() + (now.getTimezoneOffset() + estOffset) * 60 * 1000);
-  
+  const nowEST = new Date(
+    now.getTime() + (now.getTimezoneOffset() + estOffset) * 60 * 1000
+  );
+
   // Subtract days
   nowEST.setDate(nowEST.getDate() - days);
-  
+
   // Set to start of day in EST
   nowEST.setHours(0, 0, 0, 0);
-  
+
   return nowEST;
 }
 
@@ -91,7 +93,9 @@ function getDateDaysAgoEST(days: number): Date {
 function getStartOfDayEST(date: Date): Date {
   const estDate = new Date(date);
   const estOffset = -5 * 60; // EST is UTC-5
-  const adjusted = new Date(estDate.getTime() + (estDate.getTimezoneOffset() + estOffset) * 60 * 1000);
+  const adjusted = new Date(
+    estDate.getTime() + (estDate.getTimezoneOffset() + estOffset) * 60 * 1000
+  );
   adjusted.setHours(0, 0, 0, 0);
   return adjusted;
 }
@@ -165,43 +169,95 @@ export function calculatePerformanceMetrics(
 ): PerformanceMetrics {
   const now = new Date();
 
-  // Calculate performance for each window using EST timezone
+  // Helper: current time in EST
+  const estOffset = -5 * 60; // minutes
+  const nowEST = new Date(
+    now.getTime() + (now.getTimezoneOffset() + estOffset) * 60 * 1000
+  );
+
+  // Market open 09:30 EST
+  const marketOpenEST = new Date(nowEST);
+  marketOpenEST.setHours(9, 30, 0, 0);
+
+  // If pre-open, show neutral Day performance to avoid misleading overnight P&L
+  let dayWindow: PerformanceWindow;
+  if (
+    nowEST.getHours() < 9 ||
+    (nowEST.getHours() === 9 && nowEST.getMinutes() < 30)
+  ) {
+    const endAUM = calculateFundBalance(
+      transfers,
+      transactions,
+      positionsSummary
+    ).aum;
+    dayWindow = {
+      startBalance: endAUM,
+      endBalance: endAUM,
+      pnl: 0,
+      pnlPercent: 0,
+      trades: 0,
+      winningTrades: 0,
+      losingTrades: 0,
+      winRate: 0,
+    };
+  } else {
+    // During/after market hours: use today window starting from market open (approximation)
+    const startOfTodayFromOpenEST = new Date(nowEST);
+    startOfTodayFromOpenEST.setHours(9, 30, 0, 0);
+    // Convert the EST times back to local Date basis by reversing the offset addition above
+    const offsetBackMs = (now.getTimezoneOffset() + estOffset) * 60 * 1000;
+    const startDate = new Date(
+      startOfTodayFromOpenEST.getTime() - offsetBackMs
+    );
+    const endDate = now;
+    dayWindow = calculateWindowPerformance(
+      transfers,
+      transactions,
+      positionsSummary,
+      startDate,
+      endDate
+    );
+  }
+
+  // Calculate performance for other windows using EST timezone
+  const week = calculateWindowPerformance(
+    transfers,
+    transactions,
+    positionsSummary,
+    getDateDaysAgoEST(7),
+    now
+  );
+
+  const month = calculateWindowPerformance(
+    transfers,
+    transactions,
+    positionsSummary,
+    getDateDaysAgoEST(30),
+    now
+  );
+
+  const year = calculateWindowPerformance(
+    transfers,
+    transactions,
+    positionsSummary,
+    getDateDaysAgoEST(365),
+    now
+  );
+
+  const allTime = calculateWindowPerformance(
+    transfers,
+    transactions,
+    positionsSummary,
+    new Date(0),
+    now
+  );
+
   return {
-    day: calculateWindowPerformance(
-      transfers,
-      transactions,
-      positionsSummary,
-      getDateDaysAgoEST(1),
-      now
-    ),
-    week: calculateWindowPerformance(
-      transfers,
-      transactions,
-      positionsSummary,
-      getDateDaysAgoEST(7),
-      now
-    ),
-    month: calculateWindowPerformance(
-      transfers,
-      transactions,
-      positionsSummary,
-      getDateDaysAgoEST(30),
-      now
-    ),
-    year: calculateWindowPerformance(
-      transfers,
-      transactions,
-      positionsSummary,
-      getDateDaysAgoEST(365),
-      now
-    ),
-    allTime: calculateWindowPerformance(
-      transfers,
-      transactions,
-      positionsSummary,
-      new Date(0), // Beginning of time
-      now
-    ),
+    day: dayWindow,
+    week,
+    month,
+    year,
+    allTime,
   };
 }
 
@@ -453,4 +509,3 @@ export function formatPercent(value: number): string {
   const sign = value >= 0 ? "+" : "";
   return `${sign}${value.toFixed(2)}%`;
 }
-

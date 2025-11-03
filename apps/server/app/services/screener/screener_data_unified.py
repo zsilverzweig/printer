@@ -58,6 +58,8 @@ async def fetch_screener_data_unified(
         ]
     """
     
+    logger.info(f"[UNIFIED] fetch_screener_data_unified called: target_timestamp={target_timestamp}, min_rv={min_relative_volume}")
+    
     # Determine mode and dates
     if target_timestamp:
         # Historical mode
@@ -273,6 +275,7 @@ async def fetch_screener_data_unified(
             logger.info(f"[UNIFIED] Got metrics for {len(metrics_map)} symbols ({metrics_time:.2f}s)")
             
             # STEP 4: Combine into snapshot format and apply filters (in-memory, very fast)
+            logger.info(f"[UNIFIED] Combining {len(daily_data)} symbols with metrics, applying RV filter={min_relative_volume}")
             snapshots = []
             filtered_by_rv = 0
             

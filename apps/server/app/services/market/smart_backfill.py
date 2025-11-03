@@ -13,7 +13,7 @@ from typing import Dict, List, Optional
 from polygon import RESTClient
 
 from app.services.market.gap_detector import DataGap, get_gap_detector
-from app.services.market.historical_data_loader import _load_symbol_data
+from app.services.market.historical_data_loader import _load_symbol_data, TIMESCALE_CONFIG
 from app.models.assets import AssetLoadingStatus
 from app.services.core.database import get_async_session
 
@@ -286,6 +286,8 @@ class SmartBackfillService:
                         symbol=symbol,
                         start_date=start_date,
                         end_date=end_date,
+                        timescale='1min',
+                        config=TIMESCALE_CONFIG['1min'],
                         semaphore=semaphore
                     )
                     
@@ -428,6 +430,8 @@ class SmartBackfillService:
                 symbol=gap.symbol,
                 start_date=start_date,
                 end_date=end_date,
+                timescale='1min',
+                config=TIMESCALE_CONFIG['1min'],
                 semaphore=semaphore
             )
             
@@ -638,6 +642,8 @@ class SmartBackfillService:
                 symbol=symbol,
                 start_date=start_dt,
                 end_date=end_dt,
+                timescale='1min',
+                config=TIMESCALE_CONFIG['1min'],
                 semaphore=semaphore
             )
             

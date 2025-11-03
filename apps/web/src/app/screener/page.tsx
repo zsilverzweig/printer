@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter, useSearchParams } from "next/navigation";
 import React from "react";
 
 import { ScreenerEditDialog } from "@/features/screener/components/screener-edit-dialog";
@@ -13,6 +14,8 @@ import type { StockData } from "@/features/screener/types";
 import { useScreenerData } from "@/lib/hooks/use-screener-data";
 
 export default function ScreenerPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const {
     screeners,
     loading: screenersLoading,
@@ -59,6 +62,15 @@ export default function ScreenerPage() {
   );
 
   const isNewScreener = selectedScreenerId === "new";
+
+  // Initialize selected screener from URL and keep URL in sync
+  React.useEffect(() => {
+    const urlScreener = searchParams.get("screener") || "";
+    if (urlScreener !== selectedScreenerId) {
+      setSelectedScreenerId(urlScreener);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   // Check if filters have been modified
   const filtersModified = React.useMemo(() => {
@@ -164,6 +176,20 @@ export default function ScreenerPage() {
     setHistoricalResults(null);
     setLiveFilteredResults(null); // Clear filtered results when switching screeners
     setMode("live");
+
+    // Update URL query to reflect selected screener (preserve other params)
+    try {
+      const params = new URLSearchParams(Array.from(searchParams.entries()));
+      if (value) {
+        params.set("screener", value);
+      } else {
+        params.delete("screener");
+      }
+      const query = params.toString();
+      router.replace(query ? `?${query}` : "?", { scroll: false });
+    } catch (e) {
+      // no-op on URL errors
+    }
   };
 
   // Handle save (for new screeners or dialog)
@@ -280,6 +306,20 @@ export default function ScreenerPage() {
       setRunningScreener(false);
     }
   };
+
+  // Ensure results update shortly after screener selection
+  React.useEffect(() => {
+    if (!selectedScreenerId) return;
+    if (mode !== "live") return;
+    const hasFilters = currentFilters && Object.keys(currentFilters).length > 0;
+    if (!hasFilters) return;
+    const t = setTimeout(() => {
+      // fire a run to reflect the newly selected screener
+      void handleRun();
+    }, 700);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedScreenerId, mode, JSON.stringify(currentFilters)]);
 
   // Handle save filters
   const handleSaveFilters = async () => {
