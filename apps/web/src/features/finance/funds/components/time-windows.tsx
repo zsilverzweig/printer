@@ -6,13 +6,12 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Fund } from "@printer/shared";
 
 import { fundService } from "../services/fund-service";
 
-import { Button } from "@/lib/components/ui/button";
 import {
   Card,
   CardContent,
@@ -34,15 +33,21 @@ interface TimeWindowsProps {
   fundId: string;
   fund: Fund;
   onUpdate: () => void;
+  onSavingChange?: (saving: boolean) => void;
 }
 
-export function TimeWindows({ fundId, fund, onUpdate }: TimeWindowsProps) {
+export function TimeWindows({
+  fundId,
+  fund,
+  onUpdate,
+  onSavingChange,
+}: TimeWindowsProps) {
   const [tradingStartTime, setTradingStartTime] = useState("");
   const [tradingEndTime, setTradingEndTime] = useState("");
   const [timezone, setTimezone] = useState("America/New_York");
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
+  const debounceRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (fund) {
@@ -52,29 +57,52 @@ export function TimeWindows({ fundId, fund, onUpdate }: TimeWindowsProps) {
     }
   }, [fund]);
 
-  const handleSave = async () => {
-    try {
-      setIsSaving(true);
-      setError(null);
-      setSuccess(false);
+  // Debounced autosave on change
+  useEffect(() => {
+    const differs =
+      (fund.tradingStartTime || "") !== tradingStartTime ||
+      (fund.tradingEndTime || "") !== tradingEndTime ||
+      (fund.timezone || "America/New_York") !== timezone;
 
-      await fundService.updateFund(fundId, {
-        tradingStartTime,
-        tradingEndTime,
-        timezone,
-      });
+    if (!differs) return;
 
-      setSuccess(true);
-      setTimeout(() => setSuccess(false), 3000);
-      onUpdate();
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to save time windows"
-      );
-    } finally {
-      setIsSaving(false);
-    }
-  };
+    if (debounceRef.current) window.clearTimeout(debounceRef.current);
+    debounceRef.current = window.setTimeout(async () => {
+      try {
+        setIsSaving(true);
+        onSavingChange?.(true);
+        setError(null);
+        await fundService.updateFund(fundId, {
+          tradingStartTime,
+          tradingEndTime,
+          timezone,
+        });
+        onUpdate();
+      } catch (err) {
+        setError(
+          err instanceof Error ? err.message : "Failed to save time windows"
+        );
+      } finally {
+        setIsSaving(false);
+        onSavingChange?.(false);
+      }
+    }, 1500);
+
+    return () => {
+      if (debounceRef.current) window.clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    };
+  }, [
+    fundId,
+    onSavingChange,
+    onUpdate,
+    tradingStartTime,
+    tradingEndTime,
+    timezone,
+    fund.tradingStartTime,
+    fund.tradingEndTime,
+    fund.timezone,
+  ]);
 
   return (
     <div className="space-y-6">
@@ -84,11 +112,7 @@ export function TimeWindows({ fundId, fund, onUpdate }: TimeWindowsProps) {
         </div>
       )}
 
-      {success && (
-        <div className="rounded-lg bg-green-50 dark:bg-green-950/30 p-4 text-sm text-green-800 dark:text-green-200">
-          Time windows saved successfully!
-        </div>
-      )}
+      {/* Autosaves; success banner removed in favor of header indicator */}
 
       <Card>
         <CardHeader>
@@ -169,11 +193,7 @@ export function TimeWindows({ fundId, fund, onUpdate }: TimeWindowsProps) {
         </CardContent>
       </Card>
 
-      <div className="flex justify-end gap-2">
-        <Button onClick={handleSave} disabled={isSaving}>
-          {isSaving ? "Saving..." : "Save Time Windows"}
-        </Button>
-      </div>
+      {/* Autosaves; explicit save button removed */}
     </div>
   );
 }

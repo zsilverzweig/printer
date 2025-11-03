@@ -30,6 +30,7 @@ interface RiskManagementProps {
   fundId: string;
   fund: Fund;
   onUpdate: () => void;
+  onSavingChange?: (saving: boolean) => void;
 }
 
 interface ValidationWarning {
@@ -42,6 +43,7 @@ export function RiskManagement({
   fundId,
   fund,
   onUpdate,
+  onSavingChange,
 }: RiskManagementProps) {
   const { details } = useFundDetails(fundId);
   const fundBalance = details?.fund?.balance || fund.balance || 0;
@@ -56,8 +58,8 @@ export function RiskManagement({
   const [maxTotalExposure, setMaxTotalExposure] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
   const [warnings, setWarnings] = useState<ValidationWarning[]>([]);
+  const debounceRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (fund) {
@@ -182,47 +184,83 @@ export function RiskManagement({
     fundBalance,
   ]);
 
-  const handleSave = async () => {
-    // Check for blocking errors
-    const hasErrors = warnings.some((w) => w.severity === "error");
-    if (hasErrors) {
-      setError("Please fix the errors before saving");
+  // Debounced autosave on change without blocking errors
+  useEffect(() => {
+    const hasBlockingErrors = warnings.some((w) => w.severity === "error");
+    if (hasBlockingErrors) {
       return;
     }
 
-    try {
-      setIsSaving(true);
-      setError(null);
-      setSuccess(false);
+    const parsed = {
+      maxLossPercent: maxLossPercent ? parseFloat(maxLossPercent) : null,
+      maxLossDollars: maxLossDollars ? parseFloat(maxLossDollars) : null,
+      maxGivebackPercent: maxGivebackPercent
+        ? parseFloat(maxGivebackPercent)
+        : null,
+      maxOrderAgeSeconds: maxOrderAgeSeconds
+        ? parseInt(maxOrderAgeSeconds)
+        : 60,
+      sizePerTrade: sizePerTrade ? parseFloat(sizePerTrade) : 1000,
+      minBetPercent: minBetPercent ? parseFloat(minBetPercent) : null,
+      maxBetPercent: maxBetPercent ? parseFloat(maxBetPercent) : null,
+      maxTotalExposure: maxTotalExposure ? parseFloat(maxTotalExposure) : null,
+    } as const;
 
-      await fundService.updateFund(fundId, {
-        // Send null if empty, otherwise parse the value
-        maxLossPercent: maxLossPercent ? parseFloat(maxLossPercent) : null,
-        maxLossDollars: maxLossDollars ? parseFloat(maxLossDollars) : null,
-        maxGivebackPercent: maxGivebackPercent
-          ? parseFloat(maxGivebackPercent)
-          : null,
-        maxOrderAgeSeconds: maxOrderAgeSeconds
-          ? parseInt(maxOrderAgeSeconds)
-          : 60,
-        sizePerTrade: parseFloat(sizePerTrade) || 1000,
-        minBetPercent: minBetPercent ? parseFloat(minBetPercent) : null,
-        maxBetPercent: maxBetPercent ? parseFloat(maxBetPercent) : null,
-        maxTotalExposure: maxTotalExposure
-          ? parseFloat(maxTotalExposure)
-          : null,
-      });
+    const differs =
+      (fund.maxLossPercent ?? null) !== parsed.maxLossPercent ||
+      (fund.maxLossDollars ?? null) !== parsed.maxLossDollars ||
+      (fund.maxGivebackPercent ?? null) !== parsed.maxGivebackPercent ||
+      (fund.maxOrderAgeSeconds ?? 60) !== parsed.maxOrderAgeSeconds ||
+      (fund.sizePerTrade ?? 1000) !== parsed.sizePerTrade ||
+      (fund.minBetPercent ?? null) !== parsed.minBetPercent ||
+      (fund.maxBetPercent ?? null) !== parsed.maxBetPercent ||
+      (fund.maxTotalExposure ?? null) !== parsed.maxTotalExposure;
 
-      setSuccess(true);
-      setTimeout(() => setSuccess(false), 3000);
-      onUpdate();
-    } catch (err) {
-      console.error("Error saving risk management:", err);
-      setError(err instanceof Error ? err.message : "Failed to save");
-    } finally {
-      setIsSaving(false);
-    }
-  };
+    if (!differs) return;
+
+    if (debounceRef.current) window.clearTimeout(debounceRef.current);
+    debounceRef.current = window.setTimeout(async () => {
+      try {
+        setIsSaving(true);
+        onSavingChange?.(true);
+        setError(null);
+        await fundService.updateFund(fundId, parsed);
+        onUpdate();
+      } catch (err) {
+        console.error("Error saving risk management:", err);
+        setError(err instanceof Error ? err.message : "Failed to save");
+      } finally {
+        setIsSaving(false);
+        onSavingChange?.(false);
+      }
+    }, 1500);
+
+    return () => {
+      if (debounceRef.current) window.clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    };
+  }, [
+    fundId,
+    onSavingChange,
+    onUpdate,
+    warnings,
+    maxLossPercent,
+    maxLossDollars,
+    maxGivebackPercent,
+    maxOrderAgeSeconds,
+    sizePerTrade,
+    minBetPercent,
+    maxBetPercent,
+    maxTotalExposure,
+    fund.maxLossPercent,
+    fund.maxLossDollars,
+    fund.maxGivebackPercent,
+    fund.maxOrderAgeSeconds,
+    fund.sizePerTrade,
+    fund.minBetPercent,
+    fund.maxBetPercent,
+    fund.maxTotalExposure,
+  ]);
 
   const getWarningsForField = (field: string) =>
     warnings.filter((w) => w.field === field);
@@ -235,11 +273,7 @@ export function RiskManagement({
         </div>
       )}
 
-      {success && (
-        <div className="rounded-lg bg-green-50 dark:bg-green-950/30 p-4 text-sm text-green-800 dark:text-green-200">
-          Risk management settings saved successfully!
-        </div>
-      )}
+      {/* Autosaves; success banner removed in favor of header indicator */}
 
       {/* Risk Parameters */}
       <Card>
@@ -542,11 +576,7 @@ export function RiskManagement({
         </CardContent>
       </Card>
 
-      <div className="flex justify-end gap-2">
-        <Button onClick={handleSave} disabled={isSaving}>
-          {isSaving ? "Saving..." : "Save Risk Settings"}
-        </Button>
-      </div>
+      {/* Autosaves; explicit save button removed */}
     </div>
   );
 }

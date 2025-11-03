@@ -7,9 +7,8 @@
 "use client";
 
 import { ExecutionStrategy, Fund } from "@printer/shared";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-import { Button } from "@/lib/components/ui/button";
 import {
   Card,
   CardContent,
@@ -34,12 +33,14 @@ interface StrategySelectionProps {
   fundId: string;
   fund: Fund;
   onUpdate: () => void;
+  onSavingChange?: (saving: boolean) => void;
 }
 
 export function StrategySelection({
   fundId,
   fund,
   onUpdate,
+  onSavingChange,
 }: StrategySelectionProps) {
   const [executionStrategies, setExecutionStrategies] = useState<
     ExecutionStrategy[]
@@ -53,6 +54,7 @@ export function StrategySelection({
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const debounceRef = useRef<number | null>(null);
 
   useEffect(() => {
     const fetchStrategies = async () => {
@@ -80,27 +82,54 @@ export function StrategySelection({
     (s) => s.id === executionStrategyId
   );
 
-  const handleSave = async () => {
-    try {
-      setIsSaving(true);
-      setError(null);
-      setSuccess(false);
+  // Debounced autosave when strategy or config changes
+  useEffect(() => {
+    const hasChanges =
+      executionStrategyId !== fund?.strategyId ||
+      JSON.stringify(executionConfig) !==
+        JSON.stringify(fund?.strategyConfig || {});
 
-      await fundService.updateFund(fundId, {
-        strategyId: executionStrategyId,
-        strategyConfig: executionConfig,
-      });
+    if (!hasChanges) return;
 
-      setSuccess(true);
-      setTimeout(() => setSuccess(false), 3000);
-      onUpdate();
-    } catch (err) {
-      console.error("Error saving strategy:", err);
-      setError(err instanceof Error ? err.message : "Failed to save strategy");
-    } finally {
-      setIsSaving(false);
-    }
-  };
+    if (debounceRef.current) window.clearTimeout(debounceRef.current);
+
+    debounceRef.current = window.setTimeout(async () => {
+      try {
+        setIsSaving(true);
+        onSavingChange?.(true);
+        setError(null);
+        setSuccess(false);
+
+        await fundService.updateFund(fundId, {
+          strategyId: executionStrategyId,
+          strategyConfig: executionConfig,
+        });
+
+        onUpdate();
+      } catch (err) {
+        console.error("Error saving strategy:", err);
+        setError(
+          err instanceof Error ? err.message : "Failed to save strategy"
+        );
+      } finally {
+        setIsSaving(false);
+        onSavingChange?.(false);
+      }
+    }, 1500);
+    return () => {
+      if (debounceRef.current) window.clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    executionStrategyId,
+    JSON.stringify(executionConfig),
+    fund?.strategyId,
+    JSON.stringify(fund?.strategyConfig || {}),
+    fundId,
+    onSavingChange,
+    onUpdate,
+  ]);
 
   const hasChanges =
     executionStrategyId !== fund?.strategyId ||
@@ -112,12 +141,6 @@ export function StrategySelection({
       {error && (
         <div className="rounded-lg bg-red-50 dark:bg-red-950/30 p-4 text-sm text-red-800 dark:text-red-200">
           {error}
-        </div>
-      )}
-
-      {success && (
-        <div className="rounded-lg bg-green-50 dark:bg-green-950/30 p-4 text-sm text-green-800 dark:text-green-200">
-          Strategy saved successfully!
         </div>
       )}
 
@@ -221,11 +244,7 @@ export function StrategySelection({
         </CardContent>
       </Card>
 
-      <div className="flex justify-end gap-2">
-        <Button onClick={handleSave} disabled={isSaving || !hasChanges}>
-          {isSaving ? "Saving..." : "Save Strategy"}
-        </Button>
-      </div>
+      {/* Autosaves; no explicit save button */}
     </div>
   );
 }

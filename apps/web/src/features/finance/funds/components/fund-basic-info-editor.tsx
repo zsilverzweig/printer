@@ -7,8 +7,7 @@
 "use client";
 
 import { Fund, UpdateFundInput } from "@shared/types";
-import { Check } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/lib/components/ui/button";
 import {
@@ -28,11 +27,13 @@ import { IconColorPicker } from "./icon-color-picker";
 interface FundBasicInfoEditorProps {
   fund: Fund;
   onUpdate: () => void;
+  onSavingChange?: (saving: boolean) => void;
 }
 
 export function FundBasicInfoEditor({
   fund,
   onUpdate,
+  onSavingChange,
 }: FundBasicInfoEditorProps) {
   const [name, setName] = useState(fund.name);
   const [description, setDescription] = useState(fund.description || "");
@@ -40,7 +41,7 @@ export function FundBasicInfoEditor({
   const [selectedColor, setSelectedColor] = useState(fund.iconColor || "blue");
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const debounceRef = useRef<number | null>(null);
 
   // Sync local state with fund prop when it changes
   useEffect(() => {
@@ -56,38 +57,65 @@ export function FundBasicInfoEditor({
     selectedIcon !== (fund.icon || "Wallet") ||
     selectedColor !== (fund.iconColor || "blue");
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
+  // Debounced autosave on change
+  useEffect(() => {
     if (!name.trim()) {
-      setError("Fund name is required");
       return;
     }
 
-    try {
-      setIsSaving(true);
-      setError(null);
-      setSuccessMessage(null);
+    const hasChanges =
+      name !== fund.name ||
+      description !== (fund.description || "") ||
+      selectedIcon !== (fund.icon || "Wallet") ||
+      selectedColor !== (fund.iconColor || "blue");
 
-      const input: UpdateFundInput = {
-        name: name.trim(),
-        description: description.trim() || undefined,
-        icon: selectedIcon,
-        iconColor: selectedColor,
-      };
+    if (!hasChanges) return;
 
-      await fundService.updateFund(fund.id, input);
-      setSuccessMessage("Fund information updated successfully");
-      onUpdate();
-
-      // Clear success message after 3 seconds
-      setTimeout(() => setSuccessMessage(null), 3000);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update fund");
-    } finally {
-      setIsSaving(false);
+    if (debounceRef.current) {
+      window.clearTimeout(debounceRef.current);
     }
-  };
+
+    debounceRef.current = window.setTimeout(async () => {
+      try {
+        setIsSaving(true);
+        onSavingChange?.(true);
+        setError(null);
+
+        const input: UpdateFundInput = {
+          name: name.trim(),
+          description: description.trim() || undefined,
+          icon: selectedIcon,
+          iconColor: selectedColor,
+        };
+
+        await fundService.updateFund(fund.id, input);
+        onUpdate();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to update fund");
+      } finally {
+        setIsSaving(false);
+        onSavingChange?.(false);
+      }
+    }, 1500);
+
+    return () => {
+      if (debounceRef.current) {
+        window.clearTimeout(debounceRef.current);
+      }
+    };
+  }, [
+    name,
+    description,
+    selectedIcon,
+    selectedColor,
+    fund.id,
+    fund.name,
+    fund.description,
+    fund.icon,
+    fund.iconColor,
+    onSavingChange,
+    onUpdate,
+  ]);
 
   const handleReset = () => {
     setName(fund.name);
@@ -107,17 +135,10 @@ export function FundBasicInfoEditor({
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <div className="space-y-6">
           {error && (
             <div className="rounded-md bg-red-50 dark:bg-red-950/50 p-3 text-sm text-red-800 dark:text-red-200 border border-red-200 dark:border-red-800">
               {error}
-            </div>
-          )}
-
-          {successMessage && (
-            <div className="rounded-md bg-green-50 dark:bg-green-950/50 p-3 text-sm text-green-800 dark:text-green-200 border border-green-200 dark:border-green-800 flex items-center gap-2">
-              <Check className="h-4 w-4" />
-              {successMessage}
             </div>
           )}
 
@@ -154,11 +175,8 @@ export function FundBasicInfoEditor({
             />
           </div>
 
-          <div className="flex gap-2">
-            <Button type="submit" disabled={isSaving || !hasChanges}>
-              {isSaving ? "Saving..." : "Save Changes"}
-            </Button>
-            {hasChanges && (
+          {hasChanges && (
+            <div className="flex gap-2">
               <Button
                 type="button"
                 variant="outline"
@@ -167,9 +185,9 @@ export function FundBasicInfoEditor({
               >
                 Reset
               </Button>
-            )}
-          </div>
-        </form>
+            </div>
+          )}
+        </div>
       </CardContent>
     </Card>
   );

@@ -6,7 +6,7 @@
 
 "use client";
 
-import { ArrowLeft, Bug } from "lucide-react";
+import { ArrowLeft, Bug, Check } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
@@ -65,12 +65,25 @@ export function FundDetailView({ fundId }: FundDetailViewProps) {
 
   const [selectedSetupId, setSelectedSetupId] = useState<string | null>(null);
   const [showSetupEditor, setShowSetupEditor] = useState(false);
+  const [savingCount, setSavingCount] = useState(0);
+  const [justSaved, setJustSaved] = useState(false);
   const [activeTab, setActiveTab] = useUrlTabs({ defaultTab: "overview" });
 
   // Combined refresh function for fund data and ledger
   const refreshAll = useCallback(async () => {
     await Promise.all([refresh(), refreshLedger()]);
   }, [refresh, refreshLedger]);
+
+  const handleSavingChange = useCallback((saving: boolean) => {
+    setSavingCount((count) => {
+      const next = saving ? count + 1 : count - 1;
+      return next < 0 ? 0 : next;
+    });
+    if (!saving) {
+      setJustSaved(true);
+      window.setTimeout(() => setJustSaved(false), 2000);
+    }
+  }, []);
 
   if (loading) {
     return (
@@ -176,26 +189,37 @@ export function FundDetailView({ fundId }: FundDetailViewProps) {
           </div>
         </div>
 
-        {/* Debug button with connection status color */}
-        <button
-          onClick={copyDebugInfoToClipboard}
-          className={`p-1.5 rounded-md transition-colors ${
-            isConnected && !isConnecting
-              ? "text-green-600 hover:bg-green-50"
-              : isConnecting
-              ? "text-gray-400 hover:bg-gray-50"
-              : "text-orange-600 hover:bg-orange-50"
-          }`}
-          title={
-            isConnected && !isConnecting
-              ? "Live - Click to copy debug info"
-              : isConnecting
-              ? "Connecting... Click to copy debug info"
-              : "Disconnected - Click to copy debug info"
-          }
-        >
-          <Bug className="h-4 w-4" />
-        </button>
+        {/* Saving indicator + Debug button */}
+        <div className="flex items-center gap-2">
+          {savingCount > 0 ? (
+            <span className="text-xs text-muted-foreground">Saving...</span>
+          ) : justSaved ? (
+            <span className="inline-flex items-center gap-1 text-xs text-green-600">
+              <Check className="h-3 w-3" /> Saved
+            </span>
+          ) : null}
+
+          {/* Debug button with connection status color */}
+          <button
+            onClick={copyDebugInfoToClipboard}
+            className={`p-1.5 rounded-md transition-colors ${
+              isConnected && !isConnecting
+                ? "text-green-600 hover:bg-green-50"
+                : isConnecting
+                ? "text-gray-400 hover:bg-gray-50"
+                : "text-orange-600 hover:bg-orange-50"
+            }`}
+            title={
+              isConnected && !isConnecting
+                ? "Live - Click to copy debug info"
+                : isConnecting
+                ? "Connecting... Click to copy debug info"
+                : "Disconnected - Click to copy debug info"
+            }
+          >
+            <Bug className="h-4 w-4" />
+          </button>
+        </div>
       </div>
 
       {/* Tabs */}
@@ -224,7 +248,11 @@ export function FundDetailView({ fundId }: FundDetailViewProps) {
 
         <TabsContent value="configuration" className="space-y-6">
           {/* Basic Info Section */}
-          <FundBasicInfoEditor fund={fund} onUpdate={refreshAll} />
+          <FundBasicInfoEditor
+            fund={fund}
+            onUpdate={refreshAll}
+            onSavingChange={handleSavingChange}
+          />
 
           {/* Strategy Selection Section */}
           <div>
@@ -235,6 +263,7 @@ export function FundDetailView({ fundId }: FundDetailViewProps) {
               fundId={fund.id}
               fund={fund}
               onUpdate={refreshAll}
+              onSavingChange={handleSavingChange}
             />
           </div>
 
@@ -245,13 +274,19 @@ export function FundDetailView({ fundId }: FundDetailViewProps) {
               fundId={fund.id}
               fund={fund}
               onUpdate={refreshAll}
+              onSavingChange={handleSavingChange}
             />
           </div>
 
           {/* Time Windows Section */}
           <div className="pt-6 border-t">
             <h2 className="text-xl font-semibold mb-4">Trading Time Windows</h2>
-            <TimeWindows fundId={fund.id} fund={fund} onUpdate={refreshAll} />
+            <TimeWindows
+              fundId={fund.id}
+              fund={fund}
+              onUpdate={refreshAll}
+              onSavingChange={handleSavingChange}
+            />
           </div>
         </TabsContent>
 
