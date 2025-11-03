@@ -13,6 +13,7 @@ import uuid
 
 from app.main import app
 from app.models.strategies import Base, Fund, ScreeningCriteria, Order, Transaction
+from app.models.monitoring_state import StrategyMonitoringState
 # Import all models to ensure all tables are created in test database
 from app.models import *  # noqa: F401, F403
 
@@ -185,10 +186,11 @@ class MockAlpacaService:
 
 
 class MockExecutionStrategy:
-    """Mock execution strategy for testing."""
+    """Mock execution strategy for testing - uses NEW interface."""
     
-    def __init__(self, config=None):
+    def __init__(self, config=None, fund_id=None):
         self.config = config or {}
+        self.fund_id = fund_id
         self.max_positions = self.config.get("max_positions", 1)
     
     @property
@@ -204,28 +206,37 @@ class MockExecutionStrategy:
         return "Mock strategy for testing"
     
     @property
-    def strategy_type(self):
-        return "math-based"
+    def requires_setup(self):
+        return False
     
-    async def get_monitored_symbols(self, candidates, active_position_count=0, active_order_count=0):
-        """Mock candidate selection - returns first symbol if no active positions or orders."""
-        if candidates and (active_position_count + active_order_count) < self.max_positions:
-            return [candidates[0].get("ticker", "MOCK")]
-        return []
+    async def analyze_setup(self, tickers, market_data):
+        """Mock setup - passes all tickers through."""
+        return tickers
     
-    async def should_enter(self, symbol, market_data):
-        """Mock entry check - always returns True."""
-        from app.strategies.base import EntrySignal
-        return EntrySignal(should_enter=True, reason="mock_entry")
+    async def analyze_entry(self, ticker, market_data):
+        """Mock entry analysis - always returns entry level."""
+        from app.strategies.base import EntryLevel
+        return EntryLevel(
+            entry_price=market_data.price,
+            stop_loss=market_data.price * 0.98,
+            confidence=0.8,
+            order_type="market",
+            metadata={"reason": "mock_entry"}
+        )
     
-    async def should_exit(self, position, market_data):
-        """Mock exit check - always returns False."""
-        from app.strategies.base import ExitSignal
-        return ExitSignal(should_exit=False)
+    async def manage_position(self, position, market_data):
+        """Mock management - keeps stop unchanged."""
+        from app.strategies.base import StopUpdate
+        current_stop = position.strategy_state.get("stop_loss", position.entry_price * 0.98)
+        return StopUpdate(current_stop=current_stop)
     
-    async def position_sizing(self, signal, fund_balance, risk_params):
-        """Mock position sizing."""
-        return risk_params.get("size_per_trade", 1000.0)
+    async def cleanup_symbol(self, symbol):
+        """Mock cleanup."""
+        pass
+    
+    async def shutdown(self):
+        """Mock shutdown."""
+        pass
 
 
 @pytest.fixture

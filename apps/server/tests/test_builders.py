@@ -16,7 +16,7 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 
 from app.models.strategies import Fund, Order, Transaction
-from app.strategies.base import PositionContext, MarketData
+from app.strategies.base import PositionContext, MarketDataSnapshot
 
 
 def build_fund(
@@ -300,7 +300,7 @@ def build_market_data(
     indicators: Optional[Dict[str, Any]] = None,
     news: Optional[Dict[str, Any]] = None,
     float_data: Optional[Dict[str, Any]] = None,
-) -> MarketData:
+) -> MarketDataSnapshot:
     """
     Build a MarketData instance with configurable parameters.
 
@@ -345,7 +345,7 @@ def build_market_data(
     if open_price is None:
         open_price = price * 0.99
 
-    return MarketData(
+    return MarketDataSnapshot(
         symbol=symbol,
         price=price,
         timestamp=timestamp,

@@ -15,9 +15,9 @@ import pytest
 # Import StrategyEngine and related classes
 from app.services.strategies.strategy_engine import StrategyEngine
 from app.strategies.base import (
-    EntrySignal,
-    ExitSignal,
-    MarketData,
+    EntryLevel,
+    StopUpdate,
+    MarketDataSnapshot,
     PositionContext,
 )
 
@@ -60,7 +60,7 @@ def mock_market_data_provider():
     """Create a mock market data provider."""
     provider = AsyncMock()
     provider.build_market_data = AsyncMock(
-        return_value=MarketData(
+        return_value=MarketDataSnapshot(
             symbol="TEST",
             price=10.0,  # $10 per share
             timestamp=datetime.utcnow(),
@@ -323,7 +323,7 @@ async def test_fractional_share_cost_rounds_down(
     
     # Mock market data with $17.50 price
     mock_market_data_provider.build_market_data = AsyncMock(
-        return_value=MarketData(
+        return_value=MarketDataSnapshot(
             symbol="TEST",
             price=17.50,
             timestamp=datetime.utcnow(),

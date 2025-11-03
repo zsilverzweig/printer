@@ -7,11 +7,11 @@ Allows recovery from outages and ensures no levels are lost.
 
 from datetime import datetime
 from typing import Optional, Dict, Any
-from sqlalchemy import Column, String, Float, Boolean, DateTime, ForeignKey
+from sqlalchemy import Column, String, Float, Boolean, DateTime, ForeignKey, JSON
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.sql import func
 
-from app.models.base import Base
+from app.models.strategies import Base
 
 
 class StrategyMonitoringState(Base):
@@ -52,8 +52,8 @@ class StrategyMonitoringState(Base):
     trailing_stop_percent = Column(Float, nullable=True)
     high_water_mark = Column(Float, nullable=True)
     
-    # Strategy-specific metadata
-    strategy_metadata = Column(JSONB, nullable=True, server_default='{}')
+    # Strategy-specific metadata (JSON for SQLite compatibility, JSONB for PostgreSQL)
+    strategy_metadata = Column(JSON().with_variant(JSONB, "postgresql"), nullable=True, server_default='{}')
     
     # Monitoring state
     is_active = Column(Boolean, nullable=False, server_default='true')

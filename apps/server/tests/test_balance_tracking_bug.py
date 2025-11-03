@@ -18,7 +18,7 @@ import pytest
 
 from app.models.strategies import Fund, Order
 from app.services.strategies.strategy_engine import StrategyEngine
-from app.strategies.base import EntrySignal, MarketData
+from app.strategies.base import EntryLevel, MarketDataSnapshot
 
 
 @pytest.mark.asyncio
@@ -71,19 +71,23 @@ async def test_balance_not_reduced_until_order_fills(async_session, mock_market_
     
     mock_alpaca.place_market_order = track_order
     
-    with patch('app.services.strategies.strategy_engine.get_async_session') as mock_get_session:
-        mock_get_session.return_value.__aenter__.return_value = async_session
+    # Patch both modules that use get_async_session
+    with patch('app.services.strategies.order_executor.get_async_session') as mock_get_session1, \
+         patch('app.services.strategies.strategy_service.get_async_session') as mock_get_session2:
+        
+        mock_get_session1.return_value.__aenter__.return_value = async_session
+        mock_get_session2.return_value.__aenter__.return_value = async_session
         
         # Place order
-        signal = EntrySignal(should_enter=True, entry_price=150.0, reason="test")
-        market_data = MarketData(
+        signal = EntryLevel(entry_price=150.0, stop_loss=147.0, confidence=1.0, order_type="market")
+        market_data = MarketDataSnapshot(
             symbol="AAPL",
             price=150.0,
             volume=1000000,
             timestamp=datetime.utcnow()
         )
         
-        await engine._enter_position("AAPL", signal, market_data)
+        await engine.order_executor.execute_buy_order("AAPL", signal, market_data)
         
         # AFTER placing order
         await async_session.refresh(fund)
@@ -200,15 +204,19 @@ async def test_multiple_orders_exceed_balance(async_session, mock_market_data, m
     
     mock_alpaca.place_market_order = track_order
     
-    with patch('app.services.strategies.strategy_engine.get_async_session') as mock_get_session:
-        mock_get_session.return_value.__aenter__.return_value = async_session
+    # Patch both order_executor and strategy_service
+    with patch('app.services.strategies.order_executor.get_async_session') as mock_get_session1, \
+         patch('app.services.strategies.strategy_service.get_async_session') as mock_get_session2:
+        
+        mock_get_session1.return_value.__aenter__.return_value = async_session
+        mock_get_session2.return_value.__aenter__.return_value = async_session
         
         # Place 8 orders (should only be able to place 6 with $10,000)
         symbols = ["AAPL", "GOOGL", "MSFT", "TSLA", "NVDA", "AMD", "INTC", "META"]
         
         for symbol in symbols:
-            signal = EntrySignal(should_enter=True, entry_price=150.0, reason="test")
-            market_data = MarketData(
+            signal = EntryLevel(entry_price=150.0, stop_loss=147.0, confidence=1.0, order_type="market")
+            market_data = MarketDataSnapshot(
                 symbol=symbol,
                 price=150.0,
                 volume=1000000,
@@ -216,7 +224,7 @@ async def test_multiple_orders_exceed_balance(async_session, mock_market_data, m
             )
             
             # Try to place order
-            await engine._enter_position(symbol, signal, market_data)
+            await engine.order_executor.execute_buy_order(symbol, signal, market_data)
         
         # Check how many orders were placed
         total_orders = len(orders_placed)
@@ -293,19 +301,23 @@ async def test_balance_tracking_with_stop_start(async_session, mock_market_data,
     
     mock_alpaca.place_market_order = track_order
     
-    with patch('app.services.strategies.strategy_engine.get_async_session') as mock_get_session:
-        mock_get_session.return_value.__aenter__.return_value = async_session
+    # Patch both modules that use get_async_session
+    with patch('app.services.strategies.order_executor.get_async_session') as mock_get_session1, \
+         patch('app.services.strategies.strategy_service.get_async_session') as mock_get_session2:
+        
+        mock_get_session1.return_value.__aenter__.return_value = async_session
+        mock_get_session2.return_value.__aenter__.return_value = async_session
         
         # Place order
-        signal = EntrySignal(should_enter=True, entry_price=150.0, reason="test")
-        market_data = MarketData(
+        signal = EntryLevel(entry_price=150.0, stop_loss=147.0, confidence=1.0, order_type="market")
+        market_data = MarketDataSnapshot(
             symbol="AAPL",
             price=150.0,
             volume=1000000,
             timestamp=datetime.utcnow()
         )
         
-        await engine._enter_position("AAPL", signal, market_data)
+        await engine.order_executor.execute_buy_order("AAPL", signal, market_data)
         
         # Simulate fund stop
         fund.status = "paused"

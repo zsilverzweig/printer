@@ -19,7 +19,7 @@ import pytest
 
 from app.models.strategies import Fund, Order
 from app.services.strategies.strategy_engine import StrategyEngine
-from app.strategies.base import PositionContext, EntrySignal, MarketData
+from app.strategies.base import PositionContext, EntryLevel, MarketDataSnapshot
 
 
 @pytest.mark.asyncio

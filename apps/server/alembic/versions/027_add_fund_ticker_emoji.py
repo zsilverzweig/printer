@@ -1,7 +1,7 @@
 """Add ticker and emoji to funds
 
-Revision ID: 027_add_fund_ticker_emoji
-Revises: 026_add_strategy_monitoring_state
+Revision ID: 027
+Revises: 026
 Create Date: 2025-11-03 16:57:00.000000
 
 """
@@ -11,8 +11,8 @@ from alembic import op
 import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
-revision: str = '027_add_fund_ticker_emoji'
-down_revision: Union[str, None] = '026_add_strategy_monitoring_state'
+revision: str = '027'
+down_revision: Union[str, None] = '026'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

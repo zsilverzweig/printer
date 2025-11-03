@@ -24,7 +24,7 @@ from app.services.trading.position_tracker import (
 )
 from app.services.trading.order_polling import OrderPollingService
 from app.services.strategies.strategy_engine import StrategyEngine
-from app.strategies.base import PositionContext, ExitSignal, MarketData
+from app.strategies.base import PositionContext, StopUpdate, MarketDataSnapshot
 
 
 async def create_test_transaction(

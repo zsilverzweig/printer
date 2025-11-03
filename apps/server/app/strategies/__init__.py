@@ -7,19 +7,19 @@ with entry/exit logic, position sizing, and scaling rules.
 
 from app.strategies.base import (
     ExecutionStrategy,
-    EntrySignal,
-    ExitSignal,
-    ScaleSignal,
-    MarketData,
+    EntryLevel,
+    StopUpdate,
+    MarketDataSnapshot,
+    PositionContext,
 )
 from app.strategies.registry import get_strategy, list_strategies, get_strategy_metadata
 
 __all__ = [
     "ExecutionStrategy",
-    "EntrySignal",
-    "ExitSignal",
-    "ScaleSignal",
-    "MarketData",
+    "EntryLevel",
+    "StopUpdate",
+    "MarketDataSnapshot",
+    "PositionContext",
     "get_strategy",
     "list_strategies",
     "get_strategy_metadata",

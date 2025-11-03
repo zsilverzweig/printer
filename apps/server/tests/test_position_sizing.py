@@ -18,7 +18,7 @@ from unittest.mock import AsyncMock, patch
 
 from tests.test_builders import build_fund, build_position_context, build_market_data
 from tests.test_assertions import assert_position_size_valid
-from app.strategies.base import EntrySignal
+from app.strategies.base import EntryLevel
 
 
 @pytest.mark.asyncio

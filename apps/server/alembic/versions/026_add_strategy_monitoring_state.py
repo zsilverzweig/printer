@@ -1,7 +1,7 @@
 """Add strategy_monitoring_state table for persistent level tracking
 
-Revision ID: 026_add_strategy_monitoring_state
-Revises: 025_add_alpaca_fill_id_to_transactions
+Revision ID: 026
+Revises: 025
 Create Date: 2025-11-03 00:00:00.000000
 
 """
@@ -12,8 +12,8 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision: str = '026_add_strategy_monitoring_state'
-down_revision: Union[str, None] = '025_add_alpaca_fill_id_to_transactions'
+revision: str = '026'
+down_revision: Union[str, None] = '025'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

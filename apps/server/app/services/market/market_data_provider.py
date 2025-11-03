@@ -17,7 +17,7 @@ from alpaca.data.requests import StockBarsRequest, StockLatestQuoteRequest
 from alpaca.data.timeframe import TimeFrame
 
 import app.core as core
-from app.strategies.base import MarketData
+from app.strategies.base import MarketDataSnapshot
 
 logger = logging.getLogger(__name__)
 
@@ -319,7 +319,7 @@ class MarketDataProvider:
     async def subscribe_realtime(
         self, 
         symbol: str, 
-        callback: Callable[[MarketData], None]
+        callback: Callable[[MarketDataSnapshot], None]
     ) -> None:
         """
         Subscribe to real-time updates for a symbol.
@@ -341,7 +341,7 @@ class MarketDataProvider:
                 cb for cb in self._subscriptions[symbol] if cb != callback
             ]
     
-    async def build_market_data(self, symbol: str) -> MarketData:
+    async def build_market_data(self, symbol: str) -> MarketDataSnapshot:
         """
         Build comprehensive MarketData object for a symbol.
         
@@ -402,7 +402,7 @@ class MarketDataProvider:
             
             logger.debug(f"Built market data for {symbol}: price=${current_price:.2f}")
             
-            return MarketData(
+            return MarketDataSnapshot(
                 symbol=symbol,
                 price=current_price,
                 timestamp=datetime.now(),
