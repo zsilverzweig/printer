@@ -56,7 +56,6 @@ class ScreenerService:
 
     async def start(self) -> None:
         """Start the screener service and begin periodic updates without blocking."""
-        self.logger.info("ScreenerService starting; loading data from TimescaleDB…")
         # Initialize with TimescaleDB data
         await self.data_loader.load_from_timescale()
         # Start periodic loop

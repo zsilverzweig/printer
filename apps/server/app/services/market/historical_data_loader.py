@@ -177,7 +177,7 @@ async def start_historical_load_task(
     symbol_count = len(symbols) if symbols else "all"
     timescale_str = ", ".join(timescales)
     logger.info(
-        f"Started historical data loading task: {timescale_str} timescales, "
+        f"Loading: {timescale_str} timescales, "
         f"{symbol_count} symbols, status_id={status_id}"
     )
     

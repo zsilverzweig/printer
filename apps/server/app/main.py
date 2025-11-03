@@ -55,17 +55,16 @@ async def log_requests(request: Request, call_next):
 @app.on_event("startup")
 async def on_startup() -> None:
     await startup_init()
-    logger.info("FastAPI application started, WebSocket endpoints registered")
     
     # Initialize global screener service for strategy engines
     from app.services.screener.screener import ScreenerService, set_screener_service
     import app.core as core
     
-    logger.info("Initializing global ScreenerService...")
     screener_service = ScreenerService(core.get_client(), interval_s=20)
     await screener_service.start()
     set_screener_service(screener_service)
-    logger.info("✓ Global ScreenerService initialized and running")
+    
+    logger.info("✅ Server started (FastAPI + WebSocket + Screener)")
     
     # Initialize order polling service for order status synchronization
     from app.services.trading.order_polling import OrderPollingService, set_polling_service

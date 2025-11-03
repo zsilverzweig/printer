@@ -33,7 +33,8 @@ async def auto_start_active_funds() -> None:
                 logger.info("📭 No active funds found - nothing to auto-start")
                 return
             
-            logger.info(f"🔄 Found {len(active_funds)} active fund(s) to auto-start")
+            if len(active_funds) > 0:
+                logger.info(f"🔄 Starting {len(active_funds)} fund(s)...")
             
             started_count = 0
             failed_count = 0
@@ -56,11 +57,6 @@ async def auto_start_active_funds() -> None:
                         failed_count += 1
                         continue
                     
-                    logger.info(
-                        f"🚀 Auto-starting fund: {fund.id} ({fund.name}) "
-                        f"[mode={fund.mode}, strategy={fund.strategy_id}, balance=${fund.balance:.2f}]"
-                    )
-                    
                     # Create and start the strategy engine
                     engine = await create_strategy_engine(fund=fund)
                     await engine.start()
@@ -68,7 +64,10 @@ async def auto_start_active_funds() -> None:
                     # Register in the global engine registry
                     register_engine(fund.id, engine)
                     
-                    logger.info(f"✅ Fund {fund.id} ({fund.name}) auto-started successfully")
+                    # Single consolidated log line
+                    logger.info(
+                        f"🚀 Fund started: '{fund.name}' ({fund.strategy_id}, ${fund.balance:.2f})"
+                    )
                     started_count += 1
                     
                 except Exception as e:

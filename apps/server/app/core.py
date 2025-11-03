@@ -103,7 +103,7 @@ async def startup_init() -> None:
             auto_start=True
         )
         await backfill_service.start()
-        logger.info("Smart backfill service started")
+        logger.info("✅ Backfill service started")
     else:
         logger.info("Smart backfill disabled (set MARKET_DATA_BACKFILL_ENABLED=true to enable)")
     
@@ -143,11 +143,7 @@ async def _load_aggregate_timescales_async() -> None:
         # Load all aggregate timescales in a single task
         # Uses the longest lookback period (180 days for daily data)
         # Each timescale will only fetch data for its configured lookback period from TIMESCALE_CONFIG
-        logger.info("📊 Starting multi-timescale data loading...")
-        logger.info("   - 5-minute bars: 60 days (screener data - PRIORITY)")
-        logger.info("   - 15-minute bars: 60 days")
-        logger.info("   - Hourly bars: 90 days (3 months)")
-        logger.info("   - Daily bars: 180 days (6 months)")
+        logger.info("📊 Loading historical data (5min/15min/1hour/1day)")
         
         start_date = datetime.now(timezone.utc) - timedelta(days=180)
         

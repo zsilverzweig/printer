@@ -230,7 +230,7 @@ class RealtimeIngestionService:
         Runs every batch_interval_seconds, collecting all queued messages
         and performing a single batch insert.
         """
-        logger.info(f"Batch processor started (interval: {self.batch_interval_seconds}s)")
+        # Batch processor started - no log needed, handled by main startup
         
         while not self.should_stop:
             try:
@@ -469,7 +469,7 @@ class RealtimeIngestionService:
         Runs every 5 minutes to update symbol_date_validation table based
         on ingested data.
         """
-        logger.info("Validation processor started")
+        # Validation processor started - no log needed, handled by main startup
         
         while not self.should_stop:
             try:

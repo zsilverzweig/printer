@@ -118,10 +118,6 @@ class StrategyEngine:
                 f"This is a safety check to prevent accidental real trading."
             )
         
-        logger.info(
-            f"✅ StrategyEngine initialized for fund {fund.id} "
-            f"(mode: {fund.mode}, balance: ${fund.balance:.2f})"
-        )
         
         # Monitored candidates
         self.monitored_symbols: List[str] = []
@@ -147,10 +143,11 @@ class StrategyEngine:
                 if fund:
                     old_balance = self.fund.balance
                     self.fund.balance = fund.balance
-                    logger.info(
-                        f"💰 Refreshed balance for fund {self.fund_id}: "
-                        f"${old_balance:.2f} → ${fund.balance:.2f}"
-                    )
+                    # Only log if balance actually changed
+                    if abs(old_balance - fund.balance) > 0.01:
+                        logger.info(
+                            f"[FUND {self.fund_id}] 💰 Balance: ${old_balance:.2f} → ${fund.balance:.2f}"
+                        )
                 else:
                     logger.warning(f"Could not refresh balance - fund {self.fund_id} not found")
         except Exception as e:
@@ -167,22 +164,7 @@ class StrategyEngine:
         # Refresh fund balance from database to ensure we have the latest value
         await self.refresh_fund_balance()
         
-        logger.info(
-            f"🚀 Starting strategy engine for fund {self.fund_id} "
-            f"(name={self.fund.name}, balance=${self.fund.balance:.2f}, mode={self.fund.mode})"
-        )
-        logger.info(
-            f"📋 Strategy config: strategy_id={self.fund.strategy_id}, "
-            f"size_per_trade=${self.fund.size_per_trade:.2f}, "
-            f"max_bet_percent={self.fund.max_bet_percent}"
-        )
-        
-        # Log risk management settings
-        max_order_age = self.fund.max_order_age_seconds or 60
-        logger.info(
-            f"⏱️  Risk management: max_order_age={max_order_age}s "
-            f"(orders older than this will be auto-canceled)"
-        )
+        # All startup info is logged by fund_autostart, no need to duplicate here
         
         # Sync initial positions from Alpaca
         await self._refresh_positions_from_alpaca()
@@ -1447,10 +1429,7 @@ class StrategyEngine:
     ) -> List[Dict[str, Any]]:
         """Apply ScreeningCriteria filters if configured."""
         if not self.fund.screening_criteria_id:
-            logger.debug(f"[FUND {self.fund.id}] No screening criteria configured, using {len(candidates)} candidates as-is")
             return candidates
-        
-        logger.info(f"[FUND {self.fund.id}] 🔍 Applying screening filters to {len(candidates)} candidates...")
         
         try:
             # Load criteria from database
@@ -1462,33 +1441,11 @@ class StrategyEngine:
                 criteria = await session.get(ScreeningCriteria, self.fund.screening_criteria_id)
                 
                 if not criteria:
-                    logger.warning(f"ScreeningCriteria {self.fund.screening_criteria_id} not found")
+                    logger.warning(f"[FUND {self.fund.id}] ScreeningCriteria {self.fund.screening_criteria_id} not found")
                     return candidates
                 
-                # Log which screener is being used
                 screener_name = criteria.name or "Unnamed"
-                logger.info(
-                    f"[FUND {self.fund.id}] Using screener: '{screener_name}' (ID: {criteria.id})"
-                )
-                
                 params = criteria.criteria or {}
-                
-                # Log key filter parameters for visibility
-                key_filters = []
-                if params.get("min_price") or params.get("max_price"):
-                    price_range = f"${params.get('min_price', 0):.2f}-${params.get('max_price', '∞')}"
-                    key_filters.append(f"price={price_range}")
-                if params.get("min_volume"):
-                    key_filters.append(f"vol>={params['min_volume']:,}")
-                if params.get("min_relative_volume"):
-                    key_filters.append(f"RV>={params['min_relative_volume']:.1f}x")
-                if params.get("limit"):
-                    key_filters.append(f"limit={params['limit']}")
-                
-                if key_filters:
-                    logger.info(
-                        f"[FUND {self.fund.id}] Screener filters: {', '.join(key_filters)}"
-                    )
 
                 # Use screener service to compute live results with the same logic as the UI/API
                 screener = get_screener_service()
@@ -1507,8 +1464,9 @@ class StrategyEngine:
                 else:
                     results = await screener.compute_live_with_criteria(params)
 
+                # Single consolidated log line per tick
                 logger.info(
-                    f"[FUND {self.fund.id}] Screener '{screener_name}' returned {len(results)} matching stocks (from {len(candidates)} candidates)"
+                    f"[FUND {self.fund.id}] 📊 Screened: '{screener_name}' → {len(results)} stocks (from {len(candidates)} candidates)"
                 )
                 return results
         

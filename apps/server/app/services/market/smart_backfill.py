@@ -149,25 +149,15 @@ class SmartBackfillService:
             logger.warning("Backfill service already running")
             return
         
-        logger.info("Starting smart backfill service")
+        # Starting - no log needed, handled by core startup
         
         # Print Matrix legend (only shown once at startup)
-        logger.info(f"{MATRIX_CYAN}╔═══════════════════════════════════════════════════════════╗{RESET}")
-        logger.info(f"{MATRIX_CYAN}║{RESET}  {MATRIX_BRIGHT}MATRIX STATUS ENCODING: [R][B][T][G]{RESET}                     {MATRIX_CYAN}║{RESET}")
-        logger.info(f"{MATRIX_CYAN}║{RESET}  {MATRIX_GREEN}R: Result   → Ω=data Ψ=empty Φ=improved{RESET}                  {MATRIX_CYAN}║{RESET}")
-        logger.info(f"{MATRIX_CYAN}║{RESET}  {MATRIX_GREEN}B: Bars     → 0=none ₁=low ₂=mid ₃=high{RESET}                  {MATRIX_CYAN}║{RESET}")
-        logger.info(f"{MATRIX_CYAN}║{RESET}  {MATRIX_GREEN}T: Type     → ς=stock ε=etf μ=multi{RESET}                      {MATRIX_CYAN}║{RESET}")
-        logger.info(f"{MATRIX_CYAN}║{RESET}  {MATRIX_GREEN}G: Gap      → δ=no_data τ=missing ι=incomplete{RESET}           {MATRIX_CYAN}║{RESET}")
-        logger.info(f"{MATRIX_CYAN}╚═══════════════════════════════════════════════════════════╝{RESET}")
-        
         self.is_running = True
         self.should_stop = False
         self.started_at = datetime.now(timezone.utc)
         
         # Start background task
         self.task = asyncio.create_task(self._backfill_loop())
-        
-        logger.info("Smart backfill service started")
     
     async def stop(self) -> None:
         """Stop the backfill service."""
@@ -483,7 +473,7 @@ class SmartBackfillService:
         
         Continuously checks for gaps and backfills them.
         """
-        logger.info("Backfill loop started")
+        # Backfill loop started - no log needed, handled by core startup
         
         while not self.should_stop:
             try:

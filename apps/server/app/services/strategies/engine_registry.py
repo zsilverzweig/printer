@@ -29,7 +29,7 @@ def register_engine(fund_id: str, engine: 'StrategyEngine') -> None:
         engine: The StrategyEngine instance
     """
     _running_engines[fund_id] = engine
-    logger.info(f"Engine registered for fund {fund_id}")
+    # Logging handled by fund_autostart, no need to duplicate
 
 
 def get_engine(fund_id: str) -> Optional['StrategyEngine']:

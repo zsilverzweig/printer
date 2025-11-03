@@ -43,7 +43,7 @@ class ScreenerDataLoader:
             
             # Get symbols with sufficient complete data
             symbols = await ts_calc.get_symbols_with_complete_data(min_days=14)
-            self.logger.info(f"Found {len(symbols)} symbols with complete data")
+            # Found symbols - no verbose log needed
             
             # Load most recent daily OHLCV for each symbol
             # Don't hardcode "yesterday" - find the most recent date with data
@@ -63,7 +63,7 @@ class ScreenerDataLoader:
                     return
                 
                 latest_daily_date = latest_daily_row[0]
-                self.logger.info(f"Loading daily OHLCV from most recent date: {latest_daily_date}")
+                # Loading daily data - no verbose log needed
                 
                 result = await session.execute(
                     text("""
