@@ -88,23 +88,35 @@ async def on_startup() -> None:
     
     logger.info("✅ Server started (FastAPI + WebSocket + Screener)")
     
-    # Initialize order polling service for order status synchronization
-    from app.services.trading.order_polling import OrderPollingService, set_polling_service
+    # Initialize Alpaca WebSocket client for real-time order tracking
     from app.services.trading.alpaca_service import AlpacaService
+    from app.services.trading.alpaca_websocket import AlpacaWebSocketClient
+    from app.services.trading.trade_event_handler import TradeEventHandler
     from app.services.trading.reconciliation_service import ReconciliationService, set_reconciliation_service
     
-    logger.info("Initializing OrderPollingService...")
+    logger.info("Initializing Alpaca WebSocket client...")
     alpaca_service = AlpacaService(paper_trading=True)  # Use paper trading for now
-    polling_service = OrderPollingService(alpaca_service, poll_interval=5.0)
-    await polling_service.start()
-    set_polling_service(polling_service)
-    logger.info("✓ OrderPollingService initialized and running (polling every 5s)")
     
-    # Initialize reconciliation service for automatic position sync
+    # Create event handler
+    event_handler = TradeEventHandler()
+    
+    # Create and start WebSocket client
+    websocket_client = AlpacaWebSocketClient(
+        alpaca_service=alpaca_service,
+        event_handler=event_handler,
+        paper_trading=True
+    )
+    await websocket_client.connect()
+    
+    # Store global reference for shutdown
+    app.state.alpaca_websocket = websocket_client
+    logger.info("✓ Alpaca WebSocket client initialized and connected to trade_updates stream")
+    
+    # Initialize reconciliation service for manual position sync
     logger.info("Initializing ReconciliationService...")
     reconciliation_service = ReconciliationService(alpaca_service)
     set_reconciliation_service(reconciliation_service)
-    logger.info("✓ ReconciliationService initialized (automatic position reconciliation enabled)")
+    logger.info("✓ ReconciliationService initialized (manual position reconciliation available)")
     
     # Load yesterday's market data (all timescales)
     try:
@@ -137,6 +149,18 @@ async def on_startup() -> None:
     # Log all registered routes
     for route in app.routes:
         logger.debug(f"Registered route: {route.path} ({getattr(route, 'methods', 'WEBSOCKET' if 'WebSocket' in str(type(route)) else 'UNKNOWN')})")
+
+
+@app.on_event("shutdown")
+async def on_shutdown() -> None:
+    """Gracefully shutdown services on server stop."""
+    logger.info("🛑 Shutting down server...")
+    
+    # Disconnect WebSocket
+    if hasattr(app.state, 'alpaca_websocket'):
+        websocket_client = app.state.alpaca_websocket
+        await websocket_client.disconnect()
+        logger.info("✓ Alpaca WebSocket client disconnected")
 
 
 @app.get("/health")

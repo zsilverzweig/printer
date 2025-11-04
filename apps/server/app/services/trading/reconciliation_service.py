@@ -12,7 +12,7 @@ from typing import Dict, Any, Optional
 from datetime import datetime
 
 from app.services.trading.alpaca_service import AlpacaService
-from app.services.trading.activity_sync import ActivitySyncService
+from app.services.trading.trading_reconciliation_service import TradingReconciliationService
 from app.services.trading.position_tracker import get_position_quantity_from_transactions
 from app.services.core.database import get_async_session
 from app.services.events.event_service import event_service
@@ -33,7 +33,7 @@ class ReconciliationService:
     
     def __init__(self, alpaca_service: AlpacaService):
         self.alpaca_service = alpaca_service
-        self.activity_sync = ActivitySyncService(alpaca_service)
+        self.trading_reconciliation = TradingReconciliationService(alpaca_service)
     
     async def schedule_order_reconciliation(
         self,
@@ -332,10 +332,10 @@ class ReconciliationService:
         )
         
         async with get_async_session() as session:
-            # Use ActivitySyncService's auto_correct_position method
+            # Use TradingReconciliationService's auto_correct_position method
             # This method properly creates missing transactions from fills
             try:
-                result = await self.activity_sync.auto_correct_position(
+                result = await self.trading_reconciliation.auto_correct_position(
                     session=session,
                     fund_id=fund_id,
                     symbol=symbol,

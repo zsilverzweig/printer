@@ -1,9 +1,16 @@
 """
-Activity-Based Position Sync Service
+Trading Reconciliation Service
 
+Manual reconciliation service for fixing position discrepancies.
 Uses Alpaca's Activities API as the source of truth for position reconciliation.
-The Activities API shows actual fills that occurred, including fractional shares
-and partial fills, which is more reliable than polling order status.
+
+This is the "get out of jail free card" service for manual reconciliation:
+- Startup reconciliation (catch orders placed while offline)
+- Manual "Sync Positions" button in UI
+- Manual "Close Position" button in UI
+- Healing discrepancies when WebSocket missed events
+
+NOT used for normal order flow (WebSocket handles that).
 """
 
 import logging
@@ -22,12 +29,16 @@ from app.services.analytics.trade_builder import TradeBuilder
 logger = logging.getLogger(__name__)
 
 
-class ActivitySyncService:
+class TradingReconciliationService:
     """
-    Syncs positions using Alpaca's Activities API.
+    Manual reconciliation service for fixing position discrepancies.
     
+    Uses Alpaca's Activities API as the source of truth for position reconciliation.
     Activities API provides the SOURCE OF TRUTH for what actually filled,
     including exact quantities and fractional shares.
+    
+    This service is used for manual reconciliation, not for normal order flow
+    (which is handled by WebSocket events).
     """
     
     def __init__(self, alpaca_service: AlpacaService):
@@ -586,9 +597,9 @@ async def auto_update_trades_for_symbol(
         fund_id: Fund ID
         symbol: Stock symbol to update trades for
     """
-    # Use the ActivitySyncService helper method
+    # Use the TradingReconciliationService helper method
     # Create a dummy service just to call the method (it doesn't need alpaca_service for this)
-    sync_service = ActivitySyncService(alpaca_service=None)  # type: ignore
+    sync_service = TradingReconciliationService(alpaca_service=None)  # type: ignore
     await sync_service._auto_update_trades_for_symbol(session, fund_id, symbol)
 
 
@@ -604,7 +615,7 @@ async def reconcile_on_startup(
     """
     logger.info(f"🚀 Running startup reconciliation for fund {fund_id[:8]}")
     
-    sync_service = ActivitySyncService(alpaca_service)
+    sync_service = TradingReconciliationService(alpaca_service)
     result = await sync_service.reconcile_fund_positions(session, fund_id)
     
     if result["status"] == "out_of_sync":

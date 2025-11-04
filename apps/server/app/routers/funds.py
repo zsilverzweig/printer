@@ -18,7 +18,7 @@ from pydantic import BaseModel
 from sqlalchemy import select, and_
 
 from app.models.strategies import Fund, ScreeningCriteria, Order, Transaction, Transfer, Trade
-from app.models.events import StrategyEngineEvent
+from app.models.events import StrategyEngineEvent, Event
 from app.services.core.database import get_async_session
 from app.services.strategies.engine_registry import (
     register_engine,
@@ -27,6 +27,7 @@ from app.services.strategies.engine_registry import (
     list_running_funds
 )
 from app.services.strategies.strategy_factory import create_strategy_engine
+from app.strategies.registry import get_strategy_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +37,6 @@ router = APIRouter()
 # Request/Response Models
 class CreateFundInput(BaseModel):
     name: str
-    description: Optional[str] = None
     mode: str = "sim"  # "sim" or "real"
     initial_balance: Optional[float] = None  # Deprecated: Fund always starts with 0 balance
     
@@ -69,7 +69,6 @@ class CreateFundInput(BaseModel):
 
 class UpdateFundInput(BaseModel):
     name: Optional[str] = None
-    description: Optional[str] = None
     balance: Optional[float] = None
     
     # UI customization
@@ -625,11 +624,20 @@ async def _calculate_fund_performance(fund_id: str) -> dict:
 async def create_fund(fund_data: CreateFundInput) -> dict:
     """Create a new fund."""
     try:
+        # Generate description from strategy if available
+        description = None
+        if fund_data.strategy_id:
+            try:
+                strategy_metadata = get_strategy_metadata(fund_data.strategy_id)
+                description = strategy_metadata.get("description")
+            except Exception as e:
+                logger.warning(f"Could not get strategy description for {fund_data.strategy_id}: {e}")
+        
         async with get_async_session() as session:
             fund = Fund(
                 id=str(uuid.uuid4()),
                 name=fund_data.name,
-                description=fund_data.description,
+                description=description,
                 mode=fund_data.mode,
                 balance=0.0,  # Start with 0 cash, user must deposit
                 status="paused",
@@ -734,8 +742,6 @@ async def update_fund(fund_id: str, update_data: UpdateFundInput) -> dict:
             # Update fields if provided
             if update_data.name is not None:
                 fund.name = update_data.name
-            if update_data.description is not None:
-                fund.description = update_data.description
             if update_data.balance is not None:
                 fund.balance = update_data.balance
                 logger.info(f"Updated fund {fund_id} balance to ${fund.balance:.2f}")
@@ -749,6 +755,12 @@ async def update_fund(fund_id: str, update_data: UpdateFundInput) -> dict:
             # Strategy configuration
             if update_data.strategy_id is not None:
                 fund.strategy_id = update_data.strategy_id
+                # Auto-update description from strategy
+                try:
+                    strategy_metadata = get_strategy_metadata(update_data.strategy_id)
+                    fund.description = strategy_metadata.get("description")
+                except Exception as e:
+                    logger.warning(f"Could not get strategy description for {update_data.strategy_id}: {e}")
             if update_data.strategy_config is not None:
                 fund.strategy_config = update_data.strategy_config
             if update_data.screening_criteria_id is not None:
@@ -2295,7 +2307,7 @@ async def reconcile_fund_positions(fund_id: str) -> dict:
             # Get Alpaca service from engine if running, otherwise create new one
             from app.services.strategies.engine_registry import get_engine
             from app.services.trading.alpaca_service import AlpacaService
-            from app.services.trading.activity_sync import ActivitySyncService
+            from app.services.trading.trading_reconciliation_service import TradingReconciliationService
             
             engine = get_engine(fund_id)
             if engine:
@@ -2305,8 +2317,8 @@ async def reconcile_fund_positions(fund_id: str) -> dict:
                 alpaca_service = AlpacaService(paper_trading=(fund.mode == "sim"))
             
             # Run reconciliation
-            activity_sync = ActivitySyncService(alpaca_service)
-            result = await activity_sync.reconcile_fund_positions(
+            trading_reconciliation = TradingReconciliationService(alpaca_service)
+            result = await trading_reconciliation.reconcile_fund_positions(
                 session=session,
                 fund_id=fund_id,
                 lookback_hours=24
@@ -2399,10 +2411,22 @@ async def reset_fund(fund_id: str) -> dict:
             )
             
             # Delete in correct order due to foreign key constraints
-            # 1. Delete strategy engine events (independent, but should be cleaned up)
+            # 1. Delete strategy engine events
+            # First get the event IDs to delete the parent Event records
+            strategy_events_stmt = select(StrategyEngineEvent.id).where(StrategyEngineEvent.fund_id == fund_id)
+            result = await session.execute(strategy_events_stmt)
+            event_ids = [row[0] for row in result.all()]
+            
+            # Delete child records (StrategyEngineEvent)
             await session.execute(
                 delete(StrategyEngineEvent).where(StrategyEngineEvent.fund_id == fund_id)
             )
+            
+            # Delete parent records (Event) if any were found
+            if event_ids:
+                await session.execute(
+                    delete(Event).where(Event.id.in_(event_ids))
+                )
             
             # 2. Delete transactions (they reference both trades and orders)
             await session.execute(

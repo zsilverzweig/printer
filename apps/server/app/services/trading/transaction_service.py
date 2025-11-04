@@ -308,7 +308,8 @@ async def create_transaction_from_order(
     """
     Create a transaction record from an order and Alpaca order object.
     
-    Used by order_polling.py for order fills.
+    NOTE: This method is deprecated. Use create_transaction_from_fill_event() for WebSocket events
+    or create_transaction_from_activity() for Activities API reconciliation.
     
     CRITICAL: This method should NOT be used for filled orders without alpaca_fill_id.
     For filled orders, use Activities API reconciliation which has proper fill IDs.
@@ -391,7 +392,7 @@ async def create_transaction_from_activity(
     """
     Create a transaction record from Alpaca activity/fill data.
     
-    Used by activity_sync.py for syncing from Activities API.
+    Used by trading_reconciliation_service.py for syncing from Activities API.
     
     Args:
         session: Database session
@@ -461,6 +462,94 @@ async def create_transaction_from_activity(
     except Exception as e:
         logger.error(
             f"Error creating transaction from activity for {fill_data.get('symbol', 'unknown')}: {e}",
+            exc_info=True
+        )
+        raise
+
+
+async def create_transaction_from_fill_event(
+    session: AsyncSession,
+    order: Order,
+    fill_event: Dict[str, Any],
+) -> Optional[Transaction]:
+    """
+    Create a transaction record from WebSocket fill event.
+    
+    Used by trade_event_handler.py for WebSocket trade_updates events.
+    
+    Args:
+        session: Database session
+        order: Order that was filled
+        fill_event: Dict with fill data from WebSocket event
+                   Must contain: timestamp (ISO format string), price, qty
+                   Optional: position_qty (for validation)
+        
+    Returns:
+        Created Transaction record, or None if skipped
+        
+    Note:
+        For partial_fill events, qty is the incremental amount,
+        not the total filled_qty. The WebSocket sends each partial fill separately.
+    """
+    try:
+        # Extract fill details
+        fill_timestamp_str = fill_event.get("timestamp")
+        fill_price = float(fill_event.get("price", 0))
+        fill_qty = float(fill_event.get("qty", 0))
+        
+        if not fill_price or fill_price <= 0:
+            logger.error(
+                f"❌ Cannot create transaction for {order.symbol} {order.side} - "
+                f"invalid price: {fill_price}"
+            )
+            return None
+        
+        if not fill_qty or fill_qty <= 0:
+            logger.error(
+                f"❌ Cannot create transaction for {order.symbol} {order.side} - "
+                f"invalid quantity: {fill_qty}"
+            )
+            return None
+        
+        # Parse timestamp
+        fill_timestamp = None
+        if fill_timestamp_str:
+            try:
+                # Handle ISO format with or without Z
+                if fill_timestamp_str.endswith("Z"):
+                    fill_timestamp = datetime.fromisoformat(
+                        fill_timestamp_str.replace("Z", "+00:00")
+                    )
+                else:
+                    fill_timestamp = datetime.fromisoformat(fill_timestamp_str)
+            except Exception as e:
+                logger.warning(f"Failed to parse fill timestamp: {e}, using current time")
+                fill_timestamp = None
+        
+        if not fill_timestamp:
+            fill_timestamp = get_current_time()
+            if fill_timestamp.tzinfo is None:
+                fill_timestamp = fill_timestamp.replace(tzinfo=timezone.utc)
+        
+        return await create_transaction(
+            session=session,
+            fund_id=order.fund_id,
+            symbol=order.symbol,
+            transaction_type=order.side,
+            quantity=fill_qty,
+            price=fill_price,
+            order_id=order.id,
+            timestamp=fill_timestamp,
+            alpaca_order_id=order.alpaca_order_id,
+            alpaca_fill_id=None,  # WebSocket doesn't provide fill_id
+            trade_id=order.trade_id,
+            validate_order=False,  # We already have the order
+            validate_position=True,  # Validate position for sells to prevent over-selling
+        )
+        
+    except Exception as e:
+        logger.error(
+            f"Error creating transaction from fill event for {order.symbol}: {e}",
             exc_info=True
         )
         raise

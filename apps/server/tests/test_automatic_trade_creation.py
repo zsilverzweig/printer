@@ -13,7 +13,7 @@ from datetime import datetime
 from sqlalchemy import select
 
 from app.models.strategies import Fund, Order, Transaction, Trade
-from app.services.trading.activity_sync import auto_update_trades_for_symbol
+from app.services.trading.trading_reconciliation_service import auto_update_trades_for_symbol
 
 
 @pytest.mark.asyncio

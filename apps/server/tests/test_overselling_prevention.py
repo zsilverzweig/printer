@@ -22,7 +22,7 @@ from app.services.trading.position_tracker import (
     get_position_quantity_from_transactions,
     get_all_positions_from_transactions
 )
-from app.services.trading.order_polling import OrderPollingService
+from app.services.trading.transaction_service import create_transaction
 from app.services.strategies.strategy_engine import StrategyEngine
 from app.strategies.base import PositionContext, StopUpdate, MarketDataSnapshot
 from tests.test_builders import build_market_data
@@ -194,21 +194,22 @@ async def test_transaction_creation_caps_oversell(async_session, mock_alpaca):
     async_session.add(order)
     await async_session.commit()
     
-    # Mock Alpaca order that says 50 shares were filled
-    mock_alpaca_order = Mock()
-    mock_alpaca_order.filled_qty = 50.0
-    mock_alpaca_order.filled_avg_price = 160.0
-    mock_alpaca_order.filled_at = datetime.now(timezone.utc)
+    # Attempt to create transaction with over-sell (50 shares when only 10 owned)
+    # This should be capped to 10 shares by validate_position=True
+    from app.services.trading.transaction_service import create_transaction
     
-    # Create polling service and attempt to create transaction
-    polling_service = OrderPollingService(mock_alpaca, poll_interval=5.0)
-    
-    # Call _create_transaction with over-sell attempt
-    await polling_service._create_transaction(
-        async_session,
-        order,
-        mock_alpaca_order,
-        quantity_to_transact=50.0  # Attempting to sell 50
+    transaction = await create_transaction(
+        session=async_session,
+        fund_id=fund.id,
+        symbol=order.symbol,
+        transaction_type=order.side,
+        quantity=50.0,  # Attempting to sell 50 shares
+        price=160.0,
+        order_id=order.id,
+        timestamp=datetime.now(timezone.utc),
+        alpaca_order_id=order.alpaca_order_id,
+        validate_order=False,  # Order already exists
+        validate_position=True,  # This should cap the quantity to available position
     )
     
     await async_session.commit()
@@ -266,22 +267,22 @@ async def test_transaction_creation_with_no_position(async_session, mock_alpaca)
     async_session.add(order)
     await async_session.commit()
     
-    # Mock Alpaca order
-    mock_alpaca_order = Mock()
-    mock_alpaca_order.filled_qty = 10.0
-    mock_alpaca_order.filled_avg_price = 160.0
-    mock_alpaca_order.filled_at = datetime.now(timezone.utc)
-    
-    # Create polling service and attempt to create transaction
-    polling_service = OrderPollingService(mock_alpaca, poll_interval=5.0)
-    
-    # Call _create_transaction - should return early without creating transaction
-    await polling_service._create_transaction(
-        async_session,
-        order,
-        mock_alpaca_order,
-        quantity_to_transact=10.0
-    )
+    # Attempt to create transaction with no position (should raise ValueError)
+    # This should raise an error because we're trying to sell with 0 position
+    with pytest.raises(ValueError, match="Cannot sell.*position is"):
+        await create_transaction(
+            session=async_session,
+            fund_id=fund.id,
+            symbol=order.symbol,
+            transaction_type=order.side,
+            quantity=10.0,  # Attempting to sell 10 shares with 0 position
+            price=160.0,
+            order_id=order.id,
+            timestamp=datetime.now(timezone.utc),
+            alpaca_order_id=order.alpaca_order_id,
+            validate_order=False,
+            validate_position=True,  # This should prevent the transaction
+        )
     
     await async_session.commit()
     
@@ -499,21 +500,20 @@ async def test_partial_sell_with_position_deficit(async_session, mock_alpaca):
     async_session.add(order)
     await async_session.commit()
     
-    # Mock Alpaca order claiming 15 shares filled
-    mock_alpaca_order = Mock()
-    mock_alpaca_order.filled_qty = 15.0
-    mock_alpaca_order.filled_avg_price = 160.0
-    mock_alpaca_order.filled_at = datetime.now(timezone.utc)
-    
-    # Create polling service
-    polling_service = OrderPollingService(mock_alpaca, poll_interval=5.0)
-    
-    # Attempt to create transaction for 15 shares
-    await polling_service._create_transaction(
-        async_session,
-        order,
-        mock_alpaca_order,
-        quantity_to_transact=15.0
+    # Attempt to create transaction for 15 shares when only 10 owned
+    # Should be capped to 10 shares
+    transaction = await create_transaction(
+        session=async_session,
+        fund_id=fund.id,
+        symbol=order.symbol,
+        transaction_type=order.side,
+        quantity=15.0,  # Attempting to sell 15 shares
+        price=160.0,
+        order_id=order.id,
+        timestamp=datetime.now(timezone.utc),
+        alpaca_order_id=order.alpaca_order_id,
+        validate_order=False,
+        validate_position=True,  # This should cap to 10 shares
     )
     
     await async_session.commit()

@@ -68,20 +68,11 @@ async def load_date_range_data(
         current += timedelta(days=1)
     
     if not dates:
-        if logger.isEnabledFor(logging.INFO):
-            logger.info("No trading days in date range")
         return
-    
-    if logger.isEnabledFor(logging.INFO):
-        logger.info("Loading %s timescales for %s dates (%s to %s)",
-                   len(timescales), len(dates), start_date, end_date)
     
     # Process each timescale
     for timescale in timescales:
         config = TIMESCALE_CONFIG[timescale]
-        if logger.isEnabledFor(logging.INFO):
-            logger.info("")
-            logger.info("Processing %s...", timescale)
         
         processed = 0
         succeeded = 0
@@ -115,13 +106,8 @@ async def load_date_range_data(
                     symbols_needing_data.append((symbol, missing_dates))
         
         total_symbol_dates = sum(len(dates) for _, dates in symbols_needing_data)
-        if logger.isEnabledFor(logging.INFO):
-            logger.info("Found %s symbol-date combinations needing data (%s skipped)",
-                       total_symbol_dates, len(symbols) * len(dates) - total_symbol_dates)
         
         if not symbols_needing_data:
-            if logger.isEnabledFor(logging.INFO):
-                logger.info("All symbols already have %s data for date range, skipping", timescale)
             continue
         
         # Process with limited concurrency
@@ -144,10 +130,6 @@ async def load_date_range_data(
                 except Exception as e:
                     failed += 1
                     logger.error("%s %s %s: Failed - %s", symbol, date, timescale, e)
-                
-                if processed % 100 == 0 and logger.isEnabledFor(logging.INFO):
-                    logger.info("Progress: %s/%s processed (%s succeeded, %s failed)",
-                               processed, total_symbol_dates, succeeded, failed)
         
         # Create tasks for all symbol-date combinations
         tasks = []
@@ -156,10 +138,6 @@ async def load_date_range_data(
                 tasks.append(process_symbol_date(symbol, date))
         
         await asyncio.gather(*tasks, return_exceptions=True)
-        
-        if logger.isEnabledFor(logging.INFO):
-            logger.info("%s complete: %s succeeded, %s failed, %s skipped",
-                       timescale, succeeded, failed, skipped)
 
 
 async def load_yesterday_data(init_db_flag: bool = True, api_key: Optional[str] = None):
@@ -173,8 +151,6 @@ async def load_yesterday_data(init_db_flag: bool = True, api_key: Optional[str] 
     # Initialize database if needed
     if init_db_flag:
         await init_db()
-        if logger.isEnabledFor(logging.INFO):
-            logger.info("Database initialized")
     
     # Initialize Polygon client with proper connection pool configuration
     if api_key is None:
@@ -235,9 +211,6 @@ async def load_yesterday_data(init_db_flag: bool = True, api_key: Optional[str] 
             continue
         
         timescales_processed.append(timescale)
-        if logger.isEnabledFor(logging.INFO):
-            logger.info("Loading %s data for %s (%s symbols need data, %s already exist)",
-                       timescale, yesterday, len(symbols_needing_data), skipped)
         
         # Process symbols with limited concurrency (3 concurrent requests)
         total_symbols = len(symbols_needing_data)
@@ -271,25 +244,10 @@ async def load_yesterday_data(init_db_flag: bool = True, api_key: Optional[str] 
                 except Exception as e:
                     failed += 1
                     logger.error("%s: Failed - %s", symbol, e)
-                
-                # Log progress every 100 processed for better visibility
-                if processed % 100 == 0 and logger.isEnabledFor(logging.INFO):
-                    logger.info("Progress: %s/%s processed (%s succeeded, %s failed, %s skipped)",
-                                processed, total_symbols, succeeded, failed, skipped)
         
         # Process all symbols concurrently (with semaphore limiting to 3)
         tasks = [process_symbol(symbol, idx) for idx, symbol in enumerate(symbols_needing_data, 1)]
         await asyncio.gather(*tasks, return_exceptions=True)
-        
-        if logger.isEnabledFor(logging.INFO):
-            logger.info("✓ %s: %s succeeded, %s failed", timescale, succeeded, failed)
-    
-    # Summary
-    if logger.isEnabledFor(logging.INFO):
-        if timescales_processed:
-            logger.info("✓ Market data loaded: %s", ", ".join(timescales_processed))
-        if timescales_skipped:
-            logger.info("✓ Already complete: %s", ", ".join(timescales_skipped))
 
 
 async def load_comprehensive_data(init_db_flag: bool = True, api_key: Optional[str] = None):
@@ -307,8 +265,6 @@ async def load_comprehensive_data(init_db_flag: bool = True, api_key: Optional[s
     # Initialize database if needed
     if init_db_flag:
         await init_db()
-        if logger.isEnabledFor(logging.INFO):
-            logger.info("Database initialized")
     
     # Initialize Polygon client
     if api_key is None:
@@ -318,21 +274,12 @@ async def load_comprehensive_data(init_db_flag: bool = True, api_key: Optional[s
     client = create_polygon_client(api_key)
     
     # Get symbols
-    if logger.isEnabledFor(logging.INFO):
-        logger.info("Fetching symbols from Polygon snapshot...")
     snapshot_data = fetch_snapshot_all(api_key)
     symbols = [ticker["ticker"] for ticker in snapshot_data if "ticker" in ticker]
-    if logger.isEnabledFor(logging.INFO):
-        logger.info("Found %s symbols", len(symbols))
     
     today = datetime.now(timezone.utc).date()
     
     # Phase 1: Load yesterday's data (all timescales)
-    if logger.isEnabledFor(logging.INFO):
-        logger.info("")
-        logger.info("=" * 60)
-        logger.info("Phase 1: Loading yesterday's data (all timescales)")
-        logger.info("=" * 60)
     yesterday = today - timedelta(days=1)
     while yesterday.weekday() >= 5:  # Skip weekends
         yesterday -= timedelta(days=1)
@@ -343,28 +290,14 @@ async def load_comprehensive_data(init_db_flag: bool = True, api_key: Optional[s
     )
     
     # Phase 2: Load today's data (all timescales) - up to current time
-    if logger.isEnabledFor(logging.INFO):
-        logger.info("")
-        logger.info("=" * 60)
-        logger.info("Phase 2: Loading today's data (all timescales)")
-        logger.info("=" * 60)
-    
     # Only load today if it's a weekday
     if today.weekday() < 5:
         await load_date_range_data(
             client, symbols, today, today,
             timescales=['1day', '1hour', '15min', '5min', '1min']
         )
-    else:
-        if logger.isEnabledFor(logging.INFO):
-            logger.info("Today is a weekend, skipping today's data")
     
     # Phase 3: Load 7 days of hourly bars
-    if logger.isEnabledFor(logging.INFO):
-        logger.info("")
-        logger.info("=" * 60)
-        logger.info("Phase 3: Loading 7 days of hourly bars")
-        logger.info("=" * 60)
     start_date = today - timedelta(days=7)
     await load_date_range_data(
         client, symbols, start_date, yesterday - timedelta(days=1),
@@ -372,22 +305,11 @@ async def load_comprehensive_data(init_db_flag: bool = True, api_key: Optional[s
     )
     
     # Phase 4: Load 5min/15min for last 7 days
-    if logger.isEnabledFor(logging.INFO):
-        logger.info("")
-        logger.info("=" * 60)
-        logger.info("Phase 4: Loading 5min/15min for last 7 days")
-        logger.info("=" * 60)
     start_date = today - timedelta(days=7)
     await load_date_range_data(
         client, symbols, start_date, yesterday - timedelta(days=1),
         timescales=['15min', '5min']
     )
-    
-    if logger.isEnabledFor(logging.INFO):
-        logger.info("")
-        logger.info("=" * 60)
-        logger.info("✅ Comprehensive data loading complete!")
-        logger.info("=" * 60)
 
 
 # Make it importable
