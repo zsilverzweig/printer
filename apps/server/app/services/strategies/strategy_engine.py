@@ -153,6 +153,7 @@ class StrategyEngine:
             strategy_service=self.strategy_service,
             market_data_provider=market_data_provider,
             strategy_logger=self.strategy_logger,
+            risk_manager=self.risk_manager,
         )
         
         # Verify fund mode matches Alpaca service mode

@@ -7,9 +7,13 @@ Separate from math-based utilities as it's specific to AI trading approaches.
 
 import logging
 import os
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from app.services.core.task_manager import BackgroundTaskManager, CacheWithExpiry
+from app.services.core.time_context import get_current_time
+from app.services.market import market as market_service
+from app.services.ai.ai_service import AIService
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +74,15 @@ class NewsService:
         """
         Format news API response for AI context.
         
+        Extracts and formats key events that were filtered for specific types:
+        - Earnings reports or financial announcements
+        - Product launches or major updates
+        - Leadership changes (CEO, CFO, etc.)
+        - Mergers, acquisitions, or partnerships
+        - Regulatory actions or legal issues
+        - Major contracts or deals
+        - Fundraising or capital events
+        
         Args:
             data: News API response data
             
@@ -80,11 +93,31 @@ class NewsService:
         news_summary = data.get("news_summary", "No recent news")
         
         if key_events:
-            events_text = "\n".join([
-                f"  • {event['name']}: {event['summary']}"
-                for event in key_events[:3]  # Top 3 events
-            ])
-            return f"{news_summary}\n\nKey Events:\n{events_text}"
+            # Handle both dict and Pydantic model formats
+            events_text = []
+            for event in key_events:
+                # Handle Pydantic model or dict
+                if hasattr(event, 'name'):
+                    # Pydantic model
+                    name = event.name
+                    summary = event.summary
+                elif isinstance(event, dict):
+                    # Dict format
+                    name = event.get('name', 'Unknown Event')
+                    summary = event.get('summary', '')
+                else:
+                    continue
+                
+                events_text.append(f"  • {name}: {summary}")
+            
+            events_section = "\n".join(events_text)
+            
+            # Include event count in summary
+            event_count = len(key_events)
+            if event_count > 0:
+                return f"{news_summary}\n\nKey Events ({event_count} identified):\n{events_section}"
+            else:
+                return news_summary
         else:
             return news_summary
     
@@ -232,5 +265,84 @@ class NewsService:
         except Exception as e:
             logger.error(f"Error waiting for news prefetch for {symbol}: {e}")
             return None
+    
+    async def get_recent_events(
+        self,
+        symbol: str,
+        days: int = 14
+    ) -> str:
+        """
+        Get recent key events extracted from news using AI.
+        
+        This method:
+        1. Fetches recent news from Benzinga
+        2. Uses AI to extract and filter key events (earnings, product launches, 
+           leadership changes, M&A, regulatory actions, major contracts, fundraising)
+        3. Returns formatted events string for use in AI prompts
+        
+        Args:
+            symbol: Stock symbol
+            days: Number of days of news to analyze (default 1)
+            
+        Returns:
+            Formatted string with key events ready for AI prompts
+        """
+        try:
+            # Calculate date range using get_current_time() for backtesting support
+            end_date = get_current_time()
+            if end_date.tzinfo is None:
+                end_date = end_date.replace(tzinfo=timezone.utc)
+            start_date = end_date - timedelta(days=days)
+            
+            # Fetch news from Benzinga
+            # Filter to only news channel and articles explicitly tagged with the ticker
+            news_data = market_service.list_benzinga_news(
+                ticker=symbol,
+                channels="news",  # Only include news channel (exclude Price Target, etc.)
+                stocks=symbol,  # Only articles explicitly tagged with this ticker
+                published=None,  # Don't filter by date in API call
+                limit=100,  # Get more articles to ensure coverage
+                sort="published.desc"  # Sort by most recent first
+            )
+            
+            # Filter news by date range
+            if news_data and isinstance(news_data, list):
+                from dateutil import parser as date_parser
+                filtered_news = []
+                for article in news_data:
+                    try:
+                        pub_date_str = article.get('published_utc') or article.get('published')
+                        if pub_date_str:
+                            pub_date = date_parser.parse(pub_date_str)
+                            if pub_date.tzinfo is None:
+                                pub_date = pub_date.replace(tzinfo=timezone.utc)
+                            if start_date <= pub_date <= end_date:
+                                filtered_news.append(article)
+                    except Exception:
+                        # Include article if we can't parse date
+                        filtered_news.append(article)
+                
+                news_data = filtered_news
+            
+            if not news_data:
+                return "No recent news found"
+            
+            # Use AI service to extract key events
+            ai_service = AIService()
+            key_events = await ai_service.extract_key_events(symbol, news_data)
+            
+            # Format events for AI prompt
+            if key_events:
+                events_text = "\n".join([
+                    f"  • {event.name}: {event.summary}"
+                    for event in key_events
+                ])
+                return f"Recent Key Events ({len(key_events)} identified):\n{events_text}"
+            else:
+                return "No significant events identified in recent news"
+        
+        except Exception as e:
+            logger.warning(f"Error fetching recent events for {symbol}: {e}")
+            return "News events unavailable"
 
 

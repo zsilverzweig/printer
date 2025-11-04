@@ -17,7 +17,8 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select, and_
 
-from app.models.strategies import Fund, ScreeningCriteria, Order, Transaction, Transfer
+from app.models.strategies import Fund, ScreeningCriteria, Order, Transaction, Transfer, Trade
+from app.models.events import StrategyEngineEvent
 from app.services.core.database import get_async_session
 from app.services.strategies.engine_registry import (
     register_engine,
@@ -2347,6 +2348,8 @@ async def reset_fund(fund_id: str) -> dict:
     Reset a fund to zero balance by clearing all history.
     
     This will:
+    - Delete all strategy engine events
+    - Delete all trades
     - Delete all orders
     - Delete all transactions
     - Delete all transfers
@@ -2373,6 +2376,12 @@ async def reset_fund(fund_id: str) -> dict:
             from sqlalchemy import select, delete, func
             
             # Count records before deletion
+            events_count = await session.scalar(
+                select(func.count()).select_from(StrategyEngineEvent).where(StrategyEngineEvent.fund_id == fund_id)
+            ) or 0
+            trades_count = await session.scalar(
+                select(func.count()).select_from(Trade).where(Trade.fund_id == fund_id)
+            ) or 0
             orders_count = await session.scalar(
                 select(func.count()).select_from(Order).where(Order.fund_id == fund_id)
             ) or 0
@@ -2385,22 +2394,32 @@ async def reset_fund(fund_id: str) -> dict:
             
             logger.info(
                 f"🔄 RESET REQUEST for fund {fund_id} ({fund.name}): "
-                f"{orders_count} orders, {transactions_count} transactions, "
-                f"{transfers_count} transfers, current balance: ${fund.balance:.2f}"
+                f"{events_count} strategy engine events, {trades_count} trades, {orders_count} orders, "
+                f"{transactions_count} transactions, {transfers_count} transfers, current balance: ${fund.balance:.2f}"
             )
             
             # Delete in correct order due to foreign key constraints
-            # 1. Delete transactions first (they reference orders)
+            # 1. Delete strategy engine events (independent, but should be cleaned up)
+            await session.execute(
+                delete(StrategyEngineEvent).where(StrategyEngineEvent.fund_id == fund_id)
+            )
+            
+            # 2. Delete transactions (they reference both trades and orders)
             await session.execute(
                 delete(Transaction).where(Transaction.fund_id == fund_id)
             )
             
-            # 2. Delete orders (no longer referenced by transactions)
+            # 3. Delete trades (they reference orders via entry_order_id/exit_order_id)
+            await session.execute(
+                delete(Trade).where(Trade.fund_id == fund_id)
+            )
+            
+            # 4. Delete orders (no longer referenced by transactions or trades)
             await session.execute(
                 delete(Order).where(Order.fund_id == fund_id)
             )
             
-            # 3. Delete transfers (independent)
+            # 5. Delete transfers (independent)
             await session.execute(
                 delete(Transfer).where(Transfer.fund_id == fund_id)
             )
@@ -2413,8 +2432,8 @@ async def reset_fund(fund_id: str) -> dict:
             
             logger.info(
                 f"✅ Fund {fund_id} ({fund.name}) reset complete: "
-                f"Deleted {orders_count} orders, {transactions_count} transactions, "
-                f"{transfers_count} transfers. Balance: ${old_balance:.2f} → $0.00"
+                f"Deleted {events_count} strategy engine events, {trades_count} trades, {orders_count} orders, "
+                f"{transactions_count} transactions, {transfers_count} transfers. Balance: ${old_balance:.2f} → $0.00"
             )
             
             return {
@@ -2422,6 +2441,8 @@ async def reset_fund(fund_id: str) -> dict:
                 "fund_id": fund_id,
                 "fund_name": fund.name,
                 "deleted": {
+                    "strategy_engine_events": events_count,
+                    "trades": trades_count,
                     "orders": orders_count,
                     "transactions": transactions_count,
                     "transfers": transfers_count,

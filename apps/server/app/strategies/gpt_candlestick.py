@@ -18,6 +18,7 @@ from app.strategies.base import (
     PositionContext,
 )
 from app.services.ai.gpt_helper import get_gpt_helper
+from app.services.news.news_service import NewsService
 from app.lib.technical_analysis import (
     calculate_ema,
     calculate_vwap,
@@ -58,6 +59,9 @@ class GPTCandlestickStrategy(ExecutionStrategy):
         self.lookback_hours_5m = config.get("lookback_hours_5m", 2)  # 2 hours of 5min bars
         self.update_stop_interval_minutes = config.get("update_stop_interval_minutes", 5)  # Check every 5 minutes
         self.min_confidence = config.get("min_confidence", 0.6)
+        
+        # Initialize news service
+        self.news_service = NewsService()
     
     def _get_gpt_helper(self):
         """Get GPT helper with cost tracking."""
@@ -122,6 +126,13 @@ class GPTCandlestickStrategy(ExecutionStrategy):
             data_1h = self._format_candlesticks_with_indicators(bars_1h, "1hr", 20)
             data_15m = self._format_candlesticks_with_indicators(bars_15m, "15min", 20)
             
+            # Get recent key events (non-blocking)
+            try:
+                news_events = await self.news_service.get_recent_events(ticker, days=1)
+            except Exception as e:
+                logger.debug(f"News events unavailable for {ticker}: {e}")
+                news_events = "News events unavailable"
+            
             # Build prompt for GPT
             prompt = f"""You are a SELECTIVE DAY TRADER analyzing {ticker} for an INTRADAY LONG entry. This is DAY TRADING - we'll exit before market close.
 
@@ -131,7 +142,10 @@ Current Price: ${current_price:.2f}
 
 {data_15m}
 
-Based on this candlestick data, determine if there is a HIGH-QUALITY INTRADAY entry opportunity.
+RECENT NEWS & EVENTS:
+{news_events}
+
+Based on this candlestick data and recent news, determine if there is a HIGH-QUALITY INTRADAY entry opportunity.
 
 DAY TRADING Evaluation Criteria:
 ✅ REQUIRED for entry consideration:
@@ -141,6 +155,7 @@ DAY TRADING Evaluation Criteria:
 - Favorable risk/reward ratio (at least 2:1 intraday target)
 - Reasonable time of day (avoid late session entries)
 - Multiple timeframes confirming the setup
+- Consider recent news: positive news can support bullish setups, negative news should be a red flag
 
 ❌ REJECT if:
 - Choppy, sideways, or unclear price action
@@ -289,6 +304,13 @@ If there is NO setup, set entry_price and stop_loss to 0, confidence to 0, and e
             entry_reasoning = position.strategy_state.get("entry_reasoning", "N/A")
             entry_patterns = position.strategy_state.get("entry_patterns", [])
             
+            # Get recent key events (non-blocking)
+            try:
+                news_events = await self.news_service.get_recent_events(symbol, days=1)
+            except Exception as e:
+                logger.debug(f"News events unavailable for {symbol}: {e}")
+                news_events = "News events unavailable"
+            
             prompt = f"""Managing INTRADAY LONG position in {symbol}. This is DAY TRADING - we exit before close.
 
 Position Details:
@@ -309,7 +331,10 @@ Market Context (Multiple Timeframes):
 
 {data_5m}
 
-Based on the recent price action, determine if the stop loss should be updated.
+RECENT NEWS & EVENTS:
+{news_events}
+
+Based on the recent price action and news, determine if the stop loss should be updated.
 
 DAY TRADING Guidelines:
 - NEVER lower the stop loss (only raise it or keep it the same)
@@ -320,6 +345,7 @@ DAY TRADING Guidelines:
 - Remember: we exit before market close - protect profits as day progresses
 - Use technical levels (EMA9/20, VWAP, support) to place stops intelligently
 - Watch for EMA crossovers and MACD divergences as momentum shift signals
+- Consider news: negative news may warrant tighter stops, positive news may support wider stops
 
 Respond ONLY with a JSON object:
 {{

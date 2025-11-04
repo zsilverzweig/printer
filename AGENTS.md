@@ -132,3 +132,27 @@ src/
   ├── types/ # Shared TypeScript types
   └── utils/ # Shared utility functions
 ```
+
+## Backtesting Support
+
+**CRITICAL: Always use `get_current_time()` instead of `datetime.now()` or `datetime.utcnow()`**
+
+When writing services that need time awareness (news fetching, data queries, etc.), always use `get_current_time()` from `app.services.core.time_context` to support backtesting:
+
+```python
+from app.services.core.time_context import get_current_time
+
+# ❌ BAD: Breaks backtesting
+end_date = datetime.now(timezone.utc)
+
+# ✅ GOOD: Supports backtesting
+end_date = get_current_time()
+if end_date.tzinfo is None:
+    end_date = end_date.replace(tzinfo=timezone.utc)
+```
+
+This ensures that:
+
+- In live mode: Returns real current time
+- In backtest mode: Returns the simulated backtest time
+- Services can work correctly in both contexts without modification

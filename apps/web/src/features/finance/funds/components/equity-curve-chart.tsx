@@ -147,20 +147,46 @@ export function EquityCurveChart({
   useEffect(() => {
     if (!equitySeriesRef.current || equityData.length === 0) return;
 
-    // Convert equity data to chart format
-    const equityLineData: LineData<Time>[] = equityData.map((point) => ({
-      time: (new Date(point.timestamp).getTime() / 1000) as Time,
-      value: point.cumulative_pnl,
-    }));
+    // Convert equity data to chart format, sort by time, and deduplicate
+    const equityLineData: LineData<Time>[] = equityData
+      .map((point) => ({
+        time: (new Date(point.timestamp).getTime() / 1000) as Time,
+        value: point.cumulative_pnl,
+      }))
+      .sort((a, b) => a.time - b.time)
+      // Deduplicate: keep last value for each unique timestamp
+      .reduce((acc, curr) => {
+        const last = acc[acc.length - 1];
+        if (last && last.time === curr.time) {
+          // Replace with latest value for same timestamp
+          acc[acc.length - 1] = curr;
+        } else {
+          acc.push(curr);
+        }
+        return acc;
+      }, [] as LineData<Time>[]);
 
     equitySeriesRef.current.setData(equityLineData);
 
     // Add drawdown data if enabled
     if (drawdownSeriesRef.current && showDrawdowns) {
-      const drawdownLineData: LineData<Time>[] = equityData.map((point) => ({
-        time: (new Date(point.timestamp).getTime() / 1000) as Time,
-        value: -point.drawdown, // Negative to show below zero
-      }));
+      const drawdownLineData: LineData<Time>[] = equityData
+        .map((point) => ({
+          time: (new Date(point.timestamp).getTime() / 1000) as Time,
+          value: -point.drawdown, // Negative to show below zero
+        }))
+        .sort((a, b) => a.time - b.time)
+        // Deduplicate: keep last value for each unique timestamp
+        .reduce((acc, curr) => {
+          const last = acc[acc.length - 1];
+          if (last && last.time === curr.time) {
+            // Replace with latest value for same timestamp
+            acc[acc.length - 1] = curr;
+          } else {
+            acc.push(curr);
+          }
+          return acc;
+        }, [] as LineData<Time>[]);
 
       drawdownSeriesRef.current.setData(drawdownLineData);
     }

@@ -10,6 +10,7 @@ from typing import List, Dict, Any, Optional
 from app.strategies.base import ExecutionStrategy, MarketDataSnapshot, EntryLevel, PositionContext
 from app.services.market.market_data_provider import MarketDataProvider
 from app.services.strategies.strategy_service import StrategyService
+from app.services.strategies.risk_manager import RiskManager
 from app.lib.strategy_logger import StrategyLogger
 from app.types import ScreenerCriteria
 
@@ -29,6 +30,7 @@ class ScreenerConnector:
         strategy_service: StrategyService,
         market_data_provider: MarketDataProvider,
         strategy_logger: StrategyLogger,
+        risk_manager: RiskManager,
     ):
         """
         Initialize screener connector.
@@ -40,6 +42,7 @@ class ScreenerConnector:
             strategy_service: Strategy persistence service
             market_data_provider: Market data provider
             strategy_logger: Logging service
+            risk_manager: Risk management service
         """
         self.fund_id = fund_id
         self.screening_criteria_id = screening_criteria_id
@@ -47,6 +50,7 @@ class ScreenerConnector:
         self.strategy_service = strategy_service
         self.market_data_provider = market_data_provider
         self.strategy_logger = strategy_logger
+        self.risk_manager = risk_manager
     
     async def get_screened_tickers(self) -> List[str]:
         """

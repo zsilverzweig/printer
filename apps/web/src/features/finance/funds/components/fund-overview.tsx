@@ -310,6 +310,7 @@ export function FundOverview({
                     the balance to $0.00:
                   </p>
                   <ul className="list-disc list-inside space-y-1 text-sm">
+                    <li>All trade records will be deleted</li>
                     <li>All order history will be cleared</li>
                     <li>All transaction records will be deleted</li>
                     <li>All transfer history will be removed</li>
