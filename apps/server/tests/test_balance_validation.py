@@ -107,23 +107,25 @@ async def test_insufficient_balance_prevents_order(
     )
     
     # Simulate entry signal
-    entry_signal = EntrySignal(
-        should_enter=True,
+    entry_signal = EntryLevel(
         entry_price=10.0,
-        reason="Test entry",
+        stop_loss=9.8,
+        confidence=1.0,
+        order_type="market"
     )
     
-    market_data = MarketData(
+    market_data = MarketDataSnapshot(
         symbol="TEST",
         price=10.0,
         timestamp=datetime.utcnow(),
     )
     
-    # THIS TEST SHOULD FAIL initially because we DON'T check balance
-    await engine._enter_position("TEST", entry_signal, market_data)
+    # Try to place order - should be rejected due to insufficient balance
+    result = await engine.order_executor.execute_buy_order("TEST", entry_signal, market_data)
     
     # Order should NOT have been placed because insufficient balance
-    # Expected: place_market_order should NOT be called
+    # Expected: execute_buy_order returns False and Alpaca not called
+    assert result == False, "execute_buy_order should return False for insufficient balance"
     assert not mock_alpaca_service.place_market_order.called, (
         "Order was placed despite insufficient balance! "
         f"Fund balance: ${mock_fund.balance:.2f}, "
@@ -132,7 +134,7 @@ async def test_insufficient_balance_prevents_order(
 
 
 @pytest.mark.asyncio
-@patch('app.services.strategies.strategy_engine.get_async_session')
+@patch('app.services.strategies.order_executor.get_async_session')
 async def test_sufficient_balance_allows_order(
     mock_get_session,
     mock_execution_strategy,
@@ -150,15 +152,6 @@ async def test_sufficient_balance_allows_order(
     - Actual cost: 100 shares * $10 = $1000
     - Expected: Order should be ALLOWED because $1000 <= $2000 balance
     """
-    # Mock database session
-    mock_session = AsyncMock()
-    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-    mock_session.__aexit__ = AsyncMock(return_value=None)
-    mock_session.add = Mock()
-    mock_session.commit = AsyncMock()
-    mock_session.execute = AsyncMock()
-    mock_get_session.return_value = mock_session
-    
     fund = Mock()
     fund.id = str(uuid.uuid4())
     fund.name = "Well Funded"
@@ -178,6 +171,22 @@ async def test_sufficient_balance_allows_order(
     fund.trading_start_time = None
     fund.trading_end_time = None
     fund.timezone = None
+    fund.ticker = None
+    fund.emoji = None
+    
+    # Mock database session to return the fund for balance checks
+    mock_session = AsyncMock()
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=None)
+    mock_session.add = Mock()
+    mock_session.commit = AsyncMock()
+    
+    # Mock execute to return fund with balance
+    mock_result = AsyncMock()
+    mock_result.scalar_one_or_none = Mock(return_value=fund)
+    mock_result.scalars = Mock(return_value=Mock(all=Mock(return_value=[])))  # No pending orders
+    mock_session.execute = AsyncMock(return_value=mock_result)
+    mock_get_session.return_value = mock_session
     
     engine = StrategyEngine(
         fund=fund,
@@ -186,19 +195,20 @@ async def test_sufficient_balance_allows_order(
         alpaca_service=mock_alpaca_service,
     )
     
-    entry_signal = EntrySignal(
-        should_enter=True,
+    entry_signal = EntryLevel(
         entry_price=10.0,
-        reason="Test entry",
+        stop_loss=9.8,
+        confidence=1.0,
+        order_type="market"
     )
     
-    market_data = MarketData(
+    market_data = MarketDataSnapshot(
         symbol="TEST",
         price=10.0,
         timestamp=datetime.utcnow(),
     )
     
-    await engine._enter_position("TEST", entry_signal, market_data)
+    await engine.order_executor.execute_buy_order("TEST", entry_signal, market_data)
     
     # Order should have been placed
     assert mock_alpaca_service.place_market_order.called, (
@@ -207,7 +217,7 @@ async def test_sufficient_balance_allows_order(
 
 
 @pytest.mark.asyncio
-@patch('app.services.strategies.strategy_engine.get_async_session')
+@patch('app.services.strategies.order_executor.get_async_session')
 async def test_exact_balance_match_allows_order(
     mock_get_session,
     mock_execution_strategy,
@@ -225,15 +235,6 @@ async def test_exact_balance_match_allows_order(
     - Actual cost: 100 shares * $10 = $1000
     - Expected: Order should be ALLOWED because $1000 == $1000 balance
     """
-    # Mock database session
-    mock_session = AsyncMock()
-    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-    mock_session.__aexit__ = AsyncMock(return_value=None)
-    mock_session.add = Mock()
-    mock_session.commit = AsyncMock()
-    mock_session.execute = AsyncMock()
-    mock_get_session.return_value = mock_session
-    
     fund = Mock()
     fund.id = str(uuid.uuid4())
     fund.name = "Exact Balance"
@@ -253,6 +254,22 @@ async def test_exact_balance_match_allows_order(
     fund.trading_start_time = None
     fund.trading_end_time = None
     fund.timezone = None
+    fund.ticker = None
+    fund.emoji = None
+    
+    # Mock database session to return the fund for balance checks
+    mock_session = AsyncMock()
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=None)
+    mock_session.add = Mock()
+    mock_session.commit = AsyncMock()
+    
+    # Mock execute to return fund with balance
+    mock_result = AsyncMock()
+    mock_result.scalar_one_or_none = Mock(return_value=fund)
+    mock_result.scalars = Mock(return_value=Mock(all=Mock(return_value=[])))  # No pending orders
+    mock_session.execute = AsyncMock(return_value=mock_result)
+    mock_get_session.return_value = mock_session
     
     engine = StrategyEngine(
         fund=fund,
@@ -261,19 +278,20 @@ async def test_exact_balance_match_allows_order(
         alpaca_service=mock_alpaca_service,
     )
     
-    entry_signal = EntrySignal(
-        should_enter=True,
+    entry_signal = EntryLevel(
         entry_price=10.0,
-        reason="Test entry",
+        stop_loss=9.8,
+        confidence=1.0,
+        order_type="market"
     )
     
-    market_data = MarketData(
+    market_data = MarketDataSnapshot(
         symbol="TEST",
         price=10.0,
         timestamp=datetime.utcnow(),
     )
     
-    await engine._enter_position("TEST", entry_signal, market_data)
+    await engine.order_executor.execute_buy_order("TEST", entry_signal, market_data)
     
     # Order should have been placed
     assert mock_alpaca_service.place_market_order.called, (
@@ -337,19 +355,20 @@ async def test_fractional_share_cost_rounds_down(
         alpaca_service=mock_alpaca_service,
     )
     
-    entry_signal = EntrySignal(
-        should_enter=True,
+    entry_signal = EntryLevel(
         entry_price=17.50,
-        reason="Test entry",
+        stop_loss=17.00,
+        confidence=1.0,
+        order_type="market"
     )
     
-    market_data = MarketData(
+    market_data = MarketDataSnapshot(
         symbol="TEST",
         price=17.50,
         timestamp=datetime.utcnow(),
     )
     
-    await engine._enter_position("TEST", entry_signal, market_data)
+    await engine.order_executor.execute_buy_order("TEST", entry_signal, market_data)
     
     # Order should NOT have been placed
     assert not mock_alpaca_service.place_market_order.called, (
@@ -384,7 +403,7 @@ async def test_zero_balance_prevents_all_orders(
     )
     
     # Mock cheap stock at $1
-    market_data = MarketData(
+    market_data = MarketDataSnapshot(
         symbol="PENNY",
         price=1.0,
         timestamp=datetime.utcnow(),
@@ -392,13 +411,14 @@ async def test_zero_balance_prevents_all_orders(
     
     mock_market_data_provider.build_market_data = AsyncMock(return_value=market_data)
     
-    entry_signal = EntrySignal(
-        should_enter=True,
+    entry_signal = EntryLevel(
         entry_price=1.0,
-        reason="Test entry",
+        stop_loss=0.95,
+        confidence=1.0,
+        order_type="market"
     )
     
-    await engine._enter_position("PENNY", entry_signal, market_data)
+    await engine.order_executor.execute_buy_order("PENNY", entry_signal, market_data)
     
     # No order should be placed with zero balance
     assert not mock_alpaca_service.place_market_order.called, (
@@ -432,19 +452,20 @@ async def test_negative_balance_prevents_orders(
         alpaca_service=mock_alpaca_service,
     )
     
-    market_data = MarketData(
+    market_data = MarketDataSnapshot(
         symbol="TEST",
         price=10.0,
         timestamp=datetime.utcnow(),
     )
     
-    entry_signal = EntrySignal(
-        should_enter=True,
+    entry_signal = EntryLevel(
         entry_price=10.0,
-        reason="Test entry",
+        stop_loss=9.8,
+        confidence=1.0,
+        order_type="market"
     )
     
-    await engine._enter_position("TEST", entry_signal, market_data)
+    await engine.order_executor.execute_buy_order("TEST", entry_signal, market_data)
     
     # No order should be placed with negative balance
     assert not mock_alpaca_service.place_market_order.called, (

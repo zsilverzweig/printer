@@ -86,28 +86,28 @@ async def test_pending_order_cost_uses_correct_prices(async_session, mock_market
     )
     
     # Create entry signal for GOOGL at $100/share, want 30 shares = $3000
-    entry_signal = EntrySignal(
-        should_enter=True,
+    entry_signal = EntryLevel(
         entry_price=100.0,
-        reason="test_entry"
+        stop_loss=95.0,
+        confidence=1.0,
+        order_type="market"
     )
     
     # Create market data for GOOGL
-    market_data = MarketData(
+    market_data = MarketDataSnapshot(
         symbol="GOOGL",
         price=100.0,
         timestamp=datetime.utcnow(),
-        volume=1000000,
     )
     
     # Mock get_async_session
-    with patch('app.services.strategies.strategy_engine.get_async_session') as mock_get_session:
+    with patch('app.services.strategies.order_executor.get_async_session') as mock_get_session:
         mock_get_session.return_value.__aenter__.return_value = async_session
         
         # Try to enter position - should be BLOCKED because:
         # Need: $3000
         # Available: $2250 (after accounting for pending orders)
-        await engine._enter_position("GOOGL", entry_signal, market_data)
+        result = await engine.order_executor.execute_buy_order("GOOGL", entry_signal, market_data)
     
     # Verify NO order was placed (insufficient balance)
     from sqlalchemy import select
@@ -172,21 +172,21 @@ async def test_cash_validation_without_estimated_price(async_session, mock_marke
     )
     
     # Try to enter position for GOOGL at $200/share, 10 shares = $2000
-    entry_signal = EntrySignal(
-        should_enter=True,
+    entry_signal = EntryLevel(
         entry_price=200.0,
-        reason="test_entry"
+        stop_loss=190.0,
+        confidence=1.0,
+        order_type="market"
     )
     
-    market_data = MarketData(
+    market_data = MarketDataSnapshot(
         symbol="GOOGL",
         price=200.0,
         timestamp=datetime.utcnow(),
-        volume=1000000,
     )
     
     # Mock get_async_session
-    with patch('app.services.strategies.strategy_engine.get_async_session') as mock_get_session:
+    with patch('app.services.strategies.order_executor.get_async_session') as mock_get_session:
         mock_get_session.return_value.__aenter__.return_value = async_session
         
         # Try to enter position
@@ -194,7 +194,7 @@ async def test_cash_validation_without_estimated_price(async_session, mock_marke
         # Available: $3000 - $1500 = $1500
         # Need: $2000
         # Should be BLOCKED
-        await engine._enter_position("GOOGL", entry_signal, market_data)
+        result = await engine.order_executor.execute_buy_order("GOOGL", entry_signal, market_data)
     
     # Verify market data provider was called to get AAPL price
     mock_market_data.get_latest_quote.assert_called_with("AAPL")
@@ -258,27 +258,27 @@ async def test_sufficient_balance_allows_order(async_session, mock_market_data, 
     )
     
     # Try to enter position for GOOGL at $50/share, 20 shares = $1000
-    entry_signal = EntrySignal(
-        should_enter=True,
+    entry_signal = EntryLevel(
         entry_price=50.0,
-        reason="test_entry"
+        stop_loss=47.5,
+        confidence=1.0,
+        order_type="market"
     )
     
-    market_data = MarketData(
+    market_data = MarketDataSnapshot(
         symbol="GOOGL",
         price=50.0,
         timestamp=datetime.utcnow(),
-        volume=1000000,
     )
     
     # Mock get_async_session
-    with patch('app.services.strategies.strategy_engine.get_async_session') as mock_get_session:
+    with patch('app.services.strategies.order_executor.get_async_session') as mock_get_session:
         mock_get_session.return_value.__aenter__.return_value = async_session
         
         # Try to enter position - should SUCCEED
         # Need: $1000
         # Available: $9000
-        await engine._enter_position("GOOGL", entry_signal, market_data)
+        result = await engine.order_executor.execute_buy_order("GOOGL", entry_signal, market_data)
     
     await async_session.commit()
     
@@ -374,24 +374,24 @@ async def test_multiple_pending_orders_different_prices(async_session, mock_mark
     
     # Try to buy TSLA at $250/share, 20 shares = $5000
     # This should be BLOCKED (need $5000, only have $3000 available)
-    entry_signal = EntrySignal(
-        should_enter=True,
+    entry_signal = EntryLevel(
         entry_price=250.0,
-        reason="test_entry"
+        stop_loss=240.0,
+        confidence=1.0,
+        order_type="market"
     )
     
-    market_data = MarketData(
+    market_data = MarketDataSnapshot(
         symbol="TSLA",
         price=250.0,
         timestamp=datetime.utcnow(),
-        volume=1000000,
     )
     
     # Mock get_async_session
-    with patch('app.services.strategies.strategy_engine.get_async_session') as mock_get_session:
+    with patch('app.services.strategies.order_executor.get_async_session') as mock_get_session:
         mock_get_session.return_value.__aenter__.return_value = async_session
         
-        await engine._enter_position("TSLA", entry_signal, market_data)
+        result = await engine.order_executor.execute_buy_order("TSLA", entry_signal, market_data)
     
     # Verify NO order was placed
     from sqlalchemy import select
@@ -467,24 +467,24 @@ async def test_sell_orders_not_counted_in_pending_cost(async_session, mock_marke
     
     # Try to buy TSLA at $100/share, 35 shares = $3500
     # Should SUCCEED (have $4000 available)
-    entry_signal = EntrySignal(
-        should_enter=True,
+    entry_signal = EntryLevel(
         entry_price=100.0,
-        reason="test_entry"
+        stop_loss=95.0,
+        confidence=1.0,
+        order_type="market"
     )
     
-    market_data = MarketData(
+    market_data = MarketDataSnapshot(
         symbol="TSLA",
         price=100.0,
         timestamp=datetime.utcnow(),
-        volume=1000000,
     )
     
     # Mock get_async_session
-    with patch('app.services.strategies.strategy_engine.get_async_session') as mock_get_session:
+    with patch('app.services.strategies.order_executor.get_async_session') as mock_get_session:
         mock_get_session.return_value.__aenter__.return_value = async_session
         
-        await engine._enter_position("TSLA", entry_signal, market_data)
+        result = await engine.order_executor.execute_buy_order("TSLA", entry_signal, market_data)
     
     await async_session.commit()
     

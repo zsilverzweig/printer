@@ -69,67 +69,76 @@ function FundRow({ fund, onStartStop }: FundRowProps) {
   };
 
   return (
-    <TableRow className="cursor-pointer">
-      <TableCell>
+    <TableRow className="cursor-pointer hover:bg-muted/50">
+      <TableCell className="max-w-md">
         <Link
           href={`/funds/${fund.id}`}
-          className="flex items-center gap-2 hover:underline"
+          className="flex items-start gap-3 hover:underline"
         >
-          <Badge className={`${modeColor} text-white`}>{modeLabel}</Badge>
-          <div>
-            <div className="font-medium">{fund.name}</div>
+          <Badge className={`${modeColor} text-white shrink-0 mt-0.5`}>
+            {modeLabel}
+          </Badge>
+          <div className="min-w-0 flex-1">
+            <div className="font-semibold text-base mb-1">{fund.name}</div>
             {fund.description && (
-              <div className="text-xs text-muted-foreground">
+              <div
+                className="text-sm text-muted-foreground line-clamp-2"
+                title={fund.description}
+              >
                 {fund.description}
               </div>
             )}
           </div>
         </Link>
       </TableCell>
-      <TableCell className="text-right">
+      <TableCell className="text-right whitespace-nowrap">
         {loading ? (
-          <span className="text-muted-foreground">Loading...</span>
+          <span className="text-muted-foreground text-sm">Loading...</span>
         ) : hasError ? (
-          <span className="text-red-600">Error</span>
+          <span className="text-red-600 text-sm">Error</span>
         ) : (
-          <div>
-            <div className="font-medium">
+          <div className="space-y-1">
+            <div className="font-semibold text-base">
               $
               {aum.toLocaleString("en-US", {
                 minimumFractionDigits: 2,
                 maximumFractionDigits: 2,
               })}
             </div>
-            <div className="text-xs text-muted-foreground">
-              Cash: $
-              {cashBalance.toLocaleString("en-US", {
-                minimumFractionDigits: 0,
-                maximumFractionDigits: 0,
-              })}{" "}
-              • Pos: $
-              {positionValue.toLocaleString("en-US", {
-                minimumFractionDigits: 0,
-                maximumFractionDigits: 0,
-              })}
+            <div className="text-xs text-muted-foreground flex flex-col gap-0.5">
+              <span>
+                Cash $
+                {cashBalance.toLocaleString("en-US", {
+                  minimumFractionDigits: 0,
+                  maximumFractionDigits: 0,
+                })}
+              </span>
+              <span>
+                Positions $
+                {positionValue.toLocaleString("en-US", {
+                  minimumFractionDigits: 0,
+                  maximumFractionDigits: 0,
+                })}
+              </span>
             </div>
           </div>
         )}
       </TableCell>
-      <TableCell className="text-right">
+      <TableCell className="text-right whitespace-nowrap">
         {!loading && !hasError && (
           <div
-            className={`flex items-center justify-end gap-1 ${
+            className={`flex items-center justify-end gap-2 ${
               isPositive ? "text-green-600" : "text-red-600"
             }`}
           >
             {isPositive ? (
-              <TrendingUp className="h-4 w-4" />
+              <TrendingUp className="h-4 w-4 shrink-0" />
             ) : (
-              <TrendingDown className="h-4 w-4" />
+              <TrendingDown className="h-4 w-4 shrink-0" />
             )}
             <div>
-              <div className="font-medium">
-                ${Math.abs(dayChange).toFixed(2)}
+              <div className="font-semibold text-base">
+                {isPositive ? "+" : "-"}${Math.abs(dayChange).toFixed(2)}
               </div>
               <div className="text-xs">
                 {isPositive ? "+" : ""}
@@ -143,9 +152,13 @@ function FundRow({ fund, onStartStop }: FundRowProps) {
         {loading ? (
           <span className="text-xs text-muted-foreground">-</span>
         ) : (
-          <Badge variant={isTrading ? "default" : "secondary"}>
+          <span
+            className={`font-semibold ${
+              isTrading ? "text-green-600" : "text-red-600"
+            }`}
+          >
             {isTrading ? "Trading" : "Stopped"}
-          </Badge>
+          </span>
         )}
       </TableCell>
       <TableCell className="text-center">
@@ -154,18 +167,18 @@ function FundRow({ fund, onStartStop }: FundRowProps) {
           variant={isTrading ? "destructive" : "default"}
           onClick={handleStartStop}
           disabled={actionLoading || loading}
-          className="w-20"
+          className="min-w-[80px]"
         >
           {actionLoading ? (
             <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
           ) : isTrading ? (
             <>
-              <Square className="h-4 w-4 mr-1" />
+              <Square className="h-4 w-4 mr-1.5" />
               Stop
             </>
           ) : (
             <>
-              <Play className="h-4 w-4 mr-1" />
+              <Play className="h-4 w-4 mr-1.5" />
               Start
             </>
           )}
@@ -325,11 +338,13 @@ export function FundsTable({ funds, onRefresh }: FundsTableProps) {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Fund</TableHead>
-              <TableHead className="text-right">AUM</TableHead>
-              <TableHead className="text-right">Today</TableHead>
-              <TableHead className="text-center">Status</TableHead>
-              <TableHead className="text-center">Actions</TableHead>
+              <TableHead className="w-[45%]">Fund</TableHead>
+              <TableHead className="text-right w-[20%]">
+                Assets Under Management
+              </TableHead>
+              <TableHead className="text-right w-[15%]">Today</TableHead>
+              <TableHead className="text-center w-[10%]">Status</TableHead>
+              <TableHead className="text-center w-[10%]">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>

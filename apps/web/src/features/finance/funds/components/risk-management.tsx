@@ -7,15 +7,14 @@
 
 "use client";
 
-import { AlertCircle, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { AlertCircle } from "lucide-react";
+import { useEffect, useState } from "react";
 
 import { Fund } from "@printer/shared";
 
 import { useFundDetails } from "../hooks/use-fund-details";
 import { fundService } from "../services/fund-service";
 
-import { Button } from "@/lib/components/ui/button";
 import {
   Card,
   CardContent,
@@ -255,20 +254,7 @@ export function RiskManagement({
         <CardContent className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="maxLossPercent">Max Loss % Per Day</Label>
-                {maxLossPercent && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 px-2"
-                    onClick={() => setMaxLossPercent("")}
-                    disabled={isSaving}
-                  >
-                    <X className="h-3 w-3" />
-                  </Button>
-                )}
-              </div>
+              <Label htmlFor="maxLossPercent">Max Loss % Per Day</Label>
               <Input
                 id="maxLossPercent"
                 type="number"
@@ -285,20 +271,7 @@ export function RiskManagement({
             </div>
 
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="maxLossDollars">Max Loss $ Per Day</Label>
-                {maxLossDollars && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 px-2"
-                    onClick={() => setMaxLossDollars("")}
-                    disabled={isSaving}
-                  >
-                    <X className="h-3 w-3" />
-                  </Button>
-                )}
-              </div>
+              <Label htmlFor="maxLossDollars">Max Loss $ Per Day</Label>
               <Input
                 id="maxLossDollars"
                 type="number"
@@ -328,20 +301,7 @@ export function RiskManagement({
             </div>
 
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="maxGivebackPercent">Max Giveback %</Label>
-                {maxGivebackPercent && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 px-2"
-                    onClick={() => setMaxGivebackPercent("")}
-                    disabled={isSaving}
-                  >
-                    <X className="h-3 w-3" />
-                  </Button>
-                )}
-              </div>
+              <Label htmlFor="maxGivebackPercent">Max Giveback %</Label>
               <Input
                 id="maxGivebackPercent"
                 type="number"
@@ -358,20 +318,7 @@ export function RiskManagement({
             </div>
 
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="maxOrderAgeSeconds">Max Order Age (sec)</Label>
-                {maxOrderAgeSeconds && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 px-2"
-                    onClick={() => setMaxOrderAgeSeconds("")}
-                    disabled={isSaving}
-                  >
-                    <X className="h-3 w-3" />
-                  </Button>
-                )}
-              </div>
+              <Label htmlFor="maxOrderAgeSeconds">Max Order Age (sec)</Label>
               <Input
                 id="maxOrderAgeSeconds"
                 type="number"
@@ -435,20 +382,7 @@ export function RiskManagement({
             </div>
 
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="maxTotalExposure">Max Total Exposure ($)</Label>
-                {maxTotalExposure && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 px-2"
-                    onClick={() => setMaxTotalExposure("")}
-                    disabled={isSaving}
-                  >
-                    <X className="h-3 w-3" />
-                  </Button>
-                )}
-              </div>
+              <Label htmlFor="maxTotalExposure">Max Total Exposure ($)</Label>
               <Input
                 id="maxTotalExposure"
                 type="number"
@@ -478,20 +412,7 @@ export function RiskManagement({
             </div>
 
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="minBetPercent">Min Bet % of Fund</Label>
-                {minBetPercent && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 px-2"
-                    onClick={() => setMinBetPercent("")}
-                    disabled={isSaving}
-                  >
-                    <X className="h-3 w-3" />
-                  </Button>
-                )}
-              </div>
+              <Label htmlFor="minBetPercent">Min Bet % of Fund</Label>
               <Input
                 id="minBetPercent"
                 type="number"
@@ -508,20 +429,7 @@ export function RiskManagement({
             </div>
 
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="maxBetPercent">Max Bet % of Fund</Label>
-                {maxBetPercent && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 px-2"
-                    onClick={() => setMaxBetPercent("")}
-                    disabled={isSaving}
-                  >
-                    <X className="h-3 w-3" />
-                  </Button>
-                )}
-              </div>
+              <Label htmlFor="maxBetPercent">Max Bet % of Fund</Label>
               <Input
                 id="maxBetPercent"
                 type="number"
