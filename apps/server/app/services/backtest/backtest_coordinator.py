@@ -32,6 +32,7 @@ from app.services.backtest.backtest_lookup_service import check_lookup_coverage,
 from app.services.market.historical_data_loader import start_historical_load_task, get_load_status
 from app.services.strategies.strategy_factory import create_strategy_engine
 from app.services.trading.alpaca_backtest_wrapper import AlpacaBacktestWrapper
+from app.services.events.event_service import event_service
 
 logger = logging.getLogger(__name__)
 
@@ -119,6 +120,21 @@ class BacktestCoordinator:
             
             logger.info(
                 f"🚀 [BT:{backtest_id[:8]}] Starting backtest for {fund.name} on {backtest_date}"
+            )
+            
+            # Log backtest start event
+            await event_service.log_strategy_engine_event(
+                fund_id=fund_id,
+                event_category="validation",
+                message=f"Backtest started for {backtest_date}",
+                event_data={
+                    "backtest_id": backtest_id,
+                    "backtest_date": backtest_date.isoformat(),
+                    "starting_balance": fund.balance,
+                    "strategy_id": fund.strategy_id,
+                },
+                severity="info",
+                timestamp=datetime.now(timezone.utc)
             )
             
             # Step 1: Ensure data availability
@@ -437,13 +453,42 @@ class BacktestCoordinator:
                 # Check and fill pending orders at EVERY minute (not just strategy iterations)
                 current_bars = await self._get_minute_bars(current_time)
                 if current_bars:
-                    filled = await self.order_simulator.check_pending_orders(
+                    filled_count = await self.order_simulator.check_pending_orders(
                         fund.id,
                         current_time,
                         current_bars
                     )
-                    if filled > 0:
-                        logger.info(f"💰 Filled {filled} order(s) at {current_time.strftime('%H:%M')}")
+                    if filled_count > 0:
+                        logger.info(f"💰 Filled {filled_count} order(s) at {current_time.strftime('%H:%M')}")
+                        
+                        # Log fill events for filled orders
+                        async with get_async_session() as session:
+                            stmt = select(Order).where(
+                                Order.fund_id == fund.id,
+                                Order.backtest_id == backtest_id,
+                                Order.status == 'filled',
+                                Order.filled_at == current_time
+                            )
+                            result = await session.execute(stmt)
+                            filled_orders = result.scalars().all()
+                            
+                            for order in filled_orders:
+                                await event_service.log_strategy_engine_event(
+                                    fund_id=fund.id,
+                                    event_category="fill_tracking",
+                                    message=f"Order filled: {order.symbol} {order.side} {order.filled_qty} @ ${order.filled_avg_price:.2f}",
+                                    symbol=order.symbol,
+                                    event_data={
+                                        "order_id": order.id,
+                                        "symbol": order.symbol,
+                                        "side": order.side,
+                                        "quantity": order.filled_qty,
+                                        "price": order.filled_avg_price,
+                                        "total_value": order.filled_qty * order.filled_avg_price if order.filled_qty and order.filled_avg_price else None,
+                                    },
+                                    severity="info",
+                                    timestamp=current_time
+                                )
                         
                         # Update position cache after fills
                         await self._sync_positions_from_transactions(
@@ -694,7 +739,30 @@ class BacktestCoordinator:
             backtest.status = 'completed'
             backtest.completed_at = datetime.utcnow()
             
+            # Update fund balance to reflect backtest result
+            fund.balance = backtest.ending_balance
             await session.commit()
+            
+            # Log backtest completion event
+            await event_service.log_strategy_engine_event(
+                fund_id=backtest.fund_id,
+                event_category="validation",
+                message=f"Backtest completed: ${backtest.starting_balance:.2f} → ${backtest.ending_balance:.2f} ({total_pnl_percent:+.2f}%)",
+                event_data={
+                    "backtest_id": backtest_id,
+                    "starting_balance": backtest.starting_balance,
+                    "ending_balance": backtest.ending_balance,
+                    "total_pnl": total_pnl,
+                    "total_pnl_percent": total_pnl_percent,
+                    "total_trades": total_trades,
+                    "winning_trades": winning_trades,
+                    "losing_trades": losing_trades,
+                    "total_orders": total_orders,
+                    "filled_orders": filled_orders,
+                },
+                severity="info",
+                timestamp=datetime.now(timezone.utc)
+            )
             
             # Calculate metrics for display
             win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0

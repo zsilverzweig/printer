@@ -73,6 +73,8 @@ class AlpacaBacktestWrapper:
             raise ValueError("Cannot submit backtest order: not in backtest mode")
         
         order_id = str(uuid.uuid4())
+        # Generate mock Alpaca order ID for backtests (format: BT_UUID)
+        mock_alpaca_order_id = f"BT_{order_id}"
         
         logger.info(
             f"[BACKTEST] Submitting {side} order: {qty} shares of {symbol} "
@@ -82,7 +84,7 @@ class AlpacaBacktestWrapper:
         # Create Order record in database
         order = Order(
             id=order_id,
-            alpaca_order_id=None,  # No Alpaca order ID for backtests
+            alpaca_order_id=mock_alpaca_order_id,  # Mock Alpaca order ID for backtests
             fund_id=self.fund_id,  # Use stored fund_id
             trade_id=None,  # Will be set by caller if part of trade
             backtest_id=backtest_id,

@@ -6,7 +6,7 @@ to the PostgreSQL database.
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 
 from sqlalchemy import select
@@ -16,6 +16,25 @@ from app.services.core.database import get_async_session
 import json
 
 logger = logging.getLogger("app.event_service")
+
+
+def _normalize_datetime(dt: datetime) -> datetime:
+    """
+    Normalize a datetime to timezone-naive UTC for database storage.
+    
+    PostgreSQL TIMESTAMP WITHOUT TIME ZONE columns require naive datetimes.
+    This function converts timezone-aware datetimes to naive UTC datetimes.
+    
+    Args:
+        dt: Datetime (naive or timezone-aware)
+        
+    Returns:
+        Timezone-naive UTC datetime
+    """
+    if dt.tzinfo is not None:
+        # Convert timezone-aware datetime to UTC, then remove timezone info
+        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt
 
 
 class EventService:
@@ -51,6 +70,8 @@ class EventService:
         try:
             if timestamp is None:
                 timestamp = datetime.utcnow()
+            else:
+                timestamp = _normalize_datetime(timestamp)
             
             event = AITradeEvent(
                 timestamp=timestamp,
@@ -120,6 +141,14 @@ class EventService:
         try:
             if timestamp is None:
                 timestamp = datetime.utcnow()
+            else:
+                timestamp = _normalize_datetime(timestamp)
+            
+            # Normalize optional datetime fields
+            if submitted_at is not None:
+                submitted_at = _normalize_datetime(submitted_at)
+            if filled_at is not None:
+                filled_at = _normalize_datetime(filled_at)
             
             event = AlpacaTradeEvent(
                 timestamp=timestamp,
@@ -191,6 +220,8 @@ class EventService:
         try:
             if timestamp is None:
                 timestamp = datetime.utcnow()
+            else:
+                timestamp = _normalize_datetime(timestamp)
             
             # Serialize event_data to JSON if provided
             event_data_json = json.dumps(event_data) if event_data else None

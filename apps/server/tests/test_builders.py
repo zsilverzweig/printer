@@ -113,6 +113,7 @@ def build_order(
     order_id: Optional[str] = None,
     alpaca_order_id: Optional[str] = None,
     fund_id: Optional[str] = None,
+    backtest_id: Optional[str] = None,
     symbol: str = "AAPL",
     side: str = "buy",
     quantity: float = 10.0,
@@ -131,6 +132,7 @@ def build_order(
         order_id: Order ID (generates UUID if not provided)
         alpaca_order_id: Alpaca order ID (generates UUID if not provided)
         fund_id: Fund ID (generates UUID if not provided)
+        backtest_id: Backtest ID (None for non-backtest orders)
         symbol: Stock symbol
         side: Order side ('buy' or 'sell')
         quantity: Number of shares
@@ -154,6 +156,7 @@ def build_order(
         id=order_id or str(uuid.uuid4()),
         alpaca_order_id=alpaca_order_id or str(uuid.uuid4()),
         fund_id=fund_id or str(uuid.uuid4()),
+        backtest_id=backtest_id,
         symbol=symbol,
         side=side,
         quantity=quantity,
@@ -172,6 +175,7 @@ def build_transaction(
     order_id: Optional[str] = None,
     alpaca_order_id: Optional[str] = None,
     fund_id: Optional[str] = None,
+    backtest_id: Optional[str] = None,
     symbol: str = "AAPL",
     side: str = "buy",
     quantity: float = 10.0,
@@ -188,6 +192,7 @@ def build_transaction(
         order_id: Order ID (generates UUID if not provided)
         alpaca_order_id: Alpaca order ID (generates UUID if not provided)
         fund_id: Fund ID (generates UUID if not provided)
+        backtest_id: Backtest ID (None for non-backtest transactions)
         symbol: Stock symbol
         side: Transaction side ('buy' or 'sell')
         quantity: Number of shares
@@ -210,6 +215,7 @@ def build_transaction(
         order_id=order_id or str(uuid.uuid4()),
         alpaca_order_id=alpaca_order_id or str(uuid.uuid4()),
         fund_id=fund_id or str(uuid.uuid4()),
+        backtest_id=backtest_id,
         symbol=symbol,
         side=side,
         quantity=quantity,

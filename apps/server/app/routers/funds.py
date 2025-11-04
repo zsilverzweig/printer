@@ -17,7 +17,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select, and_
 
-from app.models.strategies import Fund, ScreeningCriteria, Order, Transaction, Transfer, Trade
+from app.models.strategies import Fund, ScreeningCriteria, Order, Transaction, Transfer
 from app.services.core.database import get_async_session
 from app.services.strategies.engine_registry import (
     register_engine,
@@ -233,6 +233,14 @@ def serialize_fund(fund: Fund) -> dict:
 
 def serialize_order(order: Order) -> dict:
     """Convert an Order model instance to a response dict."""
+    # Generate mock Alpaca order ID for backtest orders that don't have one
+    alpaca_order_id = order.alpaca_order_id
+    if not alpaca_order_id and order.backtest_id:
+        alpaca_order_id = f"BT_{order.id}"
+    elif not alpaca_order_id:
+        # Fallback for any order without an Alpaca ID (shouldn't happen in production)
+        alpaca_order_id = order.id
+    
     return {
         "id": order.id,
         "symbol": order.symbol,
@@ -240,11 +248,11 @@ def serialize_order(order: Order) -> dict:
         "quantity": order.quantity,
         "status": order.status,
         "order_type": order.order_type,
-        "submitted_at": order.submitted_at.isoformat() + "Z",
-        "filled_at": order.filled_at.isoformat() + "Z" if order.filled_at else None,
+        "submitted_at": order.submitted_at.isoformat() if order.submitted_at else None,
+        "filled_at": order.filled_at.isoformat() if order.filled_at else None,
         "filled_qty": order.filled_qty,
         "filled_avg_price": order.filled_avg_price,
-        "alpaca_order_id": order.alpaca_order_id,
+        "alpaca_order_id": alpaca_order_id,
     }
 
 
@@ -1155,62 +1163,6 @@ async def get_fund_transactions(fund_id: str, limit: int = 100) -> List[dict]:
             return [serialize_transaction(txn) for txn in transactions]
     except Exception as e:
         logger.error(f"Error getting transactions for fund {fund_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/funds/{fund_id}/trades")
-async def get_fund_trades(
-    fund_id: str,
-    status: Optional[str] = None,
-    limit: int = 1000
-) -> List[dict]:
-    """
-    Get trades for a fund.
-    
-    Returns closed trades (status='closed') by default for performance calculations.
-    Use status='open' to get open trades, or status=None to get all trades.
-    """
-    try:
-        async with get_async_session() as session:
-            stmt = select(Trade).where(Trade.fund_id == fund_id)
-            
-            # Filter by status if provided
-            if status:
-                stmt = stmt.where(Trade.status == status)
-            
-            # Order by entry time (most recent first)
-            stmt = stmt.order_by(Trade.entry_time.desc()).limit(limit)
-            
-            result = await session.execute(stmt)
-            trades = result.scalars().all()
-            
-            # Serialize trades
-            return [
-                {
-                    "id": t.id,
-                    "fund_id": t.fund_id,
-                    "symbol": t.symbol,
-                    "entry_time": t.entry_time.isoformat(),
-                    "exit_time": t.exit_time.isoformat() if t.exit_time else None,
-                    "entry_price": t.entry_price,
-                    "exit_price": t.exit_price,
-                    "entry_quantity": t.entry_quantity,
-                    "exit_quantity": t.exit_quantity,
-                    "realized_pnl": t.realized_pnl,
-                    "realized_pnl_percent": t.realized_pnl_percent,
-                    "hold_duration_seconds": t.hold_duration_seconds,
-                    "status": t.status,
-                    "strategy_id": t.strategy_id,
-                    "screening_criteria_id": t.screening_criteria_id,
-                    "ai_confidence": t.ai_confidence,
-                    "commission_fees": t.commission_fees,
-                    "max_adverse_excursion": t.max_adverse_excursion,
-                    "max_favorable_excursion": t.max_favorable_excursion,
-                }
-                for t in trades
-            ]
-    except Exception as e:
-        logger.error(f"Error getting trades for fund {fund_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
