@@ -1,6 +1,14 @@
 "use client";
 
-import { ArrowUpRight, Loader2, RefreshCw, TrendingUp } from "lucide-react";
+import {
+  flexRender,
+  getCoreRowModel,
+  getSortedRowModel,
+  useReactTable,
+  type ColumnDef,
+  type SortingState,
+} from "@tanstack/react-table";
+import { ArrowDown, ArrowUp, ArrowUpDown, ArrowUpRight, Loader2, RefreshCw, TrendingUp } from "lucide-react";
 import type { ChangeEvent, FormEvent } from "react";
 import { useMemo, useState } from "react";
 
@@ -15,6 +23,15 @@ import {
 } from "@/lib/components/ui/card";
 import { Input } from "@/lib/components/ui/input";
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/lib/components/ui/table";
+import {
+  AlpacaOrder,
   AlpacaOrderSide,
   AlpacaPosition,
   AlpacaPositionSide,
@@ -119,19 +136,21 @@ export function AlpacaTradingPanel() {
     useState<OrderFormState>(DEFAULT_FORM_STATE);
   const [orderError, setOrderError] = useState<string | null>(null);
   const [orderSuccess, setOrderSuccess] = useState<string | null>(null);
+  const [positionsSorting, setPositionsSorting] = useState<SortingState>([
+    { id: "symbol", desc: false },
+  ]);
+  const [ordersSorting, setOrdersSorting] = useState<SortingState>([
+    { id: "submitted_at", desc: true },
+  ]);
 
   const accountCurrency = account?.currency || "USD";
 
   const openPositions = useMemo<AlpacaPosition[]>(() => {
-    return [...positions].sort((a, b) => a.symbol.localeCompare(b.symbol));
+    return [...positions];
   }, [positions]);
 
   const recentOrders = useMemo(() => {
-    return [...orders].sort((a, b) => {
-      return (
-        new Date(b.submitted_at).getTime() - new Date(a.submitted_at).getTime()
-      );
-    });
+    return [...orders];
   }, [orders]);
 
   const handleInputChange = (
