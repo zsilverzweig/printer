@@ -50,9 +50,6 @@ export function CommandPalette() {
               <CommandItem onSelect={() => navigate("/portfolios")}>
                 Portfolios
               </CommandItem>
-              <CommandItem onSelect={() => navigate("/admin/ai-sandbox")}>
-                Admin · AI Sandbox
-              </CommandItem>
             </CommandGroup>
           </CommandList>
         </Command>

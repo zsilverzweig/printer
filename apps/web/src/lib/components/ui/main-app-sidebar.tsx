@@ -96,9 +96,9 @@ export function MainAppSidebar() {
           icon: <Building2 className="h-4 w-4" />,
         },
         {
-          id: "news-test",
+          id: "news",
           title: "News",
-          href: "/news-test",
+          href: "/news",
           icon: <Newspaper className="h-4 w-4" />,
         },
       ],

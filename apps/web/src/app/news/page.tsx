@@ -36,6 +36,7 @@ interface NewsStats {
     };
     target_date: string;
     api_filter_used?: boolean;
+    active_filters?: string[];
     note?: string;
   };
 }
@@ -48,6 +49,13 @@ export default function NewsTestPage() {
   const [statsDate, setStatsDate] = useState(
     new Date().toISOString().split("T")[0]
   );
+  const [statsFilters, setStatsFilters] = useState({
+    channels: "",
+    tags: "",
+    author: "",
+    stocks: "",
+    tickers: "",
+  });
   const [rawNewsData, setRawNewsData] = useState<any[] | null>(null);
   const [rawNewsLoading, setRawNewsLoading] = useState(false);
 
@@ -72,8 +80,31 @@ export default function NewsTestPage() {
           "https://"
         ) || "http://localhost:8000";
 
+      // Build query params
+      const params = new URLSearchParams({
+        date: statsDate,
+        limit: "50000",
+      });
+
+      // Add filters if they have values
+      if (statsFilters.channels.trim()) {
+        params.append("channels", statsFilters.channels.trim());
+      }
+      if (statsFilters.tags.trim()) {
+        params.append("tags", statsFilters.tags.trim());
+      }
+      if (statsFilters.author.trim()) {
+        params.append("author", statsFilters.author.trim());
+      }
+      if (statsFilters.stocks.trim()) {
+        params.append("stocks", statsFilters.stocks.trim());
+      }
+      if (statsFilters.tickers.trim()) {
+        params.append("tickers", statsFilters.tickers.trim());
+      }
+
       const response = await fetch(
-        `${baseUrl}/api/news/stats?date=${statsDate}&limit=1000`
+        `${baseUrl}/api/news/stats?${params.toString()}`
       );
       if (!response.ok) throw new Error("Failed to fetch stats");
       const data = await response.json();
@@ -314,16 +345,114 @@ export default function NewsTestPage() {
               <CardTitle>Daily News Statistics</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="flex gap-3 mb-4">
-                <Input
-                  type="date"
-                  value={statsDate}
-                  onChange={(e) => setStatsDate(e.target.value)}
-                  className="flex-1"
-                />
-                <Button onClick={loadNewsStats} disabled={statsLoading}>
-                  {statsLoading ? "Loading..." : "Load Stats"}
-                </Button>
+              <div className="space-y-4">
+                <div className="flex gap-3">
+                  <Input
+                    type="date"
+                    value={statsDate}
+                    onChange={(e) => setStatsDate(e.target.value)}
+                    className="flex-1"
+                    placeholder="Select date"
+                  />
+                  <Button onClick={loadNewsStats} disabled={statsLoading}>
+                    {statsLoading ? "Loading..." : "Load Stats"}
+                  </Button>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-xs text-muted-foreground">
+                      Channels
+                    </label>
+                    <Input
+                      type="text"
+                      value={statsFilters.channels}
+                      onChange={(e) =>
+                        setStatsFilters({
+                          ...statsFilters,
+                          channels: e.target.value,
+                        })
+                      }
+                      placeholder='e.g., "news", "Price Target"'
+                      className="text-sm"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs text-muted-foreground">
+                      Tags
+                    </label>
+                    <Input
+                      type="text"
+                      value={statsFilters.tags}
+                      onChange={(e) =>
+                        setStatsFilters({
+                          ...statsFilters,
+                          tags: e.target.value,
+                        })
+                      }
+                      placeholder="e.g., earnings, merger"
+                      className="text-sm"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs text-muted-foreground">
+                      Author
+                    </label>
+                    <Input
+                      type="text"
+                      value={statsFilters.author}
+                      onChange={(e) =>
+                        setStatsFilters({
+                          ...statsFilters,
+                          author: e.target.value,
+                        })
+                      }
+                      placeholder="Author name"
+                      className="text-sm"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs text-muted-foreground">
+                      Stocks
+                    </label>
+                    <Input
+                      type="text"
+                      value={statsFilters.stocks}
+                      onChange={(e) =>
+                        setStatsFilters({
+                          ...statsFilters,
+                          stocks: e.target.value,
+                        })
+                      }
+                      placeholder="e.g., AAPL, TSLA"
+                      className="text-sm"
+                    />
+                  </div>
+                  <div className="space-y-1 col-span-2">
+                    <label className="text-xs text-muted-foreground">
+                      Tickers
+                    </label>
+                    <Input
+                      type="text"
+                      value={statsFilters.tickers}
+                      onChange={(e) =>
+                        setStatsFilters({
+                          ...statsFilters,
+                          tickers: e.target.value,
+                        })
+                      }
+                      placeholder="e.g., AAPL, TSLA (alternative to stocks)"
+                      className="text-sm"
+                    />
+                  </div>
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  <p>
+                    All filters are optional. Use API server-side filtering for
+                    better performance. Leave empty to see all news for the
+                    selected date.
+                  </p>
+                </div>
               </div>
 
               {statsLoading ? (
@@ -366,6 +495,18 @@ export default function NewsTestPage() {
                                 )}
                               </div>
                             )}
+                            {newsStats.diagnostics.active_filters &&
+                              newsStats.diagnostics.active_filters.length >
+                                0 && (
+                                <div>
+                                  Active filters:{" "}
+                                  <span className="font-mono text-xs">
+                                    {newsStats.diagnostics.active_filters.join(
+                                      ", "
+                                    )}
+                                  </span>
+                                </div>
+                              )}
                             {newsStats.diagnostics.date_range_found
                               .earliest && (
                               <div>

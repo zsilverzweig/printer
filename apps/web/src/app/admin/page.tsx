@@ -1,4 +1,4 @@
-import { Cpu, Table, Upload, Wrench } from "lucide-react";
+import { Table, Upload } from "lucide-react";
 import Link from "next/link";
 
 import { requireAdmin } from "@/lib/auth/server";
@@ -36,26 +36,6 @@ export default async function AdminPage() {
           </p>
         </div>
 
-        {/* Admin Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          <Card className="hover:shadow-md transition-shadow">
-            <CardHeader>
-              <div className="flex items-center space-x-2">
-                <Cpu className="h-5 w-5 text-indigo-600" />
-                <CardTitle>AI Sandbox</CardTitle>
-              </div>
-              <CardDescription>
-                Test AI functions, portfolio generation, and OpenAI integration
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Link href="/admin/ai-sandbox">
-                <Button className="w-full">Open AI Sandbox</Button>
-              </Link>
-            </CardContent>
-          </Card>
-        </div>
-
         {/* Utilities Section */}
         <div className="space-y-4">
           <h2 className="text-xl font-semibold">Utilities</h2>
@@ -73,23 +53,6 @@ export default async function AdminPage() {
               <CardContent>
                 <Link href="/admin/database">
                   <Button className="w-full">Open Database</Button>
-                </Link>
-              </CardContent>
-            </Card>
-
-            <Card className="hover:shadow-md transition-shadow">
-              <CardHeader>
-                <div className="flex items-center space-x-2">
-                  <Wrench className="h-5 w-5 text-orange-600" />
-                  <CardTitle>Alpaca Debug</CardTitle>
-                </div>
-                <CardDescription>
-                  Debug and test Alpaca OAuth integration
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Link href="/admin/alpaca-debug">
-                  <Button className="w-full">Open Debug Tool</Button>
                 </Link>
               </CardContent>
             </Card>
