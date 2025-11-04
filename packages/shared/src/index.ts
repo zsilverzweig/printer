@@ -48,13 +48,13 @@ export type {
   ExecutionStrategy,
   // Core entities
   Fund,
-  FundOrder,
-  FundTransaction,
-  FundTrade,
   // Enums and literal types
   FundMode,
+  FundOrder,
   FundStatus,
+  FundTrade,
   FundTradingStatus,
+  FundTransaction,
   FundTransfer,
   // Composite types
   FundWithStrategy,

@@ -8,8 +8,8 @@
 
 import { useMemo } from "react";
 
-import { formatCurrency } from "../utils/ledger-calculations";
 import type { FundTrade } from "@printer/shared";
+import { formatCurrency } from "../utils/ledger-calculations";
 
 interface TradeDistributionChartProps {
   trades: FundTrade[];
@@ -47,7 +47,10 @@ export function TradeDistributionChart({
   const { bins, stats, fundColorMap } = useMemo(() => {
     // Extract trade returns from closed trades with realized P&L
     const closedTrades = trades.filter(
-      (trade) => trade.status === "closed" && trade.realizedPnl !== null && trade.realizedPnl !== undefined
+      (trade) =>
+        trade.status === "closed" &&
+        trade.realizedPnl !== null &&
+        trade.realizedPnl !== undefined
     );
 
     const tradeReturns: TradeReturn[] = closedTrades.map((trade) => ({
@@ -56,8 +59,22 @@ export function TradeDistributionChart({
       pnl: trade.realizedPnl ?? 0,
     }));
 
+    // Create fund color map from unique fund IDs
+    const uniqueFundIds = Array.from(
+      new Set(closedTrades.map((t) => t.fundId))
+    ).sort();
+    const colorMap = new Map<string, string>();
+    uniqueFundIds.forEach((fundId, index) => {
+      colorMap.set(fundId, FUND_COLORS[index % FUND_COLORS.length]);
+    });
+
     if (tradeReturns.length === 0) {
-      return { bins: [], stats: { min: 0, max: 0, range: 0 } };
+      return {
+        bins: [],
+        stats: { min: 0, max: 0, range: 0 },
+        fundColorMap: colorMap,
+        uniqueFundIds,
+      };
     }
 
     // Calculate statistics
@@ -90,15 +107,6 @@ export function TradeDistributionChart({
       bins[binIndex].trades.push(trade);
     });
 
-    // Create fund color map from unique fund IDs
-    const uniqueFundIds = Array.from(
-      new Set(closedTrades.map((t) => t.fundId))
-    ).sort();
-    const colorMap = new Map<string, string>();
-    uniqueFundIds.forEach((fundId, index) => {
-      colorMap.set(fundId, FUND_COLORS[index % FUND_COLORS.length]);
-    });
-
     return {
       bins,
       stats: { min: minPnl, max: maxPnl, range },
@@ -117,7 +125,6 @@ export function TradeDistributionChart({
       </div>
     );
   }
-
 
   const maxCount = Math.max(...bins.map((b) => b.trades.length));
   const padding = { top: 20, right: 40, bottom: 70, left: 60 };

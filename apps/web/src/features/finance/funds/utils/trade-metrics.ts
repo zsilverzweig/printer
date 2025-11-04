@@ -26,7 +26,10 @@ export interface TradeMetrics {
 export function calculateTradeMetrics(trades: FundTrade[]): TradeMetrics {
   // Filter to only closed trades with realized P&L
   const closedTrades = trades.filter(
-    (trade) => trade.status === "closed" && trade.realizedPnl !== null && trade.realizedPnl !== undefined
+    (trade) =>
+      trade.status === "closed" &&
+      trade.realizedPnl !== null &&
+      trade.realizedPnl !== undefined
   );
 
   if (closedTrades.length === 0) {

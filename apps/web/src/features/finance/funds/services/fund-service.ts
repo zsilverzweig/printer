@@ -7,9 +7,9 @@
 import type {
   CreateFundInput,
   Fund,
+  FundTrade,
   FundTradingStatus,
   FundTransaction,
-  FundTrade,
   UpdateFundInput,
 } from "@printer/shared";
 
@@ -75,7 +75,9 @@ export const fundService = {
    * Get transactions for a fund
    */
   async getFundTransactions(fundId: string): Promise<FundTransaction[]> {
-    const response = await fetch(`${API_BASE}/api/funds/${fundId}/transactions`);
+    const response = await fetch(
+      `${API_BASE}/api/funds/${fundId}/transactions`
+    );
 
     if (!response.ok) {
       throw new Error("Failed to fetch fund transactions");
@@ -122,19 +124,37 @@ export const fundService = {
       entryTime: trade.entry_time ?? trade.entryTime,
       exitTime: trade.exit_time ?? trade.exitTime,
       entryPrice: Number(trade.entry_price ?? trade.entryPrice),
-      exitPrice: trade.exit_price ?? trade.exitPrice ? Number(trade.exit_price ?? trade.exitPrice) : null,
+      exitPrice:
+        trade.exit_price ?? trade.exitPrice
+          ? Number(trade.exit_price ?? trade.exitPrice)
+          : null,
       entryQuantity: Number(trade.entry_quantity ?? trade.entryQuantity),
-      exitQuantity: trade.exit_quantity ?? trade.exitQuantity ? Number(trade.exit_quantity ?? trade.exitQuantity) : null,
-      realizedPnl: trade.realized_pnl ?? trade.realizedPnl ? Number(trade.realized_pnl ?? trade.realizedPnl) : null,
-      realizedPnlPercent: trade.realized_pnl_percent ?? trade.realizedPnlPercent ? Number(trade.realized_pnl_percent ?? trade.realizedPnlPercent) : null,
-      holdDurationSeconds: trade.hold_duration_seconds ?? trade.holdDurationSeconds,
+      exitQuantity:
+        trade.exit_quantity ?? trade.exitQuantity
+          ? Number(trade.exit_quantity ?? trade.exitQuantity)
+          : null,
+      realizedPnl:
+        trade.realized_pnl ?? trade.realizedPnl
+          ? Number(trade.realized_pnl ?? trade.realizedPnl)
+          : null,
+      realizedPnlPercent:
+        trade.realized_pnl_percent ?? trade.realizedPnlPercent
+          ? Number(trade.realized_pnl_percent ?? trade.realizedPnlPercent)
+          : null,
+      holdDurationSeconds:
+        trade.hold_duration_seconds ?? trade.holdDurationSeconds,
       status: trade.status,
       strategyId: trade.strategy_id ?? trade.strategyId,
-      screeningCriteriaId: trade.screening_criteria_id ?? trade.screeningCriteriaId,
+      screeningCriteriaId:
+        trade.screening_criteria_id ?? trade.screeningCriteriaId,
       aiConfidence: trade.ai_confidence ?? trade.aiConfidence,
-      commissionFees: Number(trade.commission_fees ?? trade.commissionFees ?? 0),
-      maxAdverseExcursion: trade.max_adverse_excursion ?? trade.maxAdverseExcursion,
-      maxFavorableExcursion: trade.max_favorable_excursion ?? trade.maxFavorableExcursion,
+      commissionFees: Number(
+        trade.commission_fees ?? trade.commissionFees ?? 0
+      ),
+      maxAdverseExcursion:
+        trade.max_adverse_excursion ?? trade.maxAdverseExcursion,
+      maxFavorableExcursion:
+        trade.max_favorable_excursion ?? trade.maxFavorableExcursion,
     }));
   },
 

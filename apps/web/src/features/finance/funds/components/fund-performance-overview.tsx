@@ -27,11 +27,11 @@ import {
   TableRow,
 } from "@/lib/components/ui/table";
 
+import type { FundTrade } from "@printer/shared";
 import { fundService } from "../services/fund-service";
 import { Fund } from "../types";
 import { formatCurrency } from "../utils/ledger-calculations";
 import { calculateTradeMetrics, TradeMetrics } from "../utils/trade-metrics";
-import type { FundTrade } from "@printer/shared";
 
 import { TradeDistributionChart } from "./trade-distribution-chart";
 
