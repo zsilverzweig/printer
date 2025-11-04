@@ -14,7 +14,6 @@ Supports:
 
 import asyncio
 import logging
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone, date as date_type
 from typing import Dict, List, Optional, Set
 from decimal import Decimal
@@ -37,15 +36,8 @@ logger = logging.getLogger("app.historical_data_loader")
 _current_task: Optional[asyncio.Task] = None
 _cancel_flag = False
 
-# Custom thread pool for Polygon API calls (synchronous SDK)
-# Default ThreadPoolExecutor only has ~8-16 threads, which bottlenecks us
-_thread_pool: Optional[ThreadPoolExecutor] = None
-
-# Rate limiting: Sequential requests to avoid connection pool warnings
-# 1 concurrent request eliminates urllib3 connection pool warnings
-# Still reasonably fast due to no delay between requests
-CONCURRENT_REQUESTS = 1  # Sequential requests (no connection pool issues)
-REQUEST_DELAY = 0.0  # NO delay between requests
+# Rate limiting: Limit concurrent Polygon API requests to avoid connection pool exhaustion
+CONCURRENT_REQUESTS = 5  # Max concurrent requests to Polygon API
 
 # Timescale configuration: lookback periods and Polygon API parameters
 TIMESCALE_CONFIG = {
@@ -75,47 +67,6 @@ TIMESCALE_CONFIG = {
         'timespan': 'day'
     }
 }
-
-
-def _get_thread_pool() -> ThreadPoolExecutor:
-    """Get or create the thread pool for Polygon API calls."""
-    global _thread_pool
-    if _thread_pool is None:
-        # Create a thread pool with as many threads as concurrent requests
-        # This allows the synchronous Polygon SDK to actually make concurrent HTTP calls
-        _thread_pool = ThreadPoolExecutor(
-            max_workers=CONCURRENT_REQUESTS,
-            thread_name_prefix="polygon_api"
-        )
-        logger.info(f"Created thread pool with {CONCURRENT_REQUESTS} workers")
-    return _thread_pool
-
-
-def detect_session_type(timestamp: datetime) -> str:
-    """
-    Detect trading session type based on timestamp.
-    
-    Args:
-        timestamp: Bar timestamp in ET timezone
-        
-    Returns:
-        'pre', 'regular', or 'after'
-    """
-    # Convert to ET time for session detection
-    # Polygon timestamps are in UTC, so we need to handle timezone conversion
-    hour = timestamp.hour
-    minute = timestamp.minute
-    time_in_minutes = hour * 60 + minute
-    
-    # ET hours (assuming timestamp is already in ET):
-    # Pre-market: 4:00 AM - 9:30 AM (240 - 570 minutes)
-    # Regular: 9:30 AM - 4:00 PM (570 - 960 minutes)
-    # After-hours: 4:00 PM - 8:00 PM (960 - 1200 minutes)
-    
-    # Note: This is simplified. In production, proper timezone handling is critical.
-    # For now, we'll use UTC timestamps and label all as 'regular'
-    # TODO: Implement proper ET timezone conversion
-    return 'regular'
 
 
 async def start_historical_load_task(
@@ -195,18 +146,13 @@ async def cancel_historical_load_task() -> bool:
     Returns:
         True if task was cancelled, False if no task was running
     """
-    global _cancel_flag, _current_task, _thread_pool
+    global _cancel_flag, _current_task
     
     if not _current_task or _current_task.done():
         return False
     
     _cancel_flag = True
     logger.info("Historical data loading task cancellation requested")
-    
-    # Cleanup thread pool on cancellation
-    if _thread_pool:
-        _thread_pool.shutdown(wait=False)
-        _thread_pool = None
     
     return True
 
@@ -309,47 +255,19 @@ async def _run_historical_load_task(
             
             logger.info(f"📅 [{timescale}] Date range: {ts_start_date.strftime('%Y-%m-%d')} to {ts_end_date.strftime('%Y-%m-%d')}")
             
-            # Pre-check: Find which symbols actually need data for this timescale
-            logger.info(f"🔍 [{timescale}] Pre-checking existing data for {total_symbols} symbols...")
-            symbols_needing_data = []
-            symbols_already_complete = []
-            
-            for symbol in symbols:
-                if _cancel_flag:
-                    logger.info("Task cancelled during pre-check")
-                    await _update_status(status_id, status="cancelled")
-                    return
-                
-                needs_data = await _needs_data(symbol, ts_start_date, ts_end_date, timescale)
-                if needs_data:
-                    symbols_needing_data.append(symbol)
-                else:
-                    symbols_already_complete.append(symbol)
-        
-            logger.info(
-                f"📊 [{timescale}] Pre-check complete: {len(symbols_needing_data)} need data, "
-                f"{len(symbols_already_complete)} already complete"
-            )
-            
-            # If everything is already loaded for this timescale, skip to next
-            if not symbols_needing_data:
-                logger.info(f"✅ [{timescale}] All symbols already have complete data!")
-                continue
-            
-            # Process only symbols that need data for this timescale
+            # Process all symbols directly - rely on ON CONFLICT DO NOTHING for deduplication
             processed = 0
             succeeded = 0
             failed = 0
             failed_symbols = []
             total_bars_inserted = 0
-            skipped_count = len(symbols_already_complete)
             
-            # Semaphore for rate limiting
+            # Semaphore for rate limiting concurrent Polygon API requests
             semaphore = asyncio.Semaphore(CONCURRENT_REQUESTS)
             
-            # Process in batches that match our concurrency
+            # Process in batches
             batch_size = 200
-            symbols_to_process = len(symbols_needing_data)
+            symbols_to_process = len(symbols)
             
             for i in range(0, symbols_to_process, batch_size):
                 if _cancel_flag:
@@ -357,7 +275,7 @@ async def _run_historical_load_task(
                     await _update_status(status_id, status="cancelled")
                     return
                 
-                batch = symbols_needing_data[i:i + batch_size]
+                batch = symbols[i:i + batch_size]
                 tasks = [
                     _load_symbol_data(
                         client, symbol, ts_start_date, ts_end_date, timescale, config, semaphore
@@ -368,7 +286,8 @@ async def _run_historical_load_task(
                 # Wait for batch to complete
                 results = await asyncio.gather(*tasks, return_exceptions=True)
                 
-                # Update stats
+                # Collect all bars for batch bulk insert
+                all_bars = []
                 for symbol, result in zip(batch, results):
                     processed += 1
                     if isinstance(result, Exception):
@@ -376,23 +295,20 @@ async def _run_historical_load_task(
                         failed_symbols.append(symbol)
                         logger.warning(f"❌ [{timescale}] Failed to load {symbol}: {result}")
                     else:
-                        # Result is the number of bars inserted
-                        bars_count = result if isinstance(result, int) else 0
-                        
-                        if bars_count > 0:
+                        # Result is list of bars
+                        bars = result if isinstance(result, list) else []
+                        if bars:
+                            all_bars.extend(bars)
                             succeeded += 1
-                            total_bars_inserted += bars_count
-                            logger.info(f"✅ [{timescale}] {symbol}: {bars_count} bars inserted")
+                            logger.debug(f"✅ [{timescale}] {symbol}: {len(bars)} bars fetched")
                         else:
                             # No data available from Polygon for this date range
                             succeeded += 1
                             logger.debug(f"⚠️  [{timescale}] {symbol}: No data available from Polygon")
                     
-                    # Update progress every 200 symbols (more efficient with ultra-high concurrency)
-                    # Progress accounts for pre-skipped symbols
+                    # Update progress every 200 symbols
                     if processed % 200 == 0:
-                        total_processed = processed + skipped_count
-                        progress_pct = (total_processed / total_symbols) * 100
+                        progress_pct = (processed / total_symbols) * 100
                         await _update_status(
                             status_id,
                             progress_pct=progress_pct,
@@ -401,16 +317,21 @@ async def _run_historical_load_task(
                             tickers_failed=failed
                         )
                 
+                # Bulk insert all bars from this batch
+                if all_bars:
+                    await _bulk_insert_bars(all_bars, ts_start_date, ts_end_date, timescale)
+                    total_bars_inserted += len(all_bars)
+                
                 logger.info(
                     f"📊 [{timescale}] Batch complete: {processed}/{symbols_to_process} fetched "
-                    f"({succeeded} succeeded, {failed} failed) + {skipped_count} pre-skipped | "
+                    f"({succeeded} succeeded, {failed} failed) | "
                     f"{total_bars_inserted} total bars inserted"
                 )
             
             # Timescale completed - log summary
             logger.info(
                 f"🎉 [{timescale}] Completed: "
-                f"{succeeded} symbols fetched, {skipped_count} already complete, {failed} failed | "
+                f"{succeeded} symbols fetched, {failed} failed | "
                 f"💾 {total_bars_inserted} total bars inserted"
             )
             
@@ -467,75 +388,6 @@ async def _run_historical_load_task(
             status="failed",
             error_message=str(e)
         )
-    finally:
-        # Cleanup thread pool when task completes
-        global _thread_pool
-        if _thread_pool:
-            _thread_pool.shutdown(wait=True)
-            _thread_pool = None
-            logger.info("Thread pool cleaned up")
-
-
-async def _needs_data(symbol: str, start_date: datetime, end_date: datetime, timescale: str) -> bool:
-    """
-    Check if a symbol needs data for the given range and timescale.
-    
-    Simplified: Just check if validation records exist and are complete.
-    Returns True if we need to fetch data, False if already complete.
-    
-    Args:
-        symbol: Ticker symbol
-        start_date: Start of desired date range
-        end_date: End of desired date range
-        timescale: Timescale granularity ('1min', '5min', '15min', '1hour', '1day')
-        
-    Returns:
-        True if data needed, False if already complete
-    """
-    from app.services.core.database import get_async_session
-    from sqlalchemy import text
-    
-    async with get_async_session() as session:
-        try:
-            # Check if we have complete validation records for the date range
-            # Cast dates before passing to avoid parameter binding issues
-            from sqlalchemy import bindparam, Date, String
-            
-            result = await session.execute(
-                text("""
-                    SELECT COUNT(*) as missing_count
-                    FROM generate_series(
-                        CAST(:start_date AS date), 
-                        CAST(:end_date AS date) - interval '1 day', 
-                        '1 day'::interval
-                    ) AS d(date)
-                    WHERE EXTRACT(DOW FROM d.date) NOT IN (0, 6)  -- Exclude weekends
-                      AND NOT EXISTS (
-                        SELECT 1 FROM symbol_date_validation
-                        WHERE symbol = :symbol
-                          AND timescale = :timescale
-                          AND date = d.date::date
-                          AND is_complete = true
-                      )
-                """).bindparams(
-                    bindparam("symbol", type_=String),
-                    bindparam("timescale", type_=String),
-                    bindparam("start_date", type_=Date),
-                    bindparam("end_date", type_=Date)
-                ),
-                {
-                    "symbol": symbol.upper(),
-                    "timescale": timescale,
-                    "start_date": start_date.date(),
-                    "end_date": end_date.date()
-                }
-            )
-            missing_count = result.scalar()
-            return missing_count > 0
-            
-        except Exception as e:
-            logger.error(f"Error checking if {symbol} needs data: {e}")
-            return True  # On error, assume we need data
 
 
 async def _load_symbol_data(
@@ -546,12 +398,9 @@ async def _load_symbol_data(
     timescale: str,
     config: Dict,
     semaphore: asyncio.Semaphore
-) -> int:
+) -> List[MarketData]:
     """
-    Load historical data for a single symbol at specified timescale.
-    
-    Simplified: Just fetch the entire date range and let Polygon return what's available.
-    Create validation records for the entire range to mark it as done.
+    Fetch and transform historical data for a single symbol.
     
     Args:
         client: Polygon REST client
@@ -560,24 +409,23 @@ async def _load_symbol_data(
         end_date: End date for data
         timescale: Timescale granularity ('1min', '5min', '15min', '1hour', '1day')
         config: Timescale configuration with multiplier and timespan
-        semaphore: Rate limiting semaphore
+        semaphore: Rate limiting semaphore to limit concurrent requests
         
     Returns:
-        Number of bars inserted
+        List of MarketData objects (empty list if no data or error)
     """
+    # Format dates for Polygon API (YYYY-MM-DD)
+    from_date = start_date.strftime("%Y-%m-%d")
+    to_date = end_date.strftime("%Y-%m-%d")
+    
     async with semaphore:
-        # Format dates for Polygon API (YYYY-MM-DD)
-        from_date = start_date.strftime("%Y-%m-%d")
-        to_date = end_date.strftime("%Y-%m-%d")
-        
         try:
             logger.debug(f"🔍 [{timescale}] Fetching {symbol} from {from_date} to {to_date}")
         
-            # Run in custom thread pool since polygon client is synchronous
+            # Run in default executor (polygon client is synchronous)
             loop = asyncio.get_event_loop()
-            thread_pool = _get_thread_pool()
             aggs = await loop.run_in_executor(
-                thread_pool,
+                None,
                 lambda: list(client.list_aggs(
                     ticker=symbol,
                     multiplier=config['multiplier'],
@@ -587,13 +435,12 @@ async def _load_symbol_data(
                     limit=50000  # Max allowed by Polygon
                 ))
             )
-            
-            # Convert to MarketData objects
+        
+            # Convert to MarketData objects (always use 'regular' session type)
             bars = []
             for agg in aggs:
                 # Convert timestamp from milliseconds to datetime
                 timestamp = datetime.fromtimestamp(agg.timestamp / 1000, tz=timezone.utc)
-                session_type = detect_session_type(timestamp)
                 
                 bar = MarketData(
                     time=timestamp,
@@ -606,33 +453,23 @@ async def _load_symbol_data(
                     volume=int(agg.volume),
                     vwap=float(agg.vwap) if hasattr(agg, 'vwap') and agg.vwap else None,
                     trade_count=int(agg.transactions) if hasattr(agg, 'transactions') and agg.transactions else None,
-                    session_type=session_type
+                    session_type='regular'
                 )
                 bars.append(bar)
             
-            # Bulk insert bars if we got any
-            if bars:
-                logger.debug(f"💾 [{timescale}] Inserting {len(bars)} bars for {symbol}")
-                await _bulk_insert_bars(bars)
-                logger.debug(f"✨ [{timescale}] Inserted {len(bars)} bars for {symbol}")
-            
-            # Create validation records for the ENTIRE date range we asked about,
-            # regardless of whether we got bars or not. This prevents re-fetching.
-            logger.debug(f"📝 [{timescale}] Creating validation records for {symbol}")
-            await _create_validation_for_range(symbol, timescale, start_date, end_date, bars)
-            
-            # Delay between requests if configured
-            if REQUEST_DELAY > 0:
-                await asyncio.sleep(REQUEST_DELAY)
-            
-            return len(bars)
-            
+            return bars
+        
         except Exception as e:
             logger.error(f"❌ Error loading {symbol}: {e}")
             raise
 
 
-async def _bulk_insert_bars(bars: List[MarketData]) -> None:
+async def _bulk_insert_bars(
+    bars: List[MarketData],
+    start_date: datetime,
+    end_date: datetime,
+    timescale: str
+) -> None:
     """
     Bulk insert bars into TimescaleDB with ON CONFLICT DO NOTHING.
     
@@ -648,10 +485,13 @@ async def _bulk_insert_bars(bars: List[MarketData]) -> None:
     - Keeps the last occurrence of each duplicate (most recent data)
     - Reduces unnecessary DB operations
     
-    Also creates/updates validation records for each symbol/date/timescale combination.
+    Also creates/updates validation records for all symbols/date/timescale combinations.
     
     Args:
         bars: List of MarketData objects to insert
+        start_date: Start of date range for validation
+        end_date: End of date range for validation
+        timescale: Timescale granularity
     """
     if not bars:
         return
@@ -715,9 +555,6 @@ async def _bulk_insert_bars(bars: List[MarketData]) -> None:
                 
                 await session.commit()
                 
-                # Create/update validation records for the loaded data
-                await _update_validation_records(session, bars)
-                
                 # Success - break out of retry loop
                 break
                 
@@ -741,9 +578,20 @@ async def _bulk_insert_bars(bars: List[MarketData]) -> None:
                     # Not a deadlock or out of retries
                     logger.error(f"❌ Bulk insert failed after {retry_attempt + 1} attempts: {e}")
                     raise
+        
+        # Create/update validation records after successful insert
+        if bars:
+            # Group bars by symbol to create validation records per symbol
+            from collections import defaultdict
+            bars_by_symbol = defaultdict(list)
+            for bar in bars:
+                bars_by_symbol[bar.symbol].append(bar)
+            
+            for symbol, symbol_bars in bars_by_symbol.items():
+                await upsert_validation_for_range(symbol, timescale, start_date, end_date, symbol_bars)
 
 
-async def _create_validation_for_range(
+async def upsert_validation_for_range(
     symbol: str,
     timescale: str,
     start_date: datetime,
@@ -751,10 +599,10 @@ async def _create_validation_for_range(
     bars: List[MarketData]
 ) -> None:
     """
-    Create validation records for an entire date range at a specific timescale.
+    Upsert validation records for a date range using a single SQL query.
     
-    This is called after fetching from Polygon to mark that we've asked for this range.
-    Creates records for EVERY date in the range, regardless of whether bars exist.
+    Builds date series once, aggregates bar counts from bars list, and executes
+    a single bulk upsert for all dates in the range.
     
     Args:
         symbol: Ticker symbol
@@ -766,46 +614,55 @@ async def _create_validation_for_range(
     from collections import defaultdict
     from sqlalchemy.dialects.postgresql import insert
     
+    # Group bars by date to count them
+    bars_by_date = defaultdict(list)
+    for bar in bars:
+        bar_date = bar.time.date()
+        bars_by_date[bar_date].append(bar)
+    
+    # Expected bars varies by timescale (rough estimates for regular trading day)
+    expected_bars_map = {
+        '1min': 390,
+        '5min': 78,
+        '15min': 26,
+        '1hour': 7,  # 6.5 hours
+        '1day': 1
+    }
+    expected_bars = expected_bars_map.get(timescale, 390)
+    
     async with get_async_session() as session:
-        # Group bars by date to count them
-        bars_by_date = defaultdict(list)
-        for bar in bars:
-            bar_date = bar.time.date()
-            bars_by_date[bar_date].append(bar)
-        
-        # Create validation record for EVERY date in range
+        # Build validation records for all dates in range using single query
+        validation_values = []
         current_date = start_date.date()
         end_date_only = end_date.date()
         
         while current_date < end_date_only:
-            date_bars = bars_by_date.get(current_date, [])
-            bar_count = len(date_bars)
+            # Skip weekends
+            if current_date.weekday() < 5:  # Monday=0, Friday=4
+                date_bars = bars_by_date.get(current_date, [])
+                bar_count = len(date_bars)
+                
+                # Calculate first/last bar times if we have bars
+                first_bar_time = min(b.time for b in date_bars) if date_bars else None
+                last_bar_time = max(b.time for b in date_bars) if date_bars else None
+                
+                validation_values.append({
+                    "symbol": symbol.upper(),
+                    "date": current_date,
+                    "timescale": timescale,
+                    "is_complete": (bar_count >= expected_bars * 0.9),  # 90% threshold
+                    "bar_count": bar_count,
+                    "expected_bars": expected_bars,
+                    "first_bar_time": first_bar_time,
+                    "last_bar_time": last_bar_time,
+                    "validated_at": datetime.now(timezone.utc)
+                })
             
-            # Calculate first/last bar times if we have bars
-            first_bar_time = min(b.time for b in date_bars) if date_bars else None
-            last_bar_time = max(b.time for b in date_bars) if date_bars else None
-            
-            # Expected bars varies by timescale (rough estimates for regular trading day)
-            expected_bars_map = {
-                '1min': 390,
-                '5min': 78,
-                '15min': 26,
-                '1hour': 7,  # 6.5 hours
-                '1day': 1
-            }
-            expected_bars = expected_bars_map.get(timescale, 390)
-            
-            stmt = insert(SymbolDateValidation).values(
-                symbol=symbol,
-                date=current_date,
-                timescale=timescale,
-                is_complete=(bar_count >= expected_bars * 0.9),  # 90% threshold
-                bar_count=bar_count,
-                expected_bars=expected_bars,
-                first_bar_time=first_bar_time,
-                last_bar_time=last_bar_time,
-                validated_at=datetime.now(timezone.utc)
-            )
+            current_date += timedelta(days=1)
+        
+        if validation_values:
+            # Bulk upsert all validation records
+            stmt = insert(SymbolDateValidation).values(validation_values)
             stmt = stmt.on_conflict_do_update(
                 index_elements=["symbol", "date", "timescale"],
                 set_={
@@ -817,73 +674,8 @@ async def _create_validation_for_range(
                 }
             )
             await session.execute(stmt)
-            current_date += timedelta(days=1)
-        
-        await session.commit()
-        logger.debug(f"Created validation records for {symbol}: {start_date.date()} to {end_date.date()}")
-
-
-async def _update_validation_records(session, bars: List[MarketData]) -> None:
-    """
-    Update validation records after inserting bars.
-    
-    Groups bars by symbol, timescale, and date, counts them, and creates/updates validation records.
-    """
-    from collections import defaultdict
-    from datetime import date as date_type
-    
-    # Group bars by symbol, timescale, and date
-    bar_counts: Dict[tuple, List[MarketData]] = defaultdict(list)
-    for bar in bars:
-        bar_date = bar.time.date()
-        key = (bar.symbol, bar.timescale, bar_date)
-        bar_counts[key].append(bar)
-    
-    # Expected bars varies by timescale
-    expected_bars_map = {
-        '1min': 390,
-        '5min': 78,
-        '15min': 26,
-        '1hour': 7,
-        '1day': 1
-    }
-    
-    # Create/update validation records
-    for (symbol, timescale, bar_date), date_bars in bar_counts.items():
-        bar_count = len(date_bars)
-        first_bar = min(b.time for b in date_bars)
-        last_bar = max(b.time for b in date_bars)
-        
-        # Determine if complete based on timescale
-        expected_bars = expected_bars_map.get(timescale, 390)
-        is_complete = bar_count >= expected_bars * 0.9  # 90% threshold
-        
-        # Upsert validation record
-        stmt = insert(SymbolDateValidation).values(
-            symbol=symbol,
-            date=bar_date,
-            timescale=timescale,
-            is_complete=is_complete,
-            bar_count=bar_count,
-            expected_bars=expected_bars,
-            first_bar_time=first_bar,
-            last_bar_time=last_bar,
-            validated_at=datetime.now(timezone.utc)
-        )
-        stmt = stmt.on_conflict_do_update(
-            index_elements=["symbol", "date", "timescale"],
-            set_={
-                "bar_count": stmt.excluded.bar_count,
-                "is_complete": stmt.excluded.is_complete,
-                "first_bar_time": stmt.excluded.first_bar_time,
-                "last_bar_time": stmt.excluded.last_bar_time,
-                "validated_at": stmt.excluded.validated_at
-            }
-        )
-        await session.execute(stmt)
-    
-    await session.commit()
-    logger.debug(f"Updated {len(bar_counts)} validation records")
+            await session.commit()
+            logger.debug(f"Upserted {len(validation_values)} validation records for {symbol}: {start_date.date()} to {end_date.date()}")
 
 
 async def _update_status(

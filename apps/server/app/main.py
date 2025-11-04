@@ -106,6 +106,40 @@ async def on_startup() -> None:
     set_reconciliation_service(reconciliation_service)
     logger.info("✓ ReconciliationService initialized (automatic position reconciliation enabled)")
     
+    # Load yesterday's market data (all timescales)
+    logger.info("")
+    logger.info("=" * 80)
+    logger.info("📊 MARKET DATA LOADER - Loading yesterday's data for all timescales")
+    logger.info("=" * 80)
+    try:
+        # Import the loader function (use relative import from scripts directory)
+        import importlib.util
+        import os
+        import app.core as core_module
+        
+        script_path = os.path.join(os.path.dirname(__file__), '..', 'scripts', 'market_data_loader.py')
+        spec = importlib.util.spec_from_file_location("market_data_loader", script_path)
+        market_data_loader_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(market_data_loader_module)
+        
+        # Database and Polygon client are already initialized, so pass False and use core API key
+        await market_data_loader_module.load_yesterday_data(
+            init_db_flag=False,  # Already initialized in startup_init()
+            api_key=core_module.API_KEY  # Use already-initialized API key
+        )
+        logger.info("=" * 80)
+        logger.info("✅ MARKET DATA LOADER - Yesterday's data loaded successfully")
+        logger.info("=" * 80)
+        logger.info("")
+    except Exception as e:
+        logger.error("=" * 80)
+        logger.error(f"❌ MARKET DATA LOADER - Failed to load yesterday's data: {e}")
+        logger.error("=" * 80)
+        logger.error("")
+        # Don't block startup if data loading fails
+        import traceback
+        logger.debug(traceback.format_exc())
+    
     # Auto-start funds that were active before server restart
     from app.services.core.fund_autostart import auto_start_active_funds
     logger.info("Checking for active funds to auto-start...")

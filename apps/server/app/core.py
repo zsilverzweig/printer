@@ -83,28 +83,32 @@ async def startup_init() -> None:
         logger.info("✓ Real-time ingestion")
     
     # Initialize backfill service (if enabled)
-    backfill_enabled = os.getenv("MARKET_DATA_BACKFILL_ENABLED", "false").lower() == "true"
-    if backfill_enabled:
-        from app.services.market.smart_backfill import initialize_backfill_service
-        backfill_service = initialize_backfill_service(
-            api_key=API_KEY,
-            concurrent_requests=100,  # Process 100 symbols concurrently
-            request_delay_seconds=0.0,  # No delay = maximum throughput
-            auto_start=True
-        )
-        await backfill_service.start()
-        logger.info("✅ Backfill service started")
-    else:
-        logger.info("Smart backfill disabled (set MARKET_DATA_BACKFILL_ENABLED=true to enable)")
+    # COMMENTED OUT - Using MarketDataLoader script instead
+    # backfill_enabled = os.getenv("MARKET_DATA_BACKFILL_ENABLED", "false").lower() == "true"
+    # if backfill_enabled:
+    #     from app.services.market.smart_backfill import initialize_backfill_service
+    #     backfill_service = initialize_backfill_service(
+    #         api_key=API_KEY,
+    #         concurrent_requests=100,  # Process 100 symbols concurrently
+    #         request_delay_seconds=0.0,  # No delay = maximum throughput
+    #         auto_start=True
+    #     )
+    #     await backfill_service.start()
+    #     logger.info("✅ Backfill service started")
+    # else:
+    #     logger.info("Smart backfill disabled (set MARKET_DATA_BACKFILL_ENABLED=true to enable)")
+    logger.info("Smart backfill disabled (using MarketDataLoader script instead)")
     
     # Initialize aggregate timescale loading
+    # COMMENTED OUT - Using MarketDataLoader script instead
     # Load recent data for all timescales to ensure system has complete multi-granularity data
-    aggregate_loading_enabled = os.getenv("MARKET_DATA_AGGREGATE_LOADING_ENABLED", "true").lower() == "true"
-    if aggregate_loading_enabled:
-        logger.info("Starting automatic aggregate timescale loading...")
-        asyncio.create_task(_load_aggregate_timescales_async())
-    else:
-        logger.info("Aggregate timescale loading disabled (set MARKET_DATA_AGGREGATE_LOADING_ENABLED=true to enable)")
+    # aggregate_loading_enabled = os.getenv("MARKET_DATA_AGGREGATE_LOADING_ENABLED", "true").lower() == "true"
+    # if aggregate_loading_enabled:
+    #     logger.info("Starting automatic aggregate timescale loading...")
+    #     asyncio.create_task(_load_aggregate_timescales_async())
+    # else:
+    #     logger.info("Aggregate timescale loading disabled (set MARKET_DATA_AGGREGATE_LOADING_ENABLED=true to enable)")
+    logger.info("Aggregate timescale loading disabled (using MarketDataLoader script instead)")
 
 
 async def _load_aggregate_timescales_async() -> None:

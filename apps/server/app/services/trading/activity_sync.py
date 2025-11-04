@@ -307,13 +307,25 @@ class ActivitySyncService:
                 timestamp = datetime.now(timezone.utc)
                 logger.warning(f"No transaction_time for fill {fill_id}, using current time")
             
+            # Validate trade_id exists if provided (prevent foreign key violation)
+            trade_id = None
+            if order.trade_id:
+                trade = await session.get(Trade, order.trade_id)
+                if trade:
+                    trade_id = order.trade_id
+                else:
+                    logger.warning(
+                        f"⚠️  Order {order.id} references non-existent trade {order.trade_id}. "
+                        f"Creating transaction without trade_id."
+                    )
+            
             transaction = Transaction(
                 id=str(uuid.uuid4()),
                 order_id=order.id,
                 alpaca_order_id=order.alpaca_order_id,
                 alpaca_fill_id=fill_id,
                 fund_id=fund_id,
-                trade_id=order.trade_id,  # Inherit trade_id from order
+                trade_id=trade_id,  # Use validated trade_id (or None if invalid)
                 symbol=fill["symbol"],
                 side=fill["side"],
                 quantity=fill["qty"],

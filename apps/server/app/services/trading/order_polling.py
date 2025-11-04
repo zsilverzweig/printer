@@ -14,7 +14,7 @@ from typing import Optional, Set, Dict
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.strategies import Order, Transaction
+from app.models.strategies import Order, Transaction, Trade
 from app.services.trading.alpaca_service import AlpacaService
 from app.services.core.database import get_async_session
 
@@ -323,12 +323,24 @@ class OrderPollingService:
             if transaction_timestamp.tzinfo:
                 transaction_timestamp = transaction_timestamp.replace(tzinfo=None)
             
+            # Validate trade_id exists if provided (prevent foreign key violation)
+            trade_id = None
+            if order.trade_id:
+                trade = await session.get(Trade, order.trade_id)
+                if trade:
+                    trade_id = order.trade_id
+                else:
+                    logger.warning(
+                        f"⚠️  Order {order.id} references non-existent trade {order.trade_id}. "
+                        f"Creating transaction without trade_id."
+                    )
+            
             transaction = Transaction(
                 id=str(uuid.uuid4()),
                 order_id=order.id,
                 alpaca_order_id=order.alpaca_order_id,
                 fund_id=order.fund_id,
-                trade_id=order.trade_id,  # Inherit trade_id from order
+                trade_id=trade_id,  # Use validated trade_id (or None if invalid)
                 symbol=order.symbol,
                 side=order.side,
                 quantity=quantity_to_transact,  # Use the delta, not full filled_qty

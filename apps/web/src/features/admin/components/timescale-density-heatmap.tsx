@@ -54,7 +54,7 @@ export function TimescaleDensityHeatmap({
               <div className="w-20 shrink-0 text-xs font-medium text-muted-foreground pt-0.5">
                 {row.timescale}
               </div>
-              <div className="grid grid-flow-col auto-cols-max gap-1">
+              <div className="flex items-center gap-1 flex-wrap">
                 {row.days.map((d, idx) => (
                   <div
                     key={`${row.timescale}-${d.date}`}
@@ -65,14 +65,13 @@ export function TimescaleDensityHeatmap({
                     )}%)`}
                     className={`w-3 h-3 rounded-sm ${colorForRate(
                       d.completion_rate
-                    )}`}
-                    style={{ marginRight: (idx + 1) % 7 === 0 ? 6 : undefined }}
+                    )} flex-shrink-0`}
                   />
                 ))}
               </div>
               <div className="ml-2">
                 <Badge variant="secondary" className="text-[10px]">
-                  {row.days.length} days
+                  {row.days.length} {row.days.length === 1 ? "day" : "days"}
                 </Badge>
               </div>
             </div>

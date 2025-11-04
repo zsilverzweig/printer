@@ -158,23 +158,33 @@ class MarketDataService:
                     )
             
             # Insufficient data - fall back to API
-            logger.info(
-                f"DB MISS: {symbol} {timeframe} ({len(bars)}/{expected_count} bars), "
-                f"fetching from API"
-            )
+            db_bars_count = len(bars)
             
         except Exception as e:
             logger.warning(f"Database query failed for {symbol}: {e}")
+            db_bars_count = 0
         
         # Fetch from API and cache
         try:
-            bars = await self._fetch_from_api_and_cache(
+            fetch_result = await self._fetch_from_api_and_cache(
                 symbol=symbol,
                 timeframe=timeframe,
                 lookback_minutes=lookback_minutes,
                 start_time=start_time,
                 end_time=end_time
             )
+            bars = fetch_result["bars"]
+            api_source = fetch_result["source"]
+            fetched_count = fetch_result["fetched_count"]
+            cached_count = fetch_result["cached_count"]
+            
+            # Consolidated log message
+            logger.info(
+                f"DB MISS: {symbol} {timeframe} ({db_bars_count}/{expected_count} bars) → "
+                f"Fetched {fetched_count} bars from {api_source} → "
+                f"Cached {cached_count} bars"
+            )
+            
             self._api_calls += 1
             return bars
             
@@ -593,7 +603,7 @@ class MarketDataService:
         lookback_minutes: int,
         start_time: datetime,
         end_time: datetime
-    ) -> List[Dict[str, Any]]:
+    ) -> Dict[str, Any]:
         """
         Fetch bars from external API and cache in database.
         
@@ -608,9 +618,10 @@ class MarketDataService:
             end_time: End time
         
         Returns:
-            List of bars from API
+            Dict with keys: bars, source, fetched_count, cached_count
         """
         bars = []
+        api_source = None
         
         # Try Alpaca first
         try:
@@ -656,7 +667,7 @@ class MarketDataService:
                             "volume": int(bar.volume),
                         })
                     
-                    logger.info(f"Fetched {len(bars)} bars from Alpaca for {symbol}")
+                    api_source = "Alpaca"
                     
         except Exception as e:
             logger.warning(f"Alpaca fetch failed for {symbol}: {e}")
@@ -702,23 +713,31 @@ class MarketDataService:
                         "volume": int(agg.volume),
                     })
                 
-                logger.info(f"Fetched {len(bars)} bars from Polygon for {symbol}")
+                api_source = "Polygon"
                 
             except Exception as e:
                 logger.error(f"Polygon fetch failed for {symbol}: {e}")
         
-        # Cache bars in database if we got any
-        if bars:
-            await self._cache_bars(symbol, timeframe, bars)
+        fetched_count = len(bars)
         
-        return bars
+        # Cache bars in database if we got any
+        cached_count = 0
+        if bars:
+            cached_count = await self._cache_bars(symbol, timeframe, bars)
+        
+        return {
+            "bars": bars,
+            "source": api_source or "None",
+            "fetched_count": fetched_count,
+            "cached_count": cached_count
+        }
     
     async def _cache_bars(
         self,
         symbol: str,
         timeframe: str,
         bars: List[Dict[str, Any]]
-    ) -> None:
+    ) -> int:
         """
         Cache fetched bars in market_data table.
         
@@ -729,9 +748,12 @@ class MarketDataService:
             symbol: Stock symbol
             timeframe: Normalized timeframe
             bars: List of bars to cache
+        
+        Returns:
+            Number of bars cached
         """
         if not bars:
-            return
+            return 0
         
         try:
             async with get_async_session() as session:
@@ -772,7 +794,7 @@ class MarketDataService:
                 
                 if not unique_records:
                     logger.warning(f"No unique bars to cache for {symbol} {timeframe}")
-                    return
+                    return 0
                 
                 # Bulk insert with conflict handling
                 stmt = insert(MarketData).values(unique_records)
@@ -783,10 +805,11 @@ class MarketDataService:
                 await session.execute(stmt)
                 await session.commit()
                 
-                logger.info(f"✅ Cached {len(unique_records)} bars for {symbol} {timeframe}")
+                return len(unique_records)
                 
         except Exception as e:
             logger.error(f"❌ Failed to cache bars for {symbol}: {e}", exc_info=True)
+            return 0
     
     def _normalize_timeframe(self, timeframe: str) -> str:
         """
@@ -915,11 +938,13 @@ class MarketDataService:
                 end_date = end_time.date()
                 
                 # Simple check: if we have a validation record for the date, trust it
+                # Only trust records marked as complete (same logic as loader)
                 stmt = select(SymbolDateValidation).where(
                     SymbolDateValidation.symbol == symbol,
                     SymbolDateValidation.timescale == timeframe,
                     SymbolDateValidation.date >= start_date,
-                    SymbolDateValidation.date <= end_date
+                    SymbolDateValidation.date <= end_date,
+                    SymbolDateValidation.is_complete == True
                 )
                 result = await session.execute(stmt)
                 validations = result.scalars().all()

@@ -313,6 +313,7 @@ class OrderExecutor:
             )
             
             # Verify position exists in ledger (prevent over-selling)
+            # Calculate actual quantity to sell (use minimum of ledger and Alpaca to prevent over-selling)
             async with get_async_session() as session:
                 db_position_qty = await get_position_quantity_from_transactions(
                     session, self.fund_id, position.symbol
@@ -325,12 +326,16 @@ class OrderExecutor:
                     )
                     return False
                 
-                # If there's a discrepancy, use ledger quantity as source of truth
+                # If there's a discrepancy, use the MINIMUM of ledger and Alpaca quantity
+                # We can't sell more than Alpaca has available, so Alpaca quantity is the upper limit
                 if abs(db_position_qty - position.quantity) > 0.01:
+                    # Use minimum to prevent over-selling
+                    actual_quantity = min(db_position_qty, position.quantity)
+                    
                     logger.warning(
                         f"⚠️ Position quantity mismatch for {position.symbol}: "
                         f"Alpaca reports {position.quantity:.6f}, ledger shows {db_position_qty:.2f}. "
-                        f"Using ledger quantity {db_position_qty:.2f} as source of truth."
+                        f"Using minimum quantity {actual_quantity:.2f} to prevent over-selling."
                     )
                     
                     # Log discrepancy
@@ -345,15 +350,23 @@ class OrderExecutor:
                             "alpaca_quantity": float(position.quantity),
                             "ledger_quantity": float(db_position_qty),
                             "discrepancy": float(position.quantity - db_position_qty),
-                            "action": "using_ledger_quantity",
+                            "action": "using_minimum_quantity",
+                            "sell_quantity": float(actual_quantity),
                             "exit_reason": signal.exit_reason or "stop_hit",
                             "current_price": float(market_data.price),
                         }
                     )
-                    
-                    actual_quantity = db_position_qty
                 else:
                     actual_quantity = position.quantity
+            
+            # Final validation: ensure we have a valid quantity to sell
+            if actual_quantity < 0.01:
+                logger.warning(
+                    f"⚠️ Insufficient quantity to sell for {position.symbol}: "
+                    f"calculated quantity {actual_quantity:.2f} is too small. "
+                    f"Skipping sell order."
+                )
+                return False
             
             # Cancel any pending buy orders for this symbol
             await self.cancel_pending_orders(position.symbol)
@@ -474,7 +487,7 @@ class OrderExecutor:
             realized_pnl = position.unrealized_pnl
             
             logger.info(
-                f"📤 Sell order submitted to Alpaca: {position.symbol} sell {position.quantity} @ ${market_data.price:.2f} "
+                f"📤 Sell order submitted to Alpaca: {position.symbol} sell {actual_quantity} @ ${market_data.price:.2f} "
                 f"(order_id={order_id}, alpaca_id={alpaca_order['id']}, P&L: ${realized_pnl:.2f})"
             )
             
