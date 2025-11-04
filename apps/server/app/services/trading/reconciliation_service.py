@@ -174,21 +174,23 @@ class ReconciliationService:
                     f"diff={discrepancy:.6f}"
                 )
                 
-                await event_service.log_strategy_engine_event(
-                    fund_id=fund_id,
-                    event_category="position_sync",
-                    symbol=symbol,
-                    severity="warning",
-                    message=f"Position mismatch detected for {symbol} (attempt {attempt}/{total_attempts})",
-                    event_data={
-                        "order_id": order_id,
-                        "db_quantity": float(db_quantity),
-                        "alpaca_quantity": float(alpaca_quantity),
-                        "discrepancy": float(discrepancy),
-                        "attempt": attempt,
-                        "total_attempts": total_attempts,
-                    }
-                )
+                # Only log event after 3+ attempts to reduce noise from temporary sync delays
+                if attempt >= 3:
+                    await event_service.log_strategy_engine_event(
+                        fund_id=fund_id,
+                        event_category="position_sync",
+                        symbol=symbol,
+                        severity="warning",
+                        message=f"Position mismatch detected for {symbol} (attempt {attempt}/{total_attempts})",
+                        event_data={
+                            "order_id": order_id,
+                            "db_quantity": float(db_quantity),
+                            "alpaca_quantity": float(alpaca_quantity),
+                            "discrepancy": float(discrepancy),
+                            "attempt": attempt,
+                            "total_attempts": total_attempts,
+                        }
+                    )
                 
                 # If this is NOT the last attempt, return False to trigger retry
                 if attempt != total_attempts:

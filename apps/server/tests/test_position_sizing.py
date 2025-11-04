@@ -19,10 +19,11 @@ from unittest.mock import AsyncMock, patch
 from tests.test_builders import build_fund, build_position_context, build_market_data
 from tests.test_assertions import assert_position_size_valid
 from app.strategies.base import EntryLevel
+from app.services.strategies.position_sizer import PositionSizer
 
 
 @pytest.mark.asyncio
-async def test_size_per_trade_is_baseline(fund_factory, mock_execution_strategy):
+async def test_size_per_trade_is_baseline(fund_factory):
     """
     Test that size_per_trade is used as the baseline position size.
     
@@ -35,21 +36,21 @@ async def test_size_per_trade_is_baseline(fund_factory, mock_execution_strategy)
         min_bet_percent=None,  # No limit
     )
     
-    risk_params = {
-        "size_per_trade": fund.size_per_trade,
-        "max_bet_percent": fund.max_bet_percent,
-    }
+    position_sizer = PositionSizer()
+    share_price = 100.0
+    confidence = 1.0
     
-    signal = EntrySignal(should_enter=True, entry_price=100.0)
-    
-    # Calculate position size
-    position_size = await mock_execution_strategy.position_sizing(
-        signal,
-        fund.balance,
-        risk_params
+    # Calculate position size using PositionSizer directly
+    position_size, quantity = position_sizer.calculate_position_size(
+        fund_balance=fund.balance,
+        size_per_trade=fund.size_per_trade,
+        confidence=confidence,
+        current_price=share_price,
+        min_bet_percent=fund.min_bet_percent,
+        max_bet_percent=fund.max_bet_percent,
     )
     
-    # Should equal size_per_trade
+    # Should equal size_per_trade (confidence=1.0, no other limits)
     assert position_size == 1000.0, (
         f"Position size {position_size} should equal size_per_trade {fund.size_per_trade}"
     )
@@ -71,22 +72,18 @@ async def test_max_bet_percent_caps_position_size(fund_factory):
         max_bet_percent=5.0,     # But can only use 5% = $500
     )
     
-    # Import the actual strategy to test
-    from app.strategies.monkey_darts import MonkeyDartsStrategy
-    strategy = MonkeyDartsStrategy(config={})
+    position_sizer = PositionSizer()
+    share_price = 100.0
+    confidence = 1.0
     
-    risk_params = {
-        "size_per_trade": fund.size_per_trade,
-        "max_bet_percent": fund.max_bet_percent,
-    }
-    
-    signal = EntrySignal(should_enter=True, entry_price=100.0)
-    
-    # Calculate position size
-    position_size = await strategy.position_sizing(
-        signal,
-        fund.balance,
-        risk_params
+    # Calculate position size using PositionSizer directly
+    position_size, quantity = position_sizer.calculate_position_size(
+        fund_balance=fund.balance,
+        size_per_trade=fund.size_per_trade,
+        confidence=confidence,
+        current_price=share_price,
+        min_bet_percent=fund.min_bet_percent,
+        max_bet_percent=fund.max_bet_percent,
     )
     
     # Should be capped at 5% of balance = $500
@@ -96,7 +93,8 @@ async def test_max_bet_percent_caps_position_size(fund_factory):
         f"of ${max_allowed:.2f} ({fund.max_bet_percent}% of ${fund.balance:.2f})"
     )
     
-    # Should be exactly $500
+    # Should be exactly $500 (after rounding to whole shares)
+    # $500 / $100 = 5 shares, so actual_dollar = $500
     assert position_size == 500.0, (
         f"Position size ${position_size:.2f} should be ${max_allowed:.2f}"
     )
@@ -118,35 +116,29 @@ async def test_min_bet_percent_prevents_tiny_positions(fund_factory):
         min_bet_percent=2.0,      # But minimum is 2% = $200
     )
     
-    from app.strategies.monkey_darts import MonkeyDartsStrategy
-    strategy = MonkeyDartsStrategy(config={})
+    position_sizer = PositionSizer()
+    share_price = 50.0
+    confidence = 1.0
     
-    risk_params = {
-        "size_per_trade": fund.size_per_trade,
-        "min_bet_percent": fund.min_bet_percent,
-    }
-    
-    signal = EntrySignal(should_enter=True, entry_price=50.0)
-    
-    # Calculate position size
-    position_size = await strategy.position_sizing(
-        signal,
-        fund.balance,
-        risk_params
+    # Calculate position size using PositionSizer directly
+    position_size, quantity = position_sizer.calculate_position_size(
+        fund_balance=fund.balance,
+        size_per_trade=fund.size_per_trade,
+        confidence=confidence,
+        current_price=share_price,
+        min_bet_percent=fund.min_bet_percent,
+        max_bet_percent=fund.max_bet_percent,
     )
     
     # Should be at least 2% of balance = $200
     min_required = fund.balance * (fund.min_bet_percent / 100.0)
     
-    # For now, just verify it respects the constraint if implemented
-    # If min_bet_percent is enforced, either:
-    # 1. Position size >= min_required, OR
-    # 2. Position size == 0 (order rejected)
-    if position_size > 0:
-        assert position_size >= min_required, (
-            f"Position size ${position_size:.2f} is below min_bet_percent "
-            f"requirement of ${min_required:.2f} ({fund.min_bet_percent}% of ${fund.balance:.2f})"
-        )
+    # PositionSizer enforces min_bet_percent by raising the size to min_required
+    # So position_size should be >= min_required
+    assert position_size >= min_required, (
+        f"Position size ${position_size:.2f} is below min_bet_percent "
+        f"requirement of ${min_required:.2f} ({fund.min_bet_percent}% of ${fund.balance:.2f})"
+    )
 
 
 @pytest.mark.asyncio
@@ -322,18 +314,21 @@ async def test_zero_max_bet_percent_treated_as_no_limit(fund_factory):
         max_bet_percent=0.0,  # Explicitly set to 0 = no limit
     )
     
-    from app.strategies.monkey_darts import MonkeyDartsStrategy
-    strategy = MonkeyDartsStrategy(config={})
+    position_sizer = PositionSizer()
+    share_price = 100.0
+    confidence = 1.0
     
-    risk_params = {
-        "size_per_trade": fund.size_per_trade,
-        "max_bet_percent": fund.max_bet_percent,
-    }
+    # Calculate position size using PositionSizer directly
+    position_size, quantity = position_sizer.calculate_position_size(
+        fund_balance=fund.balance,
+        size_per_trade=fund.size_per_trade,
+        confidence=confidence,
+        current_price=share_price,
+        min_bet_percent=fund.min_bet_percent,
+        max_bet_percent=fund.max_bet_percent,  # 0.0 should be treated as no limit
+    )
     
-    signal = EntrySignal(should_enter=True, entry_price=100.0)
-    
-    position_size = await strategy.position_sizing(signal, fund.balance, risk_params)
-    
+    # PositionSizer checks "max_bet_percent > 0" so 0.0 means no limit
     # Should use full size_per_trade
     assert position_size == 3000.0, (
         f"Position size {position_size} should equal size_per_trade {fund.size_per_trade} "

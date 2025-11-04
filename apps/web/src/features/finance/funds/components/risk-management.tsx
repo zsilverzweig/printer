@@ -18,7 +18,6 @@ import { fundService } from "../services/fund-service";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/lib/components/ui/card";
@@ -234,26 +233,20 @@ export function RiskManagement({
     warnings.filter((w) => w.field === field);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {error && (
         <div className="rounded-lg bg-red-50 dark:bg-red-950/30 p-4 text-sm text-red-800 dark:text-red-200">
           {error}
         </div>
       )}
 
-      {/* Autosaves; success banner removed in favor of header indicator */}
-
-      {/* Risk Parameters */}
       <Card>
         <CardHeader>
           <CardTitle>Risk Parameters</CardTitle>
-          <CardDescription>
-            Set maximum loss limits to protect your capital (optional)
-          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               <Label htmlFor="maxLossPercent">Max Loss % Per Day</Label>
               <Input
                 id="maxLossPercent"
@@ -265,12 +258,9 @@ export function RiskManagement({
                 disabled={isSaving}
                 placeholder="2.0 (optional)"
               />
-              <p className="text-xs text-muted-foreground">
-                Stop trading if down this % from start
-              </p>
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               <Label htmlFor="maxLossDollars">Max Loss $ Per Day</Label>
               <Input
                 id="maxLossDollars"
@@ -295,12 +285,9 @@ export function RiskManagement({
                   <span>{warning.message}</span>
                 </div>
               ))}
-              <p className="text-xs text-muted-foreground">
-                Hard dollar limit for daily losses
-              </p>
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               <Label htmlFor="maxGivebackPercent">Max Giveback %</Label>
               <Input
                 id="maxGivebackPercent"
@@ -312,12 +299,9 @@ export function RiskManagement({
                 disabled={isSaving}
                 placeholder="30.0 (optional)"
               />
-              <p className="text-xs text-muted-foreground">
-                Max loss from high water mark
-              </p>
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               <Label htmlFor="maxOrderAgeSeconds">Max Order Age (sec)</Label>
               <Input
                 id="maxOrderAgeSeconds"
@@ -328,27 +312,20 @@ export function RiskManagement({
                 onChange={(e) => setMaxOrderAgeSeconds(e.target.value)}
                 onBlur={saveIfChanged}
                 disabled={isSaving}
-                placeholder="60 (default)"
+                placeholder="60"
               />
-              <p className="text-xs text-muted-foreground">
-                Cancel pending orders after this many seconds
-              </p>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Position Sizing */}
       <Card>
         <CardHeader>
           <CardTitle>Position Sizing</CardTitle>
-          <CardDescription>
-            Configure trade sizes and exposure limits
-          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               <Label htmlFor="sizePerTrade">
                 Size Per Trade ($) <span className="text-red-500">*</span>
               </Label>
@@ -376,12 +353,9 @@ export function RiskManagement({
                   <span>{warning.message}</span>
                 </div>
               ))}
-              <p className="text-xs text-muted-foreground">
-                Default dollar amount per trade (required)
-              </p>
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               <Label htmlFor="maxTotalExposure">Max Total Exposure ($)</Label>
               <Input
                 id="maxTotalExposure"
@@ -406,12 +380,9 @@ export function RiskManagement({
                   <span>{warning.message}</span>
                 </div>
               ))}
-              <p className="text-xs text-muted-foreground">
-                Maximum capital at risk across all positions
-              </p>
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               <Label htmlFor="minBetPercent">Min Bet % of Fund</Label>
               <Input
                 id="minBetPercent"
@@ -423,12 +394,9 @@ export function RiskManagement({
                 disabled={isSaving}
                 placeholder="1.0 (optional)"
               />
-              <p className="text-xs text-muted-foreground">
-                Minimum position size as % of fund balance
-              </p>
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               <Label htmlFor="maxBetPercent">Max Bet % of Fund</Label>
               <Input
                 id="maxBetPercent"
@@ -453,15 +421,10 @@ export function RiskManagement({
                   <span>{warning.message}</span>
                 </div>
               ))}
-              <p className="text-xs text-muted-foreground">
-                Maximum position size as % of fund balance
-              </p>
             </div>
           </div>
         </CardContent>
       </Card>
-
-      {/* Autosaves; explicit save button removed */}
     </div>
   );
 }

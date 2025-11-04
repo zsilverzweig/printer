@@ -198,48 +198,33 @@ export function FundDetailView({ fundId }: FundDetailViewProps) {
           />
         </TabsContent>
 
-        <TabsContent value="configuration" className="space-y-6">
-          {/* Basic Info Section */}
+        <TabsContent value="configuration" className="space-y-4">
           <FundBasicInfoEditor
             fund={fund}
             onUpdate={refreshAll}
             onSavingChange={handleSavingChange}
           />
 
-          {/* Strategy Selection Section */}
-          <div>
-            <h2 className="text-xl font-semibold mb-4">
-              Strategy Configuration
-            </h2>
-            <StrategySelection
-              fundId={fund.id}
-              fund={fund}
-              onUpdate={refreshAll}
-              onSavingChange={handleSavingChange}
-            />
-          </div>
+          <StrategySelection
+            fundId={fund.id}
+            fund={fund}
+            onUpdate={refreshAll}
+            onSavingChange={handleSavingChange}
+          />
 
-          {/* Risk Management Section */}
-          <div className="pt-6 border-t">
-            <h2 className="text-xl font-semibold mb-4">Risk Management</h2>
-            <RiskManagement
-              fundId={fund.id}
-              fund={fund}
-              onUpdate={refreshAll}
-              onSavingChange={handleSavingChange}
-            />
-          </div>
+          <RiskManagement
+            fundId={fund.id}
+            fund={fund}
+            onUpdate={refreshAll}
+            onSavingChange={handleSavingChange}
+          />
 
-          {/* Time Windows Section */}
-          <div className="pt-6 border-t">
-            <h2 className="text-xl font-semibold mb-4">Trading Time Windows</h2>
-            <TimeWindows
-              fundId={fund.id}
-              fund={fund}
-              onUpdate={refreshAll}
-              onSavingChange={handleSavingChange}
-            />
-          </div>
+          <TimeWindows
+            fundId={fund.id}
+            fund={fund}
+            onUpdate={refreshAll}
+            onSavingChange={handleSavingChange}
+          />
         </TabsContent>
 
         <TabsContent value="activity" className="space-y-6">

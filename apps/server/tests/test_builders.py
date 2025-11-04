@@ -222,33 +222,23 @@ def build_transaction(
 
 
 def build_position_context(
-    position_id: Optional[str] = None,
     symbol: str = "AAPL",
     entry_price: float = 150.0,
     entry_time: Optional[datetime] = None,
     quantity: float = 10.0,
     current_price: float = 155.0,
-    high_water_mark: Optional[float] = None,
     strategy_state: Optional[Dict[str, Any]] = None,
-    has_scaled_out: bool = False,
-    has_taken_profits: bool = False,
-    scale_in_count: int = 0,
 ) -> PositionContext:
     """
     Build a PositionContext instance with configurable parameters.
 
     Args:
-        position_id: Position ID (generates UUID if not provided)
         symbol: Stock symbol
         entry_price: Entry price per share
         entry_time: Entry timestamp (defaults to 10 minutes ago)
         quantity: Number of shares
         current_price: Current price per share
-        high_water_mark: Highest price seen (defaults to max of entry/current)
         strategy_state: Strategy-specific state dict
-        has_scaled_out: Whether position has been scaled out
-        has_taken_profits: Whether profits have been taken
-        scale_in_count: Number of scale-in operations
 
     Returns:
         PositionContext instance
@@ -260,9 +250,6 @@ def build_position_context(
     if entry_time is None:
         entry_time = datetime.utcnow() - timedelta(minutes=10)
 
-    if high_water_mark is None:
-        high_water_mark = max(entry_price, current_price)
-
     # Calculate P&L
     unrealized_pnl = (current_price - entry_price) * quantity
     unrealized_pnl_percent = (
@@ -270,7 +257,6 @@ def build_position_context(
     )
 
     return PositionContext(
-        position_id=position_id or str(uuid.uuid4()),
         symbol=symbol,
         entry_price=entry_price,
         entry_time=entry_time,
@@ -278,11 +264,7 @@ def build_position_context(
         current_price=current_price,
         unrealized_pnl=unrealized_pnl,
         unrealized_pnl_percent=unrealized_pnl_percent,
-        high_water_mark=high_water_mark,
         strategy_state=strategy_state or {},
-        has_scaled_out=has_scaled_out,
-        has_taken_profits=has_taken_profits,
-        scale_in_count=scale_in_count,
     )
 
 

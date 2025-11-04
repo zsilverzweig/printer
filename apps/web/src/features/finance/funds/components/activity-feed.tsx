@@ -1,19 +1,34 @@
 /**
  * ActivityFeed Component
  *
- * Displays strategy engine events for a fund with filtering and refresh.
+ * Displays strategy engine events for a fund in a table format with filtering.
  */
 
 "use client";
 
 import {
+  flexRender,
+  getCoreRowModel,
+  getFilteredRowModel,
+  getPaginationRowModel,
+  getSortedRowModel,
+  useReactTable,
+  type ColumnDef,
+  type SortingState,
+} from "@tanstack/react-table";
+import {
   Activity,
   AlertCircle,
   AlertTriangle,
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  ChevronDown,
+  ChevronRight,
   Info,
   RefreshCw,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Badge } from "@/lib/components/ui/badge";
 import { Button } from "@/lib/components/ui/button";
@@ -24,7 +39,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/lib/components/ui/card";
-import { ScrollArea } from "@/lib/components/ui/scroll-area";
 import {
   Select,
   SelectContent,
@@ -32,6 +46,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/lib/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/lib/components/ui/table";
 
 interface StrategyEngineEvent {
   id: number;
@@ -49,13 +71,14 @@ interface ActivityFeedProps {
   fundId: string;
 }
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
 const CATEGORY_LABELS: Record<string, string> = {
   position_sync: "Position Sync",
   fill_tracking: "Fill Tracking",
   order_decision: "Order Decision",
   validation: "Validation",
   error: "Error",
-  all: "All Categories",
 };
 
 const SEVERITY_ICONS = {
@@ -65,9 +88,15 @@ const SEVERITY_ICONS = {
 };
 
 const SEVERITY_COLORS = {
-  info: "text-blue-500",
-  warning: "text-yellow-500",
-  error: "text-red-500",
+  info: "text-blue-600",
+  warning: "text-yellow-600",
+  error: "text-red-600",
+};
+
+const SEVERITY_BG_COLORS = {
+  info: "bg-blue-50 dark:bg-blue-950/20",
+  warning: "bg-yellow-50 dark:bg-yellow-950/20",
+  error: "bg-red-50 dark:bg-red-950/20",
 };
 
 export function ActivityFeed({ fundId }: ActivityFeedProps) {
@@ -75,44 +104,305 @@ export function ActivityFeed({ fundId }: ActivityFeedProps) {
   const [loading, setLoading] = useState(false);
   const [category, setCategory] = useState<string>("all");
   const [severity, setSeverity] = useState<string>("all");
+  const [symbol, setSymbol] = useState<string>("all");
+  const [sorting, setSorting] = useState<SortingState>([
+    { id: "timestamp", desc: true },
+  ]);
+  const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
+  const abortControllerRef = useRef<AbortController | null>(null);
 
-  const fetchEvents = async () => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams({
-        fund_id: fundId,
-        limit: "50",
-      });
+  const fetchEvents = useCallback(
+    async (signal?: AbortSignal) => {
+      if (!fundId) return;
 
-      if (category && category !== "all") params.append("category", category);
-      if (severity && severity !== "all") params.append("severity", severity);
+      setLoading(true);
+      try {
+        const params = new URLSearchParams({
+          fund_id: fundId,
+          limit: "200", // Increase limit for table view
+        });
 
-      const response = await fetch(
-        `http://localhost:8000/api/events/strategy-engine?${params}`
-      );
-      const data = await response.json();
-      setEvents(data.events || []);
-    } catch (error) {
-      console.error("Failed to fetch strategy engine events:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
+        if (category && category !== "all") params.append("category", category);
+        if (severity && severity !== "all") params.append("severity", severity);
+        if (symbol && symbol !== "all") params.append("symbol", symbol);
+
+        const response = await fetch(
+          `${API_BASE}/api/events/strategy-engine?${params}`,
+          { signal }
+        );
+
+        if (!response.ok) {
+          throw new Error(
+            `Failed to fetch events: ${response.status} ${response.statusText}`
+          );
+        }
+
+        const data = await response.json();
+
+        // Only update if not aborted
+        if (!signal?.aborted) {
+          setEvents(data.events || []);
+        }
+      } catch (error) {
+        // Don't log abort errors
+        if (error instanceof Error && error.name !== "AbortError") {
+          console.error("Failed to fetch strategy engine events:", error);
+          setEvents([]); // Clear events on error
+        }
+      } finally {
+        if (!signal?.aborted) {
+          setLoading(false);
+        }
+      }
+    },
+    [fundId, category, severity, symbol]
+  );
 
   useEffect(() => {
-    if (fundId) {
-      fetchEvents();
+    // Cancel any existing request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
     }
-  }, [fundId, category, severity]);
 
-  const SeverityIcon = ({
-    severity,
-  }: {
-    severity: StrategyEngineEvent["severity"];
-  }) => {
-    const Icon = SEVERITY_ICONS[severity];
-    return <Icon className={`h-4 w-4 ${SEVERITY_COLORS[severity]}`} />;
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+
+    fetchEvents(abortController.signal);
+
+    return () => {
+      abortController.abort();
+      abortControllerRef.current = null;
+    };
+  }, [fetchEvents]);
+
+  const handleRefresh = useCallback(() => {
+    // Cancel any existing request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+    fetchEvents(abortController.signal);
+  }, [fetchEvents]);
+
+  // Extract unique symbols from events
+  const uniqueSymbols = useMemo(() => {
+    const symbols = new Set(
+      events.map((e) => e.symbol).filter((s): s is string => !!s)
+    );
+    return Array.from(symbols).sort();
+  }, [events]);
+
+  const toggleRowExpansion = (eventId: number) => {
+    setExpandedRows((prev) => {
+      const next = new Set(prev);
+      if (next.has(eventId)) {
+        next.delete(eventId);
+      } else {
+        next.add(eventId);
+      }
+      return next;
+    });
   };
+
+  const columns = useMemo<ColumnDef<StrategyEngineEvent>[]>(
+    () => [
+      {
+        id: "expand",
+        header: "",
+        cell: ({ row }) => {
+          const hasData =
+            row.original.event_data &&
+            Object.keys(row.original.event_data).length > 0;
+          if (!hasData) return null;
+
+          const isExpanded = expandedRows.has(row.original.id);
+          return (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 w-6 p-0"
+              onClick={() => toggleRowExpansion(row.original.id)}
+            >
+              {isExpanded ? (
+                <ChevronDown className="h-4 w-4" />
+              ) : (
+                <ChevronRight className="h-4 w-4" />
+              )}
+            </Button>
+          );
+        },
+        size: 30,
+      },
+      {
+        accessorKey: "timestamp",
+        header: ({ column }) => {
+          return (
+            <Button
+              variant="ghost"
+              onClick={() =>
+                column.toggleSorting(column.getIsSorted() === "asc")
+              }
+              className="-ml-4 h-8"
+            >
+              Timestamp
+              {column.getIsSorted() === "asc" ? (
+                <ArrowUp className="ml-2 h-4 w-4" />
+              ) : column.getIsSorted() === "desc" ? (
+                <ArrowDown className="ml-2 h-4 w-4" />
+              ) : (
+                <ArrowUpDown className="ml-2 h-4 w-4" />
+              )}
+            </Button>
+          );
+        },
+        cell: ({ row }) => {
+          const date = new Date(row.original.timestamp);
+          return (
+            <div className="text-sm">
+              <div className="font-medium">{date.toLocaleDateString()}</div>
+              <div className="text-xs text-muted-foreground">
+                {date.toLocaleTimeString()}
+              </div>
+            </div>
+          );
+        },
+        size: 140,
+      },
+      {
+        accessorKey: "severity",
+        header: ({ column }) => {
+          return (
+            <Button
+              variant="ghost"
+              onClick={() =>
+                column.toggleSorting(column.getIsSorted() === "asc")
+              }
+              className="-ml-4 h-8"
+            >
+              Severity
+              {column.getIsSorted() === "asc" ? (
+                <ArrowUp className="ml-2 h-4 w-4" />
+              ) : column.getIsSorted() === "desc" ? (
+                <ArrowDown className="ml-2 h-4 w-4" />
+              ) : (
+                <ArrowUpDown className="ml-2 h-4 w-4" />
+              )}
+            </Button>
+          );
+        },
+        cell: ({ row }) => {
+          const Icon = SEVERITY_ICONS[row.original.severity];
+          return (
+            <div className="flex items-center gap-2">
+              <Icon
+                className={`h-4 w-4 ${SEVERITY_COLORS[row.original.severity]}`}
+              />
+              <span className="capitalize text-sm">
+                {row.original.severity}
+              </span>
+            </div>
+          );
+        },
+        size: 100,
+      },
+      {
+        accessorKey: "event_category",
+        header: ({ column }) => {
+          return (
+            <Button
+              variant="ghost"
+              onClick={() =>
+                column.toggleSorting(column.getIsSorted() === "asc")
+              }
+              className="-ml-4 h-8"
+            >
+              Category
+              {column.getIsSorted() === "asc" ? (
+                <ArrowUp className="ml-2 h-4 w-4" />
+              ) : column.getIsSorted() === "desc" ? (
+                <ArrowDown className="ml-2 h-4 w-4" />
+              ) : (
+                <ArrowUpDown className="ml-2 h-4 w-4" />
+              )}
+            </Button>
+          );
+        },
+        cell: ({ row }) => {
+          return (
+            <Badge variant="outline" className="text-xs">
+              {CATEGORY_LABELS[row.original.event_category] ||
+                row.original.event_category}
+            </Badge>
+          );
+        },
+        size: 130,
+      },
+      {
+        accessorKey: "symbol",
+        header: ({ column }) => {
+          return (
+            <Button
+              variant="ghost"
+              onClick={() =>
+                column.toggleSorting(column.getIsSorted() === "asc")
+              }
+              className="-ml-4 h-8"
+            >
+              Symbol
+              {column.getIsSorted() === "asc" ? (
+                <ArrowUp className="ml-2 h-4 w-4" />
+              ) : column.getIsSorted() === "desc" ? (
+                <ArrowDown className="ml-2 h-4 w-4" />
+              ) : (
+                <ArrowUpDown className="ml-2 h-4 w-4" />
+              )}
+            </Button>
+          );
+        },
+        cell: ({ row }) => {
+          return row.original.symbol ? (
+            <span className="font-semibold text-sm">{row.original.symbol}</span>
+          ) : (
+            <span className="text-muted-foreground text-sm">—</span>
+          );
+        },
+        size: 100,
+      },
+      {
+        accessorKey: "message",
+        header: "Message",
+        cell: ({ row }) => {
+          return (
+            <div className="max-w-[500px]">
+              <p className="text-sm">{row.original.message}</p>
+            </div>
+          );
+        },
+        minSize: 300,
+      },
+    ],
+    [expandedRows]
+  );
+
+  const table = useReactTable({
+    data: events,
+    columns,
+    state: {
+      sorting,
+    },
+    onSortingChange: setSorting,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
+    initialState: {
+      pagination: {
+        pageSize: 25,
+      },
+    },
+  });
 
   return (
     <Card>
@@ -124,13 +414,14 @@ export function ActivityFeed({ fundId }: ActivityFeedProps) {
               Activity Feed
             </CardTitle>
             <CardDescription>
-              Strategy engine events and trading activity
+              Strategy engine events and trading activity ({events.length}{" "}
+              events)
             </CardDescription>
           </div>
           <Button
             variant="outline"
             size="sm"
-            onClick={fetchEvents}
+            onClick={handleRefresh}
             disabled={loading}
           >
             <RefreshCw
@@ -141,20 +432,18 @@ export function ActivityFeed({ fundId }: ActivityFeedProps) {
         </div>
 
         {/* Filters */}
-        <div className="flex gap-2 mt-4">
+        <div className="flex gap-2 mt-4 flex-wrap">
           <Select value={category} onValueChange={setCategory}>
             <SelectTrigger className="w-[160px]">
               <SelectValue placeholder="Category" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Categories</SelectItem>
-              {Object.entries(CATEGORY_LABELS)
-                .filter(([key]) => key !== "all")
-                .map(([value, label]) => (
-                  <SelectItem key={value} value={value}>
-                    {label}
-                  </SelectItem>
-                ))}
+              {Object.entries(CATEGORY_LABELS).map(([value, label]) => (
+                <SelectItem key={value} value={value}>
+                  {label}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
 
@@ -169,67 +458,140 @@ export function ActivityFeed({ fundId }: ActivityFeedProps) {
               <SelectItem value="error">Error</SelectItem>
             </SelectContent>
           </Select>
+
+          <Select value={symbol} onValueChange={setSymbol}>
+            <SelectTrigger className="w-[140px]">
+              <SelectValue placeholder="Symbol" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Symbols</SelectItem>
+              {uniqueSymbols.map((sym) => (
+                <SelectItem key={sym} value={sym}>
+                  {sym}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </CardHeader>
 
       <CardContent>
-        <ScrollArea className="h-[500px] w-full">
-          {loading ? (
-            <div className="flex items-center justify-center py-8">
-              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-gray-900" />
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900" />
+          </div>
+        ) : events.length === 0 ? (
+          <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
+            No events found. Strategy events will appear here as the fund
+            trades.
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  {table.getHeaderGroups().map((headerGroup) => (
+                    <TableRow key={headerGroup.id}>
+                      {headerGroup.headers.map((header) => (
+                        <TableHead key={header.id}>
+                          {header.isPlaceholder
+                            ? null
+                            : flexRender(
+                                header.column.columnDef.header,
+                                header.getContext()
+                              )}
+                        </TableHead>
+                      ))}
+                    </TableRow>
+                  ))}
+                </TableHeader>
+                <TableBody>
+                  {table.getRowModel().rows.map((row) => (
+                    <>
+                      <TableRow
+                        key={row.id}
+                        className={`${
+                          SEVERITY_BG_COLORS[row.original.severity]
+                        } hover:opacity-80`}
+                      >
+                        {row.getVisibleCells().map((cell) => (
+                          <TableCell key={cell.id}>
+                            {flexRender(
+                              cell.column.columnDef.cell,
+                              cell.getContext()
+                            )}
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                      {expandedRows.has(row.original.id) &&
+                        row.original.event_data &&
+                        Object.keys(row.original.event_data).length > 0 && (
+                          <TableRow key={`${row.id}-expanded`}>
+                            <TableCell
+                              colSpan={columns.length}
+                              className="bg-muted/50"
+                            >
+                              <div className="p-4">
+                                <h4 className="text-sm font-semibold mb-2">
+                                  Event Details
+                                </h4>
+                                <pre className="text-xs bg-background p-3 rounded border overflow-auto max-h-64">
+                                  {JSON.stringify(
+                                    row.original.event_data,
+                                    null,
+                                    2
+                                  )}
+                                </pre>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        )}
+                    </>
+                  ))}
+                </TableBody>
+              </Table>
             </div>
-          ) : events.length === 0 ? (
-            <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
-              No events found. Strategy events will appear here as the fund
-              trades.
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {events.map((event) => (
-                <div
-                  key={event.id}
-                  className={`flex items-start gap-3 rounded-lg border p-3 ${
-                    event.severity === "error"
-                      ? "border-red-200 bg-red-50/50"
-                      : event.severity === "warning"
-                      ? "border-yellow-200 bg-yellow-50/50"
-                      : "bg-card"
-                  }`}
+
+            {/* Pagination */}
+            <div className="flex items-center justify-between">
+              <div className="text-sm text-muted-foreground">
+                Showing{" "}
+                {table.getState().pagination.pageIndex *
+                  table.getState().pagination.pageSize +
+                  1}{" "}
+                to{" "}
+                {Math.min(
+                  (table.getState().pagination.pageIndex + 1) *
+                    table.getState().pagination.pageSize,
+                  events.length
+                )}{" "}
+                of {events.length} events
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => table.previousPage()}
+                  disabled={!table.getCanPreviousPage()}
                 >
-                  <SeverityIcon severity={event.severity} />
-                  <div className="flex-1 space-y-1">
-                    <div className="flex items-center gap-2">
-                      <Badge variant="outline" className="text-xs">
-                        {CATEGORY_LABELS[event.event_category] ||
-                          event.event_category}
-                      </Badge>
-                      {event.symbol && (
-                        <span className="font-semibold text-sm">
-                          {event.symbol}
-                        </span>
-                      )}
-                      <span className="text-xs text-muted-foreground ml-auto">
-                        {new Date(event.timestamp).toLocaleString()}
-                      </span>
-                    </div>
-                    <p className="text-sm">{event.message}</p>
-                    {event.event_data &&
-                      Object.keys(event.event_data).length > 0 && (
-                        <details className="text-xs text-muted-foreground">
-                          <summary className="cursor-pointer hover:text-foreground">
-                            View details
-                          </summary>
-                          <pre className="mt-2 p-2 bg-muted rounded text-[10px] overflow-auto">
-                            {JSON.stringify(event.event_data, null, 2)}
-                          </pre>
-                        </details>
-                      )}
-                  </div>
+                  Previous
+                </Button>
+                <div className="text-sm text-muted-foreground">
+                  Page {table.getState().pagination.pageIndex + 1} of{" "}
+                  {table.getPageCount()}
                 </div>
-              ))}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => table.nextPage()}
+                  disabled={!table.getCanNextPage()}
+                >
+                  Next
+                </Button>
+              </div>
             </div>
-          )}
-        </ScrollArea>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

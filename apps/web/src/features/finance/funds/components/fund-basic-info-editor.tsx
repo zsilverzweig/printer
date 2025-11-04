@@ -13,7 +13,6 @@ import { Button } from "@/lib/components/ui/button";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/lib/components/ui/card";
@@ -107,19 +106,15 @@ export function FundBasicInfoEditor({
     setSelectedIcon(fund.icon || "Wallet");
     setSelectedColor(fund.iconColor || "blue");
     setError(null);
-    setSuccessMessage(null);
   };
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>Fund Information</CardTitle>
-        <CardDescription>
-          Customize your fund's name, description, icon, and color
-        </CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="space-y-6">
+        <div className="space-y-4">
           {error && (
             <div className="rounded-md bg-red-50 dark:bg-red-950/50 p-3 text-sm text-red-800 dark:text-red-200 border border-red-200 dark:border-red-800">
               {error}

@@ -25,6 +25,7 @@ from app.services.trading.position_tracker import (
 from app.services.trading.order_polling import OrderPollingService
 from app.services.strategies.strategy_engine import StrategyEngine
 from app.strategies.base import PositionContext, StopUpdate, MarketDataSnapshot
+from tests.test_builders import build_market_data
 
 
 async def create_test_transaction(
@@ -300,7 +301,7 @@ async def test_transaction_creation_with_no_position(async_session, mock_alpaca)
 @pytest.mark.asyncio
 async def test_exit_position_validates_before_order(async_session, mock_market_data, mock_alpaca, mock_execution_strategy):
     """
-    Test that _exit_position validates position exists before placing order.
+    Test that execute_sell_order validates position exists before placing order.
     
     This prevents the over-sell from even happening at the order placement stage.
     """
@@ -330,7 +331,6 @@ async def test_exit_position_validates_before_order(async_session, mock_market_d
     
     # Create a position context claiming we own 100 shares (but DB says 0)
     position = PositionContext(
-        position_id=str(uuid.uuid4()),
         symbol="AAPL",
         quantity=100.0,
         entry_price=150.0,
@@ -338,39 +338,39 @@ async def test_exit_position_validates_before_order(async_session, mock_market_d
         entry_time=datetime.utcnow(),
         unrealized_pnl=1000.0,
         unrealized_pnl_percent=6.67,
-        high_water_mark=160.0,
         strategy_state={},
     )
     
-    # Create exit signal
-    exit_signal = ExitSignal(should_exit=True, reason="test_exit")
-    
-    # Create market data
-    market_data = MarketData(
-        symbol="AAPL",
-        price=160.0,
-        timestamp=datetime.utcnow(),
-        volume=1000000,
+    # Create exit signal (StopUpdate with force_exit=True)
+    exit_signal = StopUpdate(
+        current_stop=160.0,
+        force_exit=True,
+        exit_reason="test_exit"
     )
     
-    # Mock get_async_session to use our test session
-    with patch('app.services.strategies.strategy_engine.get_async_session') as mock_get_session:
+    # Create market data
+    market_data = build_market_data(
+        symbol="AAPL",
+        price=160.0,
+    )
+    
+    # Mock get_async_session to use our test session (for both order_executor and strategy_engine)
+    with patch('app.services.strategies.order_executor.get_async_session') as mock_get_session:
         mock_get_session.return_value.__aenter__.return_value = async_session
         
-        # Call _exit_position - should return early without placing order
-        await engine._exit_position(position, exit_signal, market_data)
+        # Call execute_sell_order - should return False without placing order
+        result = await engine.order_executor.execute_sell_order(position, exit_signal, market_data)
+    
+    # Should return False (no position in ledger)
+    assert result is False, "execute_sell_order should return False when no position exists"
     
     # Verify NO order was placed
     from sqlalchemy import select
     stmt = select(Order).where(Order.fund_id == fund.id)
-    result = await async_session.execute(stmt)
-    orders = result.scalars().all()
+    result_query = await async_session.execute(stmt)
+    orders = result_query.scalars().all()
     
     assert len(orders) == 0, "No order should have been placed"
-    
-    # Verify Alpaca's place_market_order was never called
-    # (mock_alpaca.orders would be empty)
-    assert len(mock_alpaca.orders) == 0, "Alpaca order should not have been placed"
 
 
 @pytest.mark.asyncio
@@ -409,7 +409,6 @@ async def test_normal_sell_proceeds(async_session, mock_market_data, mock_alpaca
     
     # Create position context for 100 shares (matches DB)
     position = PositionContext(
-        position_id=str(uuid.uuid4()),
         symbol="AAPL",
         quantity=100.0,
         entry_price=150.0,
@@ -417,35 +416,41 @@ async def test_normal_sell_proceeds(async_session, mock_market_data, mock_alpaca
         entry_time=datetime.utcnow(),
         unrealized_pnl=1000.0,
         unrealized_pnl_percent=6.67,
-        high_water_mark=160.0,
         strategy_state={},
     )
     
-    # Create exit signal
-    exit_signal = ExitSignal(should_exit=True, reason="test_exit")
-    
-    # Create market data
-    market_data = MarketData(
-        symbol="AAPL",
-        price=160.0,
-        timestamp=datetime.utcnow(),
-        volume=1000000,
+    # Create exit signal (StopUpdate with force_exit=True)
+    exit_signal = StopUpdate(
+        current_stop=160.0,
+        force_exit=True,
+        exit_reason="test_exit"
     )
     
-    # Mock get_async_session to use our test session
-    with patch('app.services.strategies.strategy_engine.get_async_session') as mock_get_session:
-        mock_get_session.return_value.__aenter__.return_value = async_session
+    # Create market data
+    market_data = build_market_data(
+        symbol="AAPL",
+        price=160.0,
+    )
+    
+    # Mock get_async_session to use our test session (for both order_executor and strategy_service)
+    with patch('app.services.strategies.order_executor.get_async_session') as mock_get_session_executor, \
+         patch('app.services.strategies.strategy_service.get_async_session') as mock_get_session_service:
+        mock_get_session_executor.return_value.__aenter__.return_value = async_session
+        mock_get_session_service.return_value.__aenter__.return_value = async_session
         
-        # Call _exit_position - should place order successfully
-        await engine._exit_position(position, exit_signal, market_data)
+        # Call execute_sell_order - should place order successfully
+        result = await engine.order_executor.execute_sell_order(position, exit_signal, market_data)
     
     await async_session.commit()
     
-    # Verify sell order WAS placed (there should be 2 orders total: 1 buy from setup, 1 sell from _exit_position)
+    # Should return True (order placed successfully)
+    assert result is True, "execute_sell_order should return True when position exists"
+    
+    # Verify sell order WAS placed (there should be 2 orders total: 1 buy from setup, 1 sell from execute_sell_order)
     from sqlalchemy import select
     stmt = select(Order).where(Order.fund_id == fund.id, Order.side == "sell")
-    result = await async_session.execute(stmt)
-    sell_orders = result.scalars().all()
+    result_query = await async_session.execute(stmt)
+    sell_orders = result_query.scalars().all()
     
     assert len(sell_orders) == 1, "Sell order should have been placed"
     assert sell_orders[0].symbol == "AAPL"

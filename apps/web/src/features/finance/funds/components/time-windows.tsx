@@ -15,7 +15,6 @@ import { fundService } from "../services/fund-service";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/lib/components/ui/card";
@@ -95,104 +94,80 @@ export function TimeWindows({
   };
 
   return (
-    <div className="space-y-6">
+    <Card>
       {error && (
         <div className="rounded-lg bg-red-50 dark:bg-red-950/30 p-4 text-sm text-red-800 dark:text-red-200">
           {error}
         </div>
       )}
 
-      {/* Autosaves; success banner removed in favor of header indicator */}
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Trading Time Windows</CardTitle>
-          <CardDescription>
-            Define when trades can be executed during market hours
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-            <div className="space-y-2">
-              <Label htmlFor="tradingStartTime">Trading Start Time</Label>
-              <Input
-                id="tradingStartTime"
-                type="time"
-                value={tradingStartTime}
-                onChange={(e) => setTradingStartTime(e.target.value)}
-                onBlur={() => {
-                  void saveIfChanged();
-                }}
-                disabled={isSaving}
-              />
-              <p className="text-sm text-muted-foreground">
-                Market open (e.g., 09:30)
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="tradingEndTime">Trading End Time</Label>
-              <Input
-                id="tradingEndTime"
-                type="time"
-                value={tradingEndTime}
-                onChange={(e) => setTradingEndTime(e.target.value)}
-                onBlur={() => {
-                  void saveIfChanged();
-                }}
-                disabled={isSaving}
-              />
-              <p className="text-sm text-muted-foreground">
-                Market close (e.g., 16:00)
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="timezone">Timezone</Label>
-              <Select
-                value={timezone}
-                onValueChange={(value) => {
-                  setTimezone(value);
-                  void saveIfChanged({ timezone: value });
-                }}
-                disabled={isSaving}
-              >
-                <SelectTrigger id="timezone">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="America/New_York">
-                    Eastern Time (ET)
-                  </SelectItem>
-                  <SelectItem value="America/Chicago">
-                    Central Time (CT)
-                  </SelectItem>
-                  <SelectItem value="America/Denver">
-                    Mountain Time (MT)
-                  </SelectItem>
-                  <SelectItem value="America/Los_Angeles">
-                    Pacific Time (PT)
-                  </SelectItem>
-                  <SelectItem value="UTC">UTC</SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-sm text-muted-foreground">
-                Time zone for trading hours
-              </p>
-            </div>
+      <CardHeader>
+        <CardTitle>Time Windows</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="tradingStartTime">Start Time</Label>
+            <Input
+              id="tradingStartTime"
+              type="time"
+              value={tradingStartTime}
+              onChange={(e) => setTradingStartTime(e.target.value)}
+              onBlur={() => {
+                void saveIfChanged();
+              }}
+              disabled={isSaving}
+              placeholder="09:30"
+            />
           </div>
 
-          <div className="rounded-lg bg-blue-50 dark:bg-blue-950/30 p-4">
-            <p className="text-sm text-blue-800 dark:text-blue-200">
-              💡 <strong>Tip:</strong> Standard US market hours are 9:30 AM -
-              4:00 PM ET. Adjust these times if you want to trade only during
-              specific intraday windows.
-            </p>
+          <div className="space-y-1.5">
+            <Label htmlFor="tradingEndTime">End Time</Label>
+            <Input
+              id="tradingEndTime"
+              type="time"
+              value={tradingEndTime}
+              onChange={(e) => setTradingEndTime(e.target.value)}
+              onBlur={() => {
+                void saveIfChanged();
+              }}
+              disabled={isSaving}
+              placeholder="16:00"
+            />
           </div>
-        </CardContent>
-      </Card>
 
-      {/* Autosaves; explicit save button removed */}
-    </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="timezone">Timezone</Label>
+            <Select
+              value={timezone}
+              onValueChange={(value) => {
+                setTimezone(value);
+                void saveIfChanged({ timezone: value });
+              }}
+              disabled={isSaving}
+            >
+              <SelectTrigger id="timezone">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="America/New_York">
+                  Eastern Time (ET)
+                </SelectItem>
+                <SelectItem value="America/Chicago">
+                  Central Time (CT)
+                </SelectItem>
+                <SelectItem value="America/Denver">
+                  Mountain Time (MT)
+                </SelectItem>
+                <SelectItem value="America/Los_Angeles">
+                  Pacific Time (PT)
+                </SelectItem>
+                <SelectItem value="UTC">UTC</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

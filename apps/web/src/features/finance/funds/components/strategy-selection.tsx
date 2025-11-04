@@ -12,7 +12,6 @@ import { useEffect, useState } from "react";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/lib/components/ui/card";
@@ -131,10 +130,7 @@ export function StrategySelection({
 
       <Card>
         <CardHeader>
-          <CardTitle>Execution Strategy</CardTitle>
-          <CardDescription>
-            Choose the trading logic that will execute trades for this fund
-          </CardDescription>
+          <CardTitle>Strategy</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
