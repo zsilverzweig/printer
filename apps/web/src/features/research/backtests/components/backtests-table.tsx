@@ -14,7 +14,14 @@ import {
   SortingState,
   useReactTable,
 } from "@tanstack/react-table";
-import { ArrowDown, ArrowUp, ArrowUpDown, Eye, RefreshCw } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  Copy,
+  Eye,
+  RefreshCw,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { Badge } from "@/lib/components/ui/badge";
@@ -27,6 +34,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/lib/components/ui/table";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/lib/components/ui/tooltip";
+import { toastSuccess } from "@/lib/utils/toast";
 
 import { Backtest } from "../types";
 
@@ -134,11 +148,44 @@ export function BacktestsTable({
       {
         accessorKey: "fundId",
         header: "Fund ID",
-        cell: ({ row }) => (
-          <div className="text-sm text-muted-foreground font-mono">
-            {row.original.fundId.slice(0, 8)}...
-          </div>
-        ),
+        cell: ({ row }) => {
+          const fundId = row.original.fundId;
+          const handleCopy = async (e: React.MouseEvent) => {
+            e.stopPropagation();
+            try {
+              await navigator.clipboard.writeText(fundId);
+              toastSuccess("Fund ID copied to clipboard");
+            } catch (err) {
+              console.error("Failed to copy:", err);
+            }
+          };
+
+          return (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleCopy}
+                    className="group h-auto p-1.5 hover:bg-muted font-mono text-sm text-muted-foreground cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="hover:text-foreground transition-colors">
+                        {fundId.slice(0, 8)}...
+                      </span>
+                      <Copy className="h-3.5 w-3.5 opacity-50 group-hover:opacity-100 transition-opacity" />
+                    </div>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p className="font-mono text-xs">{fundId}</p>
+                  <p className="text-xs mt-1">Click to copy</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          );
+        },
       },
       {
         accessorKey: "status",

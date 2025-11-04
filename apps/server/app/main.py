@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from typing import Optional
+from datetime import datetime
 from dotenv import load_dotenv
 
 from fastapi import FastAPI, Request
@@ -55,6 +56,27 @@ async def log_requests(request: Request, call_next):
 @app.on_event("startup")
 async def on_startup() -> None:
     await startup_init()
+    
+    # Cancel any running backtests from previous server instance
+    from app.services.core.database import get_async_session
+    from app.models.strategies import Backtest
+    from sqlalchemy import select
+    
+    async with get_async_session() as session:
+        stmt = select(Backtest).where(Backtest.status == 'running')
+        result = await session.execute(stmt)
+        running_backtests = result.scalars().all()
+        
+        if running_backtests:
+            logger.info(f"🧹 Cleaning up {len(running_backtests)} interrupted backtest(s) from previous server instance")
+            for bt in running_backtests:
+                bt.status = 'cancelled'
+                bt.completed_at = datetime.utcnow()
+                bt.error_message = 'Server restarted'
+            await session.commit()
+            logger.info(f"✅ Cancelled {len(running_backtests)} interrupted backtest(s)")
+        else:
+            logger.debug("No interrupted backtests to clean up")
     
     # Initialize global screener service for strategy engines
     from app.services.screener.screener import ScreenerService, set_screener_service

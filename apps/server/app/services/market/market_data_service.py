@@ -332,16 +332,20 @@ class MarketDataService:
                 LOOKUP_CHUNK_SIZE = 200  # Chunk size for lookup table queries
                 
                 if len(symbols) > LOOKUP_CHUNK_SIZE:
-                    # Parallelize even the lookup table queries
+                    # Parallelize lookup table queries with connection limit
                     chunks = [symbols[i:i + LOOKUP_CHUNK_SIZE] for i in range(0, len(symbols), LOOKUP_CHUNK_SIZE)]
                     
                     import time
                     start = time.time()
                     
-                    tasks = [
-                        self._get_prices_from_lookup_table(chunk, at_timestamp)
-                        for chunk in chunks
-                    ]
+                    # Use semaphore to limit concurrent connections (max 5 to avoid "too many clients")
+                    semaphore = asyncio.Semaphore(5)
+                    
+                    async def bounded_lookup(chunk):
+                        async with semaphore:
+                            return await self._get_prices_from_lookup_table(chunk, at_timestamp)
+                    
+                    tasks = [bounded_lookup(chunk) for chunk in chunks]
                     results = await asyncio.gather(*tasks, return_exceptions=True)
                     
                     # Merge results
@@ -353,6 +357,7 @@ class MarketDataService:
                     elapsed = time.time() - start
                     
                     if price_map:
+                        from app.services.core.time_context import get_backtest_id
                         bt_id = get_backtest_id()
                         bt_label = f"[BT:{bt_id[:8]}]" if bt_id else ""
                         logger.info(f"{bt_label} ⚡ INSTANT lookup: {len(price_map)} symbols in {elapsed*1000:.0f}ms (backtest table, {len(chunks)} parallel)")
@@ -385,11 +390,14 @@ class MarketDataService:
             import time
             start = time.time()
             
-            tasks = [
-                self._get_latest_prices_chunk(chunk, timeframe, at_timestamp)
-                for chunk in chunks
-            ]
+            # Use semaphore to limit concurrent DB connections (max 5 to avoid "too many clients")
+            semaphore = asyncio.Semaphore(5)
             
+            async def bounded_query(chunk):
+                async with semaphore:
+                    return await self._get_latest_prices_chunk(chunk, timeframe, at_timestamp)
+            
+            tasks = [bounded_query(chunk) for chunk in chunks]
             results = await asyncio.gather(*tasks, return_exceptions=True)
             
             # Merge results

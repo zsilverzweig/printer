@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.strategies import Order, Transaction, Fund
+from app.models.market_data import MarketData
 from app.services.core.database import get_async_session
 from app.services.core.time_context import get_backtest_id
 
@@ -79,9 +80,8 @@ class OrderSimulator:
         order.filled_qty = order.quantity
         order.filled_avg_price = fill_price
         
-        # Update fund balance (only if explicitly requested - for legacy/testing)
-        # In backtest mode, balance is tracked separately in the coordinator
-        if update_fund_balance:
+        # Always update fund balance - backtests use real fund to test limits!
+        if True:  # Always enabled now
             fund = await session.get(Fund, order.fund_id)
             if not fund:
                 raise ValueError(f"Fund {order.fund_id} not found")
@@ -132,10 +132,38 @@ class OrderSimulator:
             result = await session.execute(stmt)
             pending_orders = result.scalars().all()
             
+            if not pending_orders:
+                return 0
+            
+            # Find symbols that need bar data
+            symbols_needing_bars = [o.symbol for o in pending_orders if o.symbol not in current_bars]
+            
+            # Fetch bar data for symbols not in current_bars
+            if symbols_needing_bars:
+                stmt = select(MarketData).where(
+                    MarketData.symbol.in_(symbols_needing_bars),
+                    MarketData.time == current_time,
+                    MarketData.timescale == '1min'
+                )
+                result = await session.execute(stmt)
+                missing_bars = result.scalars().all()
+                
+                # Add to current_bars dict
+                for bar in missing_bars:
+                    current_bars[bar.symbol] = {
+                        'time': bar.time,
+                        'open': float(bar.open),
+                        'high': float(bar.high),
+                        'low': float(bar.low),
+                        'close': float(bar.close),
+                        'volume': bar.volume,
+                    }
+            
+            # Now try to fill all pending orders
             for order in pending_orders:
                 # Check if we have bar data for this symbol
                 if order.symbol not in current_bars:
-                    logger.debug(f"No bar data for {order.symbol}, skipping fill check")
+                    logger.debug(f"No bar data for {order.symbol} at {current_time}, skipping fill check")
                     continue
                 
                 bar = current_bars[order.symbol]

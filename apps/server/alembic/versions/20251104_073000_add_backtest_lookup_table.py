@@ -32,6 +32,15 @@ def upgrade() -> None:
     backward scans through history.
     """
     
+    # Check if table already exists
+    from sqlalchemy import inspect
+    conn = op.get_bind()
+    inspector = inspect(conn)
+    
+    if 'market_data_backtest_lookup' in inspector.get_table_names():
+        print("Table market_data_backtest_lookup already exists, skipping creation")
+        return
+    
     op.create_table(
         'market_data_backtest_lookup',
         sa.Column('symbol', sa.String(20), nullable=False),

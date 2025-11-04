@@ -14,7 +14,7 @@ from typing import Dict, List, Optional
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.market_data import SymbolDateValidation, MarketData
+from app.models.market_data import SymbolDateValidation, MarketData, MarketDataBacktestLookup
 from app.services.core.database import get_async_session
 
 logger = logging.getLogger("app.health_monitor")
@@ -332,6 +332,84 @@ class MarketDataHealthCheck(BaseHealthCheck):
             }
 
 
+class BacktestDataHealthCheck(BaseHealthCheck):
+    """
+    Health check for backtest lookup table.
+    
+    Ensures we have pre-computed snapshot data for the previous trading day,
+    allowing fast backtests without real-time population.
+    """
+    
+    def __init__(self):
+        super().__init__("backtest_data")
+    
+    async def check(self) -> HealthCheckResult:
+        """Check if backtest lookup data exists for yesterday."""
+        try:
+            async with get_async_session() as session:
+                # Find previous trading day (skip weekends)
+                today = datetime.now(timezone.utc).date()
+                yesterday = today - timedelta(days=1)
+                
+                # Skip back to Friday if weekend
+                while yesterday.weekday() >= 5:  # 5=Saturday, 6=Sunday
+                    yesterday -= timedelta(days=1)
+                
+                # Check if we have lookup data for yesterday
+                result = await session.execute(text("""
+                    SELECT 
+                        COUNT(*) as total_rows,
+                        COUNT(DISTINCT symbol) as symbols,
+                        COUNT(DISTINCT lookup_time) as minutes
+                    FROM market_data_backtest_lookup
+                    WHERE DATE(lookup_time) = :target_date
+                      AND timescale = '1min';
+                """), {"target_date": yesterday})
+                
+                row = result.first()
+                total_rows = row[0]
+                symbols = row[1]
+                minutes = row[2]
+                
+                # We expect ~391 minutes (9:30-16:00) and 1000+ symbols
+                is_healthy = total_rows > 100000 and minutes >= 300
+                
+                if is_healthy:
+                    return HealthCheckResult(
+                        check_name=self.name,
+                        is_healthy=True,
+                        message=f"Backtest data ready for {yesterday}: {symbols:,} symbols × {minutes} minutes = {total_rows:,} rows",
+                        details={
+                            "date": yesterday.isoformat(),
+                            "total_rows": total_rows,
+                            "symbols": symbols,
+                            "minutes": minutes
+                        }
+                    )
+                else:
+                    return HealthCheckResult(
+                        check_name=self.name,
+                        is_healthy=False,
+                        message=f"Backtest data incomplete for {yesterday}: only {total_rows:,} rows",
+                        details={
+                            "date": yesterday.isoformat(),
+                            "total_rows": total_rows,
+                            "symbols": symbols,
+                            "minutes": minutes,
+                            "expected_rows": ">100000",
+                            "expected_minutes": 391
+                        }
+                    )
+        
+        except Exception as e:
+            return HealthCheckResult(
+                check_name=self.name,
+                is_healthy=False,
+                message=f"Error checking backtest data: {e}",
+                details={"error": str(e)}
+            )
+
+
 class RiskManagementHealthCheck(BaseHealthCheck):
     """
     Placeholder for future risk management health checks.
@@ -462,6 +540,7 @@ def initialize_health_monitor(interval_seconds: int = 300) -> HealthMonitorServi
         # Register default checks
         _health_monitor.register_check(MarketDataHealthCheck(lookback_days=30))
         _health_monitor.register_check(RiskManagementHealthCheck())
+        _health_monitor.register_check(BacktestDataHealthCheck())
         
         logger.debug("Health monitor initialized with default checks")
     
