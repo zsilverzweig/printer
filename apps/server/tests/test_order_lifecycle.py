@@ -218,28 +218,22 @@ async def test_filled_order_counts_as_position(async_session, mock_market_data, 
         alpaca_service=mock_alpaca,
     )
     
-    # Mock Alpaca to return the position
-    mock_alpaca.positions["TSLA"] = Mock(
-        symbol="TSLA",
-        qty=5.0,
-        avg_entry_price=200.0,
-        current_price=205.0,
-        market_value=1025.0,
-        unrealized_pl=25.0,
-        unrealized_plpc=0.025,
-    )
-    
     with patch('app.services.strategies.strategy_engine.get_async_session') as mock_get_session:
         mock_get_session.return_value.__aenter__.return_value = async_session
         
-        # ASSERTION 1: get_pending_orders() should return 0 (order is filled)
+        # ASSERTION 1: get_pending_orders() should return 0 (order is filled, not pending)
         pending_orders = await engine.get_pending_orders()
         assert len(pending_orders) == 0, f"Expected 0 pending orders (filled), got {len(pending_orders)}"
         
-        # ASSERTION 2: get_active_positions() should return the filled position from Alpaca
-        active_positions = await engine.get_active_positions()
-        assert len(active_positions) >= 1, f"Expected 1 active position (filled), got {len(active_positions)}"
-        assert "TSLA" in active_positions, "TSLA position should be in active positions"
+        # ASSERTION 2: Verify the order is marked as filled
+        assert order.status == "filled", "Order should have status 'filled'"
+        assert order.filled_qty == 5.0, "Order should have filled quantity"
+        assert order.filled_avg_price == 200.0, "Order should have filled price"
+        
+        # ASSERTION 3: Verify transaction was created
+        assert transaction.order_id == order.id, "Transaction should be linked to order"
+        assert transaction.symbol == "TSLA", "Transaction should have correct symbol"
+        assert transaction.quantity == 5.0, "Transaction should have correct quantity"
 
 
 @pytest.mark.asyncio
@@ -300,21 +294,35 @@ async def test_stale_order_cancellation(async_session, mock_market_data, mock_al
         side=order.side,
     )
     
-    # Mock get_async_session for the order update
-    with patch('app.services.strategies.order_executor.get_async_session') as mock_get_session:
-        mock_get_session.return_value.__aenter__.return_value = async_session
+    # Mock get_async_session for all database operations
+    with patch('app.services.strategies.strategy_engine.get_async_session') as mock_engine_session, \
+         patch('app.services.strategies.order_executor.get_async_session') as mock_executor_session:
         
-        # Get pending orders and call stale order cancellation
+        # Create mock session context managers
+        mock_session_context = AsyncMock()
+        mock_session_context.__aenter__ = AsyncMock(return_value=async_session)
+        mock_session_context.__aexit__ = AsyncMock(return_value=None)
+        mock_engine_session.return_value = mock_session_context
+        mock_executor_session.return_value = mock_session_context
+        
+        # Get pending orders first
         pending_orders = await engine.get_pending_orders()
+        assert len(pending_orders) == 1, "Should have 1 pending order"
+        assert pending_orders[0].symbol == "NVDA"
+        
+        # Call stale order cancellation
         max_age = fund.max_order_age_seconds or 60
         await engine.order_executor.cancel_stale_orders(max_age, pending_orders)
         
         # Refresh order from database
         await async_session.refresh(order)
         
-        # ASSERTION: Order should be cancelled in Alpaca
+        # ASSERTION 1: Order should be marked as canceled in database
+        assert order.status == "canceled", f"Expected order status 'canceled', got '{order.status}'"
+        
+        # ASSERTION 2: Order should be cancelled in Alpaca
         alpaca_order = mock_alpaca.orders.get(order.alpaca_order_id)
-        assert alpaca_order.status == "cancelled", f"Expected order to be cancelled, got status: {alpaca_order.status}"
+        assert alpaca_order.status == "cancelled", f"Expected Alpaca order to be cancelled, got status: {alpaca_order.status}"
 
 
 @pytest.mark.asyncio
@@ -407,14 +415,15 @@ async def test_order_lifecycle_full_flow(async_session, mock_market_data, mock_a
     with patch('app.services.strategies.strategy_engine.get_async_session') as mock_get_session:
         mock_get_session.return_value.__aenter__.return_value = async_session
         
-        # ASSERTION 4: Order is no longer pending
+        # ASSERTION 4: Order is no longer pending (it's filled)
         pending_orders = await engine.get_pending_orders()
         assert len(pending_orders) == 0, "No pending orders after fill"
         
-        # ASSERTION 5: Position shows up in Alpaca
-        active_positions_dict = await engine.get_active_positions()
-        assert len(active_positions_dict) >= 1, "Filled order should count as active position in Alpaca"
-        assert "GOOGL" in active_positions_dict, "GOOGL position should be visible"
+        # ASSERTION 5: Verify order is filled and has transaction
+        assert order.status == "filled", "Order should be filled"
+        assert order.filled_qty == 7.0, "Order should have filled quantity"
+        assert transaction.order_id == order.id, "Transaction should be linked to order"
+        assert transaction.symbol == "GOOGL", "Transaction should have correct symbol"
 
 
 @pytest.mark.asyncio

@@ -374,7 +374,37 @@ async def test_partial_sell_incremental_fills(async_session):
     # Setup fund with initial balance
     fund = build_fund(balance=5000.0)
     async_session.add(fund)
+    await async_session.commit()
     
+    # First, create buy transactions to establish a position
+    # Buy 100 shares @ $10 to have something to sell
+    buy_order = build_order(
+        fund_id=fund.id,
+        symbol="TEST",
+        side="buy",
+        quantity=100,
+        status="filled",
+        alpaca_order_id="buy-order-1"
+    )
+    async_session.add(buy_order)
+    
+    buy_transaction = Transaction(
+        id=str(uuid.uuid4()),
+        order_id=buy_order.id,
+        alpaca_order_id=buy_order.alpaca_order_id,
+        fund_id=fund.id,
+        symbol="TEST",
+        side="buy",
+        quantity=100.0,
+        price=10.0,
+        total_value=1000.0,
+        timestamp=datetime.utcnow(),
+        high_water_mark=10.0,
+        strategy_state={}
+    )
+    async_session.add(buy_transaction)
+    
+    # Now create the sell order
     order = build_order(
         fund_id=fund.id,
         symbol="TEST",

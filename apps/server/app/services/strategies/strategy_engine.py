@@ -47,15 +47,6 @@ from sqlalchemy import select
 logger = logging.getLogger(__name__)
 
 
-async def _broadcast_trading_event(event: dict) -> None:
-    """Broadcast trading event to WebSocket subscribers."""
-    try:
-        from app.routers.realtime import broadcast_trading_activity
-        await broadcast_trading_activity(event)
-    except Exception as e:
-        logger.warning(f"Failed to broadcast trading event: {e}")
-
-
 class StrategyEngine:
     """
     Orchestrates strategy execution for a fund.

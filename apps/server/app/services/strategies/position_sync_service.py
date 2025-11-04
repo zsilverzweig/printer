@@ -27,15 +27,6 @@ from app.services.trading.position_tracker import get_position_context
 logger = logging.getLogger(__name__)
 
 
-async def _broadcast_trading_event(event: dict) -> None:
-    """Broadcast trading event to WebSocket subscribers."""
-    try:
-        from app.routers.realtime import broadcast_trading_activity
-        await broadcast_trading_activity(event)
-    except Exception as e:
-        logger.warning(f"Failed to broadcast trading event: {e}")
-
-
 def _get_utc_timestamp() -> str:
     """Get current UTC timestamp as ISO string."""
     return datetime.utcnow().isoformat() + "Z"
@@ -180,17 +171,6 @@ class PositionSyncService:
                 f"Alpaca shows 0 shares but transaction ledger shows open position"
             )
             
-            # Broadcast diagnostic event
-            await _broadcast_trading_event({
-                "fund_id": fund_id,
-                "fund_name": fund_name,
-                "event_type": "diagnostic",
-                "symbol": symbol,
-                "timestamp": _get_utc_timestamp(),
-                "reason": "Position sync check",
-                "message": f"Position {symbol} is closed in Alpaca but still in transaction ledger - triggering reconciliation",
-            })
-            
             # Get the reconciliation service
             reconciliation_service = get_reconciliation_service()
             
@@ -215,50 +195,17 @@ class PositionSyncService:
                     f"✅ Successfully reconciled {symbol} - "
                     f"position now synced with Alpaca"
                 )
-                
-                # Broadcast success event
-                await _broadcast_trading_event({
-                    "fund_id": fund_id,
-                    "fund_name": fund_name,
-                    "event_type": "position_synced",
-                    "symbol": symbol,
-                    "timestamp": _get_utc_timestamp(),
-                    "reason": "Auto-correction successful",
-                    "message": f"Position {symbol} successfully reconciled with Alpaca",
-                })
             else:
                 logger.error(
                     f"❌ Failed to reconcile {symbol} - "
                     f"manual intervention may be required"
                 )
-                
-                # Broadcast error event
-                await _broadcast_trading_event({
-                    "fund_id": fund_id,
-                    "fund_name": fund_name,
-                    "event_type": "error",
-                    "symbol": symbol,
-                    "timestamp": _get_utc_timestamp(),
-                    "reason": "Position sync failed",
-                    "message": f"Failed to reconcile {symbol} - manual intervention may be required",
-                })
         
         except Exception as e:
             logger.error(
                 f"Error reconciling closed position for {symbol}: {e}",
                 exc_info=True
             )
-            
-            # Broadcast error event
-            await _broadcast_trading_event({
-                "fund_id": fund_id,
-                "fund_name": fund_name,
-                "event_type": "error",
-                "symbol": symbol,
-                "timestamp": _get_utc_timestamp(),
-                "reason": "Reconciliation error",
-                "message": f"Error reconciling {symbol}: {str(e)}",
-            })
     
     async def _get_fund_symbols(self, fund_id: str) -> Set[str]:
         """

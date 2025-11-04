@@ -91,25 +91,6 @@ async def auto_start_active_funds() -> None:
                 f"🏁 Auto-start complete: {started_count} started, "
                 f"{failed_count} failed, {len(active_funds)} total"
             )
-            
-            # Broadcast startup summary
-            if started_count > 0:
-                try:
-                    from app.routers.realtime import broadcast_trading_activity
-                    from datetime import datetime, timezone
-                    
-                    await broadcast_trading_activity({
-                        "event_type": "server_startup",
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                        "message": f"Server restarted - Auto-started {started_count} fund(s)",
-                        "details": {
-                            "total_active_funds": len(active_funds),
-                            "successfully_started": started_count,
-                            "failed_to_start": failed_count,
-                        }
-                    })
-                except Exception as broadcast_error:
-                    logger.warning(f"Failed to broadcast auto-start summary: {broadcast_error}")
     
     except Exception as e:
         logger.error(f"❌ Error in auto_start_active_funds: {e}", exc_info=True)

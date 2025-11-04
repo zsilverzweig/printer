@@ -21,15 +21,6 @@ from app.services.core.database import get_async_session
 logger = logging.getLogger(__name__)
 
 
-async def _broadcast_trading_event(event: dict) -> None:
-    """Broadcast trading event to WebSocket subscribers."""
-    try:
-        from app.routers.realtime import broadcast_trading_activity
-        await broadcast_trading_activity(event)
-    except Exception as e:
-        logger.warning(f"Failed to broadcast trading event: {e}")
-
-
 class OrderPollingService:
     """
     Poll Alpaca for order status updates.
@@ -187,19 +178,6 @@ class OrderPollingService:
                 order.filled_at = None
             order.filled_qty = float(alpaca_order.filled_qty) if alpaca_order.filled_qty else None
             order.filled_avg_price = float(alpaca_order.filled_avg_price) if alpaca_order.filled_avg_price else None
-            
-            # Broadcast status update
-            await _broadcast_trading_event({
-                "fund_id": str(order.fund_id),
-                "event_type": "order_status_update",
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "symbol": order.symbol,
-                "order_id": order.id,
-                "alpaca_order_id": order.alpaca_order_id,
-                "old_status": old_status,
-                "new_status": mapped_status,
-                "message": f"Order {order.symbol} {order.side} status: {old_status} → {mapped_status}",
-            })
             
             # If order is filled (fully or partially), check if we need to create a transaction
             # for the incremental fill amount
@@ -378,21 +356,6 @@ class OrderPollingService:
                 f"💰 Transaction created: {order.symbol} {order.side} "
                 f"{quantity_to_transact} @ ${filled_price:.2f} = ${transaction.total_value:.2f}"
             )
-            
-            # Broadcast transaction event
-            await _broadcast_trading_event({
-                "fund_id": str(order.fund_id),
-                "event_type": "transaction_created",
-                "timestamp": transaction.timestamp.isoformat(),
-                "symbol": order.symbol,
-                "side": order.side,
-                "quantity": quantity_to_transact,
-                "price": filled_price,
-                "total_value": transaction.total_value,
-                "transaction_id": transaction.id,
-                "order_id": order.id,
-                "message": f"Transaction: {order.side} {quantity_to_transact} {order.symbol} @ ${filled_price:.2f}",
-            })
         
         except Exception as e:
             logger.error(f"Error creating transaction for order {order.id}: {e}", exc_info=True)

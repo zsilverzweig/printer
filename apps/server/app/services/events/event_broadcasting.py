@@ -21,14 +21,14 @@ async def _broadcast(event: dict) -> None:
     """
     Internal broadcast function.
     
+    DEPRECATED: TradingActivityFeed system has been removed.
+    Events should be logged via EventService.log_strategy_engine_event() instead.
+    
     Args:
         event: Event dictionary to broadcast
     """
-    try:
-        from app.routers.realtime import broadcast_trading_activity
-        await broadcast_trading_activity(event)
-    except Exception as e:
-        logger.warning(f"Failed to broadcast event: {e}")
+    # No-op: Broadcasting removed in favor of persistent database events
+    pass
 
 
 def create_trading_event(

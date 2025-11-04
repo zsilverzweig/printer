@@ -357,8 +357,6 @@ def build_market_data(
         open=open_price,
         bars=bars,
         indicators=indicators,
-        news=news,
-        float_data=float_data,
     )
 
 

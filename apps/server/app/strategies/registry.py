@@ -134,6 +134,12 @@ def _auto_register_strategies() -> None:
     except ImportError as e:
         logger.warning(f"Failed to import MonkeyDartsStrategy: {e}")
     
+    try:
+        from app.strategies.gpt_candlestick import GPTCandlestickStrategy
+        register_strategy(GPTCandlestickStrategy)
+    except ImportError as e:
+        logger.warning(f"Failed to import GPTCandlestickStrategy: {e}")
+    
     # Old strategies archived - uncomment when needed
     # try:
     #     from app.strategies.archived.failed_equal_highs_old import FailedEqualHighsBreakoutStrategy

@@ -834,24 +834,6 @@ async def start_trading(fund_id: str) -> dict:
             
             logger.info(f"✅ Trading started successfully for fund {fund_id}")
             
-            # Broadcast startup event
-            from app.routers.realtime import broadcast_trading_activity
-            from datetime import datetime, timezone
-            await broadcast_trading_activity({
-                "fund_id": str(fund_id),
-                "fund_name": fund.name,
-                "event_type": "startup",
-                "timestamp": datetime.now(timezone.utc).isoformat() + "Z",  # Add Z to indicate UTC
-                "message": f"Trading engine started for {fund.name}",
-                "details": {
-                    "balance": fund.balance,
-                    "mode": fund.mode,
-                    "strategy": fund.strategy_id,
-                    "size_per_trade": fund.size_per_trade,
-                    "max_bet_percent": fund.max_bet_percent,
-                }
-            })
-            
             return {
                 "status": "started",
                 "fund_id": fund_id,
@@ -997,21 +979,6 @@ async def stop_and_liquidate(fund_id: str) -> dict:
                 error_msg = f"Error liquidating positions: {str(e)}"
                 logger.error(error_msg)
                 errors.append(error_msg)
-            
-            # Broadcast event
-            from app.routers.realtime import broadcast_trading_activity
-            await broadcast_trading_activity({
-                "fund_id": str(fund_id),
-                "fund_name": fund.name,
-                "event_type": "stop_and_liquidate",
-                "timestamp": datetime.now(timezone.utc).isoformat() + "Z",
-                "message": f"Emergency stop: {len(cancelled_orders)} orders cancelled, {len(liquidated_positions)} positions liquidating",
-                "details": {
-                    "cancelled_orders": len(cancelled_orders),
-                    "liquidated_positions": len(liquidated_positions),
-                    "errors": errors
-                }
-            })
             
             return {
                 "success": True,
@@ -2391,24 +2358,6 @@ async def reset_fund(fund_id: str) -> dict:
                 f"Deleted {orders_count} orders, {transactions_count} transactions, "
                 f"{transfers_count} transfers. Balance: ${old_balance:.2f} → $0.00"
             )
-            
-            # Broadcast reset event
-            from app.routers.realtime import broadcast_trading_activity
-            from datetime import datetime, timezone
-            await broadcast_trading_activity({
-                "fund_id": str(fund_id),
-                "fund_name": fund.name,
-                "event_type": "fund_reset",
-                "timestamp": datetime.now(timezone.utc).isoformat() + "Z",
-                "message": f"Fund {fund.name} has been reset",
-                "details": {
-                    "orders_deleted": orders_count,
-                    "transactions_deleted": transactions_count,
-                    "transfers_deleted": transfers_count,
-                    "old_balance": old_balance,
-                    "new_balance": 0.0,
-                }
-            })
             
             return {
                 "success": True,

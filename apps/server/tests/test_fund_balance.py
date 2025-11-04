@@ -147,22 +147,30 @@ async def test_balance_check_before_alpaca_submission(fund_factory, mock_market_
     )
     
     # Try to enter position
-    signal = EntrySignal(should_enter=True, entry_price=10.0, reason="test")
+    from app.strategies.base import EntryLevel, MarketDataSnapshot
+    from datetime import datetime
+    signal = EntryLevel(entry_price=10.0, stop_loss=9.5, confidence=1.0, order_type="market")
+    market_data = MarketDataSnapshot(symbol="TEST", price=10.0, timestamp=datetime.utcnow())
     
-    with patch('app.services.strategies.strategy_engine.get_async_session') as mock_get_session:
+    with patch('app.services.strategies.order_executor.get_async_session') as mock_get_session:
         mock_session = AsyncMock()
         mock_session.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session.__aexit__ = AsyncMock()
         mock_session.add = Mock()
         mock_session.commit = AsyncMock()
-        mock_session.execute = AsyncMock()
+        
+        # Mock execute to return fund with balance and no pending orders
+        mock_result = AsyncMock()
+        mock_result.scalar_one_or_none = Mock(return_value=fund)
+        mock_result.scalars = Mock(return_value=Mock(all=Mock(return_value=[])))
+        mock_session.execute = AsyncMock(return_value=mock_result)
         mock_get_session.return_value = mock_session
         
-        # Mock get_pending_orders to return empty list
-        with patch.object(engine, 'get_pending_orders', return_value=[]):
-            # Try to enter
-            await engine._enter_position("TEST", signal, market_data)
+        # Try to enter - should fail due to insufficient balance
+        result = await engine.order_executor.execute_buy_order("TEST", signal, market_data)
         
+        # Should return False (insufficient balance)
+        assert result == False, "Should return False when insufficient balance"
         # Alpaca should NOT have been called (balance check should have failed)
         assert not mock_alpaca.place_market_order.called, (
             "Alpaca was called despite insufficient balance! Balance check missing or broken."
@@ -306,11 +314,12 @@ async def test_high_price_stocks_cant_buy_fractional():
 @pytest.mark.asyncio
 async def test_balance_after_position_sizing():
     """
-    Test that position sizing respects available balance.
+    Test that position sizing and balance validation work together.
     
-    Expected: position_sizing() should consider balance when calculating size.
+    Expected: Even if size_per_trade is configured higher than balance,
+    the position sizer and balance validator should prevent the order.
     """
-    from app.strategies.monkey_darts import MonkeyDartsStrategy
+    from app.services.strategies.position_sizer import PositionSizer
     
     fund = build_fund(
         balance=800.0,
@@ -318,28 +327,33 @@ async def test_balance_after_position_sizing():
         max_bet_percent=None
     )
     
-    strategy = MonkeyDartsStrategy(config={})
+    position_sizer = PositionSizer()
     
-    risk_params = {
-        "size_per_trade": fund.size_per_trade,
-        "max_bet_percent": fund.max_bet_percent,
-    }
-    
-    signal = EntrySignal(should_enter=True, entry_price=100.0)
-    
-    # Get position size
-    position_size = await strategy.position_sizing(signal, fund.balance, risk_params)
-    
-    # Position size might be $1000 (strategy doesn't know about balance limits)
-    # But the actual order cost check should catch this
-    
-    # Calculate actual order
+    # Calculate position size
     share_price = 100.0
-    quantity = int(position_size / share_price)  # 10 shares
-    actual_cost = quantity * share_price  # $1000
+    position_size, quantity = position_sizer.calculate_position_size(
+        fund_balance=fund.balance,
+        size_per_trade=fund.size_per_trade,
+        confidence=1.0,
+        current_price=share_price,
+        min_bet_percent=fund.min_bet_percent,
+        max_bet_percent=fund.max_bet_percent,
+    )
     
-    # This SHOULD fail balance check
+    # Position sizer calculates based on size_per_trade (doesn't cap at balance)
+    # Position size: $1000 (from size_per_trade)
+    # Quantity: $1000 / $100 = 10 shares
+    # Actual cost: 10 * $100 = $1000
+    assert position_size == 1000.0, f"Expected position size $1000, got ${position_size}"
+    assert quantity == 10, f"Expected 10 shares, got {quantity}"
+    
+    actual_cost = quantity * share_price
+    assert actual_cost == 1000.0, f"Expected cost $1000, got ${actual_cost}"
+    
+    # This WOULD FAIL balance check because $1000 > $800
+    # The balance validation in execute_buy_order would reject this
     assert actual_cost > fund.balance, (
-        f"Order cost ${actual_cost} exceeds balance ${fund.balance} - should be rejected"
+        f"Order cost ${actual_cost} exceeds balance ${fund.balance} - "
+        f"balance validator should reject this"
     )
 
