@@ -138,6 +138,18 @@ class ExecutionStrategy(ABC):
         pass
     
     @property
+    @abstractmethod
+    def strategy_type(self) -> str:
+        """Strategy type: 'math-based', 'ai-based', or 'hybrid'."""
+        pass
+    
+    @property
+    @abstractmethod
+    def expected_timeframe(self) -> str:
+        """Expected holding period (e.g., '1-3 minutes', '5-30 minutes')."""
+        pass
+    
+    @property
     def requires_setup(self) -> bool:
         """
         Whether this strategy uses the setup phase.

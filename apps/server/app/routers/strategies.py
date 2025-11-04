@@ -26,21 +26,13 @@ async def get_strategies() -> JSONResponse:
     Get list of all available execution strategies.
     
     Returns:
-        List of strategy IDs with basic metadata
+        List of strategy metadata with id, name, description, strategyType, expectedTimeframe
     """
     try:
         all_metadata = get_strategy_metadata()
         
-        # Convert to list format
-        strategies = [
-            {
-                "id": metadata["id"],
-                "name": metadata["name"],
-                "strategyType": metadata["strategyType"],
-                "expectedTimeframe": metadata["expectedTimeframe"],
-            }
-            for metadata in all_metadata.values()
-        ]
+        # Convert to list format - include all fields
+        strategies = list(all_metadata.values())
         
         return JSONResponse(content=strategies)
     

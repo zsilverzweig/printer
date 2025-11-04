@@ -21,9 +21,6 @@ from app.services.realtime.db_listener import get_db_listener_service
 router = APIRouter()
 noc_service: NocService | None = None
 
-# Trading activity subscribers
-trading_activity_subscribers: Set[WebSocket] = set()
-
 
 @router.websocket("/noc/ws")
 async def noc_ws(websocket: WebSocket):
@@ -317,10 +314,9 @@ async def unified_realtime(websocket: WebSocket):
                 logger.error("Failed to start DatabaseListenerService: %s", e)
                 # Continue anyway - fund updates just won't work
         
-        # Subscribe to NOC, Screener, and Trading Activity broadcasts
+        # Subscribe to NOC and Screener broadcasts
         noc_service.subscribers.add(websocket)
         screener_service.subscribers.add(websocket)
-        trading_activity_subscribers.add(websocket)
         
         # Send initial connection status
         try:
@@ -510,7 +506,6 @@ async def unified_realtime(websocket: WebSocket):
         screener_service = get_screener_service()
         if screener_service:
             screener_service.subscribers.discard(websocket)
-        trading_activity_subscribers.discard(websocket)
         
         # Clean up fund subscriptions
         for fund_id in client_fund_subscriptions:
@@ -520,42 +515,5 @@ async def unified_realtime(websocket: WebSocket):
             await stop_polygon_websocket()
         
         logger.info("Cleaned up unified realtime connection")
-
-
-async def broadcast_trading_activity(event: dict) -> None:
-    """Broadcast trading activity event to all subscribers."""
-    global trading_activity_subscribers
-    logger = logging.getLogger("app.realtime")
-    
-    if not trading_activity_subscribers:
-        return
-    
-    message = {
-        "type": "trading_activity",
-        "data": event,
-        "timestamp": int(time.time() * 1000)
-    }
-    
-    # Send to all subscribers
-    disconnected = set()
-    for ws in trading_activity_subscribers:
-        try:
-            from starlette.websockets import WebSocketState
-            if ws.client_state == WebSocketState.CONNECTED:
-                await ws.send_json(message)
-            else:
-                disconnected.add(ws)
-        except Exception as e:
-            logger.warning(f"Error sending trading activity to subscriber: {e}")
-            disconnected.add(ws)
-    
-    # Remove disconnected subscribers
-    for ws in disconnected:
-        trading_activity_subscribers.discard(ws)
-    
-    logger.debug(f"Broadcasted trading activity to {len(trading_activity_subscribers)} subscribers")
-
-
-# Old individual fund WebSocket endpoint removed - fund updates now go through /realtime endpoint
 
 

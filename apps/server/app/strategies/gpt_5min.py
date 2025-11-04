@@ -83,6 +83,14 @@ class GPTFiveGuyStrategy(ExecutionStrategy):
         )
     
     @property
+    def strategy_type(self) -> str:
+        return "ai-based"
+    
+    @property
+    def expected_timeframe(self) -> str:
+        return "1-20 minutes"
+    
+    @property
     def requires_setup(self) -> bool:
         return False  # Goes straight to entry analysis
     

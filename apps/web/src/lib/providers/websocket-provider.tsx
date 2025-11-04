@@ -1,17 +1,5 @@
 "use client";
 
-import { useWebSocket } from "@/lib/hooks/use-websocket";
-import type { ScreenedStockPreview } from "@/lib/types/market";
-import type {
-  ConnectionStatus,
-  FundRealtimeData,
-  StockIndicators,
-  TradingActivityEvent,
-  WebSocketContextValue,
-  WebSocketMessage,
-} from "@/lib/types/websocket";
-import { log } from "@/lib/utils/logger";
-import { diagnoseWebSocketConnection } from "@/lib/utils/websocket-diagnostics";
 import React, {
   createContext,
   useCallback,
@@ -20,6 +8,18 @@ import React, {
   useRef,
   useState,
 } from "react";
+
+import { useWebSocket } from "@/lib/hooks/use-websocket";
+import type { ScreenedStockPreview } from "@/lib/types/market";
+import type {
+  ConnectionStatus,
+  FundRealtimeData,
+  StockIndicators,
+  WebSocketContextValue,
+  WebSocketMessage,
+} from "@/lib/types/websocket";
+import { log } from "@/lib/utils/logger";
+import { diagnoseWebSocketConnection } from "@/lib/utils/websocket-diagnostics";
 
 const WebSocketContext = createContext<WebSocketContextValue | null>(null);
 
@@ -34,9 +34,6 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
     ScreenedStockPreview[] | null
   >(null);
   const [marketData, setMarketData] = useState<Map<string, unknown>>(new Map());
-  const [tradingActivity, setTradingActivity] = useState<
-    TradingActivityEvent[]
-  >([]);
   const [fundData, setFundData] = useState<Map<string, FundRealtimeData>>(
     new Map()
   );
@@ -217,13 +214,6 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
       case "connection_status":
         setConnectionStatus(message.data as ConnectionStatus);
         log.debug("[WebSocket] Connection status updated", message.data);
-        break;
-
-      case "trading_activity":
-        setTradingActivity((prev) =>
-          [message.data as TradingActivityEvent, ...prev].slice(0, 100)
-        ); // Keep last 100 events
-        log.debug("[WebSocket] Trading activity received", message.data);
         break;
 
       case "fund_snapshot":
@@ -487,7 +477,6 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
     nocData,
     screenerData,
     marketData,
-    tradingActivity,
     fundData,
 
     // Connection state

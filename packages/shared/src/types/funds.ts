@@ -83,8 +83,6 @@ export interface ExecutionStrategy {
   description: string;
   strategyType: StrategyType;
   expectedTimeframe: string; // e.g., "1-3 minutes"
-  requiredIndicators: string[]; // e.g., ["MACD", "RSI"]
-  configSchema: Record<string, any>; // JSON schema for configuration
 }
 
 /**

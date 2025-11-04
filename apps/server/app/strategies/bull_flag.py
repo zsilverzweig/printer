@@ -50,6 +50,14 @@ class BullFlagStrategy(ExecutionStrategy):
         )
     
     @property
+    def strategy_type(self) -> str:
+        return "math-based"
+    
+    @property
+    def expected_timeframe(self) -> str:
+        return "1-3 minutes"
+    
+    @property
     def requires_setup(self) -> bool:
         return True  # Uses setup to detect patterns
     

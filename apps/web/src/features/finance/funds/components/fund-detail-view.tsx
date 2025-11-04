@@ -25,6 +25,7 @@ import { useFundLedger } from "../hooks/use-fund-ledger";
 import { setupService } from "../services/setup-service";
 import { CreateSetupInput } from "../types";
 
+import { ActivityFeed } from "./activity-feed";
 import { FundBasicInfoEditor } from "./fund-basic-info-editor";
 import { FundLedger } from "./fund-ledger";
 import { FundOrders } from "./fund-orders";
@@ -35,7 +36,6 @@ import { ScreenerLink } from "./screener-link";
 import { SetupEditor } from "./setup-editor";
 import { StrategySelection } from "./strategy-selection";
 import { TimeWindows } from "./time-windows";
-import { TradingActivityFeed } from "./trading-activity-feed";
 
 interface FundDetailViewProps {
   fundId: string;
@@ -243,7 +243,7 @@ export function FundDetailView({ fundId }: FundDetailViewProps) {
         </TabsContent>
 
         <TabsContent value="activity" className="space-y-6">
-          <TradingActivityFeed fundId={fundId} />
+          <ActivityFeed fundId={fundId} />
         </TabsContent>
 
         <TabsContent value="positions" className="space-y-6">

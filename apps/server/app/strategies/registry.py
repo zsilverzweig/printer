@@ -99,6 +99,8 @@ def get_strategy_metadata(strategy_id: Optional[str] = None) -> Dict[str, Any]:
             "id": temp_instance.id,
             "name": temp_instance.name,
             "description": temp_instance.description,
+            "strategyType": temp_instance.strategy_type,
+            "expectedTimeframe": temp_instance.expected_timeframe,
         }
     else:
         # Return metadata for all strategies

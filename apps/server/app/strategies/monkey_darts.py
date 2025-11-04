@@ -51,6 +51,14 @@ class MonkeyDartsStrategy(ExecutionStrategy):
         )
     
     @property
+    def strategy_type(self) -> str:
+        return "math-based"
+    
+    @property
+    def expected_timeframe(self) -> str:
+        return "random"
+    
+    @property
     def requires_setup(self) -> bool:
         return False
     

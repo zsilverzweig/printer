@@ -23,22 +23,12 @@ from app.services.trading.position_tracker import get_position_quantity_from_tra
 from app.services.events.event_broadcasting import (
     broadcast_error,
     broadcast_diagnostic,
-    _get_utc_timestamp,
 )
 from app.services.strategies.position_sizer import PositionSizer
 from app.services.strategies.strategy_service import StrategyService
 from app.lib.strategy_logger import StrategyLogger
 
 logger = logging.getLogger(__name__)
-
-
-async def _broadcast_trading_event(event: dict) -> None:
-    """Broadcast trading event to WebSocket subscribers."""
-    try:
-        from app.routers.realtime import broadcast_trading_activity
-        await broadcast_trading_activity(event)
-    except Exception as e:
-        logger.warning(f"Failed to broadcast trading event: {e}")
 
 
 class OrderExecutor:
@@ -130,22 +120,6 @@ class OrderExecutor:
                     f"❌ Skipping entry for {symbol}: position size ${position_size:.2f} "
                     f"can't buy 1 share at ${market_data.price:.2f}"
                 )
-                
-                await _broadcast_trading_event({
-                    "fund_id": str(self.fund_id),
-                    "fund_name": self.fund.name,
-                    "event_type": "skip",
-                    "timestamp": _get_utc_timestamp(),
-                    "symbol": symbol,
-                    "reason": "Insufficient position size",
-                    "message": f"Cannot buy {symbol}: need ${market_data.price:.2f} but only have ${position_size:.2f}",
-                    "details": {
-                        "fund_balance": fund_balance,
-                        "size_per_trade": self.fund.size_per_trade,
-                        "calculated_position_size": position_size,
-                        "share_price": market_data.price,
-                    }
-                })
                 return False
             
             actual_cost = quantity * market_data.price
@@ -302,41 +276,10 @@ class OrderExecutor:
             self.strategy_logger.log(symbol, f"Initial stop set: ${signal.stop_loss:.2f}")
             
             # Broadcast trading event
-            order_details = {
-                "fund_id": str(self.fund_id),
-                "fund_name": self.fund.name,
-                "event_type": "order_submitted",
-                "symbol": symbol,
-                "side": "buy",
-                "quantity": quantity,
-                "price": market_data.price,
-                "position_size": position_size,
-                "order_id": order_id,
-                "alpaca_order_id": alpaca_order["id"],
-                "timestamp": _get_utc_timestamp(),
-                "reason": "entry_level_triggered",
-                "entry_confidence": signal.confidence,
-                "order_type": order_type,
-                "message": f"Buy order submitted: {quantity} shares of {symbol} @ ${market_data.price:.2f} ({order_type})",
-            }
-            if limit_price:
-                order_details["limit_price"] = limit_price
-            await _broadcast_trading_event(order_details)
-            
             return True
         
         except Exception as e:
             logger.error(f"Error entering position for {symbol}: {e}", exc_info=True)
-            
-            await _broadcast_trading_event({
-                "fund_id": str(self.fund_id),
-                "fund_name": self.fund.name,
-                "event_type": "error",
-                "symbol": symbol,
-                "timestamp": _get_utc_timestamp(),
-                "reason": "Entry execution failed",
-                "message": f"Failed to enter position in {symbol}: {str(e)}",
-            })
             return False
     
     async def execute_sell_order(
@@ -510,25 +453,6 @@ class OrderExecutor:
                 f"(order_id={order_id}, alpaca_id={alpaca_order['id']}, P&L: ${realized_pnl:.2f})"
             )
             
-            # Broadcast trading event
-            await _broadcast_trading_event({
-                "fund_id": str(self.fund_id),
-                "fund_name": self.fund.name,
-                "event_type": "order_submitted",
-                "symbol": position.symbol,
-                "side": "sell",
-                "quantity": position.quantity,
-                "price": market_data.price,
-                "order_id": order_id,
-                "alpaca_order_id": alpaca_order["id"],
-                "pnl": realized_pnl,
-                "pnl_percent": position.unrealized_pnl_percent,
-                "timestamp": _get_utc_timestamp(),
-                "reason": signal.exit_reason or "stop_hit",
-                "order_type": "market",
-                "message": f"Sell order submitted: {position.quantity} shares of {position.symbol} @ ${market_data.price:.2f} (market)",
-            })
-            
             # Clean up monitoring state
             await self.strategy_service.deactivate_symbol_levels(
                 self.fund_id,
@@ -540,16 +464,6 @@ class OrderExecutor:
         
         except Exception as e:
             logger.error(f"Error exiting position for {position.symbol}: {e}", exc_info=True)
-            
-            await _broadcast_trading_event({
-                "fund_id": str(self.fund_id),
-                "fund_name": self.fund.name,
-                "event_type": "error",
-                "symbol": position.symbol,
-                "timestamp": _get_utc_timestamp(),
-                "reason": "Exit execution failed",
-                "message": f"Failed to exit position in {position.symbol}: {str(e)}",
-            })
             return False
     
     async def cancel_pending_orders(self, symbol: str) -> None:
@@ -585,22 +499,6 @@ class OrderExecutor:
                     
                     await self.alpaca_service.cancel_order(order_id)
                     logger.info(f"✅ Canceled order {order_id}")
-                    
-                    # Broadcast cancellation event
-                    await _broadcast_trading_event({
-                        "fund_id": str(self.fund_id),
-                        "fund_name": self.fund.name,
-                        "event_type": "order_cancelled",
-                        "symbol": symbol,
-                        "timestamp": _get_utc_timestamp(),
-                        "reason": "Exit signal received with pending order",
-                        "message": f"Canceled pending {order_side} order for {symbol}",
-                        "details": {
-                            "order_id": order_id,
-                            "side": str(order_side),
-                            "quantity": float(order_qty) if order_qty else 0,
-                        }
-                    })
                     
                 except Exception as e:
                     logger.error(f"Error canceling order {order_id}: {e}", exc_info=True)
@@ -645,19 +543,6 @@ class OrderExecutor:
                             order.error_message = f"Canceled: stale order (age: {order_age_seconds:.0f}s)"
                             session.add(order)
                             await session.commit()
-                        
-                        # Broadcast cancellation
-                        await _broadcast_trading_event({
-                            "type": "order_canceled",
-                            "message": f"Canceled stale {order.symbol} order (age: {order_age_seconds:.0f}s)",
-                            "data": {
-                                "fund_id": self.fund_id,
-                                "symbol": order.symbol,
-                                "order_id": order.id,
-                                "age_seconds": order_age_seconds,
-                                "reason": "stale_order"
-                            }
-                        })
                         
                     except Exception as e:
                         logger.error(f"Error canceling stale order {order.id}: {e}", exc_info=True)

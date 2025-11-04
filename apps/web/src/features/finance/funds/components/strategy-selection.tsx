@@ -16,8 +16,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/lib/components/ui/card";
-import { Input } from "@/lib/components/ui/input";
-import { Label } from "@/lib/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -170,66 +168,6 @@ export function StrategySelection({
               <div className="flex gap-4 text-xs text-muted-foreground">
                 <span>Type: {selectedStrategy.strategyType}</span>
                 <span>Timeframe: {selectedStrategy.expectedTimeframe}</span>
-              </div>
-              {selectedStrategy.requiredIndicators?.length > 0 && (
-                <p className="text-xs text-muted-foreground">
-                  Requires: {selectedStrategy.requiredIndicators.join(", ")}
-                </p>
-              )}
-            </div>
-          )}
-
-          {/* Strategy-specific configuration */}
-          {selectedStrategy?.configSchema?.properties && (
-            <div className="space-y-4 pt-4 border-t">
-              <div>
-                <h4 className="text-sm font-medium mb-3">
-                  Strategy Configuration
-                </h4>
-                <div className="grid gap-4 md:grid-cols-2">
-                  {Object.entries(
-                    selectedStrategy.configSchema.properties as Record<
-                      string,
-                      any
-                    >
-                  ).map(([key, schema]) => (
-                    <div key={key} className="space-y-2">
-                      <Label htmlFor={key}>{schema.description || key}</Label>
-                      <Input
-                        id={key}
-                        type={schema.type === "integer" ? "number" : "text"}
-                        min={schema.minimum}
-                        max={schema.maximum}
-                        step={schema.type === "integer" ? 1 : undefined}
-                        value={executionConfig[key] ?? schema.default ?? ""}
-                        onChange={(e) => {
-                          const value =
-                            schema.type === "integer"
-                              ? parseInt(e.target.value) || schema.default
-                              : e.target.value;
-                          setExecutionConfig({
-                            ...executionConfig,
-                            [key]: value,
-                          });
-                        }}
-                        onBlur={() => {
-                          void saveIfChanged();
-                        }}
-                        placeholder={
-                          schema.default
-                            ? `Default: ${schema.default}`
-                            : undefined
-                        }
-                        disabled={isSaving}
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        {schema.minimum && schema.maximum
-                          ? `Range: ${schema.minimum}-${schema.maximum}`
-                          : ""}
-                      </p>
-                    </div>
-                  ))}
-                </div>
               </div>
             </div>
           )}

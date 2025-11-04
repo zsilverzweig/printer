@@ -85,7 +85,10 @@ async def test_pending_order_cost_uses_correct_prices(async_session, mock_market
         alpaca_service=mock_alpaca,
     )
     
-    # Create entry signal for GOOGL at $100/share, want 30 shares = $3000
+    # Create entry signal for GOOGL at $100/share
+    # Position sizer will calculate: size_per_trade ($1000) / price ($100) = 10 shares
+    # Actual cost: 10 shares * $100 = $1000
+    # This SHOULD SUCCEED because $1000 < $2250 available
     entry_signal = EntryLevel(
         entry_price=100.0,
         stop_loss=95.0,
@@ -104,12 +107,14 @@ async def test_pending_order_cost_uses_correct_prices(async_session, mock_market
     with patch('app.services.strategies.order_executor.get_async_session') as mock_get_session:
         mock_get_session.return_value.__aenter__.return_value = async_session
         
-        # Try to enter position - should be BLOCKED because:
-        # Need: $3000
+        # Try to enter position - should be ALLOWED because:
+        # Need: $1000 (10 shares @ $100)
         # Available: $2250 (after accounting for pending orders)
         result = await engine.order_executor.execute_buy_order("GOOGL", entry_signal, market_data)
     
-    # Verify NO order was placed (insufficient balance)
+    await async_session.commit()
+    
+    # Verify order WAS placed (sufficient balance after accounting for pending)
     from sqlalchemy import select
     stmt = select(Order).where(
         Order.fund_id == fund.id,
@@ -118,7 +123,8 @@ async def test_pending_order_cost_uses_correct_prices(async_session, mock_market
     result = await async_session.execute(stmt)
     googl_orders = result.scalars().all()
     
-    assert len(googl_orders) == 0, "Should not place order when insufficient balance"
+    assert len(googl_orders) == 1, "Should place order when sufficient balance available"
+    assert googl_orders[0].quantity == 10.0, "Should order 10 shares"
 
 
 @pytest.mark.asyncio
@@ -171,7 +177,10 @@ async def test_cash_validation_without_estimated_price(async_session, mock_marke
         alpaca_service=mock_alpaca,
     )
     
-    # Try to enter position for GOOGL at $200/share, 10 shares = $2000
+    # Try to enter position for GOOGL at $200/share
+    # Position sizer will calculate: size_per_trade ($1000) / price ($200) = 5 shares
+    # Actual cost: 5 shares * $200 = $1000
+    # This SHOULD SUCCEED because $1000 < $1500 available
     entry_signal = EntryLevel(
         entry_price=200.0,
         stop_loss=190.0,
@@ -192,14 +201,16 @@ async def test_cash_validation_without_estimated_price(async_session, mock_marke
         # Try to enter position
         # Pending AAPL cost: 10 * $150 = $1500 (fetched from mock)
         # Available: $3000 - $1500 = $1500
-        # Need: $2000
-        # Should be BLOCKED
+        # Need: $1000 (5 shares @ $200)
+        # Should be ALLOWED
         result = await engine.order_executor.execute_buy_order("GOOGL", entry_signal, market_data)
     
     # Verify market data provider was called to get AAPL price
     mock_market_data.get_latest_quote.assert_called_with("AAPL")
     
-    # Verify NO order was placed
+    await async_session.commit()
+    
+    # Verify order WAS placed
     from sqlalchemy import select
     stmt = select(Order).where(
         Order.fund_id == fund.id,
@@ -208,7 +219,8 @@ async def test_cash_validation_without_estimated_price(async_session, mock_marke
     result = await async_session.execute(stmt)
     googl_orders = result.scalars().all()
     
-    assert len(googl_orders) == 0, "Should not place order when insufficient balance"
+    assert len(googl_orders) == 1, "Should place order when sufficient balance available"
+    assert googl_orders[0].quantity == 5.0, "Should order 5 shares"
 
 
 @pytest.mark.asyncio
@@ -372,8 +384,10 @@ async def test_multiple_pending_orders_different_prices(async_session, mock_mark
         alpaca_service=mock_alpaca,
     )
     
-    # Try to buy TSLA at $250/share, 20 shares = $5000
-    # This should be BLOCKED (need $5000, only have $3000 available)
+    # Try to buy TSLA at $250/share
+    # Position sizer will calculate: size_per_trade ($1000) / price ($250) = 4 shares
+    # Actual cost: 4 shares * $250 = $1000
+    # This SHOULD SUCCEED because $1000 < $3000 available
     entry_signal = EntryLevel(
         entry_price=250.0,
         stop_loss=240.0,
@@ -393,7 +407,9 @@ async def test_multiple_pending_orders_different_prices(async_session, mock_mark
         
         result = await engine.order_executor.execute_buy_order("TSLA", entry_signal, market_data)
     
-    # Verify NO order was placed
+    await async_session.commit()
+    
+    # Verify order WAS placed (sufficient balance after accounting for all pending orders)
     from sqlalchemy import select
     stmt = select(Order).where(
         Order.fund_id == fund.id,
@@ -402,7 +418,8 @@ async def test_multiple_pending_orders_different_prices(async_session, mock_mark
     result = await async_session.execute(stmt)
     tsla_orders = result.scalars().all()
     
-    assert len(tsla_orders) == 0, "Should not place order when insufficient balance after accounting for all pending orders"
+    assert len(tsla_orders) == 1, "Should place order when sufficient balance available after accounting for pending orders"
+    assert tsla_orders[0].quantity == 4.0, "Should order 4 shares"
 
 
 @pytest.mark.asyncio

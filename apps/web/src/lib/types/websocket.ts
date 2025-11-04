@@ -8,7 +8,6 @@ export type WebSocketMessageType =
   | "screener_update"
   | "market_data"
   | "connection_status"
-  | "trading_activity"
   | "fund_snapshot"
   | "fund_update";
 
@@ -26,25 +25,6 @@ export interface ConnectionStatus {
   noc: boolean;
   screener: boolean;
   market: boolean;
-}
-
-export interface TradingActivityEvent {
-  fund_id: string;
-  fund_name: string;
-  event_type: "entry" | "exit" | "scale_in" | "scale_out" | "error" | "warning";
-  symbol?: string;
-  quantity?: number;
-  price?: number;
-  timestamp: string;
-  reason: string;
-  message?: string;
-  position_size?: number;
-  pnl?: number;
-  pnl_percent?: number;
-  percent?: number;
-  multiplier?: number;
-  order_type?: string; // "market" or "limit"
-  limit_price?: number; // Limit price for limit orders
 }
 
 export interface FundRealtimeData {
@@ -75,7 +55,6 @@ export interface WebSocketContextValue {
   nocData: import("@printer/shared").StockIndicators[] | null;
   screenerData: ScreenedStockPreview[] | null;
   marketData: Map<string, unknown>;
-  tradingActivity: TradingActivityEvent[];
   fundData: Map<string, FundRealtimeData>;
 
   // Connection state
