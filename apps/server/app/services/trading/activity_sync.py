@@ -312,6 +312,7 @@ class ActivitySyncService:
                 alpaca_order_id=order.alpaca_order_id,
                 alpaca_fill_id=fill_id,
                 fund_id=fund_id,
+                trade_id=order.trade_id,  # Inherit trade_id from order
                 symbol=fill["symbol"],
                 side=fill["side"],
                 quantity=fill["qty"],

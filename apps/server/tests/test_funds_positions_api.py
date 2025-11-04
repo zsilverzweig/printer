@@ -144,15 +144,15 @@ async def test_get_fund_positions_summary(async_session):
     async_session.add(buy_txn)
     await async_session.commit()
 
-    # Mock market data provider
-    mock_market_provider = AsyncMock()
-    mock_market_provider.get_current_price = AsyncMock(return_value=160.0)
+    # Mock price service
+    mock_price_service = AsyncMock()
+    mock_price_service.get_latest_prices_batch = AsyncMock(return_value={"AAPL": 160.0})
 
     client = TestClient(app)
     with patch("app.routers.funds.get_async_session") as mock_session:
         mock_session.return_value.__aenter__.return_value = async_session
         with patch(
-            "app.services.market_data_provider.MarketDataProvider", return_value=mock_market_provider
+            "app.services.market.price_service.get_price_service", return_value=mock_price_service
         ):
             response = client.get(f"/api/funds/{fund.id}/positions/summary")
 
@@ -188,7 +188,7 @@ async def test_get_fund_positions_with_sync_check(async_session):
     with patch("app.routers.funds.get_async_session") as mock_session:
         mock_session.return_value.__aenter__.return_value = async_session
         with patch("app.routers.funds.get_engine", return_value=None):
-            with patch("app.services.alpaca_service.AlpacaService", return_value=mock_alpaca):
+            with patch("app.services.trading.alpaca_service.AlpacaService", return_value=mock_alpaca):
                 response = client.get(f"/api/funds/{fund.id}/positions")
 
     assert response.status_code == status.HTTP_200_OK

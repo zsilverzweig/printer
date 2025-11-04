@@ -28,43 +28,43 @@ def client():
 async def async_client(test_engine):
     """Async HTTP client fixture for testing async endpoints."""
     from contextlib import asynccontextmanager
-    from app.services.core.database import get_async_session as original_get_async_session
+    import app.services.core.database as db_module
+    import app.routers.funds as funds_router
     
     # Create a session factory for the test engine
-    # Use autocommit=False to ensure proper transaction handling
     test_session_factory = async_sessionmaker(
         test_engine,
         class_=AsyncSession,
         expire_on_commit=False,
-        autocommit=False,
     )
     
     # Override get_async_session to use test database
     @asynccontextmanager
-    async def test_get_async_session():
+    async def override_get_async_session():
         async with test_session_factory() as session:
             try:
                 yield session
-                # Auto-commit if no exception
-                await session.commit()
             except Exception:
                 await session.rollback()
                 raise
             finally:
                 await session.close()
     
-    # Monkey patch the database function
-    import app.services.core.database as db_module
-    original_func = db_module.get_async_session
-    db_module.get_async_session = test_get_async_session
+    # Monkey-patch in both the source module and router modules that import it
+    original_db_func = db_module.get_async_session
+    original_funds_func = funds_router.get_async_session
+    
+    db_module.get_async_session = override_get_async_session
+    funds_router.get_async_session = override_get_async_session
     
     try:
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             yield ac
     finally:
-        # Restore original function
-        db_module.get_async_session = original_func
+        # Restore original functions
+        db_module.get_async_session = original_db_func
+        funds_router.get_async_session = original_funds_func
 
 
 @pytest.fixture
@@ -102,9 +102,13 @@ async def test_engine():
     db_fd, db_path = tempfile.mkstemp(suffix='.db')
     os.close(db_fd)
     
+    # Use NullPool for SQLite to ensure single connection (better for testing)
+    # This ensures all sessions see committed data immediately
     engine = create_async_engine(
         f"sqlite+aiosqlite:///{db_path}",
         echo=False,
+        connect_args={"check_same_thread": False},  # Allow multiple connections
+        poolclass=NullPool,  # Single connection pool for consistent visibility
     )
     
     # Create all tables

@@ -62,7 +62,7 @@ async def test_detect_orders_in_alpaca_but_not_in_db(async_session):
     with patch("app.routers.funds.get_async_session") as mock_session:
         mock_session.return_value.__aenter__.return_value = async_session
         with patch("app.routers.funds.get_engine", return_value=None):
-            with patch("app.services.alpaca_service.AlpacaService", return_value=mock_alpaca):
+            with patch("app.services.trading.alpaca_service.AlpacaService", return_value=mock_alpaca):
                 response = client.get(f"/api/funds/{fund.id}/positions")
     
     assert response.status_code == status.HTTP_200_OK
@@ -241,14 +241,14 @@ async def test_partial_fill_sync_issue(async_session):
     
     client = TestClient(app)
     
-    # Mock MarketDataProvider
-    mock_market = AsyncMock()
-    mock_market.get_latest_price = AsyncMock(return_value=10.0)
+    # Mock price service
+    mock_price_service = AsyncMock()
+    mock_price_service.get_latest_prices_batch = AsyncMock(return_value={"TEST": 10.0})
     
     # Check positions
     with patch("app.routers.funds.get_async_session") as mock_session:
         mock_session.return_value.__aenter__.return_value = async_session
-        with patch("app.services.market_data_provider.MarketDataProvider", return_value=mock_market):
+        with patch("app.services.market.price_service.get_price_service", return_value=mock_price_service):
             response = client.get(f"/api/funds/{fund.id}/positions/summary")
     
     assert response.status_code == status.HTTP_200_OK
@@ -387,7 +387,7 @@ async def test_detect_missing_sell_transaction(async_session):
     with patch("app.routers.funds.get_async_session") as mock_session:
         mock_session.return_value.__aenter__.return_value = async_session
         with patch("app.routers.funds.get_engine", return_value=None):
-            with patch("app.services.alpaca_service.AlpacaService", return_value=mock_alpaca):
+            with patch("app.services.trading.alpaca_service.AlpacaService", return_value=mock_alpaca):
                 response = client.get(f"/api/funds/{fund.id}/positions")
     
     assert response.status_code == status.HTTP_200_OK

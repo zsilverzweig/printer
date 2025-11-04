@@ -37,11 +37,7 @@ async def test_start_trading_success(async_session):
                 "app.routers.funds.create_strategy_engine", return_value=mock_engine
             ):
                 with patch("app.routers.funds.register_engine"):
-                    with patch(
-                        "app.routers.realtime.broadcast_trading_activity",
-                        new_callable=AsyncMock,
-                    ):
-                        response = client.post(f"/api/funds/{fund.id}/start")
+                    response = client.post(f"/api/funds/{fund.id}/start")
 
     assert response.status_code == status.HTTP_200_OK
     data = response.json()

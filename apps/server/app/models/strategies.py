@@ -4,8 +4,9 @@ Fund and trading models.
 Provides SQLAlchemy models for:
 - Fund: Trading account with balance, mode, strategy configuration, and risk parameters
 - ScreeningCriteria: Reusable screening configurations
-- Order: Order tracking
-- Transaction: Transaction ledger
+- Order: Order tracking with trade_id
+- Transaction: Transaction ledger with trade_id
+- Trade: Master record for complete trades with performance metrics
 """
 
 from datetime import datetime
@@ -132,6 +133,7 @@ class Order(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     alpaca_order_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
     fund_id: Mapped[str] = mapped_column(String(36), ForeignKey("funds.id"), nullable=False, index=True)
+    trade_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)  # Links to Trade record
     
     # Order details
     symbol: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
@@ -182,6 +184,7 @@ class Transaction(Base):
     alpaca_order_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
     alpaca_fill_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
     fund_id: Mapped[str] = mapped_column(String(36), ForeignKey("funds.id"), nullable=False, index=True)
+    trade_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("trades.id"), nullable=True, index=True)  # Links to Trade record
     
     # Transaction details
     symbol: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
@@ -224,6 +227,71 @@ class Transfer(Base):
         DateTime, 
         nullable=False, 
         default=datetime.utcnow
+    )
+
+
+class Trade(Base):
+    """
+    Master record for a complete trade (open to close).
+    
+    Tracks the lifecycle of a position from entry through exit,
+    with comprehensive performance metrics and strategy context.
+    """
+    __tablename__ = "trades"
+    
+    # Identification
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)  # Same as trade_id in orders/transactions
+    fund_id: Mapped[str] = mapped_column(String(36), ForeignKey("funds.id"), nullable=False, index=True)
+    symbol: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
+    
+    # Entry information
+    entry_order_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("orders.id"), nullable=True)
+    entry_time: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    entry_price: Mapped[float] = mapped_column(Float, nullable=False)  # Average entry price
+    entry_quantity: Mapped[float] = mapped_column(Float, nullable=False)
+    
+    # Exit information (nullable for open trades)
+    exit_order_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("orders.id"), nullable=True)
+    exit_time: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, index=True)
+    exit_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    exit_quantity: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    
+    # Strategy context
+    strategy_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, index=True)
+    screening_criteria_id: Mapped[Optional[str]] = mapped_column(
+        String(36), 
+        ForeignKey("screening_criteria.id"), 
+        nullable=True,
+        index=True
+    )
+    ai_confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    ai_reasoning: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    
+    # Performance metrics
+    realized_pnl: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # Null until closed
+    realized_pnl_percent: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    hold_duration_seconds: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    max_adverse_excursion: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # MAE
+    max_favorable_excursion: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # MFE
+    commission_fees: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    
+    # Status
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="open", index=True)
+    # Valid statuses: 'open', 'closed', 'partial'
+    
+    # Additional context
+    trade_metadata: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, 
+        nullable=False, 
+        default=datetime.utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, 
+        nullable=False, 
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow
     )
 
 

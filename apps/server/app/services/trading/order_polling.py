@@ -325,6 +325,7 @@ class OrderPollingService:
                 order_id=order.id,
                 alpaca_order_id=order.alpaca_order_id,
                 fund_id=order.fund_id,
+                trade_id=order.trade_id,  # Inherit trade_id from order
                 symbol=order.symbol,
                 side=order.side,
                 quantity=quantity_to_transact,  # Use the delta, not full filled_qty

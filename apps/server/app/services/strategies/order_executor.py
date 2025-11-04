@@ -14,7 +14,7 @@ from typing import Optional
 from sqlalchemy import select
 
 from app.strategies.base import EntryLevel, StopUpdate, MarketDataSnapshot, PositionContext
-from app.models.strategies import Fund, Order
+from app.models.strategies import Fund, Order, Transaction, Trade
 from app.services.core.database import get_async_session
 from app.services.trading.alpaca_service import AlpacaService
 from app.services.trading.order_lifecycle import OrderLifecycleManager
@@ -26,6 +26,7 @@ from app.services.events.event_broadcasting import (
 )
 from app.services.strategies.position_sizer import PositionSizer
 from app.services.strategies.strategy_service import StrategyService
+from app.services.analytics.trade_builder import TradeBuilder
 from app.lib.strategy_logger import StrategyLogger
 
 logger = logging.getLogger(__name__)
@@ -128,6 +129,7 @@ class OrderExecutor:
             
             # CRITICAL: Validate AND create order in SINGLE transaction
             order_id = str(uuid.uuid4())
+            trade_id = str(uuid.uuid4())  # Generate new trade_id for opening position
             submitted_at = datetime.utcnow()
             
             try:
@@ -157,6 +159,7 @@ class OrderExecutor:
                         id=order_id,
                         alpaca_order_id="",
                         fund_id=self.fund_id,
+                        trade_id=trade_id,  # Link to new trade
                         symbol=symbol,
                         side="buy",
                         quantity=quantity,
@@ -168,7 +171,8 @@ class OrderExecutor:
                     session.add(order_record)
                     await session.commit()
                 
-                logger.info(f"📝 Order record created in DB: {order_id}")
+                logger.info(f"📝 Order record created with trade_id={trade_id}: {order_id}")
+                
                 
                 # Broadcast diagnostic
                 await broadcast_diagnostic(
@@ -354,6 +358,26 @@ class OrderExecutor:
             # Cancel any pending buy orders for this symbol
             await self.cancel_pending_orders(position.symbol)
             
+            # Look up the open trade for this symbol to link the exit order
+            trade_id = None
+            try:
+                async with get_async_session() as session:
+                    trade_builder = TradeBuilder(session)
+                    open_trade = await trade_builder.get_open_trade_for_symbol(
+                        fund_id=self.fund_id,
+                        symbol=position.symbol
+                    )
+                    if open_trade:
+                        trade_id = open_trade.id
+                        logger.info(f"📊 Found open trade {trade_id} for {position.symbol}")
+                    else:
+                        logger.warning(
+                            f"⚠️  No open trade found for {position.symbol}. "
+                            f"Exit order will not be linked to a trade."
+                        )
+            except Exception as e:
+                logger.warning(f"Error looking up trade for {position.symbol}: {e}")
+            
             # Create order record
             order_id = str(uuid.uuid4())
             submitted_at = datetime.utcnow()
@@ -367,6 +391,7 @@ class OrderExecutor:
                         id=order_id,
                         alpaca_order_id="",
                         fund_id=self.fund_id,
+                        trade_id=trade_id,  # Link to existing trade
                         symbol=position.symbol,
                         side="sell",
                         quantity=actual_quantity,

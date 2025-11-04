@@ -14,6 +14,7 @@ Tests cover:
 
 import asyncio
 import pytest
+import pytest_asyncio
 from datetime import datetime, timezone, timedelta
 from unittest.mock import Mock, patch, AsyncMock
 from decimal import Decimal
@@ -32,15 +33,20 @@ from app.services.market.historical_data_loader import (
 )
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def clean_market_data(async_session):
     """Clean market data tables before each test."""
-    await async_session.execute("DELETE FROM market_data_minute")
-    await async_session.execute("DELETE FROM asset_loading_status")
+    from sqlalchemy import delete
+    from app.models.market_data import MarketData
+    from app.models.assets import AssetLoadingStatus
+    
+    # Delete using SQLAlchemy ORM delete statements
+    await async_session.execute(delete(MarketData))
+    await async_session.execute(delete(AssetLoadingStatus))
     await async_session.commit()
     yield
-    await async_session.execute("DELETE FROM market_data_minute")
-    await async_session.execute("DELETE FROM asset_loading_status")
+    await async_session.execute(delete(MarketData))
+    await async_session.execute(delete(AssetLoadingStatus))
     await async_session.commit()
 
 

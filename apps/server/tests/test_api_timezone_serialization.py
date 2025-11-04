@@ -66,12 +66,19 @@ async def test_transaction_api_returns_utc_timestamps(async_session, async_clien
     async_session.add(transaction)
     await async_session.commit()
     
+    # Verify data is in database by querying directly
+    from sqlalchemy import select
+    stmt = select(Transaction).where(Transaction.fund_id == fund_id)
+    result = await async_session.execute(stmt)
+    direct_transactions = result.scalars().all()
+    assert len(direct_transactions) > 0, f"Expected transaction in database but found {len(direct_transactions)}"
+    
     # Call API endpoint
     response = await async_client.get(f"/api/funds/{fund_id}/transactions")
     assert response.status_code == 200
     
     transactions = response.json()
-    assert len(transactions) > 0
+    assert len(transactions) > 0, f"Expected transactions from API but got {transactions}"
     
     # Verify timestamp has Z suffix (UTC indicator)
     timestamp = transactions[0]["timestamp"]
