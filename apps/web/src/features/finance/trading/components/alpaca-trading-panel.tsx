@@ -8,7 +8,15 @@ import {
   type ColumnDef,
   type SortingState,
 } from "@tanstack/react-table";
-import { ArrowDown, ArrowUp, ArrowUpDown, ArrowUpRight, Loader2, RefreshCw, TrendingUp } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  ArrowUpRight,
+  Loader2,
+  RefreshCw,
+  TrendingUp,
+} from "lucide-react";
 import type { ChangeEvent, FormEvent } from "react";
 import { useMemo, useState } from "react";
 
@@ -234,6 +242,386 @@ export function AlpacaTradingPanel() {
       );
     }
   };
+
+  const positionsColumns = useMemo<ColumnDef<AlpacaPosition>[]>(
+    () => [
+      {
+        accessorKey: "symbol",
+        header: ({ column }) => {
+          return (
+            <Button
+              variant="ghost"
+              onClick={() =>
+                column.toggleSorting(column.getIsSorted() === "asc")
+              }
+              className="-ml-4 h-8"
+            >
+              Symbol
+              {column.getIsSorted() === "asc" ? (
+                <ArrowUp className="ml-2 h-4 w-4" />
+              ) : column.getIsSorted() === "desc" ? (
+                <ArrowDown className="ml-2 h-4 w-4" />
+              ) : (
+                <ArrowUpDown className="ml-2 h-4 w-4" />
+              )}
+            </Button>
+          );
+        },
+        cell: ({ row }) => (
+          <div className="font-medium">{row.original.symbol}</div>
+        ),
+      },
+      {
+        accessorKey: "side",
+        header: ({ column }) => {
+          return (
+            <Button
+              variant="ghost"
+              onClick={() =>
+                column.toggleSorting(column.getIsSorted() === "asc")
+              }
+              className="-ml-4 h-8"
+            >
+              Side
+              {column.getIsSorted() === "asc" ? (
+                <ArrowUp className="ml-2 h-4 w-4" />
+              ) : column.getIsSorted() === "desc" ? (
+                <ArrowDown className="ml-2 h-4 w-4" />
+              ) : (
+                <ArrowUpDown className="ml-2 h-4 w-4" />
+              )}
+            </Button>
+          );
+        },
+        cell: ({ row }) => (
+          <div className="capitalize">{row.original.side || "N/A"}</div>
+        ),
+      },
+      {
+        id: "quantity",
+        accessorFn: (row) => Number(row.qty) || 0,
+        header: ({ column }) => {
+          return (
+            <div className="text-right">
+              <Button
+                variant="ghost"
+                onClick={() =>
+                  column.toggleSorting(column.getIsSorted() === "asc")
+                }
+                className="-ml-4 h-8"
+              >
+                Quantity
+                {column.getIsSorted() === "asc" ? (
+                  <ArrowUp className="ml-2 h-4 w-4" />
+                ) : column.getIsSorted() === "desc" ? (
+                  <ArrowDown className="ml-2 h-4 w-4" />
+                ) : (
+                  <ArrowUpDown className="ml-2 h-4 w-4" />
+                )}
+              </Button>
+            </div>
+          );
+        },
+        cell: ({ row }) => (
+          <div className="text-right">{formatNumber(row.original.qty, 4)}</div>
+        ),
+      },
+      {
+        id: "market_value",
+        accessorFn: (row) => Number(row.market_value) || 0,
+        header: ({ column }) => {
+          return (
+            <div className="text-right">
+              <Button
+                variant="ghost"
+                onClick={() =>
+                  column.toggleSorting(column.getIsSorted() === "asc")
+                }
+                className="-ml-4 h-8"
+              >
+                Market value
+                {column.getIsSorted() === "asc" ? (
+                  <ArrowUp className="ml-2 h-4 w-4" />
+                ) : column.getIsSorted() === "desc" ? (
+                  <ArrowDown className="ml-2 h-4 w-4" />
+                ) : (
+                  <ArrowUpDown className="ml-2 h-4 w-4" />
+                )}
+              </Button>
+            </div>
+          );
+        },
+        cell: ({ row }) => (
+          <div className="text-right">
+            {formatCurrency(row.original.market_value, accountCurrency)}
+          </div>
+        ),
+      },
+      {
+        id: "unrealized_pl",
+        accessorFn: (row) => Number(row.unrealized_pl) || 0,
+        header: ({ column }) => {
+          return (
+            <div className="text-right">
+              <Button
+                variant="ghost"
+                onClick={() =>
+                  column.toggleSorting(column.getIsSorted() === "asc")
+                }
+                className="-ml-4 h-8"
+              >
+                Unrealized P/L
+                {column.getIsSorted() === "asc" ? (
+                  <ArrowUp className="ml-2 h-4 w-4" />
+                ) : column.getIsSorted() === "desc" ? (
+                  <ArrowDown className="ml-2 h-4 w-4" />
+                ) : (
+                  <ArrowUpDown className="ml-2 h-4 w-4" />
+                )}
+              </Button>
+            </div>
+          );
+        },
+        cell: ({ row }) => {
+          const pl = Number.parseFloat(row.original.unrealized_pl) || 0;
+          return (
+            <div
+              className={`text-right ${
+                pl >= 0 ? "text-green-600" : "text-red-600"
+              }`}
+            >
+              {formatCurrency(row.original.unrealized_pl, accountCurrency)}
+            </div>
+          );
+        },
+      },
+      {
+        id: "unrealized_plpc",
+        accessorFn: (row) => Number(row.unrealized_plpc) || 0,
+        header: ({ column }) => {
+          return (
+            <div className="text-right">
+              <Button
+                variant="ghost"
+                onClick={() =>
+                  column.toggleSorting(column.getIsSorted() === "asc")
+                }
+                className="-ml-4 h-8"
+              >
+                P/L %
+                {column.getIsSorted() === "asc" ? (
+                  <ArrowUp className="ml-2 h-4 w-4" />
+                ) : column.getIsSorted() === "desc" ? (
+                  <ArrowDown className="ml-2 h-4 w-4" />
+                ) : (
+                  <ArrowUpDown className="ml-2 h-4 w-4" />
+                )}
+              </Button>
+            </div>
+          );
+        },
+        cell: ({ row }) => {
+          const plpc = Number.parseFloat(row.original.unrealized_plpc) || 0;
+          return (
+            <div
+              className={`text-right ${
+                plpc >= 0 ? "text-green-600" : "text-red-600"
+              }`}
+            >
+              {formatPercent(row.original.unrealized_plpc)}
+            </div>
+          );
+        },
+      },
+    ],
+    [accountCurrency]
+  );
+
+  const ordersColumns = useMemo<ColumnDef<AlpacaOrder>[]>(
+    () => [
+      {
+        id: "submitted_at",
+        accessorFn: (row) => new Date(row.submitted_at).getTime(),
+        header: ({ column }) => {
+          return (
+            <Button
+              variant="ghost"
+              onClick={() =>
+                column.toggleSorting(column.getIsSorted() === "asc")
+              }
+              className="-ml-4 h-8"
+            >
+              Submitted
+              {column.getIsSorted() === "asc" ? (
+                <ArrowUp className="ml-2 h-4 w-4" />
+              ) : column.getIsSorted() === "desc" ? (
+                <ArrowDown className="ml-2 h-4 w-4" />
+              ) : (
+                <ArrowUpDown className="ml-2 h-4 w-4" />
+              )}
+            </Button>
+          );
+        },
+        cell: ({ row }) => (
+          <div className="text-muted-foreground">
+            {new Date(row.original.submitted_at).toLocaleString()}
+          </div>
+        ),
+      },
+      {
+        accessorKey: "symbol",
+        header: ({ column }) => {
+          return (
+            <Button
+              variant="ghost"
+              onClick={() =>
+                column.toggleSorting(column.getIsSorted() === "asc")
+              }
+              className="-ml-4 h-8"
+            >
+              Symbol
+              {column.getIsSorted() === "asc" ? (
+                <ArrowUp className="ml-2 h-4 w-4" />
+              ) : column.getIsSorted() === "desc" ? (
+                <ArrowDown className="ml-2 h-4 w-4" />
+              ) : (
+                <ArrowUpDown className="ml-2 h-4 w-4" />
+              )}
+            </Button>
+          );
+        },
+        cell: ({ row }) => (
+          <div className="font-medium">{row.original.symbol}</div>
+        ),
+      },
+      {
+        id: "side_display",
+        header: ({ column }) => {
+          return (
+            <Button
+              variant="ghost"
+              onClick={() =>
+                column.toggleSorting(column.getIsSorted() === "asc")
+              }
+              className="-ml-4 h-8"
+            >
+              Side
+              {column.getIsSorted() === "asc" ? (
+                <ArrowUp className="ml-2 h-4 w-4" />
+              ) : column.getIsSorted() === "desc" ? (
+                <ArrowDown className="ml-2 h-4 w-4" />
+              ) : (
+                <ArrowUpDown className="ml-2 h-4 w-4" />
+              )}
+            </Button>
+          );
+        },
+        cell: ({ row }) => (
+          <div className="capitalize">
+            {row.original.side}
+            {row.original.position_side
+              ? ` (${row.original.position_side})`
+              : ""}
+          </div>
+        ),
+        sortingFn: (rowA, rowB) => {
+          const sideA = rowA.original.side;
+          const sideB = rowB.original.side;
+          return sideA.localeCompare(sideB);
+        },
+      },
+      {
+        id: "quantity",
+        accessorFn: (row) => {
+          if (row.qty) return Number(row.qty) || 0;
+          if (row.notional) return Number(row.notional) || 0;
+          return 0;
+        },
+        header: ({ column }) => {
+          return (
+            <div className="text-right">
+              <Button
+                variant="ghost"
+                onClick={() =>
+                  column.toggleSorting(column.getIsSorted() === "asc")
+                }
+                className="-ml-4 h-8"
+              >
+                Quantity
+                {column.getIsSorted() === "asc" ? (
+                  <ArrowUp className="ml-2 h-4 w-4" />
+                ) : column.getIsSorted() === "desc" ? (
+                  <ArrowDown className="ml-2 h-4 w-4" />
+                ) : (
+                  <ArrowUpDown className="ml-2 h-4 w-4" />
+                )}
+              </Button>
+            </div>
+          );
+        },
+        cell: ({ row }) => (
+          <div className="text-right">
+            {row.original.qty
+              ? formatNumber(row.original.qty, 4)
+              : row.original.notional
+              ? formatCurrency(row.original.notional, accountCurrency)
+              : "-"}
+          </div>
+        ),
+      },
+      {
+        accessorKey: "status",
+        header: ({ column }) => {
+          return (
+            <Button
+              variant="ghost"
+              onClick={() =>
+                column.toggleSorting(column.getIsSorted() === "asc")
+              }
+              className="-ml-4 h-8"
+            >
+              Status
+              {column.getIsSorted() === "asc" ? (
+                <ArrowUp className="ml-2 h-4 w-4" />
+              ) : column.getIsSorted() === "desc" ? (
+                <ArrowDown className="ml-2 h-4 w-4" />
+              ) : (
+                <ArrowUpDown className="ml-2 h-4 w-4" />
+              )}
+            </Button>
+          );
+        },
+        cell: ({ row }) => (
+          <Badge variant={getOrderStatusVariant(row.original.status)}>
+            {row.original.status.replace(/_/g, " ")}
+          </Badge>
+        ),
+      },
+    ],
+    [accountCurrency]
+  );
+
+  const positionsTable = useReactTable({
+    data: openPositions,
+    columns: positionsColumns,
+    state: {
+      sorting: positionsSorting,
+    },
+    onSortingChange: setPositionsSorting,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+  });
+
+  const ordersTable = useReactTable({
+    data: recentOrders,
+    columns: ordersColumns,
+    state: {
+      sorting: ordersSorting,
+    },
+    onSortingChange: setOrdersSorting,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+  });
 
   return (
     <div className="space-y-6">
@@ -530,59 +918,50 @@ export function AlpacaTradingPanel() {
                 <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
               </div>
             ) : openPositions.length > 0 ? (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="text-left text-muted-foreground">
-                    <tr>
-                      <th className="py-2">Symbol</th>
-                      <th className="py-2">Side</th>
-                      <th className="py-2 text-right">Quantity</th>
-                      <th className="py-2 text-right">Market value</th>
-                      <th className="py-2 text-right">Unrealized P/L</th>
-                      <th className="py-2 text-right">P/L %</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {openPositions.map((position) => (
-                      <tr key={position.symbol} className="border-t">
-                        <td className="py-2 font-medium">{position.symbol}</td>
-                        <td className="py-2 capitalize">
-                          {position.side || "N/A"}
-                        </td>
-                        <td className="py-2 text-right">
-                          {formatNumber(position.qty, 4)}
-                        </td>
-                        <td className="py-2 text-right">
-                          {formatCurrency(
-                            position.market_value,
-                            accountCurrency
-                          )}
-                        </td>
-                        <td
-                          className={`py-2 text-right ${
-                            Number.parseFloat(position.unrealized_pl) >= 0
-                              ? "text-green-600"
-                              : "text-red-600"
-                          }`}
-                        >
-                          {formatCurrency(
-                            position.unrealized_pl,
-                            accountCurrency
-                          )}
-                        </td>
-                        <td
-                          className={`py-2 text-right ${
-                            Number.parseFloat(position.unrealized_plpc) >= 0
-                              ? "text-green-600"
-                              : "text-red-600"
-                          }`}
-                        >
-                          {formatPercent(position.unrealized_plpc)}
-                        </td>
-                      </tr>
+              <div className="rounded-md border">
+                <Table>
+                  <TableHeader>
+                    {positionsTable.getHeaderGroups().map((headerGroup) => (
+                      <TableRow key={headerGroup.id}>
+                        {headerGroup.headers.map((header) => (
+                          <TableHead key={header.id}>
+                            {header.isPlaceholder
+                              ? null
+                              : flexRender(
+                                  header.column.columnDef.header,
+                                  header.getContext()
+                                )}
+                          </TableHead>
+                        ))}
+                      </TableRow>
                     ))}
-                  </tbody>
-                </table>
+                  </TableHeader>
+                  <TableBody>
+                    {positionsTable.getRowModel().rows.length === 0 ? (
+                      <TableRow>
+                        <TableCell
+                          colSpan={positionsColumns.length}
+                          className="text-center text-muted-foreground py-8"
+                        >
+                          No open positions found.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      positionsTable.getRowModel().rows.map((row) => (
+                        <TableRow key={row.id} className="hover:bg-muted/50">
+                          {row.getVisibleCells().map((cell) => (
+                            <TableCell key={cell.id}>
+                              {flexRender(
+                                cell.column.columnDef.cell,
+                                cell.getContext()
+                              )}
+                            </TableCell>
+                          ))}
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
               </div>
             ) : (
               <p className="text-sm text-muted-foreground">
@@ -605,46 +984,50 @@ export function AlpacaTradingPanel() {
                 <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
               </div>
             ) : recentOrders.length > 0 ? (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="text-left text-muted-foreground">
-                    <tr>
-                      <th className="py-2">Submitted</th>
-                      <th className="py-2">Symbol</th>
-                      <th className="py-2">Side</th>
-                      <th className="py-2 text-right">Quantity</th>
-                      <th className="py-2">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {recentOrders.map((order) => (
-                      <tr key={order.id} className="border-t">
-                        <td className="py-2 text-muted-foreground">
-                          {new Date(order.submitted_at).toLocaleString()}
-                        </td>
-                        <td className="py-2 font-medium">{order.symbol}</td>
-                        <td className="py-2 capitalize">
-                          {order.side}
-                          {order.position_side
-                            ? ` (${order.position_side})`
-                            : ""}
-                        </td>
-                        <td className="py-2 text-right">
-                          {order.qty
-                            ? formatNumber(order.qty, 4)
-                            : order.notional
-                            ? formatCurrency(order.notional, accountCurrency)
-                            : "-"}
-                        </td>
-                        <td className="py-2">
-                          <Badge variant={getOrderStatusVariant(order.status)}>
-                            {order.status.replace(/_/g, " ")}
-                          </Badge>
-                        </td>
-                      </tr>
+              <div className="rounded-md border">
+                <Table>
+                  <TableHeader>
+                    {ordersTable.getHeaderGroups().map((headerGroup) => (
+                      <TableRow key={headerGroup.id}>
+                        {headerGroup.headers.map((header) => (
+                          <TableHead key={header.id}>
+                            {header.isPlaceholder
+                              ? null
+                              : flexRender(
+                                  header.column.columnDef.header,
+                                  header.getContext()
+                                )}
+                          </TableHead>
+                        ))}
+                      </TableRow>
                     ))}
-                  </tbody>
-                </table>
+                  </TableHeader>
+                  <TableBody>
+                    {ordersTable.getRowModel().rows.length === 0 ? (
+                      <TableRow>
+                        <TableCell
+                          colSpan={ordersColumns.length}
+                          className="text-center text-muted-foreground py-8"
+                        >
+                          No recent orders found.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      ordersTable.getRowModel().rows.map((row) => (
+                        <TableRow key={row.id} className="hover:bg-muted/50">
+                          {row.getVisibleCells().map((cell) => (
+                            <TableCell key={cell.id}>
+                              {flexRender(
+                                cell.column.columnDef.cell,
+                                cell.getContext()
+                              )}
+                            </TableCell>
+                          ))}
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
               </div>
             ) : (
               <p className="text-sm text-muted-foreground">

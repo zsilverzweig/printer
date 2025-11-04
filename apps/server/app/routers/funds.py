@@ -1295,10 +1295,12 @@ async def get_fund_positions(fund_id: str) -> dict:
     """
     try:
         # Get fund to determine mode
+        fund_mode = None
         async with get_async_session() as session:
             fund = await session.get(Fund, fund_id)
             if not fund:
                 raise HTTPException(status_code=404, detail="Fund not found")
+            fund_mode = fund.mode  # Store mode value while in session
         
         # Get engine if running (for reference)
         engine = get_engine(fund_id)
@@ -1314,7 +1316,7 @@ async def get_fund_positions(fund_id: str) -> dict:
                 alpaca_service = engine.alpaca_service
             else:
                 # Create a temporary alpaca service for this fund's mode
-                alpaca_service = AlpacaService(paper_trading=(fund.mode == "sim"))
+                alpaca_service = AlpacaService(paper_trading=(fund_mode == "sim"))
             
             if alpaca_service and alpaca_service.is_available():
                 alpaca_positions_raw = await alpaca_service.get_positions()
@@ -1337,8 +1339,9 @@ async def get_fund_positions(fund_id: str) -> dict:
             logger.error(f"Error getting Alpaca positions for fund {fund_id}: {e}", exc_info=True)
         
         # Get positions from our database (via transactions)
-        from sqlalchemy import select, and_
+        from sqlalchemy import select, and_, func, distinct
         async with get_async_session() as session:
+            # Get transactions for this fund
             stmt = select(
                 Transaction.symbol,
                 Transaction.side,
@@ -1350,7 +1353,7 @@ async def get_fund_positions(fund_id: str) -> dict:
             result = await session.execute(stmt)
             transactions = result.all()
             
-            # Calculate net positions
+            # Calculate net positions for this fund
             position_tracker = {}
             for symbol, side, quantity in transactions:
                 if symbol not in position_tracker:
@@ -1371,9 +1374,56 @@ async def get_fund_positions(fund_id: str) -> dict:
                 for symbol, qty in position_tracker.items()
                 if qty > 0.001
             ]
+            
+            # Get all symbols that have OPEN positions in OTHER funds of the SAME mode
+            # (excluding current fund). We only filter positions from funds with the same mode
+            # because sim and real trading use different Alpaca accounts.
+            # We need to calculate net positions for each other fund to find open positions
+            other_funds_transactions_stmt = select(
+                Transaction.fund_id,
+                Transaction.symbol,
+                Transaction.side,
+                Transaction.quantity,
+                Fund.mode
+            ).join(
+                Fund, Transaction.fund_id == Fund.id
+            ).where(
+                and_(
+                    Transaction.fund_id != fund_id,
+                    Fund.mode == fund_mode  # Only check funds with same mode
+                )
+            )
+            
+            other_funds_result = await session.execute(other_funds_transactions_stmt)
+            other_funds_transactions = other_funds_result.all()
+            
+            # Calculate net positions for each symbol in other funds of the same mode
+            other_funds_positions = {}
+            for other_fund_id, symbol, side, quantity, other_fund_mode in other_funds_transactions:
+                key = (other_fund_id, symbol)
+                if key not in other_funds_positions:
+                    other_funds_positions[key] = 0
+                
+                if side == "buy":
+                    other_funds_positions[key] += quantity
+                else:  # sell
+                    other_funds_positions[key] -= quantity
+            
+            # Get symbols that have open positions (qty > 0.001) in other funds of the same mode
+            symbols_in_other_funds = {
+                symbol for (fund_id, symbol), qty in other_funds_positions.items()
+                if qty > 0.001
+            }
         
-        # Compare and detect sync issues
-        alpaca_symbols = {p["symbol"] for p in alpaca_positions}
+        # Filter out Alpaca positions that are already tracked by other funds
+        # These positions belong to other funds, so we shouldn't show them here
+        filtered_alpaca_positions = [
+            pos for pos in alpaca_positions
+            if pos["symbol"] not in symbols_in_other_funds
+        ]
+        
+        # Compare and detect sync issues (only for positions not in other funds)
+        alpaca_symbols = {p["symbol"] for p in filtered_alpaca_positions}
         db_symbols = {p["symbol"] for p in db_positions}
         
         sync_issues = {
@@ -1383,9 +1433,9 @@ async def get_fund_positions(fund_id: str) -> dict:
         
         return {
             "fund_id": fund_id,
-            "fund_mode": fund.mode,
+            "fund_mode": fund_mode,
             "is_running": engine is not None,
-            "alpaca_positions": alpaca_positions,
+            "alpaca_positions": filtered_alpaca_positions,
             "database_positions": db_positions,
             "sync_issues": sync_issues,
             "has_sync_issues": bool(sync_issues["in_alpaca_not_db"] or sync_issues["in_db_not_alpaca"]),

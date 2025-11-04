@@ -7,13 +7,24 @@
 "use client";
 
 import {
+  flexRender,
+  getCoreRowModel,
+  getSortedRowModel,
+  useReactTable,
+  type ColumnDef,
+  type SortingState,
+} from "@tanstack/react-table";
+import {
   AlertTriangle,
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
   CheckCircle,
   RefreshCw,
   Trash2,
   XCircle,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/lib/components/ui/alert";
 import {
@@ -226,6 +237,12 @@ export function FundPositions({ fundId }: FundPositionsProps) {
   const [isClosingAll, setIsClosingAll] = useState(false);
   const [closeAllError, setCloseAllError] = useState<string | null>(null);
   const [showCloseAllDialog, setShowCloseAllDialog] = useState(false);
+  const [alpacaSorting, setAlpacaSorting] = useState<SortingState>([
+    { id: "symbol", desc: false },
+  ]);
+  const [databaseSorting, setDatabaseSorting] = useState<SortingState>([
+    { id: "symbol", desc: false },
+  ]);
 
   const fetchPositions = async () => {
     try {
@@ -284,6 +301,391 @@ export function FundPositions({ fundId }: FundPositionsProps) {
     // return () => clearInterval(interval);
   }, [fundId]);
 
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+    }).format(value);
+  };
+
+  const formatPercent = (value: number) => {
+    return `${(value * 100).toFixed(2)}%`;
+  };
+
+  const alpacaColumns = useMemo<ColumnDef<AlpacaPosition>[]>(
+    () => [
+      {
+        accessorKey: "symbol",
+        header: ({ column }) => {
+          return (
+            <Button
+              variant="ghost"
+              onClick={() =>
+                column.toggleSorting(column.getIsSorted() === "asc")
+              }
+              className="-ml-4 h-8"
+            >
+              Symbol
+              {column.getIsSorted() === "asc" ? (
+                <ArrowUp className="ml-2 h-4 w-4" />
+              ) : column.getIsSorted() === "desc" ? (
+                <ArrowDown className="ml-2 h-4 w-4" />
+              ) : (
+                <ArrowUpDown className="ml-2 h-4 w-4" />
+              )}
+            </Button>
+          );
+        },
+        cell: ({ row }) => (
+          <div className="font-medium">{row.original.symbol}</div>
+        ),
+      },
+      {
+        id: "quantity",
+        accessorFn: (row) => row.qty,
+        header: ({ column }) => {
+          return (
+            <div className="text-right">
+              <Button
+                variant="ghost"
+                onClick={() =>
+                  column.toggleSorting(column.getIsSorted() === "asc")
+                }
+                className="-ml-4 h-8"
+              >
+                Quantity
+                {column.getIsSorted() === "asc" ? (
+                  <ArrowUp className="ml-2 h-4 w-4" />
+                ) : column.getIsSorted() === "desc" ? (
+                  <ArrowDown className="ml-2 h-4 w-4" />
+                ) : (
+                  <ArrowUpDown className="ml-2 h-4 w-4" />
+                )}
+              </Button>
+            </div>
+          );
+        },
+        cell: ({ row }) => <div className="text-right">{row.original.qty}</div>,
+      },
+      {
+        id: "avg_entry_price",
+        accessorFn: (row) => row.avg_entry_price,
+        header: ({ column }) => {
+          return (
+            <div className="text-right">
+              <Button
+                variant="ghost"
+                onClick={() =>
+                  column.toggleSorting(column.getIsSorted() === "asc")
+                }
+                className="-ml-4 h-8"
+              >
+                Avg Entry
+                {column.getIsSorted() === "asc" ? (
+                  <ArrowUp className="ml-2 h-4 w-4" />
+                ) : column.getIsSorted() === "desc" ? (
+                  <ArrowDown className="ml-2 h-4 w-4" />
+                ) : (
+                  <ArrowUpDown className="ml-2 h-4 w-4" />
+                )}
+              </Button>
+            </div>
+          );
+        },
+        cell: ({ row }) => (
+          <div className="text-right">
+            {formatCurrency(row.original.avg_entry_price)}
+          </div>
+        ),
+      },
+      {
+        id: "current_price",
+        accessorFn: (row) => row.current_price,
+        header: ({ column }) => {
+          return (
+            <div className="text-right">
+              <Button
+                variant="ghost"
+                onClick={() =>
+                  column.toggleSorting(column.getIsSorted() === "asc")
+                }
+                className="-ml-4 h-8"
+              >
+                Current Price
+                {column.getIsSorted() === "asc" ? (
+                  <ArrowUp className="ml-2 h-4 w-4" />
+                ) : column.getIsSorted() === "desc" ? (
+                  <ArrowDown className="ml-2 h-4 w-4" />
+                ) : (
+                  <ArrowUpDown className="ml-2 h-4 w-4" />
+                )}
+              </Button>
+            </div>
+          );
+        },
+        cell: ({ row }) => (
+          <div className="text-right">
+            {formatCurrency(row.original.current_price)}
+          </div>
+        ),
+      },
+      {
+        id: "market_value",
+        accessorFn: (row) => row.market_value,
+        header: ({ column }) => {
+          return (
+            <div className="text-right">
+              <Button
+                variant="ghost"
+                onClick={() =>
+                  column.toggleSorting(column.getIsSorted() === "asc")
+                }
+                className="-ml-4 h-8"
+              >
+                Market Value
+                {column.getIsSorted() === "asc" ? (
+                  <ArrowUp className="ml-2 h-4 w-4" />
+                ) : column.getIsSorted() === "desc" ? (
+                  <ArrowDown className="ml-2 h-4 w-4" />
+                ) : (
+                  <ArrowUpDown className="ml-2 h-4 w-4" />
+                )}
+              </Button>
+            </div>
+          );
+        },
+        cell: ({ row }) => (
+          <div className="text-right">
+            {formatCurrency(row.original.market_value)}
+          </div>
+        ),
+      },
+      {
+        id: "unrealized_pl",
+        accessorFn: (row) => row.unrealized_pl,
+        header: ({ column }) => {
+          return (
+            <div className="text-right">
+              <Button
+                variant="ghost"
+                onClick={() =>
+                  column.toggleSorting(column.getIsSorted() === "asc")
+                }
+                className="-ml-4 h-8"
+              >
+                Unrealized P&L
+                {column.getIsSorted() === "asc" ? (
+                  <ArrowUp className="ml-2 h-4 w-4" />
+                ) : column.getIsSorted() === "desc" ? (
+                  <ArrowDown className="ml-2 h-4 w-4" />
+                ) : (
+                  <ArrowUpDown className="ml-2 h-4 w-4" />
+                )}
+              </Button>
+            </div>
+          );
+        },
+        cell: ({ row }) => (
+          <div
+            className={`text-right font-medium ${
+              row.original.unrealized_pl >= 0
+                ? "text-green-600"
+                : "text-red-600"
+            }`}
+          >
+            {formatCurrency(row.original.unrealized_pl)}
+          </div>
+        ),
+      },
+      {
+        id: "unrealized_plpc",
+        accessorFn: (row) => row.unrealized_plpc,
+        header: ({ column }) => {
+          return (
+            <div className="text-right">
+              <Button
+                variant="ghost"
+                onClick={() =>
+                  column.toggleSorting(column.getIsSorted() === "asc")
+                }
+                className="-ml-4 h-8"
+              >
+                P&L %
+                {column.getIsSorted() === "asc" ? (
+                  <ArrowUp className="ml-2 h-4 w-4" />
+                ) : column.getIsSorted() === "desc" ? (
+                  <ArrowDown className="ml-2 h-4 w-4" />
+                ) : (
+                  <ArrowUpDown className="ml-2 h-4 w-4" />
+                )}
+              </Button>
+            </div>
+          );
+        },
+        cell: ({ row }) => (
+          <div
+            className={`text-right font-medium ${
+              row.original.unrealized_plpc >= 0
+                ? "text-green-600"
+                : "text-red-600"
+            }`}
+          >
+            {formatPercent(row.original.unrealized_plpc)}
+          </div>
+        ),
+      },
+      {
+        id: "sync",
+        header: "Sync",
+        cell: ({ row }) => {
+          if (!data) return null;
+          const inDb = data.database_positions.some(
+            (p) => p.symbol === row.original.symbol
+          );
+          return inDb ? (
+            <div className="flex items-center gap-1 text-green-600">
+              <CheckCircle className="h-4 w-4" />
+              <span className="text-xs">Synced</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1 text-red-600">
+              <XCircle className="h-4 w-4" />
+              <span className="text-xs">Not in DB</span>
+            </div>
+          );
+        },
+        enableSorting: false,
+      },
+    ],
+    [data]
+  );
+
+  const databaseColumns = useMemo<ColumnDef<DatabasePosition>[]>(
+    () => [
+      {
+        accessorKey: "symbol",
+        header: ({ column }) => {
+          return (
+            <Button
+              variant="ghost"
+              onClick={() =>
+                column.toggleSorting(column.getIsSorted() === "asc")
+              }
+              className="-ml-4 h-8"
+            >
+              Symbol
+              {column.getIsSorted() === "asc" ? (
+                <ArrowUp className="ml-2 h-4 w-4" />
+              ) : column.getIsSorted() === "desc" ? (
+                <ArrowDown className="ml-2 h-4 w-4" />
+              ) : (
+                <ArrowUpDown className="ml-2 h-4 w-4" />
+              )}
+            </Button>
+          );
+        },
+        cell: ({ row }) => (
+          <div className="font-medium">{row.original.symbol}</div>
+        ),
+      },
+      {
+        id: "quantity",
+        accessorFn: (row) => row.qty,
+        header: ({ column }) => {
+          return (
+            <div className="text-right">
+              <Button
+                variant="ghost"
+                onClick={() =>
+                  column.toggleSorting(column.getIsSorted() === "asc")
+                }
+                className="-ml-4 h-8"
+              >
+                Quantity
+                {column.getIsSorted() === "asc" ? (
+                  <ArrowUp className="ml-2 h-4 w-4" />
+                ) : column.getIsSorted() === "desc" ? (
+                  <ArrowDown className="ml-2 h-4 w-4" />
+                ) : (
+                  <ArrowUpDown className="ml-2 h-4 w-4" />
+                )}
+              </Button>
+            </div>
+          );
+        },
+        cell: ({ row }) => <div className="text-right">{row.original.qty}</div>,
+      },
+      {
+        id: "sync",
+        header: "Sync",
+        cell: ({ row }) => {
+          if (!data) return null;
+          const inAlpaca = data.alpaca_positions.some(
+            (p) => p.symbol === row.original.symbol
+          );
+          return inAlpaca ? (
+            <div className="flex items-center gap-1 text-green-600">
+              <CheckCircle className="h-4 w-4" />
+              <span className="text-xs">Synced</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1 text-red-600">
+              <XCircle className="h-4 w-4" />
+              <span className="text-xs">Not in Alpaca</span>
+            </div>
+          );
+        },
+        enableSorting: false,
+      },
+      {
+        id: "actions",
+        header: () => <div className="text-right">Actions</div>,
+        cell: ({ row }) => {
+          if (!data) return null;
+          const inAlpaca = data.alpaca_positions.some(
+            (p) => p.symbol === row.original.symbol
+          );
+          return (
+            <div className="text-right">
+              {!inAlpaca && (
+                <CloseOrphanedPositionButton
+                  fundId={fundId}
+                  symbol={row.original.symbol}
+                  onSuccess={fetchPositions}
+                />
+              )}
+            </div>
+          );
+        },
+        enableSorting: false,
+      },
+    ],
+    [data, fundId]
+  );
+
+  const alpacaTable = useReactTable({
+    data: data?.alpaca_positions || [],
+    columns: alpacaColumns,
+    state: {
+      sorting: alpacaSorting,
+    },
+    onSortingChange: setAlpacaSorting,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+  });
+
+  const databaseTable = useReactTable({
+    data: data?.database_positions || [],
+    columns: databaseColumns,
+    state: {
+      sorting: databaseSorting,
+    },
+    onSortingChange: setDatabaseSorting,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+  });
+
+  // Early returns after all hooks have been called
   if (loading) {
     return (
       <Card>
@@ -310,17 +712,6 @@ export function FundPositions({ fundId }: FundPositionsProps) {
       </Card>
     );
   }
-
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-    }).format(value);
-  };
-
-  const formatPercent = (value: number) => {
-    return `${(value * 100).toFixed(2)}%`;
-  };
 
   return (
     <div className="space-y-6">
@@ -413,73 +804,45 @@ export function FundPositions({ fundId }: FundPositionsProps) {
             <div className="rounded-md border">
               <Table>
                 <TableHeader>
-                  <TableRow>
-                    <TableHead>Symbol</TableHead>
-                    <TableHead className="text-right">Quantity</TableHead>
-                    <TableHead className="text-right">Avg Entry</TableHead>
-                    <TableHead className="text-right">Current Price</TableHead>
-                    <TableHead className="text-right">Market Value</TableHead>
-                    <TableHead className="text-right">Unrealized P&L</TableHead>
-                    <TableHead className="text-right">P&L %</TableHead>
-                    <TableHead>Sync</TableHead>
-                  </TableRow>
+                  {alpacaTable.getHeaderGroups().map((headerGroup) => (
+                    <TableRow key={headerGroup.id}>
+                      {headerGroup.headers.map((header) => (
+                        <TableHead key={header.id}>
+                          {header.isPlaceholder
+                            ? null
+                            : flexRender(
+                                header.column.columnDef.header,
+                                header.getContext()
+                              )}
+                        </TableHead>
+                      ))}
+                    </TableRow>
+                  ))}
                 </TableHeader>
                 <TableBody>
-                  {data.alpaca_positions.map((position) => {
-                    const inDb = data.database_positions.some(
-                      (p) => p.symbol === position.symbol
-                    );
-                    return (
-                      <TableRow key={position.symbol}>
-                        <TableCell className="font-medium">
-                          {position.symbol}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {position.qty}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {formatCurrency(position.avg_entry_price)}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {formatCurrency(position.current_price)}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {formatCurrency(position.market_value)}
-                        </TableCell>
-                        <TableCell
-                          className={`text-right font-medium ${
-                            position.unrealized_pl >= 0
-                              ? "text-green-600"
-                              : "text-red-600"
-                          }`}
-                        >
-                          {formatCurrency(position.unrealized_pl)}
-                        </TableCell>
-                        <TableCell
-                          className={`text-right font-medium ${
-                            position.unrealized_plpc >= 0
-                              ? "text-green-600"
-                              : "text-red-600"
-                          }`}
-                        >
-                          {formatPercent(position.unrealized_plpc)}
-                        </TableCell>
-                        <TableCell>
-                          {inDb ? (
-                            <div className="flex items-center gap-1 text-green-600">
-                              <CheckCircle className="h-4 w-4" />
-                              <span className="text-xs">Synced</span>
-                            </div>
-                          ) : (
-                            <div className="flex items-center gap-1 text-red-600">
-                              <XCircle className="h-4 w-4" />
-                              <span className="text-xs">Not in DB</span>
-                            </div>
-                          )}
-                        </TableCell>
+                  {alpacaTable.getRowModel().rows.length === 0 ? (
+                    <TableRow>
+                      <TableCell
+                        colSpan={alpacaColumns.length}
+                        className="text-center text-muted-foreground py-8"
+                      >
+                        No positions found.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    alpacaTable.getRowModel().rows.map((row) => (
+                      <TableRow key={row.id} className="hover:bg-muted/50">
+                        {row.getVisibleCells().map((cell) => (
+                          <TableCell key={cell.id}>
+                            {flexRender(
+                              cell.column.columnDef.cell,
+                              cell.getContext()
+                            )}
+                          </TableCell>
+                        ))}
                       </TableRow>
-                    );
-                  })}
+                    ))
+                  )}
                 </TableBody>
               </Table>
             </div>
@@ -595,51 +958,45 @@ export function FundPositions({ fundId }: FundPositionsProps) {
             <div className="rounded-md border">
               <Table>
                 <TableHeader>
-                  <TableRow>
-                    <TableHead>Symbol</TableHead>
-                    <TableHead className="text-right">Quantity</TableHead>
-                    <TableHead>Sync</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
+                  {databaseTable.getHeaderGroups().map((headerGroup) => (
+                    <TableRow key={headerGroup.id}>
+                      {headerGroup.headers.map((header) => (
+                        <TableHead key={header.id}>
+                          {header.isPlaceholder
+                            ? null
+                            : flexRender(
+                                header.column.columnDef.header,
+                                header.getContext()
+                              )}
+                        </TableHead>
+                      ))}
+                    </TableRow>
+                  ))}
                 </TableHeader>
                 <TableBody>
-                  {data.database_positions.map((position) => {
-                    const inAlpaca = data.alpaca_positions.some(
-                      (p) => p.symbol === position.symbol
-                    );
-                    return (
-                      <TableRow key={position.symbol}>
-                        <TableCell className="font-medium">
-                          {position.symbol}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {position.qty}
-                        </TableCell>
-                        <TableCell>
-                          {inAlpaca ? (
-                            <div className="flex items-center gap-1 text-green-600">
-                              <CheckCircle className="h-4 w-4" />
-                              <span className="text-xs">Synced</span>
-                            </div>
-                          ) : (
-                            <div className="flex items-center gap-1 text-red-600">
-                              <XCircle className="h-4 w-4" />
-                              <span className="text-xs">Not in Alpaca</span>
-                            </div>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {!inAlpaca && (
-                            <CloseOrphanedPositionButton
-                              fundId={fundId}
-                              symbol={position.symbol}
-                              onSuccess={fetchPositions}
-                            />
-                          )}
-                        </TableCell>
+                  {databaseTable.getRowModel().rows.length === 0 ? (
+                    <TableRow>
+                      <TableCell
+                        colSpan={databaseColumns.length}
+                        className="text-center text-muted-foreground py-8"
+                      >
+                        No positions found.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    databaseTable.getRowModel().rows.map((row) => (
+                      <TableRow key={row.id} className="hover:bg-muted/50">
+                        {row.getVisibleCells().map((cell) => (
+                          <TableCell key={cell.id}>
+                            {flexRender(
+                              cell.column.columnDef.cell,
+                              cell.getContext()
+                            )}
+                          </TableCell>
+                        ))}
                       </TableRow>
-                    );
-                  })}
+                    ))
+                  )}
                 </TableBody>
               </Table>
             </div>

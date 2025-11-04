@@ -1,6 +1,15 @@
 "use client";
 
-import React, { useState } from "react";
+import {
+  flexRender,
+  getCoreRowModel,
+  getSortedRowModel,
+  useReactTable,
+  type ColumnDef,
+  type SortingState,
+} from "@tanstack/react-table";
+import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
+import React, { useMemo, useState } from "react";
 
 import { Badge } from "@/lib/components/ui/badge";
 import { Button } from "@/lib/components/ui/button";
@@ -14,6 +23,14 @@ import {
 import { ConfirmationDialog } from "@/lib/components/ui/confirmation-dialog";
 import { Input } from "@/lib/components/ui/input";
 import { Modal } from "@/lib/components/ui/modal";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/lib/components/ui/table";
 import { log } from "@/lib/utils/logger";
 
 import { Portfolio, PortfolioPosition, UpdatePortfolioRequest } from "../types";
@@ -38,6 +55,9 @@ export function PortfolioDetailsDialog({
   const [formData, setFormData] = useState<UpdatePortfolioRequest>({});
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [sorting, setSorting] = useState<SortingState>([
+    { id: "symbol", desc: false },
+  ]);
 
   React.useEffect(() => {
     if (portfolio) {
@@ -87,6 +107,210 @@ export function PortfolioDetailsDialog({
     portfolioSummary?: string;
     riskManagement?: string;
   };
+
+  const positionsColumns = useMemo<ColumnDef<PortfolioPosition>[]>(
+    () => [
+      {
+        accessorKey: "symbol",
+        header: ({ column }) => {
+          return (
+            <Button
+              variant="ghost"
+              onClick={() =>
+                column.toggleSorting(column.getIsSorted() === "asc")
+              }
+              className="-ml-4 h-8"
+            >
+              Symbol
+              {column.getIsSorted() === "asc" ? (
+                <ArrowUp className="ml-2 h-4 w-4" />
+              ) : column.getIsSorted() === "desc" ? (
+                <ArrowDown className="ml-2 h-4 w-4" />
+              ) : (
+                <ArrowUpDown className="ml-2 h-4 w-4" />
+              )}
+            </Button>
+          );
+        },
+        cell: ({ row }) => (
+          <div className="font-semibold text-foreground">
+            {row.original.symbol}
+          </div>
+        ),
+      },
+      {
+        accessorKey: "name",
+        header: ({ column }) => {
+          return (
+            <Button
+              variant="ghost"
+              onClick={() =>
+                column.toggleSorting(column.getIsSorted() === "asc")
+              }
+              className="-ml-4 h-8"
+            >
+              Name
+              {column.getIsSorted() === "asc" ? (
+                <ArrowUp className="ml-2 h-4 w-4" />
+              ) : column.getIsSorted() === "desc" ? (
+                <ArrowDown className="ml-2 h-4 w-4" />
+              ) : (
+                <ArrowUpDown className="ml-2 h-4 w-4" />
+              )}
+            </Button>
+          );
+        },
+        cell: ({ row }) => <div>{row.original.name}</div>,
+      },
+      {
+        accessorKey: "side",
+        header: ({ column }) => {
+          return (
+            <Button
+              variant="ghost"
+              onClick={() =>
+                column.toggleSorting(column.getIsSorted() === "asc")
+              }
+              className="-ml-4 h-8"
+            >
+              Side
+              {column.getIsSorted() === "asc" ? (
+                <ArrowUp className="ml-2 h-4 w-4" />
+              ) : column.getIsSorted() === "desc" ? (
+                <ArrowDown className="ml-2 h-4 w-4" />
+              ) : (
+                <ArrowUpDown className="ml-2 h-4 w-4" />
+              )}
+            </Button>
+          );
+        },
+        cell: ({ row }) => (
+          <div className="capitalize">{row.original.side || "N/A"}</div>
+        ),
+      },
+      {
+        id: "weight",
+        accessorFn: (row) => row.weight || 0,
+        header: ({ column }) => {
+          return (
+            <Button
+              variant="ghost"
+              onClick={() =>
+                column.toggleSorting(column.getIsSorted() === "asc")
+              }
+              className="-ml-4 h-8"
+            >
+              Weight
+              {column.getIsSorted() === "asc" ? (
+                <ArrowUp className="ml-2 h-4 w-4" />
+              ) : column.getIsSorted() === "desc" ? (
+                <ArrowDown className="ml-2 h-4 w-4" />
+              ) : (
+                <ArrowUpDown className="ml-2 h-4 w-4" />
+              )}
+            </Button>
+          );
+        },
+        cell: ({ row }) => (
+          <div>
+            {row.original.weight
+              ? (row.original.weight * 100).toFixed(1) + "%"
+              : "N/A"}
+          </div>
+        ),
+      },
+      {
+        accessorKey: "status",
+        header: ({ column }) => {
+          return (
+            <Button
+              variant="ghost"
+              onClick={() =>
+                column.toggleSorting(column.getIsSorted() === "asc")
+              }
+              className="-ml-4 h-8"
+            >
+              Status
+              {column.getIsSorted() === "asc" ? (
+                <ArrowUp className="ml-2 h-4 w-4" />
+              ) : column.getIsSorted() === "desc" ? (
+                <ArrowDown className="ml-2 h-4 w-4" />
+              ) : (
+                <ArrowUpDown className="ml-2 h-4 w-4" />
+              )}
+            </Button>
+          );
+        },
+        cell: ({ row }) => (
+          <div className="capitalize">
+            {row.original.status?.replace("_", " ") || "N/A"}
+          </div>
+        ),
+      },
+      {
+        id: "priceTarget",
+        accessorFn: (row) => row.priceTarget || 0,
+        header: ({ column }) => {
+          return (
+            <Button
+              variant="ghost"
+              onClick={() =>
+                column.toggleSorting(column.getIsSorted() === "asc")
+              }
+              className="-ml-4 h-8"
+            >
+              Price Target
+              {column.getIsSorted() === "asc" ? (
+                <ArrowUp className="ml-2 h-4 w-4" />
+              ) : column.getIsSorted() === "desc" ? (
+                <ArrowDown className="ml-2 h-4 w-4" />
+              ) : (
+                <ArrowUpDown className="ml-2 h-4 w-4" />
+              )}
+            </Button>
+          );
+        },
+        cell: ({ row }) => (
+          <div>
+            {row.original.priceTarget > 0
+              ? `$${row.original.priceTarget.toLocaleString(undefined, {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}`
+              : "—"}
+          </div>
+        ),
+      },
+      {
+        accessorKey: "catalyst",
+        header: "Catalyst",
+        cell: ({ row }) => (
+          <div className="text-muted-foreground">
+            {row.original.catalyst || "—"}
+          </div>
+        ),
+      },
+      {
+        accessorKey: "rationale",
+        header: "Rationale",
+        cell: ({ row }) => (
+          <div className="text-muted-foreground">{row.original.rationale}</div>
+        ),
+      },
+    ],
+    []
+  );
+
+  const positionsTable = useReactTable({
+    data: portfolio.positions,
+    columns: positionsColumns,
+    state: {
+      sorting,
+    },
+    onSortingChange: setSorting,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+  });
 
   return (
     <>
@@ -262,60 +486,54 @@ export function PortfolioDetailsDialog({
                       <p>{portfolioMetadata.riskManagement}</p>
                     </div>
                   )}
-                  <table className="min-w-full text-sm">
-                    <thead>
-                      <tr className="text-left text-muted-foreground">
-                        <th className="py-2 pr-4 font-medium">Symbol</th>
-                        <th className="py-2 pr-4 font-medium">Name</th>
-                        <th className="py-2 pr-4 font-medium">Side</th>
-                        <th className="py-2 pr-4 font-medium">Weight</th>
-                        <th className="py-2 pr-4 font-medium">Status</th>
-                        <th className="py-2 pr-4 font-medium">Price Target</th>
-                        <th className="py-2 pr-4 font-medium">Catalyst</th>
-                        <th className="py-2 pr-4 font-medium">Rationale</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
-                      {portfolio.positions.map(
-                        (position: PortfolioPosition) => (
-                          <tr key={position.id} className="align-top">
-                            <td className="py-3 pr-4 font-semibold text-foreground">
-                              {position.symbol}
-                            </td>
-                            <td className="py-3 pr-4">{position.name}</td>
-                            <td className="py-3 pr-4 capitalize">
-                              {position.side || "N/A"}
-                            </td>
-                            <td className="py-3 pr-4">
-                              {position.weight
-                                ? (position.weight * 100).toFixed(1) + "%"
-                                : "N/A"}
-                            </td>
-                            <td className="py-3 pr-4 capitalize">
-                              {position.status?.replace("_", " ") || "N/A"}
-                            </td>
-                            <td className="py-3 pr-4">
-                              {position.priceTarget > 0
-                                ? `$${position.priceTarget.toLocaleString(
-                                    undefined,
-                                    {
-                                      minimumFractionDigits: 2,
-                                      maximumFractionDigits: 2,
-                                    }
-                                  )}`
-                                : "—"}
-                            </td>
-                            <td className="py-3 pr-4 text-muted-foreground">
-                              {position.catalyst || "—"}
-                            </td>
-                            <td className="py-3 pr-4 text-muted-foreground">
-                              {position.rationale}
-                            </td>
-                          </tr>
-                        )
-                      )}
-                    </tbody>
-                  </table>
+                  <div className="rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        {positionsTable.getHeaderGroups().map((headerGroup) => (
+                          <TableRow key={headerGroup.id}>
+                            {headerGroup.headers.map((header) => (
+                              <TableHead key={header.id}>
+                                {header.isPlaceholder
+                                  ? null
+                                  : flexRender(
+                                      header.column.columnDef.header,
+                                      header.getContext()
+                                    )}
+                              </TableHead>
+                            ))}
+                          </TableRow>
+                        ))}
+                      </TableHeader>
+                      <TableBody>
+                        {positionsTable.getRowModel().rows.length === 0 ? (
+                          <TableRow>
+                            <TableCell
+                              colSpan={positionsColumns.length}
+                              className="text-center text-muted-foreground py-8"
+                            >
+                              No positions found.
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          positionsTable.getRowModel().rows.map((row) => (
+                            <TableRow
+                              key={row.id}
+                              className="align-top hover:bg-muted/50"
+                            >
+                              {row.getVisibleCells().map((cell) => (
+                                <TableCell key={cell.id}>
+                                  {flexRender(
+                                    cell.column.columnDef.cell,
+                                    cell.getContext()
+                                  )}
+                                </TableCell>
+                              ))}
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
                 </div>
               )}
             </CardContent>

@@ -6,20 +6,15 @@
 
 "use client";
 
-import { useState, useEffect } from "react";
-import { Trash2, AlertTriangle, CheckCircle, XCircle, RefreshCw } from "lucide-react";
-
-import { Button } from "@/lib/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/lib/components/ui/card";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/lib/components/ui/table";
-import { Badge } from "@/lib/components/ui/badge";
+  AlertTriangle,
+  CheckCircle,
+  RefreshCw,
+  Trash2,
+  XCircle,
+} from "lucide-react";
+import { useEffect, useState } from "react";
+
 import {
   AlertDialog,
   AlertDialogAction,
@@ -30,6 +25,23 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/lib/components/ui/alert-dialog";
+import { Badge } from "@/lib/components/ui/badge";
+import { Button } from "@/lib/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/lib/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/lib/components/ui/table";
 
 interface Order {
   id: string;
@@ -63,7 +75,9 @@ export function FundOrders({ fundId }: FundOrdersProps) {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [validationResults, setValidationResults] = useState<Map<string, ValidationResult>>(new Map());
+  const [validationResults, setValidationResults] = useState<
+    Map<string, ValidationResult>
+  >(new Map());
   const [validating, setValidating] = useState<Set<string>>(new Set());
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -71,13 +85,34 @@ export function FundOrders({ fundId }: FundOrdersProps) {
   const fetchOrders = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`http://localhost:8000/api/funds/${fundId}/orders?limit=100`);
+      setError(null);
+
+      // Add timeout to prevent hanging
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+
+      const response = await fetch(
+        `http://localhost:8000/api/funds/${fundId}/orders?limit=100`,
+        {
+          signal: controller.signal,
+        }
+      );
+
+      clearTimeout(timeoutId);
+
       if (!response.ok) throw new Error("Failed to fetch orders");
       const data = await response.json();
-      setOrders(data);
+
+      // Ensure data is an array
+      setOrders(Array.isArray(data) ? data : []);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to fetch orders");
+      if (err instanceof Error && err.name === "AbortError") {
+        setError("Request timed out. Please try again.");
+      } else {
+        setError(err instanceof Error ? err.message : "Failed to fetch orders");
+      }
+      setOrders([]); // Set empty array on error to show empty state
     } finally {
       setLoading(false);
     }
@@ -89,18 +124,18 @@ export function FundOrders({ fundId }: FundOrdersProps) {
 
   const validateOrder = async (orderId: string) => {
     try {
-      setValidating(prev => new Set(prev).add(orderId));
+      setValidating((prev) => new Set(prev).add(orderId));
       const response = await fetch(
         `http://localhost:8000/api/funds/${fundId}/orders/${orderId}/validate`,
         { method: "POST" }
       );
       if (!response.ok) throw new Error("Failed to validate order");
       const result: ValidationResult = await response.json();
-      setValidationResults(prev => new Map(prev).set(orderId, result));
+      setValidationResults((prev) => new Map(prev).set(orderId, result));
     } catch (err) {
       console.error("Error validating order:", err);
     } finally {
-      setValidating(prev => {
+      setValidating((prev) => {
         const next = new Set(prev);
         next.delete(orderId);
         return next;
@@ -130,17 +165,16 @@ export function FundOrders({ fundId }: FundOrdersProps) {
   };
 
   const getStatusBadge = (status: string) => {
-    const variants: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
+    const variants: Record<
+      string,
+      "default" | "secondary" | "destructive" | "outline"
+    > = {
       filled: "default",
       pending: "secondary",
       canceled: "outline",
       failed: "destructive",
     };
-    return (
-      <Badge variant={variants[status] || "outline"}>
-        {status}
-      </Badge>
-    );
+    return <Badge variant={variants[status] || "outline"}>{status}</Badge>;
   };
 
   const getValidationIcon = (orderId: string) => {
@@ -255,9 +289,15 @@ export function FundOrders({ fundId }: FundOrdersProps) {
                 <TableBody>
                   {orders.map((order) => (
                     <TableRow key={order.id}>
-                      <TableCell className="font-medium">{order.symbol}</TableCell>
+                      <TableCell className="font-medium">
+                        {order.symbol}
+                      </TableCell>
                       <TableCell>
-                        <Badge variant={order.side === "buy" ? "default" : "secondary"}>
+                        <Badge
+                          variant={
+                            order.side === "buy" ? "default" : "secondary"
+                          }
+                        >
                           {order.side.toUpperCase()}
                         </Badge>
                       </TableCell>
@@ -280,9 +320,7 @@ export function FundOrders({ fundId }: FundOrdersProps) {
                           <span className="text-red-600">Missing</span>
                         )}
                       </TableCell>
-                      <TableCell>
-                        {getValidationIcon(order.id)}
-                      </TableCell>
+                      <TableCell>{getValidationIcon(order.id)}</TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <Button
@@ -321,13 +359,17 @@ export function FundOrders({ fundId }: FundOrdersProps) {
       </Card>
 
       {/* Delete Confirmation Dialog */}
-      <AlertDialog open={!!deleteConfirm} onOpenChange={() => setDeleteConfirm(null)}>
+      <AlertDialog
+        open={!!deleteConfirm}
+        onOpenChange={() => setDeleteConfirm(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Order</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete this order? This action cannot be undone.
-              This should only be used for failed, canceled, or orphaned orders.
+              Are you sure you want to delete this order? This action cannot be
+              undone. This should only be used for failed, canceled, or orphaned
+              orders.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -345,4 +387,3 @@ export function FundOrders({ fundId }: FundOrdersProps) {
     </>
   );
 }
-

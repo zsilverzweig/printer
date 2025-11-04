@@ -4,7 +4,7 @@ Pytest configuration and shared fixtures.
 import pytest
 import pytest_asyncio
 from fastapi.testclient import TestClient
-from httpx import AsyncClient
+from httpx import AsyncClient, ASGITransport
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.pool import NullPool
 
@@ -24,11 +24,47 @@ def client():
     return TestClient(app)
 
 
-@pytest.fixture
-async def async_client():
+@pytest_asyncio.fixture
+async def async_client(test_engine):
     """Async HTTP client fixture for testing async endpoints."""
-    async with AsyncClient(base_url="http://test") as ac:
-        yield ac
+    from contextlib import asynccontextmanager
+    from app.services.core.database import get_async_session as original_get_async_session
+    
+    # Create a session factory for the test engine
+    # Use autocommit=False to ensure proper transaction handling
+    test_session_factory = async_sessionmaker(
+        test_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+        autocommit=False,
+    )
+    
+    # Override get_async_session to use test database
+    @asynccontextmanager
+    async def test_get_async_session():
+        async with test_session_factory() as session:
+            try:
+                yield session
+                # Auto-commit if no exception
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
+            finally:
+                await session.close()
+    
+    # Monkey patch the database function
+    import app.services.core.database as db_module
+    original_func = db_module.get_async_session
+    db_module.get_async_session = test_get_async_session
+    
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            yield ac
+    finally:
+        # Restore original function
+        db_module.get_async_session = original_func
 
 
 @pytest.fixture
@@ -92,13 +128,13 @@ async def async_session(test_engine):
     """Create an async database session for testing."""
     # Create session bound to the test engine  
     async with AsyncSession(test_engine, expire_on_commit=False) as session:
-        # Start a transaction
-        await session.begin()
-        
         yield session
         
-        # Rollback to clean up any changes made during the test
-        await session.rollback()
+        # Clean up: rollback any uncommitted changes
+        # Note: if tests call commit(), the data will persist for other sessions
+        # This allows API endpoint tests to see committed data
+        if session.in_transaction():
+            await session.rollback()
 
 
 # Mock services for testing
