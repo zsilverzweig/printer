@@ -8,15 +8,11 @@
 
 import { useMemo } from "react";
 
-import { FundTransaction } from "../types";
 import { formatCurrency } from "../utils/ledger-calculations";
+import type { FundTrade } from "@printer/shared";
 
 interface TradeDistributionChartProps {
-  summaries: Array<{
-    fundId: string;
-    fundName: string;
-    transactions: FundTransaction[];
-  }>;
+  trades: FundTrade[];
   height?: number;
 }
 
@@ -45,59 +41,20 @@ const FUND_COLORS = [
 ];
 
 export function TradeDistributionChart({
-  summaries,
+  trades,
   height = 300,
 }: TradeDistributionChartProps) {
-  const { bins, stats } = useMemo(() => {
-    // Extract all trade returns using FIFO matching
-    const tradeReturns: TradeReturn[] = [];
+  const { bins, stats, fundColorMap } = useMemo(() => {
+    // Extract trade returns from closed trades with realized P&L
+    const closedTrades = trades.filter(
+      (trade) => trade.status === "closed" && trade.realizedPnl !== null && trade.realizedPnl !== undefined
+    );
 
-    summaries.forEach((summary) => {
-      const sortedTransactions = [...summary.transactions].sort(
-        (a, b) =>
-          new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-      );
-
-      const lots: Record<string, { quantity: number; price: number }[]> = {};
-
-      sortedTransactions.forEach((txn) => {
-        if (txn.side === "buy") {
-          if (!lots[txn.symbol]) {
-            lots[txn.symbol] = [];
-          }
-          lots[txn.symbol].push({ quantity: txn.quantity, price: txn.price });
-          return;
-        }
-
-        // Process sell transactions
-        const symbolLots = lots[txn.symbol] ?? (lots[txn.symbol] = []);
-        let remainingQuantity = txn.quantity;
-        let tradePnl = 0;
-        const initialQuantity = txn.quantity;
-
-        while (remainingQuantity > 0 && symbolLots.length > 0) {
-          const lot = symbolLots[0];
-          const matchedQuantity = Math.min(remainingQuantity, lot.quantity);
-          tradePnl += (txn.price - lot.price) * matchedQuantity;
-
-          lot.quantity -= matchedQuantity;
-          remainingQuantity -= matchedQuantity;
-
-          if (lot.quantity <= 0) {
-            symbolLots.shift();
-          }
-        }
-
-        const quantityMatched = initialQuantity - remainingQuantity;
-        if (quantityMatched > 0) {
-          tradeReturns.push({
-            fundId: summary.fundId,
-            fundName: summary.fundName,
-            pnl: tradePnl,
-          });
-        }
-      });
-    });
+    const tradeReturns: TradeReturn[] = closedTrades.map((trade) => ({
+      fundId: trade.fundId,
+      fundName: "", // Will be populated from fund map if needed
+      pnl: trade.realizedPnl ?? 0,
+    }));
 
     if (tradeReturns.length === 0) {
       return { bins: [], stats: { min: 0, max: 0, range: 0 } };
@@ -133,11 +90,22 @@ export function TradeDistributionChart({
       bins[binIndex].trades.push(trade);
     });
 
+    // Create fund color map from unique fund IDs
+    const uniqueFundIds = Array.from(
+      new Set(closedTrades.map((t) => t.fundId))
+    ).sort();
+    const colorMap = new Map<string, string>();
+    uniqueFundIds.forEach((fundId, index) => {
+      colorMap.set(fundId, FUND_COLORS[index % FUND_COLORS.length]);
+    });
+
     return {
       bins,
       stats: { min: minPnl, max: maxPnl, range },
+      fundColorMap: colorMap,
+      uniqueFundIds,
     };
-  }, [summaries]);
+  }, [trades]);
 
   if (bins.length === 0) {
     return (
@@ -150,17 +118,6 @@ export function TradeDistributionChart({
     );
   }
 
-  // Get unique funds and assign colors
-  const fundColorMap = useMemo(() => {
-    const uniqueFunds = Array.from(
-      new Set(summaries.map((s) => s.fundId))
-    ).sort();
-    const map = new Map<string, string>();
-    uniqueFunds.forEach((fundId, index) => {
-      map.set(fundId, FUND_COLORS[index % FUND_COLORS.length]);
-    });
-    return map;
-  }, [summaries]);
 
   const maxCount = Math.max(...bins.map((b) => b.trades.length));
   const padding = { top: 20, right: 40, bottom: 70, left: 60 };
@@ -287,7 +244,6 @@ export function TradeDistributionChart({
                     padding.top + plotHeight - cumulativeHeight - segmentHeight;
                   cumulativeHeight += segmentHeight;
 
-                  const fundName = trades[0].fundName;
                   const color = fundColorMap.get(fundId) || "#888";
 
                   return (
@@ -302,7 +258,7 @@ export function TradeDistributionChart({
                       className="hover:opacity-100 transition-opacity"
                     >
                       <title>
-                        {fundName}: {segmentCount} trade
+                        Fund {fundId}: {segmentCount} trade
                         {segmentCount !== 1 ? "s" : ""} (
                         {formatCurrency(bin.start)} to {formatCurrency(bin.end)}
                         )
@@ -338,21 +294,23 @@ export function TradeDistributionChart({
       </svg>
 
       {/* Legend */}
-      <div className="flex flex-wrap gap-4 justify-center mt-4">
-        {summaries.map((summary) => (
-          <div key={summary.fundId} className="flex items-center gap-2">
-            <div
-              className="w-4 h-4 rounded"
-              style={{
-                backgroundColor: fundColorMap.get(summary.fundId) || "#888",
-              }}
-            />
-            <span className="text-sm text-muted-foreground">
-              {summary.fundName}
-            </span>
-          </div>
-        ))}
-      </div>
+      {uniqueFundIds.length > 0 && (
+        <div className="flex flex-wrap gap-4 justify-center mt-4">
+          {uniqueFundIds.map((fundId) => (
+            <div key={fundId} className="flex items-center gap-2">
+              <div
+                className="w-4 h-4 rounded"
+                style={{
+                  backgroundColor: fundColorMap.get(fundId) || "#888",
+                }}
+              />
+              <span className="text-sm text-muted-foreground">
+                Fund {fundId.substring(0, 8)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

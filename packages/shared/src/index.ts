@@ -50,6 +50,7 @@ export type {
   Fund,
   FundOrder,
   FundTransaction,
+  FundTrade,
   // Enums and literal types
   FundMode,
   FundStatus,

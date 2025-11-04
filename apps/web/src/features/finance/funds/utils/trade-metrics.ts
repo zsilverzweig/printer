@@ -1,10 +1,12 @@
 /**
  * Trade Metrics Utilities
  *
- * Calculates aggregated trade performance metrics for a set of transactions.
+ * Calculates aggregated trade performance metrics from Trade records.
+ * Uses pre-calculated realized_pnl from the Trade model instead of
+ * rebuilding from transaction ledger.
  */
 
-import { FundTransaction } from "../types";
+import { FundTrade } from "@printer/shared";
 
 export interface TradeMetrics {
   totalTrades: number;
@@ -17,17 +19,17 @@ export interface TradeMetrics {
   totalPnl: number;
 }
 
-interface TradeResult {
-  pnl: number;
-}
-
 /**
- * Calculate trade metrics using FIFO matching of buys and sells per symbol.
+ * Calculate trade metrics from Trade records.
+ * Only includes closed trades (status='closed') with realized P&L.
  */
-export function calculateTradeMetrics(
-  transactions: FundTransaction[]
-): TradeMetrics {
-  if (transactions.length === 0) {
+export function calculateTradeMetrics(trades: FundTrade[]): TradeMetrics {
+  // Filter to only closed trades with realized P&L
+  const closedTrades = trades.filter(
+    (trade) => trade.status === "closed" && trade.realizedPnl !== null && trade.realizedPnl !== undefined
+  );
+
+  if (closedTrades.length === 0) {
     return {
       totalTrades: 0,
       winningTrades: 0,
@@ -40,49 +42,12 @@ export function calculateTradeMetrics(
     };
   }
 
-  const sortedTransactions = [...transactions].sort(
-    (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-  );
-
-  const lots: Record<string, { quantity: number; price: number }[]> = {};
-  const tradeResults: TradeResult[] = [];
-
-  sortedTransactions.forEach((txn) => {
-    if (txn.side === "buy") {
-      if (!lots[txn.symbol]) {
-        lots[txn.symbol] = [];
-      }
-      lots[txn.symbol].push({ quantity: txn.quantity, price: txn.price });
-      return;
-    }
-
-    // Process sell transactions using FIFO lots
-    const symbolLots = lots[txn.symbol] ?? (lots[txn.symbol] = []);
-    let remainingQuantity = txn.quantity;
-    let tradePnl = 0;
-    const initialQuantity = txn.quantity;
-
-    while (remainingQuantity > 0 && symbolLots.length > 0) {
-      const lot = symbolLots[0];
-      const matchedQuantity = Math.min(remainingQuantity, lot.quantity);
-      tradePnl += (txn.price - lot.price) * matchedQuantity;
-
-      lot.quantity -= matchedQuantity;
-      remainingQuantity -= matchedQuantity;
-
-      if (lot.quantity <= 0) {
-        symbolLots.shift();
-      }
-    }
-
-    // Only record trades that actually matched some buy lots
-    const quantityMatched = initialQuantity - remainingQuantity;
-    if (quantityMatched > 0) {
-      tradeResults.push({ pnl: tradePnl });
-    }
+  // Extract P&L values (net of commissions)
+  const pnlValues = closedTrades.map((trade) => {
+    // realized_pnl already includes commission fees, so use it directly
+    return trade.realizedPnl ?? 0;
   });
 
-  const pnlValues = tradeResults.map((result) => result.pnl);
   const winningTrades = pnlValues.filter((pnl) => pnl > 0).length;
   const losingTrades = pnlValues.filter((pnl) => pnl < 0).length;
   const totalTrades = pnlValues.length;

@@ -28,9 +28,10 @@ import {
 } from "@/lib/components/ui/table";
 
 import { fundService } from "../services/fund-service";
-import { Fund, FundTransaction } from "../types";
+import { Fund } from "../types";
 import { formatCurrency } from "../utils/ledger-calculations";
 import { calculateTradeMetrics, TradeMetrics } from "../utils/trade-metrics";
+import type { FundTrade } from "@printer/shared";
 
 import { TradeDistributionChart } from "./trade-distribution-chart";
 
@@ -43,7 +44,7 @@ interface FundPerformanceSummary {
   fundId: string;
   fundName: string;
   metrics: TradeMetrics;
-  transactions: FundTransaction[];
+  trades: FundTrade[];
 }
 
 export function FundPerformanceOverview({
@@ -72,25 +73,26 @@ export function FundPerformanceOverview({
       setLoading(true);
       setError(null);
 
-      const allTransactions: FundTransaction[] = [];
+      const allTrades: FundTrade[] = [];
 
       const data = await Promise.all(
         funds.map(async (fund) => {
-          const transactions = await fundService.getFundTransactions(fund.id);
-          allTransactions.push(...transactions);
-          const metrics = calculateTradeMetrics(transactions);
+          // Get closed trades for performance metrics
+          const trades = await fundService.getFundTrades(fund.id, "closed");
+          allTrades.push(...trades);
+          const metrics = calculateTradeMetrics(trades);
 
           return {
             fundId: fund.id,
             fundName: fund.name,
             metrics,
-            transactions,
+            trades,
           } satisfies FundPerformanceSummary;
         })
       );
 
       setSummaries(data);
-      setPortfolioMetrics(calculateTradeMetrics(allTransactions));
+      setPortfolioMetrics(calculateTradeMetrics(allTrades));
     } catch (err) {
       setError(
         err instanceof Error
@@ -249,7 +251,10 @@ Average Loss: ${formatCurrency(portfolioMetrics.averageLoss)}`;
                   Histogram of individual trade P&L across all funds
                 </p>
               </div>
-              <TradeDistributionChart summaries={summaries} height={320} />
+              <TradeDistributionChart
+                trades={summaries.flatMap((s) => s.trades)}
+                height={320}
+              />
             </div>
 
             {portfolioMetrics && (

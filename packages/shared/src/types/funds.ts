@@ -178,6 +178,35 @@ export interface FundTransfer {
   notes?: string;
 }
 
+/**
+ * Trade Record
+ *
+ * Master record for a complete trade (open to close).
+ * Tracks the lifecycle of a position from entry through exit,
+ * with comprehensive performance metrics and strategy context.
+ */
+export interface FundTrade {
+  id: string;
+  fundId: string;
+  symbol: string;
+  entryTime: Date | string;
+  exitTime?: Date | string | null;
+  entryPrice: number;
+  exitPrice?: number | null;
+  entryQuantity: number;
+  exitQuantity?: number | null;
+  realizedPnl?: number | null;
+  realizedPnlPercent?: number | null;
+  holdDurationSeconds?: number | null;
+  status: string; // 'open', 'closed', 'partial'
+  strategyId?: string | null;
+  screeningCriteriaId?: string | null;
+  aiConfidence?: number | null;
+  commissionFees: number;
+  maxAdverseExcursion?: number | null;
+  maxFavorableExcursion?: number | null;
+}
+
 // ============================================================================
 // Composite Types
 // ============================================================================
