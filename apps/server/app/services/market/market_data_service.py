@@ -311,11 +311,11 @@ class MarketDataService:
         """
         Get latest close prices for multiple symbols - optimized for screener.
         
-        Parallelizes large batches into concurrent queries for speed.
+        Uses pre-computed lookup table in backtest mode for instant queries.
         
         Args:
             symbols: List of stock symbols
-            timeframe: Bar granularity to use for prices
+            timeframe: Bar granularity to use for prices (ignored in backtest - uses 1min lookup)
             at_timestamp: Optional timestamp (for historical screener runs)
         
         Returns:
@@ -323,6 +323,49 @@ class MarketDataService:
         """
         if not symbols:
             return {}
+        
+        # Check if in backtest mode and lookup table is available
+        ctx = get_backtest_context()
+        if ctx and at_timestamp:
+            # Try backtest lookup table first - PARALLELIZED for max speed!
+            try:
+                LOOKUP_CHUNK_SIZE = 200  # Chunk size for lookup table queries
+                
+                if len(symbols) > LOOKUP_CHUNK_SIZE:
+                    # Parallelize even the lookup table queries
+                    chunks = [symbols[i:i + LOOKUP_CHUNK_SIZE] for i in range(0, len(symbols), LOOKUP_CHUNK_SIZE)]
+                    
+                    import time
+                    start = time.time()
+                    
+                    tasks = [
+                        self._get_prices_from_lookup_table(chunk, at_timestamp)
+                        for chunk in chunks
+                    ]
+                    results = await asyncio.gather(*tasks, return_exceptions=True)
+                    
+                    # Merge results
+                    price_map = {}
+                    for result in results:
+                        if isinstance(result, dict):
+                            price_map.update(result)
+                    
+                    elapsed = time.time() - start
+                    
+                    if price_map:
+                        bt_id = get_backtest_id()
+                        bt_label = f"[BT:{bt_id[:8]}]" if bt_id else ""
+                        logger.info(f"{bt_label} ⚡ INSTANT lookup: {len(price_map)} symbols in {elapsed*1000:.0f}ms (backtest table, {len(chunks)} parallel)")
+                        return price_map
+                else:
+                    # Small batch - single lookup query
+                    result = await self._get_prices_from_lookup_table(symbols, at_timestamp)
+                    if result:
+                        logger.info(f"⚡ INSTANT lookup: {len(result)} symbols (backtest table)")
+                        return result
+                        
+            except Exception as e:
+                logger.warning(f"Lookup table query failed, falling back: {e}")
         
         timeframe = self._normalize_timeframe(timeframe)
         
@@ -364,6 +407,42 @@ class MarketDataService:
         
         # Small batch - single query
         return await self._get_latest_prices_chunk(symbols, timeframe, at_timestamp)
+    
+    async def _get_prices_from_lookup_table(
+        self,
+        symbols: List[str],
+        at_timestamp: datetime
+    ) -> Dict[str, float]:
+        """
+        Get prices from pre-computed backtest lookup table (instant!).
+        
+        This queries the materialized snapshot data instead of scanning history.
+        
+        Args:
+            symbols: List of stock symbols
+            at_timestamp: Timestamp to get prices for
+            
+        Returns:
+            Dict mapping symbol -> close price
+        """
+        async with get_async_session() as session:
+            result = await session.execute(
+                text("""
+                    SELECT symbol, close
+                    FROM market_data_backtest_lookup
+                    WHERE symbol = ANY(:symbols)
+                      AND timescale = '1min'
+                      AND lookup_time = :lookup_time
+                """),
+                {"symbols": symbols, "lookup_time": at_timestamp}
+            )
+            
+            price_map = {}
+            for row in result:
+                if row[1] is not None:
+                    price_map[row[0]] = float(row[1])
+            
+            return price_map
     
     async def _get_latest_prices_chunk(
         self,
