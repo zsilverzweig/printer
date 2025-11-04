@@ -350,9 +350,11 @@ class Backtest(Base):
     # Valid statuses: 'running', 'completed', 'failed', 'cancelled'
     
     # Configuration snapshot (captures fund state at backtest time)
+    fund_name: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)  # Snapshot of fund name
     strategy_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     strategy_config: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     screening_criteria_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    screening_criteria_name: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)  # Snapshot of screener name
     
     # Results
     starting_balance: Mapped[float] = mapped_column(Float, nullable=False)

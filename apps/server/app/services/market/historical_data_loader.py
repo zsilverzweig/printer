@@ -15,7 +15,7 @@ Supports:
 import asyncio
 import logging
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, date as date_type
 from typing import Dict, List, Optional, Set
 from decimal import Decimal
 
@@ -29,6 +29,7 @@ from app.models.assets import AssetLoadingStatus
 from app.models.market_data import MarketData, SymbolDateValidation
 from app.services.core.database import get_async_session
 from app.services.screener.screener_snapshot import fetch_snapshot_all
+from app.services.backtest.backtest_lookup_service import populate_lookup_for_date, check_lookup_coverage
 
 logger = logging.getLogger("app.historical_data_loader")
 
@@ -412,6 +413,41 @@ async def _run_historical_load_task(
                 f"{succeeded} symbols fetched, {skipped_count} already complete, {failed} failed | "
                 f"💾 {total_bars_inserted} total bars inserted"
             )
+            
+            # If we just loaded 1min data, populate lookup tables for all dates in range
+            if timescale == '1min' and total_bars_inserted > 0:
+                logger.info(f"📊 Populating backtest lookup tables for loaded dates...")
+                try:
+                    # Iterate through each date in the range and populate lookup if needed
+                    current_date = ts_start_date.date()
+                    end_date = ts_end_date.date()
+                    
+                    dates_populated = 0
+                    dates_skipped = 0
+                    
+                    while current_date <= end_date:
+                        # Check if lookup already exists
+                        coverage = await check_lookup_coverage(current_date)
+                        
+                        if not coverage["has_data"]:
+                            try:
+                                await populate_lookup_for_date(current_date, timescale='1min')
+                                dates_populated += 1
+                                logger.info(f"  ✅ Populated lookup for {current_date}")
+                            except Exception as e:
+                                logger.warning(f"  ⚠️  Failed to populate lookup for {current_date}: {e}")
+                        else:
+                            dates_skipped += 1
+                        
+                        current_date += timedelta(days=1)
+                    
+                    if dates_populated > 0:
+                        logger.info(f"✅ Populated lookup tables for {dates_populated} date(s), {dates_skipped} already existed")
+                    else:
+                        logger.info(f"✅ All lookup tables already populated ({dates_skipped} dates)")
+                except Exception as e:
+                    # Don't fail the whole task if lookup population fails
+                    logger.warning(f"⚠️  Failed to populate lookup tables: {e}", exc_info=True)
         
         # All timescales completed - final status update
         await _update_status(

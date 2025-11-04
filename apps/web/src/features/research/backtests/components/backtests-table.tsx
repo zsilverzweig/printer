@@ -93,9 +93,13 @@ function formatDate(dateString: string): string {
   }
 }
 
-function formatDateTime(dateString: string): string {
+function formatDateTime(dateString: string | undefined | null): string {
+  if (!dateString) return "—";
   try {
     const date = new Date(dateString);
+    if (isNaN(date.getTime())) {
+      return "Invalid date";
+    }
     return date.toLocaleString("en-US", {
       month: "short",
       day: "numeric",
@@ -146,10 +150,13 @@ export function BacktestsTable({
         ),
       },
       {
-        accessorKey: "fundId",
-        header: "Fund ID",
+        accessorKey: "fundName",
+        header: "Fund",
         cell: ({ row }) => {
-          const fundId = row.original.fundId;
+          const backtest = row.original;
+          const fundName = backtest.fundName || backtest.fundId.slice(0, 8) + "...";
+          const fundId = backtest.fundId;
+          
           const handleCopy = async (e: React.MouseEvent) => {
             e.stopPropagation();
             try {
@@ -168,19 +175,20 @@ export function BacktestsTable({
                     variant="ghost"
                     size="sm"
                     onClick={handleCopy}
-                    className="group h-auto p-1.5 hover:bg-muted font-mono text-sm text-muted-foreground cursor-pointer"
+                    className="group h-auto p-1.5 hover:bg-muted text-sm cursor-pointer"
                   >
                     <div className="flex items-center gap-2">
                       <span className="hover:text-foreground transition-colors">
-                        {fundId.slice(0, 8)}...
+                        {fundName}
                       </span>
                       <Copy className="h-3.5 w-3.5 opacity-50 group-hover:opacity-100 transition-opacity" />
                     </div>
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p className="font-mono text-xs">{fundId}</p>
-                  <p className="text-xs mt-1">Click to copy</p>
+                  <p className="font-semibold">{backtest.fundName || "Fund"}</p>
+                  <p className="font-mono text-xs mt-1">ID: {fundId}</p>
+                  <p className="text-xs mt-1">Click to copy ID</p>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>

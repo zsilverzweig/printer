@@ -30,10 +30,12 @@ class RunBacktestRequest(BaseModel):
 class BacktestResponse(BaseModel):
     id: str
     fund_id: str
+    fund_name: Optional[str]
     date: str
     status: str
     strategy_id: Optional[str]
     screening_criteria_id: Optional[str]
+    screening_criteria_name: Optional[str]
     
     # Results
     starting_balance: float
@@ -295,10 +297,12 @@ def _serialize_backtest(backtest: Backtest) -> dict:
     return {
         "id": backtest.id,
         "fund_id": backtest.fund_id,
+        "fund_name": backtest.fund_name,
         "date": backtest.date.isoformat() if backtest.date else None,
         "status": backtest.status,
         "strategy_id": backtest.strategy_id,
         "screening_criteria_id": backtest.screening_criteria_id,
+        "screening_criteria_name": backtest.screening_criteria_name,
         "starting_balance": backtest.starting_balance,
         "ending_balance": backtest.ending_balance,
         "total_pnl": backtest.total_pnl,
@@ -309,8 +313,8 @@ def _serialize_backtest(backtest: Backtest) -> dict:
         "total_orders": backtest.total_orders,
         "filled_orders": backtest.filled_orders,
         "cancelled_orders": backtest.cancelled_orders,
-        "started_at": backtest.started_at.isoformat() + "Z" if backtest.started_at else None,
-        "completed_at": backtest.completed_at.isoformat() + "Z" if backtest.completed_at else None,
+        "started_at": backtest.started_at.isoformat() if backtest.started_at else None,
+        "completed_at": backtest.completed_at.isoformat() if backtest.completed_at else None,
         "error_message": backtest.error_message,
     }
 
@@ -324,8 +328,8 @@ def _serialize_order(order: Order) -> dict:
         "quantity": order.quantity,
         "status": order.status,
         "order_type": order.order_type,
-        "submitted_at": order.submitted_at.isoformat() + "Z" if order.submitted_at else None,
-        "filled_at": order.filled_at.isoformat() + "Z" if order.filled_at else None,
+        "submitted_at": order.submitted_at.isoformat() if order.submitted_at else None,
+        "filled_at": order.filled_at.isoformat() if order.filled_at else None,
         "filled_qty": order.filled_qty,
         "filled_avg_price": order.filled_avg_price,
     }

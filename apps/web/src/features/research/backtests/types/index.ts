@@ -7,11 +7,13 @@
 export interface Backtest {
   id: string;
   fundId: string;
+  fundName?: string;
   date: string; // ISO date string (YYYY-MM-DD)
   status: "running" | "completed" | "failed" | "cancelled";
   strategyId?: string;
   strategyConfig?: Record<string, any>;
   screeningCriteriaId?: string;
+  screeningCriteriaName?: string;
 
   // Results
   startingBalance: number;

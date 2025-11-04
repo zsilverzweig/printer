@@ -124,7 +124,7 @@ export function BacktestDetailsDialog({
         <DialogHeader>
           <DialogTitle>Backtest Details</DialogTitle>
           <DialogDescription>
-            {backtest.date} - {backtest.fundId.slice(0, 8)}...
+            {backtest.date} - {backtest.fundName || backtest.fundId.slice(0, 8) + "..."}
           </DialogDescription>
         </DialogHeader>
 

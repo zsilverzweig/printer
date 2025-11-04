@@ -21,11 +21,13 @@ function parseBacktest(data: any): Backtest {
   return {
     id: data.id,
     fundId: data.fund_id ?? data.fundId,
+    fundName: data.fund_name ?? data.fundName,
     date: data.date,
     status: data.status,
     strategyId: data.strategy_id ?? data.strategyId,
     strategyConfig: data.strategy_config ?? data.strategyConfig,
     screeningCriteriaId: data.screening_criteria_id ?? data.screeningCriteriaId,
+    screeningCriteriaName: data.screening_criteria_name ?? data.screeningCriteriaName,
     startingBalance: Number(data.starting_balance ?? data.startingBalance ?? 0),
     endingBalance: data.ending_balance ?? data.endingBalance,
     totalPnl: data.total_pnl ?? data.totalPnl,
