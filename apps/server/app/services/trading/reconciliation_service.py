@@ -382,6 +382,12 @@ class ReconciliationService:
                         
                         # Create a synthetic closing transaction to zero out the position
                         # Use a nominal price since we're just reconciling the position
+                        # Generate a short order_id (max 36 chars for DB constraint)
+                        # Format: "recon_SYMBOL_YYYYMMDDHHMMSS" (e.g., "recon_DDD_20251104172920")
+                        now = datetime.utcnow()
+                        short_timestamp = now.strftime("%Y%m%d%H%M%S")  # 14 chars
+                        synthetic_order_id = f"recon_{symbol}_{short_timestamp}"  # Max ~25 chars
+                        
                         await create_transaction(
                             session=session,
                             fund_id=fund_id,
@@ -389,7 +395,7 @@ class ReconciliationService:
                             transaction_type="sell",
                             quantity=abs(actual_qty),
                             price=1.0,  # Nominal price - position is already closed in Alpaca
-                            order_id=f"reconciliation_{symbol}_{datetime.utcnow().isoformat()}",
+                            order_id=synthetic_order_id,
                             notes=f"Force-close reconciliation: Alpaca closed, DB had {actual_qty} shares"
                         )
                         

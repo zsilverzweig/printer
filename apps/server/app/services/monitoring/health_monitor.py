@@ -443,7 +443,7 @@ class MarketDataLoaderHealthCheck(BaseHealthCheck):
     Loads:
     - All timescales from yesterday
     - All timescales from today (up to current time)
-    - 90 days of hourly bars
+    - 7 days of hourly bars
     - 5min/15min for last 7 days
     """
     

@@ -26,11 +26,13 @@ import { setupService } from "../services/setup-service";
 import { CreateSetupInput } from "../types";
 
 import { ActivityFeed } from "./activity-feed";
+import { AIModelSelector } from "./ai-model-selector";
 import { FundBasicInfoEditor } from "./fund-basic-info-editor";
 import { FundLedger } from "./fund-ledger";
 import { FundOrders } from "./fund-orders";
 import { FundOverview } from "./fund-overview";
 import { FundPositions } from "./fund-positions";
+import { FundTrades } from "./fund-trades";
 import { RiskManagement } from "./risk-management";
 import { ScreenerLink } from "./screener-link";
 import { SetupEditor } from "./setup-editor";
@@ -176,12 +178,13 @@ export function FundDetailView({ fundId }: FundDetailViewProps) {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-2 md:grid-cols-7 gap-1">
+        <TabsList className="grid w-full grid-cols-2 md:grid-cols-8 gap-1">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="configuration">Configuration</TabsTrigger>
           <TabsTrigger value="activity">Activity</TabsTrigger>
           <TabsTrigger value="positions">Positions</TabsTrigger>
           <TabsTrigger value="orders">Orders</TabsTrigger>
+          <TabsTrigger value="trades">Trades</TabsTrigger>
           <TabsTrigger value="screener">Screener</TabsTrigger>
           <TabsTrigger value="ledger">Ledger</TabsTrigger>
         </TabsList>
@@ -212,6 +215,12 @@ export function FundDetailView({ fundId }: FundDetailViewProps) {
             onSavingChange={handleSavingChange}
           />
 
+          <AIModelSelector
+            fund={fund}
+            onUpdate={refreshAll}
+            onSavingChange={handleSavingChange}
+          />
+
           <RiskManagement
             fundId={fund.id}
             fund={fund}
@@ -237,6 +246,10 @@ export function FundDetailView({ fundId }: FundDetailViewProps) {
 
         <TabsContent value="orders" className="space-y-6">
           <FundOrders fundId={fundId} />
+        </TabsContent>
+
+        <TabsContent value="trades" className="space-y-6">
+          <FundTrades fundId={fundId} />
         </TabsContent>
 
         <TabsContent value="screener" className="space-y-6">

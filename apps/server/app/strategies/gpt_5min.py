@@ -62,8 +62,12 @@ class GPTFiveGuyStrategy(ExecutionStrategy):
         self.max_concurrent_positions = config.get("max_concurrent_positions", 5)
     
     def _get_gpt_helper(self):
-        """Get GPT helper with cost tracking."""
-        return get_gpt_helper(model="gpt-5-pro", fund_id=self.fund_id)
+        """Get GPT helper with cost tracking, respecting model override from config."""
+        return get_gpt_helper(
+            model="gpt-5-nano",
+            fund_id=self.fund_id,
+            config=self.config
+        )
     
     @property
     def id(self) -> str:

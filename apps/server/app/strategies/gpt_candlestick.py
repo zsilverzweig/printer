@@ -64,8 +64,12 @@ class GPTCandlestickStrategy(ExecutionStrategy):
         self.news_service = NewsService()
     
     def _get_gpt_helper(self):
-        """Get GPT helper with cost tracking."""
-        return get_gpt_helper(model="gpt-5-pro", fund_id=self.fund_id)
+        """Get GPT helper with cost tracking, respecting model override from config."""
+        return get_gpt_helper(
+            model="gpt-5-pro",
+            fund_id=self.fund_id,
+            config=self.config
+        )
     
     @property
     def id(self) -> str:

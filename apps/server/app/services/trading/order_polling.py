@@ -7,14 +7,13 @@ Updates order records and creates transaction records when orders fill.
 
 import asyncio
 import logging
-import uuid
 from datetime import datetime, timezone
 from typing import Optional, Set, Dict
 
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.strategies import Order, Transaction, Trade
+from app.models.strategies import Order, Transaction
 from app.services.trading.alpaca_service import AlpacaService
 from app.services.core.database import get_async_session
 
@@ -296,125 +295,25 @@ class OrderPollingService:
             alpaca_order: Alpaca order object with fill details
             quantity_to_transact: The specific quantity to record (delta for partial fills)
         """
-        try:
-            # CRITICAL VALIDATION: Prevent creating transactions without alpaca_fill_id
-            # This prevents phantom transactions that can't be traced back to Alpaca fills.
-            # For filled orders, we must use Activities API reconciliation which has fill IDs.
-            if order.status in ["filled", "partially_filled"]:
-                logger.warning(
-                    f"⚠️  Skipping transaction creation for {order.symbol} {order.side} order {order.id[:8]} "
-                    f"because it's filled but we don't have alpaca_fill_id. "
-                    f"Activities API reconciliation will handle this with proper fill IDs. "
-                    f"(Order filled_qty: {alpaca_order.filled_qty}, quantity_to_transact: {quantity_to_transact})"
-                )
-                
-                # Log event for monitoring
-                from app.services.events.event_service import event_service
-                await event_service.log_strategy_engine_event(
-                    fund_id=order.fund_id,
-                    event_category="fill_tracking",
-                    symbol=order.symbol,
-                    severity="warning",
-                    message=f"Skipped transaction creation for {order.symbol} - missing alpaca_fill_id",
-                    event_data={
-                        "order_id": order.id,
-                        "alpaca_order_id": order.alpaca_order_id,
-                        "side": order.side,
-                        "order_status": order.status,
-                        "filled_qty": float(alpaca_order.filled_qty) if alpaca_order.filled_qty else None,
-                        "quantity_to_transact": float(quantity_to_transact),
-                        "reason": "missing_alpaca_fill_id",
-                        "note": "Activities API reconciliation will create transaction with proper fill ID"
-                    }
-                )
-                return
-            
-            filled_price = float(alpaca_order.filled_avg_price) if alpaca_order.filled_avg_price else 0.0
-            
-            # For sells, validate we own enough shares (prevent over-selling)
-            if order.side == "sell":
-                from app.services.trading.position_tracker import get_position_quantity_from_transactions
-                
-                actual_position = await get_position_quantity_from_transactions(
-                    session, order.fund_id, order.symbol
-                )
-                
-                if quantity_to_transact > actual_position + 0.01:  # Small epsilon for float math
-                    logger.error(
-                        f"🚨 OVER-SELL DETECTED: Attempting to sell {quantity_to_transact} "
-                        f"{order.symbol} but only own {actual_position:.2f}. Capping transaction."
-                    )
-                    quantity_to_transact = max(0.0, actual_position)
-                
-                if quantity_to_transact <= 0.001:  # Epsilon check
-                    logger.error(
-                        f"❌ Cannot create sell transaction for {order.symbol} - "
-                        f"no position to sell (actual: {actual_position:.2f})"
-                    )
-                    return
-            
-            # Convert timezone-aware datetime to timezone-naive UTC for database
-            transaction_timestamp = alpaca_order.filled_at if alpaca_order.filled_at else datetime.now(timezone.utc)
-            if transaction_timestamp.tzinfo:
-                transaction_timestamp = transaction_timestamp.replace(tzinfo=None)
-            
-            # Validate trade_id exists if provided (prevent foreign key violation)
-            trade_id = None
-            if order.trade_id:
-                trade = await session.get(Trade, order.trade_id)
-                if trade:
-                    trade_id = order.trade_id
-                else:
-                    logger.warning(
-                        f"⚠️  Order {order.id} references non-existent trade {order.trade_id}. "
-                        f"Creating transaction without trade_id."
-                    )
-            
-            # NOTE: This code path should rarely be used now since filled orders
-            # are handled by Activities API reconciliation. Only use for special cases
-            # where we have a fill ID from another source.
-            transaction = Transaction(
-                id=str(uuid.uuid4()),
-                order_id=order.id,
-                alpaca_order_id=order.alpaca_order_id,
-                alpaca_fill_id=None,  # Explicitly None - should be set by Activities API reconciliation
-                fund_id=order.fund_id,
-                trade_id=trade_id,  # Use validated trade_id (or None if invalid)
-                symbol=order.symbol,
-                side=order.side,
-                quantity=quantity_to_transact,  # Use the delta, not full filled_qty
-                price=filled_price,
-                total_value=quantity_to_transact * filled_price,
-                timestamp=transaction_timestamp,
-                high_water_mark=filled_price if order.side == "buy" else None,
-                strategy_state={},
-            )
-            
-            session.add(transaction)
-            
-            # Update fund balance (cash position)
-            # Buy: cash decreases, Sell: cash increases
-            from app.models.strategies import Fund
-            fund = await session.get(Fund, order.fund_id)
-            if fund:
-                old_balance = fund.balance
-                if order.side == "buy":
-                    fund.balance -= transaction.total_value
-                else:  # sell
-                    fund.balance += transaction.total_value
-                logger.info(
-                    f"💰 Fund balance updated: ${old_balance:.2f} → ${fund.balance:.2f} "
-                    f"(after {order.side} ${transaction.total_value:.2f})"
-                )
-            
-            logger.info(
-                f"💰 Transaction created: {order.symbol} {order.side} "
-                f"{quantity_to_transact} @ ${filled_price:.2f} = ${transaction.total_value:.2f}"
-            )
+        from app.services.trading.transaction_service import create_transaction_from_order
         
-        except Exception as e:
-            logger.error(f"Error creating transaction for order {order.id}: {e}", exc_info=True)
-            raise
+        transaction = await create_transaction_from_order(
+            session=session,
+            order=order,
+            alpaca_order=alpaca_order,
+            quantity_to_transact=quantity_to_transact,
+            alpaca_fill_id=None,  # Explicitly None - should be set by Activities API reconciliation
+        )
+        
+        if transaction is None:
+            # Transaction was skipped (e.g., missing fill_id for filled order)
+            return
+        
+        # Transaction was created successfully by the service
+        logger.info(
+            f"💰 Transaction created: {order.symbol} {order.side} "
+            f"{quantity_to_transact} @ ${transaction.price:.2f} = ${transaction.total_value:.2f}"
+        )
 
 
 # Global instance

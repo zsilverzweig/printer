@@ -5,7 +5,7 @@ Market data loader for comprehensive data coverage.
 Loads:
 - Yesterday's data (all timescales)
 - Today's data (all timescales) - up to current time
-- 90 days of hourly bars
+- 7 days of hourly bars
 - 5min/15min for last 7 days
 """
 
@@ -182,34 +182,23 @@ async def load_yesterday_data(init_db_flag: bool = True, api_key: Optional[str] 
     if not api_key:
         raise ValueError("POLYGON_API_KEY environment variable not set")
     client = create_polygon_client(api_key)
-    if logger.isEnabledFor(logging.INFO):
-        logger.info("Polygon client initialized with connection pool (10 connections)")
     
     # Get yesterday (skip weekends)
     yesterday = datetime.now(timezone.utc).date() - timedelta(days=1)
     while yesterday.weekday() >= 5:  # Skip weekends
         yesterday -= timedelta(days=1)
     
-    if logger.isEnabledFor(logging.INFO):
-        logger.info("Loading data for %s", yesterday)
-    
     # Get all symbols
-    if logger.isEnabledFor(logging.INFO):
-        logger.info("Fetching symbols from Polygon snapshot...")
     snapshot_data = fetch_snapshot_all(api_key)
     symbols = [ticker["ticker"] for ticker in snapshot_data if "ticker" in ticker]
-    if logger.isEnabledFor(logging.INFO):
-        logger.info("Found %s symbols", len(symbols))
     
     # Process each timescale in reverse granularity order (largest to smallest)
     # This loads daily data first (fastest, most coverage), then works down to minute data
+    timescales_processed = []
+    timescales_skipped = []
+    
     for timescale in ['1day', '1hour', '15min', '5min', '1min']:
         config = TIMESCALE_CONFIG[timescale]
-        if logger.isEnabledFor(logging.INFO):
-            logger.info("")
-            logger.info("=" * 60)
-            logger.info("Processing %s for %s", timescale, yesterday)
-            logger.info("=" * 60)
         
         processed = 0
         succeeded = 0
@@ -217,8 +206,6 @@ async def load_yesterday_data(init_db_flag: bool = True, api_key: Optional[str] 
         skipped = 0
         
         # Pre-check which symbols need data (single query for efficiency)
-        if logger.isEnabledFor(logging.INFO):
-            logger.info("Checking which of %s symbols need %s data...", len(symbols), timescale)
         symbols_needing_data = []
         async with get_async_session() as session:
             # Batch check all symbols at once using proper PostgreSQL array syntax
@@ -243,20 +230,18 @@ async def load_yesterday_data(init_db_flag: bool = True, api_key: Optional[str] 
             symbols_needing_data = [s for s in symbols if s.upper() not in existing_symbols]
             skipped = len(symbols) - len(symbols_needing_data)
         
-        if logger.isEnabledFor(logging.INFO):
-            logger.info("Found %s symbols needing data, %s already have data (will skip)",
-                       len(symbols_needing_data), skipped)
-        
         if not symbols_needing_data:
-            if logger.isEnabledFor(logging.INFO):
-                logger.info("All symbols already have %s data for %s, skipping this timescale", timescale, yesterday)
+            timescales_skipped.append(timescale)
             continue
+        
+        timescales_processed.append(timescale)
+        if logger.isEnabledFor(logging.INFO):
+            logger.info("Loading %s data for %s (%s symbols need data, %s already exist)",
+                       timescale, yesterday, len(symbols_needing_data), skipped)
         
         # Process symbols with limited concurrency (3 concurrent requests)
         total_symbols = len(symbols_needing_data)
         semaphore = asyncio.Semaphore(3)  # 3 concurrent requests for ~3x speedup
-        if logger.isEnabledFor(logging.INFO):
-            logger.info("Processing %s symbols with 3 concurrent requests...", total_symbols)
         
         async def process_symbol(symbol: str, idx: int):
             nonlocal processed, succeeded, failed
@@ -297,11 +282,14 @@ async def load_yesterday_data(init_db_flag: bool = True, api_key: Optional[str] 
         await asyncio.gather(*tasks, return_exceptions=True)
         
         if logger.isEnabledFor(logging.INFO):
-            logger.info("%s complete: %s succeeded, %s failed, %s skipped",
-                       timescale, succeeded, failed, skipped)
+            logger.info("✓ %s: %s succeeded, %s failed", timescale, succeeded, failed)
     
+    # Summary
     if logger.isEnabledFor(logging.INFO):
-        logger.info("All done!")
+        if timescales_processed:
+            logger.info("✓ Market data loaded: %s", ", ".join(timescales_processed))
+        if timescales_skipped:
+            logger.info("✓ Already complete: %s", ", ".join(timescales_skipped))
 
 
 async def load_comprehensive_data(init_db_flag: bool = True, api_key: Optional[str] = None):
@@ -309,7 +297,7 @@ async def load_comprehensive_data(init_db_flag: bool = True, api_key: Optional[s
     Load comprehensive market data:
     - All timescales from yesterday
     - All timescales from today (up to current time)
-    - 90 days of hourly bars
+    - 7 days of hourly bars
     - 5min/15min for last 7 days
     
     Args:
@@ -371,13 +359,13 @@ async def load_comprehensive_data(init_db_flag: bool = True, api_key: Optional[s
         if logger.isEnabledFor(logging.INFO):
             logger.info("Today is a weekend, skipping today's data")
     
-    # Phase 3: Load 90 days of hourly bars
+    # Phase 3: Load 7 days of hourly bars
     if logger.isEnabledFor(logging.INFO):
         logger.info("")
         logger.info("=" * 60)
-        logger.info("Phase 3: Loading 90 days of hourly bars")
+        logger.info("Phase 3: Loading 7 days of hourly bars")
         logger.info("=" * 60)
-    start_date = today - timedelta(days=90)
+    start_date = today - timedelta(days=7)
     await load_date_range_data(
         client, symbols, start_date, yesterday - timedelta(days=1),
         timescales=['1hour']

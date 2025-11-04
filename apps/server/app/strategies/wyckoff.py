@@ -93,7 +93,8 @@ class WyckoffStrategy(ExecutionStrategy):
         
         # Services
         self._news_service = NewsService()
-        self._gpt_model = config.get("gpt_model", "gpt-5-pro")
+        # Support both ai_model_override (from UI) and gpt_model (legacy config)
+        self._gpt_model = config.get("ai_model_override") or config.get("gpt_model", "gpt-5-pro")
         
         # Tracking: AI monitor levels and stops (per-symbol state)
         # symbol -> { entry: float, stop: float, confidence: float, rationale: str }
@@ -341,7 +342,15 @@ class WyckoffStrategy(ExecutionStrategy):
     # ---------------------------- Internals -------------------------------
     
     def _get_gpt_helper(self):
-        return get_gpt_helper(model=self._gpt_model, fund_id=self.fund_id)
+        """Get GPT helper with cost tracking, respecting model override from config."""
+        # Resolve model name (may be a UI key like "premium" or actual model name)
+        from app.services.ai.gpt_helper import resolve_model_name
+        resolved_model = resolve_model_name(self._gpt_model, default="gpt-5-pro")
+        return get_gpt_helper(
+            model=resolved_model,
+            fund_id=self.fund_id,
+            config=self.config
+        )
     
     async def _get_candlesticks(
         self,

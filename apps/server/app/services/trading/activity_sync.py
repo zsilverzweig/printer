@@ -307,61 +307,30 @@ class ActivitySyncService:
                 timestamp = datetime.now(timezone.utc)
                 logger.warning(f"No transaction_time for fill {fill_id}, using current time")
             
-            # Validate trade_id exists if provided (prevent foreign key violation)
-            trade_id = None
-            if order.trade_id:
-                trade = await session.get(Trade, order.trade_id)
-                if trade:
-                    trade_id = order.trade_id
-                else:
-                    logger.warning(
-                        f"⚠️  Order {order.id} references non-existent trade {order.trade_id}. "
-                        f"Creating transaction without trade_id."
-                    )
+            # Use centralized transaction service
+            from app.services.trading.transaction_service import create_transaction_from_activity
             
-            # CRITICAL VALIDATION: Ensure we always have a fill_id when creating transactions
-            # This prevents phantom transactions that can't be traced back to Alpaca fills.
-            if not fill_id:
-                logger.error(
-                    f"❌ Cannot create transaction for {fill['symbol']} {fill['side']} - "
-                    f"missing fill_id. This indicates a data integrity issue. "
-                    f"Skipping transaction creation."
-                )
-                await event_service.log_strategy_engine_event(
-                    fund_id=fund_id,
-                    event_category="fill_tracking",
-                    symbol=fill["symbol"],
-                    severity="error",
-                    message=f"Failed to create transaction for {fill['symbol']} - missing fill_id",
-                    event_data={
-                        "order_id": order.id if order else None,
-                        "alpaca_order_id": fill.get("order_id"),
-                        "side": fill["side"],
-                        "quantity": fill["qty"],
-                        "price": fill["price"],
-                        "reason": "missing_fill_id",
-                    }
-                )
-                continue
+            # Prepare fill_data dict for the service
+            fill_data = {
+                "id": fill_id,
+                "symbol": fill["symbol"],
+                "side": fill["side"],
+                "qty": fill["qty"],
+                "price": fill["price"],
+                "transaction_time": timestamp,
+            }
             
-            transaction = Transaction(
-                id=str(uuid.uuid4()),
-                order_id=order.id,
-                alpaca_order_id=order.alpaca_order_id,
-                alpaca_fill_id=fill_id,  # REQUIRED: Must have fill_id for all transactions
+            transaction = await create_transaction_from_activity(
+                session=session,
                 fund_id=fund_id,
-                trade_id=trade_id,  # Use validated trade_id (or None if invalid)
-                symbol=fill["symbol"],
-                side=fill["side"],
-                quantity=fill["qty"],
-                price=fill["price"],
-                total_value=fill["qty"] * fill["price"],
-                timestamp=timestamp,
-                high_water_mark=fill["price"] if fill["side"] == "buy" else None,
-                strategy_state={},
+                order=order,
+                fill_data=fill_data,
             )
             
-            session.add(transaction)
+            if transaction is None:
+                # Transaction was skipped (e.g., missing fill_id)
+                continue
+            
             transactions_created += 1
             
             logger.info(

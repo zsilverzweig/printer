@@ -50,4 +50,28 @@ export const AI_MODELS = {
     contextWindow: 16385,
     temperature: 0.2,
   },
+
+  // GPT-5 Pro - best quality GPT-5 model
+  gpt5Pro: {
+    name: "gpt-5-pro",
+    provider: "openai" as const,
+    maxTokens: 4096,
+    costPerInputToken: 5.0 / 1000000,
+    costPerOutputToken: 15.0 / 1000000,
+    capabilities: ["text", "function_calling", "structured_outputs"],
+    contextWindow: 128000,
+    temperature: 0.2,
+  },
+
+  // GPT-5 Nano - economical GPT-5 model
+  gpt5Nano: {
+    name: "gpt-5-nano",
+    provider: "openai" as const,
+    maxTokens: 4096,
+    costPerInputToken: 0.25 / 1000000,
+    costPerOutputToken: 0.75 / 1000000,
+    capabilities: ["text", "function_calling", "structured_outputs"],
+    contextWindow: 128000,
+    temperature: 0.2,
+  },
 } as const;

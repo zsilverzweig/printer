@@ -181,28 +181,42 @@ async def record_ai_cost_async(
     )
     
     async with get_async_session() as session:
-        session.add(ai_cost)
-        
-        # Update fund AI cost totals
-        result = await session.execute(
-            select(Fund).where(Fund.id == fund_id)
-        )
-        fund = result.scalar_one_or_none()
-        
-        if fund:
-            fund.total_ai_cost += cost
-            fund.ai_cost_mtd += cost
-            fund.ai_cost_ytd += cost
+        try:
+            session.add(ai_cost)
             
-            logger.info(
-                f"💰 AI cost recorded: {operation} for {symbol or 'N/A'} - "
-                f"${cost:.6f} ({prompt_tokens} + {completion_tokens} tokens, {model}). "
-                f"Fund total: ${fund.total_ai_cost:.4f}"
+            # Update fund AI cost totals
+            result = await session.execute(
+                select(Fund).where(Fund.id == fund_id)
             )
-        else:
-            logger.warning(f"Fund {fund_id} not found when recording AI cost")
-        
-        await session.commit()
+            fund = result.scalar_one_or_none()
+            
+            if fund:
+                fund.total_ai_cost += cost
+                fund.ai_cost_mtd += cost
+                fund.ai_cost_ytd += cost
+                
+                logger.info(
+                    f"💰 AI cost recorded: {operation} for {symbol or 'N/A'} - "
+                    f"${cost:.6f} ({prompt_tokens} + {completion_tokens} tokens, {model}). "
+                    f"Fund total: ${fund.total_ai_cost:.4f}, MTD: ${fund.ai_cost_mtd:.4f}"
+                )
+            else:
+                logger.error(
+                    f"❌ Fund {fund_id} not found when recording AI cost. "
+                    f"Operation: {operation}, Symbol: {symbol}, Cost: ${cost:.6f}"
+                )
+                # Still save the cost record even if fund not found (for debugging)
+            
+            await session.flush()  # Flush before commit to catch any issues early
+            await session.commit()
+        except Exception as e:
+            logger.error(
+                f"❌ Failed to save AI cost to database: {e}. "
+                f"fund_id={fund_id}, operation={operation}, cost=${cost:.6f}",
+                exc_info=True
+            )
+            await session.rollback()
+            raise
     
     return ai_cost
 
