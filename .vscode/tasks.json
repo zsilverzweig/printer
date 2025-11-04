@@ -1,0 +1,104 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Run Tests (All)",
+      "type": "shell",
+      "command": "docker exec printer-server pytest tests/ -v --tb=short",
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      },
+      "problemMatcher": {
+        "owner": "pytest",
+        "fileLocation": ["relative", "${workspaceFolder}/apps/server"],
+        "pattern": [
+          {
+            "regexp": "^(.+):(\\d+):\\s+(.+)$",
+            "file": 1,
+            "line": 2,
+            "message": 3
+          }
+        ]
+      }
+    },
+    {
+      "label": "Run Tests (Watch Mode)",
+      "type": "shell",
+      "command": "cd apps/server && ./scripts/run_tests_watch.sh",
+      "isBackground": true,
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      },
+      "problemMatcher": {
+        "owner": "pytest",
+        "fileLocation": ["relative", "${workspaceFolder}/apps/server"],
+        "pattern": [
+          {
+            "regexp": "^FAILED\\s+(.+?)::(.+?)\\s+-\\s+(.+)$",
+            "file": 1,
+            "message": 3
+          },
+          {
+            "regexp": "^\\s*(.+?):(\\d+):\\s+in\\s+(.+)$",
+            "file": 1,
+            "line": 2
+          }
+        ],
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "^Running.*pytest",
+          "endsPattern": "^(.*passed.*|.*failed.*)"
+        }
+      }
+    },
+    {
+      "label": "Run Tests (Current File)",
+      "type": "shell",
+      "command": "docker exec printer-server pytest ${relativeFile} -v --tb=short",
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      },
+      "problemMatcher": {
+        "owner": "pytest",
+        "fileLocation": ["relative", "${workspaceFolder}/apps/server"],
+        "pattern": [
+          {
+            "regexp": "^(.+):(\\d+):\\s+(.+)$",
+            "file": 1,
+            "line": 2,
+            "message": 3
+          }
+        ]
+      }
+    },
+    {
+      "label": "Run Tests (Selective - testmon)",
+      "type": "shell",
+      "command": "docker exec printer-server pytest --testmon -v --tb=short",
+      "group": "test",
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      },
+      "problemMatcher": {
+        "owner": "pytest",
+        "fileLocation": ["relative", "${workspaceFolder}/apps/server"],
+        "pattern": [
+          {
+            "regexp": "^(.+):(\\d+):\\s+(.+)$",
+            "file": 1,
+            "line": 2,
+            "message": 3
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -56,40 +56,6 @@ class ScreenerResult(TypedDict):
     rv60: float
 
 
-class NocStockData(TypedDict):
-    """NOC (Network Operations Center) stock data with all trading signals.
-    
-    Fields:
-        ticker: Stock ticker symbol
-        price: Current price
-        priceSignal: Price signal status (green/yellow/red)
-        changePercent: Yesterday's change percentage
-        changeSignal: Change signal status
-        relativeVolume: Time-adjusted relative volume
-        rvSignal: Relative volume signal status
-        newsSentiment: AI-generated news sentiment
-        newsSignal: News signal status
-        float: Number of shares trading
-        floatSignal: Float signal status
-        bullFlag: Bull flag pattern detected
-        flagSignal: Bull flag signal status
-    """
-    ticker: str
-    price: float
-    priceSignal: str  # "green" | "yellow" | "red"
-    changePercent: float
-    changeSignal: str
-    relativeVolume: float
-    rvSignal: str
-    newsSentiment: str
-    newsSignal: str
-    float: str
-    floatSignal: str
-    bullFlag: bool
-    flagSignal: str
-
-
-
 class ScreenerCriteria(BaseModel):
     """Shared model for screener criteria used across services and routers.
     Mirrors the JSON stored in ScreeningCriteria.criteria.

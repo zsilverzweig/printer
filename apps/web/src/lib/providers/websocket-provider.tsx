@@ -14,7 +14,6 @@ import type { ScreenedStockPreview } from "@/lib/types/market";
 import type {
   ConnectionStatus,
   FundRealtimeData,
-  StockIndicators,
   WebSocketContextValue,
   WebSocketMessage,
 } from "@/lib/types/websocket";
@@ -29,7 +28,6 @@ interface WebSocketProviderProps {
 
 export function WebSocketProvider({ children }: WebSocketProviderProps) {
   // Data state
-  const [nocData, setNocData] = useState<StockIndicators[] | null>(null);
   const [screenerData, setScreenerData] = useState<
     ScreenedStockPreview[] | null
   >(null);
@@ -40,7 +38,6 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
 
   // Connection state
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>({
-    noc: false,
     screener: false,
     market: false,
   });
@@ -98,14 +95,16 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
       case "orders":
         // Handle order updates
         if (message.event_type === "order_created") {
-          updated.orders = [message.data, ...existing.orders];
+          updated.orders = [message.data as any, ...existing.orders];
         } else if (message.event_type === "order_updated") {
           updated.orders = existing.orders.map((order: any) =>
-            order.id === message.data.id ? { ...order, ...message.data } : order
+            order.id === (message.data as any).id
+              ? { ...order, ...(message.data as any) }
+              : order
           );
         } else if (message.event_type === "order_deleted") {
           updated.orders = existing.orders.filter(
-            (order: any) => order.id !== message.data.id
+            (order: any) => order.id !== (message.data as any).id
           );
         }
         break;
@@ -113,29 +112,36 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
       case "transactions":
         // Handle transaction updates
         if (message.event_type === "transaction_created") {
-          updated.transactions = [message.data, ...existing.transactions];
+          updated.transactions = [
+            message.data as any,
+            ...existing.transactions,
+          ];
         }
         break;
 
       case "transfers":
         // Handle transfer updates
         if (message.event_type === "transfer_created") {
-          updated.transfers = [message.data, ...existing.transfers];
+          updated.transfers = [message.data as any, ...existing.transfers];
         }
         break;
 
       case "balance":
         // Handle balance updates
         if (message.event_type === "balance_changed" && existing.fund) {
-          updated.fund = { ...existing.fund, balance: message.data.balance };
+          updated.fund = {
+            ...existing.fund,
+            balance: (message.data as any).balance,
+          };
         }
         break;
 
       case "positions":
         // Handle position updates
         if (message.event_type === "positions_updated") {
-          updated.positions = message.data.positions || [];
-          updated.positionsSummary = message.data.summary || {
+          const posData = message.data as any;
+          updated.positions = posData.positions || [];
+          updated.positionsSummary = posData.summary || {
             positionCount: 0,
             totalMarketValue: 0,
             totalUnrealizedPl: 0,
@@ -146,7 +152,7 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
       case "performance":
         // Handle performance updates
         if (message.event_type === "performance_updated") {
-          updated.performance = message.data;
+          updated.performance = message.data as any;
         }
         break;
     }
@@ -168,14 +174,6 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
     setLastUpdate(message.timestamp);
 
     switch (message.type) {
-      case "noc_update":
-        setNocData(message.data as StockIndicators[]);
-        setConnectionStatus((prev) => ({ ...prev, noc: true }));
-        log.debug("[WebSocket] NOC data updated", {
-          count: Array.isArray(message.data) ? message.data.length : 0,
-        });
-        break;
-
       case "screener_update":
         const screenerUpdateData = message.data as ScreenedStockPreview[];
         console.log("[WebSocket] Screener update received:", {
@@ -474,7 +472,6 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
 
   const contextValue: WebSocketContextValue = {
     // Data
-    nocData,
     screenerData,
     marketData,
     fundData,

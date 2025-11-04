@@ -46,10 +46,26 @@ def list_benzinga_news(
     order: Optional[str] = None,
     limit: int = 10,
     sort: Optional[str] = None,
+    channels: Optional[str] = None,
+    tags: Optional[str] = None,
+    author: Optional[str] = None,
+    stocks: Optional[str] = None,
 ) -> list:
     """Fetch news from Polygon's Benzinga endpoint and return a JSON-serializable list.
 
     Docs: GET https://api.polygon.io/benzinga/v2/news
+    https://massive.com/docs/rest/partners/benzinga/news
+    
+    Args:
+        ticker: Filter by ticker symbol
+        published: Date filter (YYYY-MM-DD) or timestamp
+        order: Sort order (deprecated, use sort instead)
+        limit: Max number of results (default 10, max 50000)
+        sort: Sort columns (e.g., "published.desc")
+        channels: Filter for arrays that contain the value (e.g., "news", "Price Target")
+        tags: Filter for arrays that contain the value
+        author: Filter by author name
+        stocks: Filter for arrays that contain the value (alias for tickers)
     """
     import logging
     import urllib.parse
@@ -71,7 +87,17 @@ def list_benzinga_news(
         params["limit"] = str(limit)
     if sort:
         params["sort"] = sort
-    params["channels"] = "news"
+    if channels:
+        params["channels"] = channels
+    else:
+        # Default to "news" channel if not specified
+        params["channels"] = "news"
+    if tags:
+        params["tags"] = tags
+    if author:
+        params["author"] = author
+    if stocks:
+        params["stocks"] = stocks
 
     # API key
     api_key = getattr(core, "API_KEY", None)

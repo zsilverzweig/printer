@@ -2,16 +2,14 @@
 
 import {
   BarChart3,
-  Bot,
   Briefcase,
   Building2,
-  Database,
-  Home,
   Newspaper,
-  Settings,
   Shield,
+  Table,
   Target,
   TrendingUp,
+  Upload,
   Users,
 } from "lucide-react";
 
@@ -33,17 +31,6 @@ export function MainAppSidebar() {
 
   // Base navigation items for all authenticated users
   const baseSections: SidebarSection[] = [
-    {
-      title: "TCC",
-      items: [
-        {
-          id: "home",
-          title: "TCC",
-          href: "/",
-          icon: <Home className="h-4 w-4" />,
-        },
-      ],
-    },
     {
       title: "Funds",
       titleHref: "/funds",
@@ -97,16 +84,16 @@ export function MainAppSidebar() {
       title: "Research",
       items: [
         {
+          id: "ticker",
+          title: "Ticker Research",
+          href: "/ticker",
+          icon: <BarChart3 className="h-4 w-4" />,
+        },
+        {
           id: "company-research",
           title: "Company Research",
           href: "/company-research",
           icon: <Building2 className="h-4 w-4" />,
-        },
-        {
-          id: "events",
-          title: "Events",
-          href: "/events",
-          icon: <Database className="h-4 w-4" />,
         },
         {
           id: "news-test",
@@ -130,28 +117,16 @@ export function MainAppSidebar() {
           icon: <Shield className="h-4 w-4" />,
         },
         {
-          id: "ticker-database",
-          title: "Ticker Database",
+          id: "data-loading",
+          title: "Data Loading",
           href: "/admin/assets",
-          icon: <Database className="h-4 w-4" />,
+          icon: <Upload className="h-4 w-4" />,
         },
         {
-          id: "database-admin",
-          title: "Database Admin",
+          id: "database",
+          title: "Database",
           href: "/admin/database",
-          icon: <Database className="h-4 w-4" />,
-        },
-        {
-          id: "agent-management",
-          title: "Agent Management",
-          href: "/admin/agents",
-          icon: <Bot className="h-4 w-4" />,
-        },
-        {
-          id: "admin-settings",
-          title: "Admin Settings",
-          href: "/admin/settings",
-          icon: <Settings className="h-4 w-4" />,
+          icon: <Table className="h-4 w-4" />,
         },
       ],
     },

@@ -303,9 +303,7 @@ async def test_screening_criteria_timestamps(async_session):
     criteria = ScreeningCriteria(
         id=criteria_id,
         name="Test Criteria",
-        min_price=1.0,
-        max_price=100.0,
-        min_volume=100000,
+        criteria={"minPrice": 1.0, "maxPrice": 100.0, "minVolume": 100000},
         created_at=now_naive,
         updated_at=now_naive,
     )

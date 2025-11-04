@@ -1,53 +1,34 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
-import { Suspense } from "react";
-
-import { NocTable } from "@/features/finance/market/components/noc-table";
 import { WelcomePage } from "@/lib/components/welcome-page";
 import { useAuthContext } from "@/lib/providers/auth-provider";
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 
 /**
- * Home page content with URL parameter support
+ * Home page that shows:
+ * - Welcome page for unauthenticated users
+ * - Redirects to funds for authenticated users
  */
-function HomePageContent() {
-  const { isAuthenticated } = useAuthContext();
-  const searchParams = useSearchParams();
-  const tickerFromUrl = searchParams.get("ticker");
+export default function HomePage() {
+  const { isAuthenticated, loading } = useAuthContext();
+  const router = useRouter();
 
-  // Show TCC for authenticated users
-  if (isAuthenticated) {
+  // Redirect authenticated users to funds page
+  useEffect(() => {
+    if (!loading && isAuthenticated) {
+      router.push("/funds");
+    }
+  }, [isAuthenticated, loading, router]);
+
+  if (loading) {
     return (
-      <div className="w-full h-screen flex flex-col overflow-hidden">
-        <h1 className="text-3xl font-bold px-6 pt-6 pb-4">
-          Trading Command Center
-        </h1>
-        <div className="flex-1 min-h-0 px-6 pb-6">
-          <NocTable initialTicker={tickerFromUrl || undefined} />
-        </div>
+      <div className="w-full h-screen p-6 flex items-center justify-center">
+        Loading...
       </div>
     );
   }
 
   // Show welcome page for unauthenticated users
   return <WelcomePage />;
-}
-
-/**
- * Home page that shows:
- * - Welcome page for unauthenticated users
- * - TCC (Trading Command Center) for authenticated users
- */
-export default function HomePage() {
-  return (
-    <Suspense
-      fallback={
-        <div className="w-full h-screen p-6 flex items-center justify-center">
-          Loading...
-        </div>
-      }
-    >
-      <HomePageContent />
-    </Suspense>
-  );
 }

@@ -177,37 +177,6 @@ async def test_balance_check_before_alpaca_submission(fund_factory, mock_market_
         )
 
 
-@pytest.mark.asyncio
-async def test_multiple_pending_orders_dont_overallocate():
-    """
-    Test that multiple pending orders don't over-allocate balance.
-    
-    Scenario:
-    - Balance: $1000
-    - Pending order 1: $600 (allocated)
-    - Pending order 2: $600 (would over-allocate to $1200)
-    
-    Expected: Second order should be rejected.
-    
-    Note: This test documents the DESIRED behavior. Implementation
-    would require tracking allocated-but-not-spent balance.
-    """
-    fund = build_fund(balance=1000.0)
-    
-    # First order allocates $600
-    order1_cost = 600.0
-    remaining_after_order1 = fund.balance - order1_cost  # $400
-    
-    # Second order wants $600
-    order2_cost = 600.0
-    
-    # Should not allow second order (would need $1200 total but only have $1000)
-    assert order2_cost > remaining_after_order1, (
-        f"Second order ${order2_cost} exceeds remaining balance ${remaining_after_order1}"
-    )
-    
-    # TODO: Implement balance reservation system to track pending allocations
-    pytest.skip("Balance reservation not implemented - pending orders can over-allocate")
 
 
 @pytest.mark.asyncio

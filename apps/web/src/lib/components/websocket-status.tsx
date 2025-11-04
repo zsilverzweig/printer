@@ -50,10 +50,7 @@ export function WebSocketStatus() {
     return status ? Wifi : WifiOff;
   };
 
-  const allHealthy =
-    connectionStatus.noc &&
-    connectionStatus.screener &&
-    connectionStatus.market;
+  const allHealthy = connectionStatus.screener && connectionStatus.market;
 
   // Determine dot color based on connection status
   const getDotColor = () => {
@@ -135,11 +132,6 @@ export function WebSocketStatus() {
               <div className="flex items-center gap-1">
                 <div
                   className={`h-1.5 w-1.5 rounded-full ${getStatusColor(
-                    connectionStatus.noc
-                  )}`}
-                />
-                <div
-                  className={`h-1.5 w-1.5 rounded-full ${getStatusColor(
                     connectionStatus.screener
                   )}`}
                 />
@@ -156,27 +148,6 @@ export function WebSocketStatus() {
               <div className="mt-3 space-y-2">
                 {/* Service status */}
                 <div className="space-y-1">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-muted-foreground">NOC Service</span>
-                    <div className="flex items-center gap-1">
-                      {React.createElement(
-                        getStatusIcon(connectionStatus.noc),
-                        {
-                          className: "h-3 w-3",
-                        }
-                      )}
-                      <span
-                        className={
-                          connectionStatus.noc
-                            ? "text-green-600"
-                            : "text-red-600"
-                        }
-                      >
-                        {connectionStatus.noc ? "Connected" : "Disconnected"}
-                      </span>
-                    </div>
-                  </div>
-
                   <div className="flex items-center justify-between text-xs">
                     <span className="text-muted-foreground">
                       Screener Service

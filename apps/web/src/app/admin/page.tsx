@@ -1,4 +1,4 @@
-import { Cpu, Database, Settings, Users, Wrench } from "lucide-react";
+import { Cpu, Table, Upload, Wrench } from "lucide-react";
 import Link from "next/link";
 
 import { requireAdmin } from "@/lib/auth/server";
@@ -54,40 +54,6 @@ export default async function AdminPage() {
               </Link>
             </CardContent>
           </Card>
-
-          <Card className="hover:shadow-md transition-shadow opacity-50">
-            <CardHeader>
-              <div className="flex items-center space-x-2">
-                <Users className="h-5 w-5 text-green-600" />
-                <CardTitle>User Management</CardTitle>
-              </div>
-              <CardDescription>
-                Manage user accounts and permissions
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button className="w-full" disabled>
-                Coming Soon
-              </Button>
-            </CardContent>
-          </Card>
-
-          <Card className="hover:shadow-md transition-shadow opacity-50">
-            <CardHeader>
-              <div className="flex items-center space-x-2">
-                <Settings className="h-5 w-5 text-gray-600" />
-                <CardTitle>System Settings</CardTitle>
-              </div>
-              <CardDescription>
-                Configure system-wide settings and preferences
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button className="w-full" disabled>
-                Coming Soon
-              </Button>
-            </CardContent>
-          </Card>
         </div>
 
         {/* Utilities Section */}
@@ -97,8 +63,8 @@ export default async function AdminPage() {
             <Card className="hover:shadow-md transition-shadow">
               <CardHeader>
                 <div className="flex items-center space-x-2">
-                  <Database className="h-5 w-5 text-blue-600" />
-                  <CardTitle>Database Admin</CardTitle>
+                  <Table className="h-5 w-5 text-blue-600" />
+                  <CardTitle>Database</CardTitle>
                 </div>
                 <CardDescription>
                   Query and explore database with SQL or natural language
@@ -106,7 +72,7 @@ export default async function AdminPage() {
               </CardHeader>
               <CardContent>
                 <Link href="/admin/database">
-                  <Button className="w-full">Open Database Admin</Button>
+                  <Button className="w-full">Open Database</Button>
                 </Link>
               </CardContent>
             </Card>
@@ -131,8 +97,8 @@ export default async function AdminPage() {
             <Card className="hover:shadow-md transition-shadow">
               <CardHeader>
                 <div className="flex items-center space-x-2">
-                  <Database className="h-5 w-5 text-purple-600" />
-                  <CardTitle>Asset Loading</CardTitle>
+                  <Upload className="h-5 w-5 text-purple-600" />
+                  <CardTitle>Data Loading</CardTitle>
                 </div>
                 <CardDescription>
                   Load ticker details and historical market data
@@ -145,43 +111,6 @@ export default async function AdminPage() {
               </CardContent>
             </Card>
           </div>
-        </div>
-
-        {/* Quick Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600">
-                AI Operations
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">2</div>
-              <p className="text-xs text-gray-600">Portfolio & Thesis</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600">
-                Total Users
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">-</div>
-              <p className="text-xs text-gray-600">Coming soon</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600">
-                System Status
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-green-600">Online</div>
-              <p className="text-xs text-gray-600">All systems operational</p>
-            </CardContent>
-          </Card>
         </div>
       </div>
     </div>

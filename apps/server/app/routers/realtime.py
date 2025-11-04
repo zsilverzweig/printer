@@ -14,99 +14,10 @@ from polygon import WebSocketClient
 import app.core as core
 from app.core import rest_client
 from app.services.screener.screener import get_screener_service
-from app.services.noc.noc import NocService
 from app.services.realtime.db_listener import get_db_listener_service
 
 
 router = APIRouter()
-noc_service: NocService | None = None
-
-
-@router.websocket("/noc/ws")
-async def noc_ws(websocket: WebSocket):
-    """WebSocket endpoint for NOC (Network Operations Center) real-time data."""
-    global noc_service
-    import logging
-    logger = logging.getLogger("app.realtime")
-    
-    await websocket.accept()
-    logger.info("NOC WebSocket connection accepted")
-    
-    # Get the global screener service (started in main.py)
-    screener_service = get_screener_service()
-    if screener_service is None:
-        logger.error("Global screener service not available")
-        try:
-            await websocket.close()
-        finally:
-            return
-    
-    # Lazy init: create and start NOC service on first connection
-    if noc_service is None:
-        logger.info("Initializing NocService for first time")
-        noc_service = NocService(rest_client, screener_service)
-        try:
-            await noc_service.start()
-        except Exception as e:
-            noc_service = None
-            logger.error("NOC service failed to start: %s", e)
-            try:
-                await websocket.close()
-            finally:
-                return
-    
-    # Attach to NOC service broadcast list and send last cached payload
-    noc_service.subscribers.add(websocket)
-    logger.info("Added NOC subscriber, total subscribers=%s", len(noc_service.subscribers))
-    if noc_service.cached_payload:
-        logger.info("Sending cached NOC payload with %s stocks", len(noc_service.cached_payload))
-        await websocket.send_json(noc_service.cached_payload)
-    else:
-        logger.info("No cached NOC payload to send yet")
-    try:
-        while True:
-            # Keep-alive; wait for client messages or disconnection
-            message = await websocket.receive_text()
-            
-            # Handle client messages
-            try:
-                data = json.loads(message)
-                if isinstance(data, dict):
-                    msg_type = data.get("type")
-                    
-                    if msg_type == "ping":
-                        # Respond to ping with pong
-                        await websocket.send_json({"type": "pong", "timestamp": data.get("timestamp")})
-                        if logger.isEnabledFor(logging.DEBUG):
-                            logger.debug("Sent pong response to NOC client")
-                    
-                    elif msg_type == "set_screener":
-                        # Update the active screener for NOC
-                        screener_id = data.get("screener_id")
-                        if screener_id == "default" or screener_id is None:
-                            noc_service.screener_criteria_id = None
-                            logger.info(f"NOC screener set to default")
-                            await websocket.send_json({
-                                "type": "screener_updated",
-                                "screener_id": None,
-                                "message": "Using default screener"
-                            })
-                        else:
-                            noc_service.screener_criteria_id = screener_id
-                            logger.info(f"NOC screener set to: {screener_id}")
-                            await websocket.send_json({
-                                "type": "screener_updated",
-                                "screener_id": screener_id,
-                                "message": f"Screener updated to {screener_id}"
-                            })
-            except (json.JSONDecodeError, Exception):
-                # Not JSON or other error, ignore and continue
-                pass
-    except Exception as e:
-        logger.info("NOC WebSocket connection closed: %s", e)
-    finally:
-        noc_service.subscribers.discard(websocket)
-        logger.info("Removed NOC subscriber, remaining subscribers=%s", len(noc_service.subscribers))
 
 
 @router.websocket("/ws")
@@ -180,8 +91,7 @@ async def ws_proxy(websocket: WebSocket, subs: str = ""):
 
 @router.websocket("/realtime")
 async def unified_realtime(websocket: WebSocket):
-    """Unified WebSocket endpoint for all real-time data (NOC, screener, market, funds)."""
-    global noc_service
+    """Unified WebSocket endpoint for all real-time data (screener, market, funds)."""
     logger = logging.getLogger("app.realtime")
     
     await websocket.accept()
@@ -293,18 +203,6 @@ async def unified_realtime(websocket: WebSocket):
             await websocket.close()
             return
         
-        # Ensure NOC service is running
-        if noc_service is None:
-            logger.info("Initializing NocService for unified connection")
-            noc_service = NocService(rest_client, screener_service)
-            try:
-                await noc_service.start()
-            except Exception as e:
-                noc_service = None
-                logger.error("NOC service failed to start: %s", e)
-                await websocket.close()
-                return
-        
         # Get database listener service for fund updates
         db_listener = get_db_listener_service()
         if not db_listener.running:
@@ -314,8 +212,7 @@ async def unified_realtime(websocket: WebSocket):
                 logger.error("Failed to start DatabaseListenerService: %s", e)
                 # Continue anyway - fund updates just won't work
         
-        # Subscribe to NOC and Screener broadcasts
-        noc_service.subscribers.add(websocket)
+        # Subscribe to Screener broadcasts
         screener_service.subscribers.add(websocket)
         
         # Send initial connection status
@@ -323,7 +220,6 @@ async def unified_realtime(websocket: WebSocket):
             await websocket.send_json({
                 "type": "connection_status",
                 "data": {
-                    "noc": True,
                     "screener": True,
                     "market": True
                 },
@@ -331,13 +227,6 @@ async def unified_realtime(websocket: WebSocket):
             })
             
             # Send cached data if available
-            if noc_service.cached_payload:
-                await websocket.send_json({
-                    "type": "noc_update",
-                    "data": noc_service.cached_payload,
-                    "timestamp": int(time.time() * 1000)
-                })
-            
             if screener_service.cached_payload:
                 await websocket.send_json({
                     "type": "screener_update",
@@ -501,8 +390,6 @@ async def unified_realtime(websocket: WebSocket):
         logger.info("Unified realtime WebSocket connection closed: %s", e)
     finally:
         # Cleanup
-        if noc_service:
-            noc_service.subscribers.discard(websocket)
         screener_service = get_screener_service()
         if screener_service:
             screener_service.subscribers.discard(websocket)

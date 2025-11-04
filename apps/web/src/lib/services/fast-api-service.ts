@@ -171,6 +171,98 @@ export class FastApiService {
     );
     return [];
   }
+
+  async getHistoricalBars(
+    symbol: string,
+    fromTime: string,
+    toTime: string,
+    timeframe: "1m" | "5m" | "15m" | "1h" | "1d" = "1m",
+    limit: number = 10000
+  ): Promise<AggregateBar[]> {
+    const query = new URLSearchParams({
+      from_time: fromTime,
+      to_time: toTime,
+      timeframe: timeframe,
+      limit: String(limit),
+    });
+
+    const endpoint = this.useProxy
+      ? `/api/market/bars/${encodeURIComponent(symbol)}?${query.toString()}`
+      : `/bars/${encodeURIComponent(symbol)}?${query.toString()}`;
+
+    log.info(
+      "[FastApiService] Fetching historical bars",
+      { symbol, fromTime, toTime, timeframe, limit, endpoint },
+      "FastApiService"
+    );
+
+    try {
+      const response = await this.api.get<{
+        symbol: string;
+        timeframe: string;
+        from: string;
+        to: string;
+        count: number;
+        bars: Array<{
+          time: string;
+          symbol: string;
+          open: number | null;
+          high: number | null;
+          low: number | null;
+          close: number | null;
+          volume: number | null;
+          vwap: number | null;
+          trade_count: number | null;
+        }>;
+      }>(endpoint);
+
+      // Transform database format to AggregateBar format
+      const aggregateBars: AggregateBar[] = response.bars
+        .map((bar) => {
+          // Convert ISO time string to milliseconds timestamp
+          const timestamp = new Date(bar.time).getTime();
+
+          return {
+            t: timestamp,
+            o: bar.open ?? 0,
+            h: bar.high ?? 0,
+            l: bar.low ?? 0,
+            c: bar.close ?? 0,
+            v: bar.volume ?? undefined,
+            vw: bar.vwap ?? undefined,
+            n: bar.trade_count ?? undefined,
+          };
+        })
+        .filter(
+          (bar) =>
+            bar.t &&
+            bar.o != null &&
+            bar.h != null &&
+            bar.l != null &&
+            bar.c != null
+        )
+        .sort((a, b) => a.t - b.t); // Sort ascending (API returns DESC)
+
+      log.info(
+        "[FastApiService] Historical bars fetched",
+        {
+          symbol,
+          count: aggregateBars.length,
+          timeframe,
+        },
+        "FastApiService"
+      );
+
+      return aggregateBars;
+    } catch (error) {
+      log.error(
+        "[FastApiService] Failed to fetch historical bars",
+        error instanceof Error ? error.message : String(error),
+        "FastApiService"
+      );
+      throw error;
+    }
+  }
 }
 
 export const fastApiService = new FastApiService();

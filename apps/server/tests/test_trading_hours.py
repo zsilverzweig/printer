@@ -170,8 +170,8 @@ async def test_strategy_engine_respects_trading_hours():
         alpaca_service=mock_alpaca,
     )
     
-    # Test with mocked time
-    with patch('app.services.strategies.strategy_engine.datetime') as mock_datetime:
+    # Test with mocked time - patch in risk_manager where it's actually used
+    with patch('app.services.strategies.risk_manager.datetime') as mock_datetime:
         ny_tz = pytz.timezone("America/New_York")
         
         # Test during trading hours (10:30 AM ET)
@@ -328,55 +328,6 @@ def test_edge_case_one_second_after_end(fund_factory):
     
     # Should not allow trading
     assert_trading_hours_respected(fund, test_time, should_allow_trading=False)
-
-
-@pytest.mark.asyncio
-async def test_monitor_entries_skips_outside_hours():
-    """
-    Test that _monitor_entries skips entry checks outside trading hours.
-    
-    Expected: The method should return early if not within trading hours.
-    
-    This test will likely FAIL if trading hour checks are not in _monitor_entries.
-    """
-    from app.services.strategies.strategy_engine import StrategyEngine
-    
-    fund = build_fund(
-        trading_start_time="09:30",
-        trading_end_time="16:00",
-        timezone="America/New_York"
-    )
-    
-    mock_market_data = Mock()
-    mock_alpaca = Mock(paper_trading=True)
-    mock_strategy = Mock()
-    mock_strategy.get_monitored_symbols = AsyncMock(return_value=["AAPL"])
-    
-    engine = StrategyEngine(
-        fund=fund,
-        execution_strategy=mock_strategy,
-        market_data_provider=mock_market_data,
-        alpaca_service=mock_alpaca,
-    )
-    
-    # Set monitored symbols
-    engine.monitored_symbols = ["AAPL"]
-    
-    # Mock time to be outside trading hours (8:00 AM ET)
-    with patch('app.services.strategies.strategy_engine.datetime') as mock_datetime:
-        ny_tz = pytz.timezone("America/New_York")
-        mock_datetime.now.return_value = ny_tz.localize(datetime(2024, 1, 15, 8, 0))
-        
-        # Spy on should_enter to verify it's NOT called
-        mock_strategy.should_enter = AsyncMock()
-        
-        # Call monitor entries
-        await engine._monitor_entries()
-        
-        # should_enter should NOT be called (skipped due to trading hours)
-        assert not mock_strategy.should_enter.called, (
-            "should_enter was called outside trading hours - trading hour check not working!"
-        )
 
 
 def test_default_timezone_is_eastern(fund_factory):

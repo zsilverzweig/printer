@@ -1,13 +1,5 @@
 // Admin service for managing system configuration
-import type { AdminConfig } from "../types";
-
 import { log } from "@/lib/utils/logger";
-
-// Default admin configuration
-const DEFAULT_ADMIN_CONFIG: Omit<
-  AdminConfig,
-  "id" | "createdAt" | "updatedAt" | "updatedBy"
-> = {};
 
 export class AdminService {
   private static instance: AdminService;

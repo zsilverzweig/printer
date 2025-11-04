@@ -4,7 +4,6 @@ import type { ScreenedStockPreview } from "@/lib/types/market";
 export type { StockIndicators } from "@printer/shared";
 
 export type WebSocketMessageType =
-  | "noc_update"
   | "screener_update"
   | "market_data"
   | "connection_status"
@@ -22,7 +21,6 @@ export interface WebSocketMessage<T = unknown> {
 }
 
 export interface ConnectionStatus {
-  noc: boolean;
   screener: boolean;
   market: boolean;
 }
@@ -52,7 +50,6 @@ export interface FundRealtimeData {
 
 export interface WebSocketContextValue {
   // Data
-  nocData: import("@printer/shared").StockIndicators[] | null;
   screenerData: ScreenedStockPreview[] | null;
   marketData: Map<string, unknown>;
   fundData: Map<string, FundRealtimeData>;

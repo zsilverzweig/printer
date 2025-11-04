@@ -165,6 +165,17 @@ class StrategyEngine:
         # Position cache (refreshed from Alpaca)
         self._position_cache: Dict[str, PositionContext] = {}
     
+    def _is_trading_time(self) -> bool:
+        """
+        Check if current time is within trading hours.
+        
+        Delegates to risk_manager for trading time check.
+        
+        Returns:
+            True if within trading hours, False otherwise
+        """
+        return self.risk_manager.is_trading_time()
+    
     async def refresh_fund_balance(self) -> None:
         """
         Refresh fund balance from database.

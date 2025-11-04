@@ -381,40 +381,6 @@ async def test_profitable_positions_dont_trigger_loss_limits():
     )
 
 
-@pytest.mark.asyncio
-async def test_max_giveback_percent_not_implemented():
-    """
-    Test for max_giveback_percent (likely not implemented yet).
-    
-    Expected: max_giveback_percent should lock in profits when reached.
-    
-    Example: If max_giveback_percent=20%, and position was up $1000 but
-    drops to $800 profit (gave back $200 = 20%), should exit.
-    
-    This test documents the expected behavior for future implementation.
-    """
-    fund = build_fund(
-        balance=10000.0,
-        max_giveback_percent=20.0  # Stop if give back 20% of gains
-    )
-    
-    # Create position that was up more but gave back some profit
-    # Entry: $150, Peak: $170 (was up $20/share)
-    # Current: $164 (now up $14/share)
-    # Giveback: $6 / $20 = 30% > 20% limit
-    position = build_position_context(
-        entry_price=150.0,
-        current_price=164.0,  # Still profitable, but gave back from peak
-        quantity=100
-    )
-    
-    # Calculate giveback percentage
-    # Note: PositionContext no longer has high_water_mark, so we'll skip this test
-    # The giveback feature would need to track peak price separately
-    
-    # TODO: When implemented, this should trigger an exit
-    # For now, just document that this feature is not yet implemented
-    pytest.skip("max_giveback_percent not implemented yet - skipping enforcement test")
 
 
 @pytest.mark.asyncio

@@ -276,19 +276,9 @@ export function NewsCard({ ticker, onNewsLoad }: NewsCardProps) {
         {/* News Summary */}
         <div className="space-y-1">
           <h4 className="text-xs font-medium">Summary</h4>
-          <p className="text-xs text-muted-foreground line-clamp-3">
-            {newsData.news_summary}
-          </p>
-        </div>
-
-        {/* Trade Recommendation */}
-        <div className="space-y-1">
-          <h4 className="text-xs font-medium">Analysis</h4>
-          <div className="bg-muted p-2 rounded-lg max-h-40 overflow-y-auto">
+          <div className="bg-muted p-2 rounded-lg max-h-60 overflow-y-auto">
             <p className="text-xs whitespace-pre-wrap leading-relaxed">
-              {typeof newsData.trade_recommendation === "string"
-                ? newsData.trade_recommendation
-                : JSON.stringify(newsData.trade_recommendation, null, 2)}
+              {newsData.news_summary}
             </p>
           </div>
         </div>

@@ -2,21 +2,18 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { useMarketData } from "@/lib/hooks/use-market-data";
-import { Button } from "@/lib/components/ui/button";
 import { CandlestickChart } from "@/lib/components/ui/candlestick-chart";
-import { CardActionButton } from "@/lib/components/ui/card-action-button";
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
 } from "@/lib/components/ui/card";
+import { CardActionButton } from "@/lib/components/ui/card-action-button";
 import { Input } from "@/lib/components/ui/input";
+import { useMarketData } from "@/lib/hooks/use-market-data";
 import { useShortcut } from "@/lib/hooks/use-shortcut";
 import type { AggregateBar } from "@printer/shared";
-
-import { FinancialInfoPanel } from "./financial-info-panel";
 
 interface NocRealtimeChartProps {
   symbol: string;
@@ -25,62 +22,8 @@ interface NocRealtimeChartProps {
   onCaptureChart?: () => Promise<string>;
 }
 
-type Timeframe = "1min" | "5min";
-type ViewMode = "default" | "focus"; // default = 24h, focus = 2h
-
-/**
- * Aggregates 1-minute bars into 5-minute bars
- */
-function aggregate5MinBars(minuteBars: AggregateBar[]): AggregateBar[] {
-  if (minuteBars.length === 0) return [];
-
-  const fiveMinBars: AggregateBar[] = [];
-  const barsByFiveMin = new Map<number, AggregateBar[]>();
-
-  // Group bars by 5-minute intervals
-  minuteBars.forEach((bar) => {
-    const fiveMinTimestamp =
-      Math.floor(bar.t / (5 * 60 * 1000)) * (5 * 60 * 1000);
-    if (!barsByFiveMin.has(fiveMinTimestamp)) {
-      barsByFiveMin.set(fiveMinTimestamp, []);
-    }
-    const group = barsByFiveMin.get(fiveMinTimestamp);
-    if (group) group.push(bar);
-  });
-
-  // Aggregate each 5-minute group
-  barsByFiveMin.forEach((bars, timestamp) => {
-    if (bars.length === 0) return;
-
-    const open = bars[0].o;
-    const close = bars[bars.length - 1].c;
-    const high = Math.max(...bars.map((b) => b.h));
-    const low = Math.min(...bars.map((b) => b.l));
-    const volume = bars.reduce((sum, b) => sum + (b.v || 0), 0);
-    const transactions = bars.reduce((sum, b) => sum + (b.n || 0), 0);
-
-    // Calculate weighted average VWAP
-    const totalVolumeForVwap = bars.reduce((sum, b) => sum + (b.v || 0), 0);
-    const vwap =
-      totalVolumeForVwap > 0
-        ? bars.reduce((sum, b) => sum + (b.vw || 0) * (b.v || 0), 0) /
-          totalVolumeForVwap
-        : bars[bars.length - 1].vw;
-
-    fiveMinBars.push({
-      t: timestamp,
-      o: open,
-      h: high,
-      l: low,
-      c: close,
-      v: volume,
-      vw: vwap,
-      n: transactions,
-    });
-  });
-
-  return fiveMinBars.sort((a, b) => a.t - b.t);
-}
+type Timeframe = "1m" | "5m" | "15m" | "1h" | "1d"; // Database timeframes
+type LookbackPeriod = "1hr" | "4hr" | "1d" | "1w" | "1m"; // Lookback periods
 
 /**
  * Real-time candlestick chart for NOC
@@ -92,8 +35,8 @@ export function NocRealtimeChart({
   onSymbolChange,
   onCaptureChart,
 }: NocRealtimeChartProps) {
-  const [timeframe, setTimeframe] = useState<Timeframe>("1min");
-  const [viewMode, setViewMode] = useState<ViewMode>("default");
+  const [timeframe, setTimeframe] = useState<Timeframe>("1m");
+  const [lookbackPeriod, setLookbackPeriod] = useState<LookbackPeriod>("1d");
   const [bars, setBars] = useState<AggregateBar[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
@@ -101,6 +44,40 @@ export function NocRealtimeChart({
   const [isEditingTicker, setIsEditingTicker] = useState(false);
   const tickerInputRef = useRef<HTMLInputElement>(null);
   const chartContainerRef = useRef<HTMLDivElement>(null);
+
+  // Calculate lookback period in milliseconds
+  const getLookbackMs = (period: LookbackPeriod): number => {
+    switch (period) {
+      case "1hr":
+        return 1 * 60 * 60 * 1000;
+      case "4hr":
+        return 4 * 60 * 60 * 1000;
+      case "1d":
+        return 24 * 60 * 60 * 1000;
+      case "1w":
+        return 7 * 24 * 60 * 60 * 1000;
+      case "1m":
+        return 30 * 24 * 60 * 60 * 1000;
+      default:
+        return 24 * 60 * 60 * 1000;
+    }
+  };
+
+  // Calculate appropriate limit based on timeframe and lookback period
+  const getLimit = (tf: Timeframe, period: LookbackPeriod): number => {
+    const lookbackMs = getLookbackMs(period);
+    const barIntervalMs = {
+      "1m": 60 * 1000,
+      "5m": 5 * 60 * 1000,
+      "15m": 15 * 60 * 1000,
+      "1h": 60 * 60 * 1000,
+      "1d": 24 * 60 * 60 * 1000,
+    }[tf];
+
+    // Calculate max bars needed + buffer
+    const maxBars = Math.ceil(lookbackMs / barIntervalMs) + 100;
+    return Math.min(maxBars, 100000); // Cap at 100k bars
+  };
 
   // Subscribe to real-time aggregates through FastAPI server
   // Polygon WebSocket subscription types:
@@ -241,13 +218,12 @@ export function NocRealtimeChart({
       setBars([]); // Clear existing bars
 
       try {
-        // Fetch minute bars for the last 4 days
-        // This provides sufficient historical context for technical indicators
-        // and captures pre-market, regular hours, and after-hours trading
         const now = new Date();
-        const fourDaysAgo = new Date(now.getTime() - 4 * 24 * 60 * 60 * 1000);
-        const from = fourDaysAgo;
+        const lookbackMs = getLookbackMs(lookbackPeriod);
+        const from = new Date(now.getTime() - lookbackMs);
+        const limit = getLimit(timeframe, lookbackPeriod);
 
+        // Build backend URL from NEXT_PUBLIC_WS_URL (consistent with other components)
         const baseUrl =
           process.env.NEXT_PUBLIC_WS_URL?.replace("ws://", "http://").replace(
             "wss://",
@@ -255,52 +231,45 @@ export function NocRealtimeChart({
           ) || "http://localhost:8000";
 
         const params = new URLSearchParams({
-          multiplier: "1",
-          timespan: "minute",
-          from: from.getTime().toString(), // Unix timestamp in milliseconds
-          to: now.getTime().toString(), // Unix timestamp in milliseconds
-          limit: "10000", // 4 days of minute bars (including pre/after-hours)
-          paginate: "true", // Enable pagination to get all bars
+          from_time: from.toISOString(),
+          to_time: now.toISOString(),
+          timeframe: timeframe, // Use selected database timeframe
+          limit: String(limit),
         });
 
-        const url = `${baseUrl}/api/market/aggs/${encodeURIComponent(
+        const url = `${baseUrl}/api/market/bars/${encodeURIComponent(
           symbol
         )}?${params.toString()}`;
+
         console.log(
-          `[NOC Chart] Fetching 4 days of minute bars: ${url}`,
-          `\n  From: ${from.toLocaleString()} (4 days ago)`,
-          `\n  To: ${now.toLocaleString()} (now)`
+          `[NOC Chart] Fetching ${lookbackPeriod} of ${timeframe} bars from database`,
+          `\n  Symbol: ${symbol}`,
+          `\n  URL: ${url}`,
+          `\n  From: ${from.toISOString()} (${lookbackPeriod} ago)`,
+          `\n  To: ${now.toISOString()} (now)`,
+          `\n  Timeframe: ${timeframe}`,
+          `\n  Limit: ${limit}`
         );
 
+        // Fetch from database via MarketDataService endpoint
         const response = await fetch(url);
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
 
         const data = await response.json();
-        console.log(
-          `[NOC Chart] Received ${data.length} historical bars for ${symbol}`,
-          data.length > 0
-            ? `\n  First bar: ${new Date(data[0].t).toLocaleString()}`
-            : "",
-          data.length > 0
-            ? `\n  Last bar: ${new Date(
-                data[data.length - 1].t
-              ).toLocaleString()}`
-            : ""
-        );
 
-        // Convert to our format if needed
-        const historicalBars: AggregateBar[] = data
-          .map((bar: Record<string, unknown>) => ({
-            t: (bar.t as number) || (bar.timestamp as number),
-            o: (bar.o as number) || (bar.open as number),
-            h: (bar.h as number) || (bar.high as number),
-            l: (bar.l as number) || (bar.low as number),
-            c: (bar.c as number) || (bar.close as number),
-            v: (bar.v as number) || (bar.volume as number),
-            vw: (bar.vw as number) || (bar.vwap as number),
-            n: (bar.n as number) || (bar.transactions as number),
+        // Transform database format to AggregateBar format
+        const historicalBars: AggregateBar[] = data.bars
+          .map((bar: any) => ({
+            t: new Date(bar.time).getTime(), // ISO string to milliseconds
+            o: bar.open ?? 0,
+            h: bar.high ?? 0,
+            l: bar.low ?? 0,
+            c: bar.close ?? 0,
+            v: bar.volume ?? undefined,
+            vw: bar.vwap ?? undefined,
+            n: bar.trade_count ?? undefined,
           }))
           .filter(
             (bar: AggregateBar) =>
@@ -310,37 +279,37 @@ export function NocRealtimeChart({
               bar.l != null &&
               bar.c != null
           )
-          .sort((a: AggregateBar, b: AggregateBar) => a.t - b.t); // Sort by timestamp ascending
+          .sort((a: AggregateBar, b: AggregateBar) => a.t - b.t); // Sort ascending
 
-        // Deduplicate bars by minute timestamp
+        console.log(
+          `[NOC Chart] Received ${historicalBars.length} historical bars for ${symbol}`,
+          historicalBars.length > 0
+            ? `\n  First bar: ${new Date(historicalBars[0].t).toLocaleString()}`
+            : "",
+          historicalBars.length > 0
+            ? `\n  Last bar: ${new Date(
+                historicalBars[historicalBars.length - 1].t
+              ).toLocaleString()}`
+            : ""
+        );
+
+        // Bars come from database already in correct timeframe, just deduplicate by timestamp
         const dedupedBars: AggregateBar[] = [];
         const seen = new Set<number>();
 
         for (const bar of historicalBars) {
-          const minuteTimestamp = Math.floor(bar.t / 60000) * 60000;
-          if (!seen.has(minuteTimestamp)) {
-            seen.add(minuteTimestamp);
-            dedupedBars.push({ ...bar, t: minuteTimestamp });
+          // Use the exact timestamp from the bar (database already provides correct timeframe)
+          if (!seen.has(bar.t)) {
+            seen.add(bar.t);
+            dedupedBars.push(bar);
           }
         }
 
-        // Check for gaps in the data to verify we're not artificially filling them
-        if (dedupedBars.length > 1) {
-          let gapsFound = 0;
-          for (let i = 1; i < dedupedBars.length; i++) {
-            const timeDiff = dedupedBars[i].t - dedupedBars[i - 1].t;
-            const expectedDiff = 60000; // 1 minute in milliseconds
-            if (timeDiff > expectedDiff * 1.5) {
-              // More than 1.5 minutes gap
-              gapsFound++;
-            }
-          }
-          console.log(
-            `[NOC Chart] Loaded ${dedupedBars.length} unique minute bars (${
-              historicalBars.length - dedupedBars.length
-            } duplicates removed, ${gapsFound} gaps detected)`
-          );
-        }
+        console.log(
+          `[NOC Chart] Loaded ${dedupedBars.length} ${timeframe} bars (${
+            historicalBars.length - dedupedBars.length
+          } duplicates removed)`
+        );
 
         setBars(dedupedBars);
       } catch (error) {
@@ -352,18 +321,12 @@ export function NocRealtimeChart({
     };
 
     fetchHistoricalData();
-  }, [symbol]);
+  }, [symbol, timeframe, lookbackPeriod]);
 
-  // Filter bars based on timeframe
+  // No need to filter/aggregate - bars come from database in the correct timeframe
   const filteredBars = useMemo(() => {
-    if (bars.length === 0) return [];
-
-    if (timeframe === "5min") {
-      return aggregate5MinBars(bars);
-    }
-
     return bars;
-  }, [bars, timeframe]);
+  }, [bars]);
 
   // Sync ticker input with symbol prop
   useEffect(() => {
@@ -387,11 +350,11 @@ export function NocRealtimeChart({
     setIsEditingTicker(false);
   };
 
-  // Keyboard shortcuts
+  // Keyboard shortcuts for timeframes
   useShortcut(
     "1",
     () => {
-      setTimeframe("1min");
+      setTimeframe("1m");
       console.log("[NOC Chart] Switched to 1-minute timeframe");
     },
     [setTimeframe]
@@ -400,22 +363,37 @@ export function NocRealtimeChart({
   useShortcut(
     "5",
     () => {
-      setTimeframe("5min");
+      setTimeframe("5m");
       console.log("[NOC Chart] Switched to 5-minute timeframe");
     },
     [setTimeframe]
   );
 
   useShortcut(
-    "f",
+    "3",
     () => {
-      setViewMode((prev) => {
-        const newMode = prev === "default" ? "focus" : "default";
-        console.log(`[NOC Chart] Switched to ${newMode} view`);
-        return newMode;
-      });
+      setTimeframe("15m");
+      console.log("[NOC Chart] Switched to 15-minute timeframe");
     },
-    [setViewMode]
+    [setTimeframe]
+  );
+
+  useShortcut(
+    "h",
+    () => {
+      setTimeframe("1h");
+      console.log("[NOC Chart] Switched to 1-hour timeframe");
+    },
+    [setTimeframe]
+  );
+
+  useShortcut(
+    "d",
+    () => {
+      setTimeframe("1d");
+      console.log("[NOC Chart] Switched to 1-day timeframe");
+    },
+    [setTimeframe]
   );
 
   useShortcut(
@@ -441,8 +419,9 @@ export function NocRealtimeChart({
           typeof window !== "undefined" &&
           (window as Window & { html2canvas?: Function }).html2canvas
         ) {
-          const html2canvas = (window as unknown as Window & { html2canvas: Function })
-            .html2canvas;
+          const html2canvas = (
+            window as unknown as Window & { html2canvas: Function }
+          ).html2canvas;
           html2canvas(chartContainerRef.current, {
             backgroundColor: null,
             scale: 2, // Higher resolution
@@ -490,141 +469,192 @@ export function NocRealtimeChart({
   }, [onCaptureChart]);
 
   return (
-    <div className="flex flex-col gap-2 h-full">
-      {/* Chart Section */}
-      <Card className="flex flex-col flex-1 min-h-0" ref={chartContainerRef}>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-          <div className="flex items-center gap-3">
-            {isEditingTicker ? (
-              <Input
-                ref={tickerInputRef}
-                type="text"
-                value={tickerInput}
-                onChange={(e) => setTickerInput(e.target.value.toUpperCase())}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    handleTickerSubmit();
-                  } else if (e.key === "Escape") {
-                    setTickerInput(symbol);
-                    setIsEditingTicker(false);
-                  }
-                }}
-                onBlur={handleTickerSubmit}
-                className="h-8 w-24 text-lg font-semibold"
-                placeholder="Ticker"
-              />
-            ) : (
-              <CardTitle
-                className="text-lg font-semibold cursor-pointer hover:text-primary transition-colors"
-                onClick={() => setIsEditingTicker(true)}
-                title="Click to change ticker (press T)"
-              >
-                {symbol}
-              </CardTitle>
-            )}
-            <div className="flex items-center gap-1.5">
-              <div
-                className={`h-2 w-2 rounded-full ${
-                  isConnected ? "bg-green-500" : "bg-red-500"
-                }`}
-                title={isConnected ? "Live" : "Disconnected"}
-              />
-              <span className="text-xs text-muted-foreground">
+    <Card className="flex flex-col h-full" ref={chartContainerRef}>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+        <div className="flex items-center gap-3">
+          {isEditingTicker ? (
+            <Input
+              ref={tickerInputRef}
+              type="text"
+              value={tickerInput}
+              onChange={(e) => setTickerInput(e.target.value.toUpperCase())}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  handleTickerSubmit();
+                } else if (e.key === "Escape") {
+                  setTickerInput(symbol);
+                  setIsEditingTicker(false);
+                }
+              }}
+              onBlur={handleTickerSubmit}
+              className="h-8 w-24 text-lg font-semibold"
+              placeholder="Ticker"
+            />
+          ) : (
+            <CardTitle
+              className="text-lg font-semibold cursor-pointer hover:text-primary transition-colors"
+              onClick={() => setIsEditingTicker(true)}
+              title="Click to change ticker (press T)"
+            >
+              {symbol}
+            </CardTitle>
+          )}
+          <div className="flex items-center gap-1.5">
+            <div
+              className={`h-2 w-2 rounded-full ${
+                isConnected ? "bg-green-500" : "bg-red-500"
+              }`}
+              title={isConnected ? "Live" : "Disconnected"}
+            />
+            <span className="text-xs text-muted-foreground">
+              {isConnected ? "Live" : "Disconnected"}
+            </span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="flex gap-1">
+            <CardActionButton
+              variant={timeframe === "1m" ? "default" : "outline"}
+              onClick={() => setTimeframe("1m")}
+              title="1-minute bars (press 1)"
+            >
+              1m
+            </CardActionButton>
+            <CardActionButton
+              variant={timeframe === "5m" ? "default" : "outline"}
+              onClick={() => setTimeframe("5m")}
+              title="5-minute bars (press 5)"
+            >
+              5m
+            </CardActionButton>
+            <CardActionButton
+              variant={timeframe === "15m" ? "default" : "outline"}
+              onClick={() => setTimeframe("15m")}
+              title="15-minute bars (press 3)"
+            >
+              15m
+            </CardActionButton>
+            <CardActionButton
+              variant={timeframe === "1h" ? "default" : "outline"}
+              onClick={() => setTimeframe("1h")}
+              title="1-hour bars (press H)"
+            >
+              1h
+            </CardActionButton>
+            <CardActionButton
+              variant={timeframe === "1d" ? "default" : "outline"}
+              onClick={() => setTimeframe("1d")}
+              title="1-day bars (press D)"
+            >
+              1d
+            </CardActionButton>
+          </div>
+          <div className="flex gap-1">
+            <CardActionButton
+              variant={lookbackPeriod === "1hr" ? "default" : "outline"}
+              onClick={() => setLookbackPeriod("1hr")}
+              title="Last 1 hour"
+            >
+              1hr
+            </CardActionButton>
+            <CardActionButton
+              variant={lookbackPeriod === "4hr" ? "default" : "outline"}
+              onClick={() => setLookbackPeriod("4hr")}
+              title="Last 4 hours"
+            >
+              4hr
+            </CardActionButton>
+            <CardActionButton
+              variant={lookbackPeriod === "1d" ? "default" : "outline"}
+              onClick={() => setLookbackPeriod("1d")}
+              title="Last 1 day"
+            >
+              1d
+            </CardActionButton>
+            <CardActionButton
+              variant={lookbackPeriod === "1w" ? "default" : "outline"}
+              onClick={() => setLookbackPeriod("1w")}
+              title="Last 1 week"
+            >
+              1w
+            </CardActionButton>
+            <CardActionButton
+              variant={lookbackPeriod === "1m" ? "default" : "outline"}
+              onClick={() => setLookbackPeriod("1m")}
+              title="Last 1 month"
+            >
+              1m
+            </CardActionButton>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="flex-1 min-h-0 p-4">
+        {isLoadingHistory ? (
+          <div className="flex h-full items-center justify-center text-muted-foreground">
+            Loading historical data...
+          </div>
+        ) : filteredBars.length > 0 ? (
+          <>
+            <CandlestickChart
+              data={filteredBars}
+              height="calc(100% - 24px)"
+              viewMode="default"
+              showEMA12={true}
+              showEMA26={true}
+              showVWAP={true}
+              showVolume={true}
+              showMACD={true}
+              showLegend={true}
+              barIntervalSeconds={
+                timeframe === "1m"
+                  ? 60
+                  : timeframe === "5m"
+                  ? 300
+                  : timeframe === "15m"
+                  ? 900
+                  : timeframe === "1h"
+                  ? 3600
+                  : 86400 // 1d
+              }
+            />
+            <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
+              <span>
+                {filteredBars.length} bars
+                {filteredBars.length > 0 && (
+                  <>
+                    {" • "}
+                    {new Date(filteredBars[0].t).toLocaleTimeString("en-US", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                    {" - "}
+                    {new Date(
+                      filteredBars[filteredBars.length - 1].t
+                    ).toLocaleTimeString("en-US", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </>
+                )}
+              </span>
+              <span className="flex items-center gap-1">
+                <span
+                  className={`h-1.5 w-1.5 rounded-full ${
+                    isConnected ? "bg-green-500" : "bg-red-500"
+                  }`}
+                />
                 {isConnected ? "Live" : "Disconnected"}
               </span>
             </div>
+          </>
+        ) : (
+          <div className="flex h-full items-center justify-center text-muted-foreground">
+            {isConnected
+              ? "Waiting for data..."
+              : "Connecting to real-time feed..."}
           </div>
-          <div className="flex items-center gap-2">
-            <div className="flex gap-1">
-              <CardActionButton
-                variant={timeframe === "1min" ? "default" : "outline"}
-                onClick={() => setTimeframe("1min")}
-                title="1-minute bars (press 1)"
-              >
-                1m
-              </CardActionButton>
-              <CardActionButton
-                variant={timeframe === "5min" ? "default" : "outline"}
-                onClick={() => setTimeframe("5min")}
-                title="5-minute bars (press 5)"
-              >
-                5m
-              </CardActionButton>
-            </div>
-            <CardActionButton
-              variant={viewMode === "focus" ? "default" : "outline"}
-              onClick={() => {
-                setViewMode((prev) =>
-                  prev === "default" ? "focus" : "default"
-                );
-              }}
-              title="Focus on last 2 hours (press F)"
-            >
-              Focus
-            </CardActionButton>
-          </div>
-        </CardHeader>
-        <CardContent className="flex-1 min-h-0 p-4">
-          {isLoadingHistory ? (
-            <div className="flex h-full items-center justify-center text-muted-foreground">
-              Loading historical data...
-            </div>
-          ) : filteredBars.length > 0 ? (
-            <>
-              <CandlestickChart
-                data={filteredBars}
-                height="calc(100% - 24px)"
-                viewMode={viewMode}
-                showEMA12={true}
-                showEMA26={true}
-                showVWAP={true}
-                showVolume={true}
-                showMACD={true}
-                showLegend={true}
-                barIntervalSeconds={timeframe === "5min" ? 300 : 60}
-              />
-              <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
-                <span>
-                  {filteredBars.length} bars
-                  {filteredBars.length > 0 && (
-                    <>
-                      {" • "}
-                      {new Date(filteredBars[0].t).toLocaleTimeString("en-US", {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                      {" - "}
-                      {new Date(
-                        filteredBars[filteredBars.length - 1].t
-                      ).toLocaleTimeString("en-US", {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </>
-                  )}
-                </span>
-                <span className="flex items-center gap-1">
-                  <span
-                    className={`h-1.5 w-1.5 rounded-full ${
-                      isConnected ? "bg-green-500" : "bg-red-500"
-                    }`}
-                  />
-                  {isConnected ? "Live" : "Disconnected"}
-                </span>
-              </div>
-            </>
-          ) : (
-            <div className="flex h-full items-center justify-center text-muted-foreground">
-              {isConnected
-                ? "Waiting for data..."
-                : "Connecting to real-time feed..."}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Financial Info Panel */}
-      <FinancialInfoPanel ticker={symbol} />
-    </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
