@@ -20,7 +20,6 @@ async def startup_init() -> None:
     - PostgreSQL database connection and tables
     - Real-time market data ingestion (if enabled)
     - Health monitoring
-    - Gap detection and backfill (if enabled)
     
     Raises:
         RuntimeError: If required environment variables are not set
@@ -51,13 +50,6 @@ async def startup_init() -> None:
     health_monitor = initialize_health_monitor(interval_seconds=health_check_interval)
     await health_monitor.start()
     logger.info(f"✓ Health monitor ({health_check_interval}s)")
-    
-    # Initialize gap detector
-    from app.services.market.gap_detector import initialize_gap_detector
-    lookback_days = int(os.getenv("MARKET_DATA_LOOKBACK_DAYS", "30"))
-    gap_detector = initialize_gap_detector(lookback_days=lookback_days)
-    # Run initial gap detection (silent unless gaps found)
-    await gap_detector.detect_gaps()
     
     # Initialize snapshot ingestion service (for real-time pricing and gap filling)
     snapshot_ingestion_enabled = os.getenv("SNAPSHOT_INGESTION_ENABLED", "true").lower() == "true"
@@ -109,48 +101,6 @@ async def startup_init() -> None:
     # else:
     #     logger.info("Aggregate timescale loading disabled (set MARKET_DATA_AGGREGATE_LOADING_ENABLED=true to enable)")
     logger.info("Aggregate timescale loading disabled (using MarketDataLoader script instead)")
-
-
-async def _load_aggregate_timescales_async() -> None:
-    """
-    Background task to load aggregate timescales on startup.
-    
-    This runs on startup to ensure the system has historical data at key granularities:
-    - 60 days of 5-minute bars (powers the screener - PRIORITY)
-    - 60 days of 15-minute bars (intraday analysis)
-    - 3 months of hourly bars (intraday analysis)
-    - 6 months of daily bars (technical analysis and backtesting)
-    
-    Note: All timescales are loaded in a single task to avoid conflicts.
-    Each timescale respects its configured lookback period from TIMESCALE_CONFIG.
-    """
-    import logging
-    logger = logging.getLogger("app.core")
-    
-    try:
-        # Wait a few seconds for other services to initialize
-        await asyncio.sleep(5)
-        
-        from app.services.market import historical_data_loader
-        from datetime import datetime, timedelta, timezone
-        
-        # Load all aggregate timescales in a single task
-        # Uses the longest lookback period (180 days for daily data)
-        # Each timescale will only fetch data for its configured lookback period from TIMESCALE_CONFIG
-        logger.info("📊 Loading historical data (5min/15min/1hour/1day)")
-        
-        start_date = datetime.now(timezone.utc) - timedelta(days=180)
-        
-        result = await historical_data_loader.start_historical_load_task(
-            days=180,  # Maximum lookback across all timescales
-            symbols=None,  # All symbols
-            start_date=start_date,
-            timescales=['5min', '15min', '1hour', '1day']  # All aggregate timescales
-        )
-        logger.info(f"✅ Multi-timescale data loading started: {result['message']}")
-        
-    except Exception as e:
-        logger.error(f"Failed to start aggregate timescale loading: {e}", exc_info=True)
 
 
 def get_client(pagination: bool = True) -> RESTClient:

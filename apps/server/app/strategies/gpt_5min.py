@@ -63,7 +63,7 @@ class GPTFiveGuyStrategy(ExecutionStrategy):
     
     def _get_gpt_helper(self):
         """Get GPT helper with cost tracking."""
-        return get_gpt_helper(model="gpt-4o-mini", fund_id=self.fund_id)
+        return get_gpt_helper(model="gpt-5-pro", fund_id=self.fund_id)
     
     @property
     def id(self) -> str:

@@ -93,7 +93,7 @@ class WyckoffStrategy(ExecutionStrategy):
         
         # Services
         self._news_service = NewsService()
-        self._gpt_model = config.get("gpt_model", "gpt-4o-mini")
+        self._gpt_model = config.get("gpt_model", "gpt-5-pro")
         
         # Tracking: AI monitor levels and stops (per-symbol state)
         # symbol -> { entry: float, stop: float, confidence: float, rationale: str }

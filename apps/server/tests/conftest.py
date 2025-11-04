@@ -65,12 +65,7 @@ async def async_client(test_engine):
     except AttributeError:
         pass  # get_async_session might not be imported directly
     
-    # Patch in services that use it
-    try:
-        import app.services.market.historical_data_loader as historical_loader
-        historical_loader.get_async_session = override_get_async_session
-    except AttributeError:
-        pass
+    # Note: historical_data_loader has been removed, no longer needs patching
     
     try:
         transport = ASGITransport(app=app)

@@ -24,12 +24,12 @@ T = TypeVar('T', bound=BaseModel)
 class GPTHelper:
     """Simple helper for GPT API calls with structured outputs."""
     
-    def __init__(self, model: str = "gpt-4o-mini", fund_id: Optional[str] = None):
+    def __init__(self, model: str = "gpt-5-nano", fund_id: Optional[str] = None):
         """
         Initialize GPT helper.
         
         Args:
-            model: OpenAI model to use (default: gpt-4o-mini)
+            model: OpenAI model to use (default: gpt-5-nano)
             fund_id: Optional fund ID for cost tracking
         """
         api_key = os.getenv("OPENAI_API_KEY")
@@ -39,6 +39,17 @@ class GPTHelper:
         self.client = openai.AsyncOpenAI(api_key=api_key)
         self.model = model
         self.fund_id = fund_id
+    
+    def _uses_responses_endpoint(self) -> bool:
+        """Check if model requires v1/responses endpoint instead of v1/chat/completions."""
+        # GPT-5 models (including variants like gpt-5-pro, gpt-5-nano) use v1/responses endpoint
+        # o3 and o4 models also use the responses endpoint
+        responses_endpoint_models = ["gpt-5", "gpt-5-pro", "gpt-5-nano", "o3", "o4"]
+        return any(self.model.lower().startswith(prefix) for prefix in responses_endpoint_models)
+    
+    def _get_json_schema(self, response_model: Type[BaseModel]) -> Dict[str, Any]:
+        """Generate JSON schema from Pydantic model for Structured Outputs."""
+        return response_model.model_json_schema()
     
     async def get_structured_response(
         self,
@@ -51,13 +62,16 @@ class GPTHelper:
         metadata: Optional[Dict[str, Any]] = None,
     ) -> T:
         """
-        Get a structured response from GPT.
+        Get a structured response from GPT using Structured Outputs.
+        
+        Uses client.responses.parse() for Responses API models (GPT-5, o3, o4)
+        and client.chat.completions.create() for traditional models.
         
         Args:
             prompt: The user prompt
             response_model: Pydantic model class for the expected response
             system_prompt: System prompt to set context
-            temperature: Sampling temperature (0-2)
+            temperature: Sampling temperature (0-2) - only used for chat completions
             operation: Optional operation name for cost tracking (e.g., "entry_analysis")
             symbol: Optional symbol for cost tracking
             metadata: Optional metadata for cost tracking
@@ -71,56 +85,102 @@ class GPTHelper:
         try:
             logger.debug(f"Calling GPT with model={self.model}, prompt_length={len(prompt)}")
             
-            response = await self.client.chat.completions.create(
-                model=self.model,
-                response_format={"type": "json_object"},
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=temperature,
-            )
+            # Use Responses API for GPT-5 models with Structured Outputs
+            if self._uses_responses_endpoint():
+                # Use responses.parse() which automatically handles Pydantic models
+                # See: https://platform.openai.com/docs/guides/structured-outputs
+                response = await self.client.responses.parse(
+                    model=self.model,
+                    input=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": prompt}
+                    ],
+                    text_format=response_model,
+                )
+                
+                # Check for refusals
+                if hasattr(response, 'output') and response.output:
+                    output_item = response.output[0]
+                    if hasattr(output_item, 'content') and output_item.content:
+                        content_item = output_item.content[0]
+                        if hasattr(content_item, 'type') and content_item.type == "refusal":
+                            refusal_msg = getattr(content_item, 'refusal', 'Model refused to respond')
+                            logger.warning(f"Model refused request: {refusal_msg}")
+                            raise ValueError(f"Model refused to respond: {refusal_msg}")
+                
+                # Check for incomplete responses
+                if hasattr(response, 'status') and response.status == "incomplete":
+                    reason = getattr(response.incomplete_details, 'reason', 'unknown') if hasattr(response, 'incomplete_details') else 'unknown'
+                    logger.error(f"Incomplete response: {reason}")
+                    raise ValueError(f"Incomplete response: {reason}")
+                
+                # Get parsed response directly (no manual JSON parsing needed)
+                validated_response = response.output_parsed
+                
+                # Get usage for cost tracking
+                usage = response.usage if hasattr(response, 'usage') else None
+                
+            else:
+                # Use chat completions endpoint with Structured Outputs for traditional models
+                json_schema = self._get_json_schema(response_model)
+                response = await self.client.chat.completions.create(
+                    model=self.model,
+                    response_format={
+                        "type": "json_schema",
+                        "json_schema": {
+                            "name": response_model.__name__,
+                            "schema": json_schema,
+                            "strict": True,
+                        }
+                    },
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=temperature,
+                )
+                
+                # Extract content from chat completions format
+                content = response.choices[0].message.content
+                if not content:
+                    raise ValueError("GPT returned empty response")
+                
+                # Parse and validate JSON
+                try:
+                    json_data = json.loads(content)
+                except json.JSONDecodeError as e:
+                    logger.error(f"Failed to parse JSON from response. Content: {content[:500]}")
+                    raise ValueError(f"GPT returned invalid JSON: {e}")
+                
+                # Validate against Pydantic model
+                try:
+                    validated_response = response_model(**json_data)
+                except ValidationError as e:
+                    logger.error(f"GPT response validation failed: {e}")
+                    logger.error(f"Raw response: {json_data}")
+                    raise ValueError(f"GPT response doesn't match expected schema: {e}")
+                
+                # Get usage for cost tracking
+                usage = response.usage
             
             # Record cost if tracking is enabled
-            if self.fund_id and operation:
-                usage = response.usage
-                if usage:
-                    try:
-                        await record_ai_cost_async(
-                            fund_id=self.fund_id,
-                            model=self.model,
-                            prompt_tokens=usage.prompt_tokens,
-                            completion_tokens=usage.completion_tokens,
-                            operation=operation,
-                            symbol=symbol,
-                            metadata=metadata,
-                        )
-                    except Exception as e:
-                        logger.error(f"Failed to record AI cost: {e}", exc_info=True)
-                        # Don't fail the request if cost tracking fails
+            if self.fund_id and operation and usage:
+                try:
+                    await record_ai_cost_async(
+                        fund_id=self.fund_id,
+                        model=self.model,
+                        prompt_tokens=usage.prompt_tokens,
+                        completion_tokens=usage.completion_tokens,
+                        operation=operation,
+                        symbol=symbol,
+                        metadata=metadata,
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to record AI cost: {e}", exc_info=True)
+                    # Don't fail the request if cost tracking fails
             
-            # Parse JSON response
-            content = response.choices[0].message.content
-            if not content:
-                raise ValueError("GPT returned empty response")
-            
-            logger.debug(f"GPT raw response: {content[:200]}...")
-            
-            json_data = json.loads(content)
-            
-            # Validate against Pydantic model
-            try:
-                validated_response = response_model(**json_data)
-                logger.debug(f"Successfully validated GPT response as {response_model.__name__}")
-                return validated_response
-            except ValidationError as e:
-                logger.error(f"GPT response validation failed: {e}")
-                logger.error(f"Raw response: {json_data}")
-                raise ValueError(f"GPT response doesn't match expected schema: {e}")
-        
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse GPT response as JSON: {e}")
-            raise ValueError(f"GPT returned invalid JSON: {e}")
+            logger.debug(f"Successfully validated GPT response as {response_model.__name__}")
+            return validated_response
         
         except Exception as e:
             logger.error(f"GPT API error: {e}", exc_info=True)
@@ -132,7 +192,7 @@ _gpt_helper: GPTHelper | None = None
 
 
 def get_gpt_helper(
-    model: str = "gpt-4o-mini",
+    model: str = "gpt-5-nano",
     fund_id: Optional[str] = None,
 ) -> GPTHelper:
     """

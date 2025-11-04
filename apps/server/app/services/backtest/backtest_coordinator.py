@@ -29,7 +29,6 @@ from app.services.core.time_context import (
 )
 from app.services.backtest.order_simulator import OrderSimulator
 from app.services.backtest.backtest_lookup_service import check_lookup_coverage, populate_lookup_for_date
-from app.services.market.historical_data_loader import start_historical_load_task, get_load_status
 from app.services.strategies.strategy_factory import create_strategy_engine
 from app.services.trading.alpaca_backtest_wrapper import AlpacaBacktestWrapper
 from app.services.events.event_service import event_service

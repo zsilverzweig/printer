@@ -319,11 +319,36 @@ class ActivitySyncService:
                         f"Creating transaction without trade_id."
                     )
             
+            # CRITICAL VALIDATION: Ensure we always have a fill_id when creating transactions
+            # This prevents phantom transactions that can't be traced back to Alpaca fills.
+            if not fill_id:
+                logger.error(
+                    f"❌ Cannot create transaction for {fill['symbol']} {fill['side']} - "
+                    f"missing fill_id. This indicates a data integrity issue. "
+                    f"Skipping transaction creation."
+                )
+                await event_service.log_strategy_engine_event(
+                    fund_id=fund_id,
+                    event_category="fill_tracking",
+                    symbol=fill["symbol"],
+                    severity="error",
+                    message=f"Failed to create transaction for {fill['symbol']} - missing fill_id",
+                    event_data={
+                        "order_id": order.id if order else None,
+                        "alpaca_order_id": fill.get("order_id"),
+                        "side": fill["side"],
+                        "quantity": fill["qty"],
+                        "price": fill["price"],
+                        "reason": "missing_fill_id",
+                    }
+                )
+                continue
+            
             transaction = Transaction(
                 id=str(uuid.uuid4()),
                 order_id=order.id,
                 alpaca_order_id=order.alpaca_order_id,
-                alpaca_fill_id=fill_id,
+                alpaca_fill_id=fill_id,  # REQUIRED: Must have fill_id for all transactions
                 fund_id=fund_id,
                 trade_id=trade_id,  # Use validated trade_id (or None if invalid)
                 symbol=fill["symbol"],

@@ -1,280 +1,165 @@
 #!/usr/bin/env python3
 """
-Simple market data loader for yesterday's data.
-Loads 1min, 5min, 15min, 1hour, 1day bars and creates validation records.
+Market data loader for comprehensive data coverage.
+
+Loads:
+- Yesterday's data (all timescales)
+- Today's data (all timescales) - up to current time
+- 90 days of hourly bars
+- 5min/15min for last 7 days
 """
 
 import asyncio
 import sys
 import os
 from datetime import datetime, timedelta, timezone
-from typing import List, Dict, Optional
-from collections import defaultdict
+from typing import List, Optional
 
 # Add parent directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from polygon import RESTClient
 from sqlalchemy import text
-from sqlalchemy.dialects.postgresql import insert
-import urllib3
-from urllib3.poolmanager import PoolManager
-
-import os
 import logging
 
-# Configure urllib3 connection pool globally for concurrent requests
-# Patch the PoolManager to use a larger default pool size
-_original_connection_from_url = PoolManager.connection_from_url
+# Import core utilities
+# Add scripts directory to path so we can import the core module
+_scripts_dir = os.path.dirname(__file__)
+if _scripts_dir not in sys.path:
+    sys.path.insert(0, _scripts_dir)
 
-def _connection_from_url_with_pool(self, url, pool_kwargs=None):
-    """Wrapper to set maxsize for connection pools."""
-    if pool_kwargs is None:
-        pool_kwargs = {}
-    pool_kwargs.setdefault('maxsize', 10)  # Default pool size is 1, increase to 10
-    return _original_connection_from_url(self, url, pool_kwargs)
+import market_data_loader_core
+from market_data_loader_core import (
+    create_polygon_client,
+    load_symbol_data,
+    insert_bars,
+    create_validation,
+    TIMESCALE_CONFIG,
+    logger
+)
 
-PoolManager.connection_from_url = _connection_from_url_with_pool
-
-# Also patch connection_from_host
-_original_connection_from_host = PoolManager.connection_from_host
-
-def _connection_from_host_with_pool(self, host, port=None, scheme='http', pool_kwargs=None):
-    """Wrapper to set maxsize for connection pools."""
-    if pool_kwargs is None:
-        pool_kwargs = {}
-    pool_kwargs.setdefault('maxsize', 10)
-    return _original_connection_from_host(self, host, port, scheme, pool_kwargs)
-
-PoolManager.connection_from_host = _connection_from_host_with_pool
-
-from app.models.market_data import MarketData, SymbolDateValidation
 from app.services.core.database import get_async_session, init_db
 from app.services.screener.screener_snapshot import fetch_snapshot_all
 
-# Optimize logging: default to INFO for visibility, allow override via env
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
-logger.setLevel(os.getenv("LOADER_LOG_LEVEL", "INFO"))
 
-# Quiet noisy libraries
-logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
-logging.getLogger("urllib3").setLevel(logging.WARNING)
-logging.getLogger("polygon").setLevel(logging.WARNING)
-
-TIMESCALE_CONFIG = {
-    '1min': {'multiplier': 1, 'timespan': 'minute'},
-    '5min': {'multiplier': 5, 'timespan': 'minute'},
-    '15min': {'multiplier': 15, 'timespan': 'minute'},
-    '1hour': {'multiplier': 1, 'timespan': 'hour'},
-    '1day': {'multiplier': 1, 'timespan': 'day'}
-}
-
-EXPECTED_BARS = {
-    '1min': 390,
-    '5min': 78,
-    '15min': 26,
-    '1hour': 7,
-    '1day': 1
-}
-
-
-def create_polygon_client(api_key: str) -> RESTClient:
-    """
-    Create Polygon RESTClient.
-    
-    Connection pool is configured globally via urllib3 settings above.
-    """
-    return RESTClient(api_key=api_key)
-
-
-async def needs_data(symbol: str, date: datetime.date, timescale: str) -> bool:
-    """Check if we already have validation for this symbol/date/timescale."""
-    async with get_async_session() as session:
-        result = await session.execute(
-            text("""
-                SELECT COUNT(*) FROM symbol_date_validation
-                WHERE symbol = :symbol
-                  AND date = :date
-                  AND timescale = :timescale
-                  AND is_complete = true
-            """),
-            {
-                "symbol": symbol.upper(),
-                "date": date,
-                "timescale": timescale
-            }
-        )
-        return result.scalar() == 0
-
-
-async def load_symbol_data(
+async def load_date_range_data(
     client: RESTClient,
-    symbol: str,
-    date: datetime.date,
-    timescale: str,
-    config: Dict
-) -> List[MarketData]:
-    """Fetch bars for a symbol/date/timescale from Polygon."""
-    from_date = date.strftime("%Y-%m-%d")
-    to_date = (date + timedelta(days=1)).strftime("%Y-%m-%d")
+    symbols: List[str],
+    start_date: datetime.date,
+    end_date: datetime.date,
+    timescales: List[str]
+):
+    """
+    Load data for a date range and timescales.
     
-    try:
-        # Run Polygon API call in executor (it's synchronous)
-        loop = asyncio.get_event_loop()
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug("Fetching %s %s from Polygon...", symbol, timescale)
-        aggs = await loop.run_in_executor(
-            None,
-            lambda: list(client.list_aggs(
-                ticker=symbol,
-                multiplier=config['multiplier'],
-                timespan=config['timespan'],
-                from_=from_date,
-                to=to_date,
-                limit=50000
-            ))
-        )
-        
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug("Polygon returned %s bars for %s %s", len(aggs), symbol, timescale)
-        
-        # Optimize hot path: bind locals to avoid repeated lookups
-        bars = []
-        ts_from_ms = datetime.fromtimestamp
-        utc = timezone.utc
-        append = bars.append
-        symbol_upper = symbol.upper()
-        
-        for agg in aggs:
-            timestamp = ts_from_ms(agg.timestamp / 1000, tz=utc)
-            append(MarketData(
-                time=timestamp,
-                symbol=symbol_upper,
-                timescale=timescale,
-                open=float(agg.open),
-                high=float(agg.high),
-                low=float(agg.low),
-                close=float(agg.close),
-                volume=int(agg.volume),
-                vwap=float(agg.vwap) if hasattr(agg, 'vwap') and agg.vwap else None,
-                trade_count=int(agg.transactions) if hasattr(agg, 'transactions') and agg.transactions else None,
-                session_type='regular'
-            ))
-        
-        return bars
-    except Exception as e:
-        logger.error("Error loading %s %s: %s", symbol, timescale, e)
-        return []
-
-
-async def insert_bars(bars: List[MarketData]) -> None:
-    """Bulk insert bars with ON CONFLICT DO NOTHING."""
-    if not bars:
+    Args:
+        client: Polygon REST client
+        symbols: List of symbols to load
+        start_date: Start date (inclusive)
+        end_date: End date (inclusive)
+        timescales: List of timescales to load (e.g., ['1hour', '5min'])
+    """
+    # Generate date range (skip weekends)
+    dates = []
+    current = start_date
+    while current <= end_date:
+        if current.weekday() < 5:  # Monday=0, Friday=4
+            dates.append(current)
+        current += timedelta(days=1)
+    
+    if not dates:
+        if logger.isEnabledFor(logging.INFO):
+            logger.info("No trading days in date range")
         return
     
-    original_count = len(bars)
+    if logger.isEnabledFor(logging.INFO):
+        logger.info("Loading %s timescales for %s dates (%s to %s)",
+                   len(timescales), len(dates), start_date, end_date)
     
-    # Deduplicate
-    seen = {}
-    for bar in bars:
-        key = (bar.time, bar.symbol, bar.timescale)
-        seen[key] = bar
-    bars = list(seen.values())
-    
-    if len(bars) < original_count and logger.isEnabledFor(logging.DEBUG):
-        logger.debug("Deduplicated %s bars to %s unique bars", original_count, len(bars))
-    
-    # Sort to prevent deadlocks
-    bars = sorted(bars, key=lambda b: (b.time, b.symbol, b.timescale))
-    
-    async with get_async_session() as session:
-        # Insert all at once (or in chunks if very large)
-        if len(bars) <= 2000:
-            # Single insert for smaller batches
-            values = [{
-                "time": bar.time,
-                "symbol": bar.symbol,
-                "timescale": bar.timescale,
-                "open": bar.open,
-                "high": bar.high,
-                "low": bar.low,
-                "close": bar.close,
-                "volume": bar.volume,
-                "vwap": bar.vwap,
-                "trade_count": bar.trade_count,
-                "session_type": bar.session_type
-            } for bar in bars]
-            
-            stmt = insert(MarketData).values(values)
-            stmt = stmt.on_conflict_do_nothing(index_elements=["time", "symbol", "timescale"])
-            await session.execute(stmt)
-        else:
-            # Chunk for very large batches
-            for i in range(0, len(bars), 2000):
-                chunk = bars[i:i + 2000]
-                values = [{
-                    "time": bar.time,
-                    "symbol": bar.symbol,
-                    "timescale": bar.timescale,
-                    "open": bar.open,
-                    "high": bar.high,
-                    "low": bar.low,
-                    "close": bar.close,
-                    "volume": bar.volume,
-                    "vwap": bar.vwap,
-                    "trade_count": bar.trade_count,
-                    "session_type": bar.session_type
-                } for bar in chunk]
-                
-                stmt = insert(MarketData).values(values)
-                stmt = stmt.on_conflict_do_nothing(index_elements=["time", "symbol", "timescale"])
-                await session.execute(stmt)
+    # Process each timescale
+    for timescale in timescales:
+        config = TIMESCALE_CONFIG[timescale]
+        if logger.isEnabledFor(logging.INFO):
+            logger.info("")
+            logger.info("Processing %s...", timescale)
         
-        await session.commit()
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug("Inserted %s bars into database", len(bars))
-
-
-async def create_validation(symbol: str, date: datetime.date, timescale: str, bars: List[MarketData]) -> None:
-    """Create validation record for symbol/date/timescale."""
-    bar_count = len([b for b in bars if b.time.date() == date])
-    expected = EXPECTED_BARS.get(timescale, 390)
-    is_complete = bar_count >= expected * 0.9
-    
-    date_bars = [b for b in bars if b.time.date() == date]
-    first_bar = min(b.time for b in date_bars) if date_bars else None
-    last_bar = max(b.time for b in date_bars) if date_bars else None
-    
-    async with get_async_session() as session:
-        stmt = insert(SymbolDateValidation).values({
-            "symbol": symbol.upper(),
-            "date": date,
-            "timescale": timescale,
-            "is_complete": is_complete,
-            "bar_count": bar_count,
-            "expected_bars": expected,
-            "first_bar_time": first_bar,
-            "last_bar_time": last_bar,
-            "validated_at": datetime.now(timezone.utc)
-        })
-        stmt = stmt.on_conflict_do_update(
-            index_elements=["symbol", "date", "timescale"],
-            set_={
-                "bar_count": stmt.excluded.bar_count,
-                "is_complete": stmt.excluded.is_complete,
-                "first_bar_time": stmt.excluded.first_bar_time,
-                "last_bar_time": stmt.excluded.last_bar_time,
-                "validated_at": stmt.excluded.validated_at
-            }
-        )
-        await session.execute(stmt)
-        await session.commit()
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug("Created validation record for %s %s %s", symbol, date, timescale)
+        processed = 0
+        succeeded = 0
+        failed = 0
+        skipped = 0
+        
+        # Pre-check which symbols/dates need data
+        symbols_needing_data = []
+        async with get_async_session() as session:
+            for symbol in symbols:
+                symbol_upper = symbol.upper()
+                # Check which dates need data for this symbol
+                result = await session.execute(
+                    text("""
+                        SELECT DISTINCT date
+                        FROM symbol_date_validation
+                        WHERE symbol = :symbol
+                          AND date BETWEEN :start_date AND :end_date
+                          AND timescale = :timescale
+                    """),
+                    {
+                        "symbol": symbol_upper,
+                        "start_date": start_date,
+                        "end_date": end_date,
+                        "timescale": timescale
+                    }
+                )
+                existing_dates = {row[0] for row in result}
+                missing_dates = [d for d in dates if d not in existing_dates]
+                if missing_dates:
+                    symbols_needing_data.append((symbol, missing_dates))
+        
+        total_symbol_dates = sum(len(dates) for _, dates in symbols_needing_data)
+        if logger.isEnabledFor(logging.INFO):
+            logger.info("Found %s symbol-date combinations needing data (%s skipped)",
+                       total_symbol_dates, len(symbols) * len(dates) - total_symbol_dates)
+        
+        if not symbols_needing_data:
+            if logger.isEnabledFor(logging.INFO):
+                logger.info("All symbols already have %s data for date range, skipping", timescale)
+            continue
+        
+        # Process with limited concurrency
+        semaphore = asyncio.Semaphore(3)
+        
+        async def process_symbol_date(symbol: str, date: datetime.date):
+            nonlocal processed, succeeded, failed
+            
+            async with semaphore:
+                processed += 1
+                try:
+                    bars = await load_symbol_data(client, symbol, date, timescale, config)
+                    if bars:
+                        await insert_bars(bars)
+                        await create_validation(symbol, date, timescale, bars)
+                        succeeded += 1
+                    else:
+                        await create_validation(symbol, date, timescale, [])
+                        succeeded += 1
+                except Exception as e:
+                    failed += 1
+                    logger.error("%s %s %s: Failed - %s", symbol, date, timescale, e)
+                
+                if processed % 100 == 0 and logger.isEnabledFor(logging.INFO):
+                    logger.info("Progress: %s/%s processed (%s succeeded, %s failed)",
+                               processed, total_symbol_dates, succeeded, failed)
+        
+        # Create tasks for all symbol-date combinations
+        tasks = []
+        for symbol, dates_list in symbols_needing_data:
+            for date in dates_list:
+                tasks.append(process_symbol_date(symbol, date))
+        
+        await asyncio.gather(*tasks, return_exceptions=True)
+        
+        if logger.isEnabledFor(logging.INFO):
+            logger.info("%s complete: %s succeeded, %s failed, %s skipped",
+                       timescale, succeeded, failed, skipped)
 
 
 async def load_yesterday_data(init_db_flag: bool = True, api_key: Optional[str] = None):
@@ -419,9 +304,106 @@ async def load_yesterday_data(init_db_flag: bool = True, api_key: Optional[str] 
         logger.info("All done!")
 
 
+async def load_comprehensive_data(init_db_flag: bool = True, api_key: Optional[str] = None):
+    """
+    Load comprehensive market data:
+    - All timescales from yesterday
+    - All timescales from today (up to current time)
+    - 90 days of hourly bars
+    - 5min/15min for last 7 days
+    
+    Args:
+        init_db_flag: If True, initialize database (default True). Set to False if already initialized.
+        api_key: Polygon API key. If None, reads from POLYGON_API_KEY env var.
+    """
+    # Initialize database if needed
+    if init_db_flag:
+        await init_db()
+        if logger.isEnabledFor(logging.INFO):
+            logger.info("Database initialized")
+    
+    # Initialize Polygon client
+    if api_key is None:
+        api_key = os.getenv("POLYGON_API_KEY")
+    if not api_key:
+        raise ValueError("POLYGON_API_KEY environment variable not set")
+    client = create_polygon_client(api_key)
+    
+    # Get symbols
+    if logger.isEnabledFor(logging.INFO):
+        logger.info("Fetching symbols from Polygon snapshot...")
+    snapshot_data = fetch_snapshot_all(api_key)
+    symbols = [ticker["ticker"] for ticker in snapshot_data if "ticker" in ticker]
+    if logger.isEnabledFor(logging.INFO):
+        logger.info("Found %s symbols", len(symbols))
+    
+    today = datetime.now(timezone.utc).date()
+    
+    # Phase 1: Load yesterday's data (all timescales)
+    if logger.isEnabledFor(logging.INFO):
+        logger.info("")
+        logger.info("=" * 60)
+        logger.info("Phase 1: Loading yesterday's data (all timescales)")
+        logger.info("=" * 60)
+    yesterday = today - timedelta(days=1)
+    while yesterday.weekday() >= 5:  # Skip weekends
+        yesterday -= timedelta(days=1)
+    
+    await load_date_range_data(
+        client, symbols, yesterday, yesterday, 
+        timescales=['1day', '1hour', '15min', '5min', '1min']
+    )
+    
+    # Phase 2: Load today's data (all timescales) - up to current time
+    if logger.isEnabledFor(logging.INFO):
+        logger.info("")
+        logger.info("=" * 60)
+        logger.info("Phase 2: Loading today's data (all timescales)")
+        logger.info("=" * 60)
+    
+    # Only load today if it's a weekday
+    if today.weekday() < 5:
+        await load_date_range_data(
+            client, symbols, today, today,
+            timescales=['1day', '1hour', '15min', '5min', '1min']
+        )
+    else:
+        if logger.isEnabledFor(logging.INFO):
+            logger.info("Today is a weekend, skipping today's data")
+    
+    # Phase 3: Load 90 days of hourly bars
+    if logger.isEnabledFor(logging.INFO):
+        logger.info("")
+        logger.info("=" * 60)
+        logger.info("Phase 3: Loading 90 days of hourly bars")
+        logger.info("=" * 60)
+    start_date = today - timedelta(days=90)
+    await load_date_range_data(
+        client, symbols, start_date, yesterday - timedelta(days=1),
+        timescales=['1hour']
+    )
+    
+    # Phase 4: Load 5min/15min for last 7 days
+    if logger.isEnabledFor(logging.INFO):
+        logger.info("")
+        logger.info("=" * 60)
+        logger.info("Phase 4: Loading 5min/15min for last 7 days")
+        logger.info("=" * 60)
+    start_date = today - timedelta(days=7)
+    await load_date_range_data(
+        client, symbols, start_date, yesterday - timedelta(days=1),
+        timescales=['15min', '5min']
+    )
+    
+    if logger.isEnabledFor(logging.INFO):
+        logger.info("")
+        logger.info("=" * 60)
+        logger.info("✅ Comprehensive data loading complete!")
+        logger.info("=" * 60)
+
+
 # Make it importable
-__all__ = ['load_yesterday_data']
+__all__ = ['load_yesterday_data', 'load_comprehensive_data']
 
 if __name__ == "__main__":
     asyncio.run(load_yesterday_data())
-

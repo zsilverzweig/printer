@@ -19,6 +19,14 @@ logger = logging.getLogger(__name__)
 
 # Model pricing per 1M tokens (as of November 2024)
 MODEL_PRICING = {
+    'gpt-5-pro': {
+        'input': 5.00 / 1_000_000,  # Estimated - update with actual pricing
+        'output': 15.00 / 1_000_000,
+    },
+    'gpt-5-nano': {
+        'input': 0.25 / 1_000_000,  # Estimated - cheaper than gpt-5-pro, similar to gpt-4o-mini
+        'output': 0.75 / 1_000_000,
+    },
     'gpt-4o': {
         'input': 2.50 / 1_000_000,
         'output': 10.00 / 1_000_000,

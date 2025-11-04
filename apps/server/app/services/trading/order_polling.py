@@ -287,6 +287,9 @@ class OrderPollingService:
         """
         Create a transaction record for a specific quantity.
         
+        CRITICAL: This method should NOT be used for filled orders without alpaca_fill_id.
+        For filled orders, use Activities API reconciliation which has proper fill IDs.
+        
         Args:
             session: Database session
             order: Order that was filled
@@ -294,6 +297,38 @@ class OrderPollingService:
             quantity_to_transact: The specific quantity to record (delta for partial fills)
         """
         try:
+            # CRITICAL VALIDATION: Prevent creating transactions without alpaca_fill_id
+            # This prevents phantom transactions that can't be traced back to Alpaca fills.
+            # For filled orders, we must use Activities API reconciliation which has fill IDs.
+            if order.status in ["filled", "partially_filled"]:
+                logger.warning(
+                    f"⚠️  Skipping transaction creation for {order.symbol} {order.side} order {order.id[:8]} "
+                    f"because it's filled but we don't have alpaca_fill_id. "
+                    f"Activities API reconciliation will handle this with proper fill IDs. "
+                    f"(Order filled_qty: {alpaca_order.filled_qty}, quantity_to_transact: {quantity_to_transact})"
+                )
+                
+                # Log event for monitoring
+                from app.services.events.event_service import event_service
+                await event_service.log_strategy_engine_event(
+                    fund_id=order.fund_id,
+                    event_category="fill_tracking",
+                    symbol=order.symbol,
+                    severity="warning",
+                    message=f"Skipped transaction creation for {order.symbol} - missing alpaca_fill_id",
+                    event_data={
+                        "order_id": order.id,
+                        "alpaca_order_id": order.alpaca_order_id,
+                        "side": order.side,
+                        "order_status": order.status,
+                        "filled_qty": float(alpaca_order.filled_qty) if alpaca_order.filled_qty else None,
+                        "quantity_to_transact": float(quantity_to_transact),
+                        "reason": "missing_alpaca_fill_id",
+                        "note": "Activities API reconciliation will create transaction with proper fill ID"
+                    }
+                )
+                return
+            
             filled_price = float(alpaca_order.filled_avg_price) if alpaca_order.filled_avg_price else 0.0
             
             # For sells, validate we own enough shares (prevent over-selling)
@@ -335,10 +370,14 @@ class OrderPollingService:
                         f"Creating transaction without trade_id."
                     )
             
+            # NOTE: This code path should rarely be used now since filled orders
+            # are handled by Activities API reconciliation. Only use for special cases
+            # where we have a fill ID from another source.
             transaction = Transaction(
                 id=str(uuid.uuid4()),
                 order_id=order.id,
                 alpaca_order_id=order.alpaca_order_id,
+                alpaca_fill_id=None,  # Explicitly None - should be set by Activities API reconciliation
                 fund_id=order.fund_id,
                 trade_id=trade_id,  # Use validated trade_id (or None if invalid)
                 symbol=order.symbol,

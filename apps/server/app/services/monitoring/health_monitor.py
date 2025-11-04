@@ -434,6 +434,94 @@ class RiskManagementHealthCheck(BaseHealthCheck):
         )
 
 
+class MarketDataLoaderHealthCheck(BaseHealthCheck):
+    """
+    Health check that runs the Market Data Loader to ensure comprehensive data coverage.
+    
+    Runs the loader in the background (non-blocking) to avoid blocking other health checks.
+    
+    Loads:
+    - All timescales from yesterday
+    - All timescales from today (up to current time)
+    - 90 days of hourly bars
+    - 5min/15min for last 7 days
+    """
+    
+    def __init__(self):
+        super().__init__("market_data_loader")
+        self._last_run: Optional[datetime] = None
+        self._last_completed: Optional[datetime] = None
+        self._running_task: Optional[asyncio.Task] = None
+        self._last_error: Optional[str] = None
+    
+    async def _run_loader_background(self) -> None:
+        """Run the comprehensive market data loader in the background."""
+        try:
+            # Import the loader function
+            import importlib.util
+            import os
+            
+            script_path = os.path.join(
+                os.path.dirname(__file__), '..', '..', '..', 'scripts', 'market_data_loader.py'
+            )
+            spec = importlib.util.spec_from_file_location("market_data_loader", script_path)
+            market_data_loader_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(market_data_loader_module)
+            
+            # Import core API key
+            import app.core as core_module
+            
+            # Run the comprehensive loader
+            self.logger.info("Running comprehensive market data loader in background...")
+            
+            await market_data_loader_module.load_comprehensive_data(
+                init_db_flag=False,  # Already initialized
+                api_key=core_module.API_KEY
+            )
+            
+            self._last_completed = datetime.now(timezone.utc)
+            self._last_error = None
+            self.logger.info("Market data loader completed successfully")
+            
+        except Exception as e:
+            self._last_error = str(e)
+            self.logger.error(f"Market data loader failed: {e}", exc_info=True)
+        finally:
+            self._running_task = None
+    
+    async def check(self) -> HealthCheckResult:
+        """Check status and start background loader if not already running."""
+        # Check if a task is already running
+        if self._running_task is not None and not self._running_task.done():
+            return HealthCheckResult(
+                check_name=self.name,
+                is_healthy=True,
+                message="Market data loader is running in background",
+                details={
+                    "status": "running",
+                    "started_at": self._last_run.isoformat() if self._last_run else None,
+                    "last_completed": self._last_completed.isoformat() if self._last_completed else None,
+                    "last_error": self._last_error
+                }
+            )
+        
+        # Start new background task
+        self._last_run = datetime.now(timezone.utc)
+        self._running_task = asyncio.create_task(self._run_loader_background())
+        
+        return HealthCheckResult(
+            check_name=self.name,
+            is_healthy=True,
+            message="Market data loader started in background",
+            details={
+                "status": "started",
+                "started_at": self._last_run.isoformat(),
+                "last_completed": self._last_completed.isoformat() if self._last_completed else None,
+                "last_error": self._last_error
+            }
+        )
+
+
 class HealthMonitorService:
     """
     Service that runs health checks periodically.
@@ -541,6 +629,7 @@ def initialize_health_monitor(interval_seconds: int = 300) -> HealthMonitorServi
         _health_monitor.register_check(MarketDataHealthCheck(lookback_days=30))
         _health_monitor.register_check(RiskManagementHealthCheck())
         _health_monitor.register_check(BacktestDataHealthCheck())
+        _health_monitor.register_check(MarketDataLoaderHealthCheck())
         
         logger.debug("Health monitor initialized with default checks")
     
