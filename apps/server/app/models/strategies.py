@@ -134,6 +134,7 @@ class Order(Base):
     alpaca_order_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
     fund_id: Mapped[str] = mapped_column(String(36), ForeignKey("funds.id"), nullable=False, index=True)
     trade_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)  # Links to Trade record
+    backtest_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)  # Links to Backtest record if from backtest
     
     # Order details
     symbol: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
@@ -147,8 +148,8 @@ class Order(Base):
     # Valid statuses: pending/filled/partially_filled/canceled/failed
     
     # Timing
-    submitted_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    filled_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    submitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    filled_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     
     # Fill details (from Alpaca when filled)
     filled_qty: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
@@ -185,6 +186,7 @@ class Transaction(Base):
     alpaca_fill_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
     fund_id: Mapped[str] = mapped_column(String(36), ForeignKey("funds.id"), nullable=False, index=True)
     trade_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("trades.id"), nullable=True, index=True)  # Links to Trade record
+    backtest_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)  # Links to Backtest record if from backtest
     
     # Transaction details
     symbol: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
@@ -192,7 +194,7 @@ class Transaction(Base):
     quantity: Mapped[float] = mapped_column(Float, nullable=False)
     price: Mapped[float] = mapped_column(Float, nullable=False)
     total_value: Mapped[float] = mapped_column(Float, nullable=False)  # quantity * price
-    timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     
     # Strategy tracking fields (for position management)
     high_water_mark: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
@@ -221,7 +223,7 @@ class Transfer(Base):
     amount: Mapped[float] = mapped_column(Float, nullable=False)
     transfer_type: Mapped[str] = mapped_column(String(20), nullable=False)  # deposit/withdrawal
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True, default=datetime.utcnow)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True, default=datetime.utcnow)
     
     created_at: Mapped[datetime] = mapped_column(
         DateTime, 
@@ -243,16 +245,17 @@ class Trade(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True)  # Same as trade_id in orders/transactions
     fund_id: Mapped[str] = mapped_column(String(36), ForeignKey("funds.id"), nullable=False, index=True)
     symbol: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
+    backtest_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)  # Links to Backtest record if from backtest
     
     # Entry information
     entry_order_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("orders.id"), nullable=True)
-    entry_time: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    entry_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     entry_price: Mapped[float] = mapped_column(Float, nullable=False)  # Average entry price
     entry_quantity: Mapped[float] = mapped_column(Float, nullable=False)
     
     # Exit information (nullable for open trades)
     exit_order_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("orders.id"), nullable=True)
-    exit_time: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, index=True)
+    exit_time: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     exit_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     exit_quantity: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     
@@ -328,6 +331,63 @@ class AICost(Base):
         DateTime, 
         nullable=False, 
         default=datetime.utcnow
+    )
+
+
+class Backtest(Base):
+    """
+    Backtest execution record.
+    
+    Tracks backtesting of a fund's strategy against historical data for a specific date.
+    All orders, transactions, and trades created during a backtest are linked via backtest_id.
+    """
+    __tablename__ = "backtests"
+    
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    fund_id: Mapped[str] = mapped_column(String(36), ForeignKey("funds.id"), nullable=False, index=True)
+    date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)  # Date being backtested
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="running", index=True)
+    # Valid statuses: 'running', 'completed', 'failed', 'cancelled'
+    
+    # Configuration snapshot (captures fund state at backtest time)
+    strategy_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    strategy_config: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    screening_criteria_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    
+    # Results
+    starting_balance: Mapped[float] = mapped_column(Float, nullable=False)
+    ending_balance: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # Null until completed
+    total_trades: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    winning_trades: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    losing_trades: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    total_pnl: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # Null until completed
+    total_pnl_percent: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    
+    # Execution stats
+    total_orders: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    filled_orders: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    cancelled_orders: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    
+    # Timing
+    started_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    
+    # Error tracking
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    
+    # Additional metadata (renamed from 'metadata' to avoid SQLAlchemy reserved name)
+    backtest_metadata: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, 
+        nullable=False, 
+        default=datetime.utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, 
+        nullable=False, 
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow
     )
 
 

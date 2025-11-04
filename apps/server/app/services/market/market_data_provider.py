@@ -18,6 +18,7 @@ from alpaca.data.timeframe import TimeFrame
 
 import app.core as core
 from app.strategies.base import MarketDataSnapshot
+from app.services.core.time_context import get_backtest_context, get_current_time
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +55,8 @@ class MarketDataProvider:
         """
         Get current real-time quote for a symbol.
         
+        In backtest mode, returns historical quote at backtest time.
+        
         Args:
             symbol: Stock symbol
             
@@ -61,6 +64,37 @@ class MarketDataProvider:
             Dictionary with current quote data
         """
         try:
+            # Check if in backtest mode
+            ctx = get_backtest_context()
+            if ctx:
+                # Backtest mode: get historical bar at current backtest time
+                from app.services.market.market_data_service import get_market_data_service
+                service = get_market_data_service()
+                
+                # Get the current minute bar
+                bars = await service.get_bars(
+                    symbol=symbol,
+                    timeframe="1Min",
+                    lookback_minutes=1  # Just get current minute
+                )
+                
+                if bars and len(bars) > 0:
+                    bar = bars[-1]  # Most recent bar
+                    return {
+                        "symbol": symbol,
+                        "price": bar["close"],
+                        "bid": bar["low"],  # Approximate
+                        "ask": bar["high"],  # Approximate
+                        "timestamp": bar["timestamp"],  # Bars use "timestamp" key
+                    }
+                else:
+                    # No bar data at this moment - stock not trading (normal for low volume)
+                    # Return None to signal no data, don't raise error
+                    logger.debug(f"No bar data for {symbol} at {ctx.current_time} (not trading this minute)")
+                    # Raise to propagate up so strategy skips this ticker
+                    raise ValueError(f"No bar data available for {symbol} at {ctx.current_time}")
+            
+            # Live mode: get real-time quote
             if self.alpaca_data_client:
                 request = StockLatestQuoteRequest(symbol_or_symbols=symbol)
                 quotes = self.alpaca_data_client.get_stock_latest_quote(request)
@@ -84,6 +118,12 @@ class MarketDataProvider:
                     "timestamp": datetime.fromtimestamp(last_trade.sip_timestamp / 1e9),
                 }
         
+        except ValueError as e:
+            # Don't log error for expected "no bar data" cases in backtest
+            if "No bar data available" in str(e):
+                raise  # Re-raise without logging
+            logger.error(f"Error getting realtime quote for {symbol}: {e}")
+            raise
         except Exception as e:
             logger.error(f"Error getting realtime quote for {symbol}: {e}")
             raise
@@ -412,6 +452,12 @@ class MarketDataProvider:
                 indicators=indicators,
             )
         
+        except ValueError as e:
+            # Don't log error for expected "no bar data" cases in backtest
+            if "No bar data available" in str(e):
+                raise  # Re-raise without logging
+            logger.error(f"Error building market data for {symbol}: {e}", exc_info=True)
+            raise
         except Exception as e:
             logger.error(f"Error building market data for {symbol}: {e}", exc_info=True)
             raise

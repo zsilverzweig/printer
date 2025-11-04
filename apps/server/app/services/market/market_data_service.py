@@ -11,11 +11,12 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from decimal import Decimal
 
-from sqlalchemy import select, text, and_
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy import select, text, and_, bindparam, String
+from sqlalchemy.dialects.postgresql import insert, ARRAY as postgresql_ARRAY
 
 from app.services.core.database import get_async_session
 from app.models.market_data import MarketData
+from app.services.core.time_context import get_current_time, get_backtest_context
 
 
 logger = logging.getLogger(__name__)
@@ -77,14 +78,40 @@ class MarketDataService:
         # Normalize timeframe
         timeframe = self._normalize_timeframe(timeframe)
         
-        # Calculate time window
+        # Calculate time window (respecting backtest context)
         if end_time is None:
-            end_time = datetime.now(timezone.utc)
+            # Use backtest time if in backtest mode, otherwise current time
+            end_time = get_current_time()
+            if end_time.tzinfo is None:
+                end_time = end_time.replace(tzinfo=timezone.utc)
         if start_time is None:
             start_time = end_time - timedelta(minutes=lookback_minutes)
         
         try:
-            # Try database first
+            # Check validation table FIRST (before querying) to avoid unnecessary API calls
+            # If validated, we have all available data (even if sparse) and should not refetch
+            ctx = get_backtest_context()
+            if ctx:
+                # Only check validation in backtest mode (for performance)
+                is_validated = await self._check_validation(symbol, timeframe, start_time, end_time)
+                
+                if is_validated:
+                    # Data has been validated - query DB and use whatever we have
+                    result = await self._query_database(
+                        symbols=[symbol],
+                        timeframe=timeframe,
+                        start_time=start_time,
+                        end_time=end_time
+                    )
+                    bars = result.get(symbol, [])
+                    
+                    self._db_hits += 1
+                    logger.info(
+                        f"✓ VALIDATED: {symbol} {timeframe} - using DB ({len(bars)} bars), skipping API"
+                    )
+                    return bars
+            
+            # Try database first (for non-validated or live mode)
             result = await self._query_database(
                 symbols=[symbol],
                 timeframe=timeframe,
@@ -284,8 +311,7 @@ class MarketDataService:
         """
         Get latest close prices for multiple symbols - optimized for screener.
         
-        This is used by the screener to get current prices for all symbols
-        efficiently in a single query.
+        Parallelizes large batches into concurrent queries for speed.
         
         Args:
             symbols: List of stock symbols
@@ -300,35 +326,92 @@ class MarketDataService:
         
         timeframe = self._normalize_timeframe(timeframe)
         
+        # For large batches, split into parallel chunks for speed
+        CHUNK_SIZE = 10  # Tiny chunks = maximum parallelism (10 symbols per query, ~130 concurrent)
+        if len(symbols) > CHUNK_SIZE:
+            # Run parallel queries
+            chunks = [symbols[i:i + CHUNK_SIZE] for i in range(0, len(symbols), CHUNK_SIZE)]
+            
+            # Get backtest ID for logging
+            from app.services.core.time_context import get_backtest_id
+            bt_id = get_backtest_id()
+            bt_label = f"[BT:{bt_id[:8]}]" if bt_id else ""
+            
+            logger.info(f"{bt_label} [BATCH] Splitting {len(symbols)} symbols into {len(chunks)} parallel queries")
+            
+            import time
+            start = time.time()
+            
+            tasks = [
+                self._get_latest_prices_chunk(chunk, timeframe, at_timestamp)
+                for chunk in chunks
+            ]
+            
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            # Merge results
+            price_map = {}
+            for result in results:
+                if isinstance(result, dict):
+                    price_map.update(result)
+                elif isinstance(result, Exception):
+                    logger.warning(f"Chunk query failed: {result}")
+            
+            elapsed = time.time() - start
+            logger.info(f"{bt_label} [BATCH] Completed {len(chunks)} parallel queries in {elapsed:.2f}s ({len(price_map)} symbols)")
+            
+            return price_map
+        
+        # Small batch - single query
+        return await self._get_latest_prices_chunk(symbols, timeframe, at_timestamp)
+    
+    async def _get_latest_prices_chunk(
+        self,
+        symbols: List[str],
+        timeframe: str,
+        at_timestamp: Optional[datetime] = None
+    ) -> Dict[str, float]:
+        """Execute a single price query for a chunk of symbols."""
         try:
             async with get_async_session() as session:
                 if at_timestamp:
-                    # Historical mode: Get latest price at or before timestamp
+                    # Historical mode: Use LATERAL join for better performance
+                    # This does one index lookup per symbol instead of scanning all bars
                     result = await session.execute(
                         text("""
-                            SELECT DISTINCT ON (symbol)
-                                symbol,
-                                close as current_price
-                            FROM market_data
-                            WHERE symbol = ANY(:symbols)
-                              AND timescale = :timescale
-                              AND time <= :timestamp
-                            ORDER BY symbol, time DESC
-                        """),
+                            SELECT s.symbol, m.close as current_price
+                            FROM unnest(CAST(:symbols AS text[])) AS s(symbol)
+                            CROSS JOIN LATERAL (
+                                SELECT close
+                                FROM market_data
+                                WHERE symbol = s.symbol
+                                  AND timescale = :timescale
+                                  AND time <= :timestamp
+                                ORDER BY time DESC
+                                LIMIT 1
+                            ) m
+                        """).bindparams(
+                            bindparam("symbols", type_=postgresql_ARRAY(String))
+                        ),
                         {"symbols": symbols, "timescale": timeframe, "timestamp": at_timestamp}
                     )
                 else:
-                    # Live mode: Get most recent price
+                    # Live mode: Use LATERAL join
                     result = await session.execute(
                         text("""
-                            SELECT DISTINCT ON (symbol)
-                                symbol,
-                                close as current_price
-                            FROM market_data
-                            WHERE symbol = ANY(:symbols)
-                              AND timescale = :timescale
-                            ORDER BY symbol, time DESC
-                        """),
+                            SELECT s.symbol, m.close as current_price
+                            FROM unnest(CAST(:symbols AS text[])) AS s(symbol)
+                            CROSS JOIN LATERAL (
+                                SELECT close
+                                FROM market_data
+                                WHERE symbol = s.symbol
+                                  AND timescale = :timescale
+                                ORDER BY time DESC
+                                LIMIT 1
+                            ) m
+                        """).bindparams(
+                            bindparam("symbols", type_=postgresql_ARRAY(String))
+                        ),
                         {"symbols": symbols, "timescale": timeframe}
                     )
                 
@@ -340,7 +423,7 @@ class MarketDataService:
                 return price_map
                 
         except Exception as e:
-            logger.error(f"Error fetching latest prices batch: {e}")
+            logger.error(f"Error fetching latest prices chunk ({len(symbols)} symbols): {e}")
             return {}
     
     async def _query_database(
@@ -713,6 +796,57 @@ class MarketDataService:
                 expected_bars = max(1, int(lookback_minutes / bar_minutes * 0.6))
             
             return expected_bars
+    
+    async def _check_validation(
+        self,
+        symbol: str,
+        timeframe: str,
+        start_time: datetime,
+        end_time: datetime
+    ) -> bool:
+        """
+        Check if this symbol/date/timescale has been validated.
+        
+        If validated, we've already fetched all available data from the API,
+        so we should use whatever is in the DB (even if sparse/empty).
+        
+        Args:
+            symbol: Stock symbol
+            timeframe: Timescale
+            start_time: Query start time
+            end_time: Query end time
+            
+        Returns:
+            True if data has been validated (don't refetch), False otherwise
+        """
+        try:
+            from app.models.market_data import SymbolDateValidation
+            
+            async with get_async_session() as session:
+                # Check if all days in the range have validation records
+                start_date = start_time.date()
+                end_date = end_time.date()
+                
+                # Simple check: if we have a validation record for the date, trust it
+                stmt = select(SymbolDateValidation).where(
+                    SymbolDateValidation.symbol == symbol,
+                    SymbolDateValidation.timescale == timeframe,
+                    SymbolDateValidation.date >= start_date,
+                    SymbolDateValidation.date <= end_date
+                )
+                result = await session.execute(stmt)
+                validations = result.scalars().all()
+                
+                # If we have validation records covering the date range, consider it validated
+                if validations:
+                    logger.debug(f"Validation exists for {symbol} on {start_date} - using DB data as-is")
+                    return True
+                
+                return False
+        
+        except Exception as e:
+            logger.debug(f"Error checking validation for {symbol}: {e}")
+            return False
     
     def _bar_to_dict(self, bar: MarketData) -> Dict[str, Any]:
         """Convert SQLAlchemy MarketData model to dict."""

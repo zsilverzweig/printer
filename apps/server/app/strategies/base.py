@@ -119,6 +119,23 @@ class ExecutionStrategy(ABC):
         from app.services.core.timing import IntervalTracker
         self._interval_tracker = IntervalTracker()
     
+    def validate_config(self, config: Dict[str, Any]) -> bool:
+        """
+        Validate strategy configuration.
+        
+        Override in subclass to add strategy-specific validation.
+        
+        Args:
+            config: Configuration dictionary to validate
+            
+        Returns:
+            True if valid
+            
+        Raises:
+            ValueError: If configuration is invalid
+        """
+        return True  # Default: accept any config
+    
     @property
     @abstractmethod
     def id(self) -> str:

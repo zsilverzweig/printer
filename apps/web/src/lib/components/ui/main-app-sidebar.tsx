@@ -5,6 +5,7 @@ import {
   Briefcase,
   Building2,
   Newspaper,
+  PlaySquare,
   Shield,
   Table,
   Target,
@@ -94,6 +95,12 @@ export function MainAppSidebar() {
           title: "Company Research",
           href: "/company-research",
           icon: <Building2 className="h-4 w-4" />,
+        },
+        {
+          id: "backtests",
+          title: "Backtests",
+          href: "/research/backtests",
+          icon: <PlaySquare className="h-4 w-4" />,
         },
         {
           id: "news",

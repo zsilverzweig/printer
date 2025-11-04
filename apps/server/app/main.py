@@ -11,7 +11,7 @@ load_dotenv("env.local")
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from app.core import startup_init
-from app.routers import market, news, trading, events, admin, screener, strategies, funds, screening_criteria, db_admin, screener_metrics, analytics
+from app.routers import market, news, trading, events, admin, screener, strategies, funds, screening_criteria, db_admin, screener_metrics, analytics, backtests
 from app.routers.realtime import router as realtime_router
 import logging
 import time
@@ -112,6 +112,7 @@ app.include_router(screener_metrics.router)  # Screener metrics management
 app.include_router(strategies.router)
 app.include_router(funds.router, prefix="/api", tags=["funds"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"])  # Trade analytics and performance
+app.include_router(backtests.router, prefix="/api/backtests", tags=["backtests"])  # Backtest execution and results
 
 # Include realtime/WebSocket router
 app.include_router(realtime_router)

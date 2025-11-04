@@ -13,10 +13,11 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.strategies import Transaction, Order
+from app.models.strategies import Transaction, Order, Trade
 from app.services.trading.alpaca_service import AlpacaService
-from app.services.trading.position_tracker import get_all_positions_from_transactions
+from app.services.trading.position_tracker import get_all_positions_from_transactions, get_position_quantity_from_transactions
 from app.services.events.event_service import event_service
+from app.services.analytics.trade_builder import TradeBuilder
 
 logger = logging.getLogger(__name__)
 
@@ -351,6 +352,9 @@ class ActivitySyncService:
             await session.commit()
             logger.info(f"✅ Created {transactions_created} missing transactions for {symbol}")
             
+            # Automatically update trades after transactions are created
+            await self._auto_update_trades_for_symbol(session, fund_id, symbol)
+            
             await event_service.log_strategy_engine_event(
                 fund_id=fund_id,
                 event_category="position_sync",
@@ -411,6 +415,122 @@ class ActivitySyncService:
             "fills_already_existed": len(symbol_fills) - transactions_created,
         }
     
+    async def _auto_update_trades_for_symbol(
+        self,
+        session: AsyncSession,
+        fund_id: str,
+        symbol: str
+    ) -> None:
+        """
+        Automatically create or update Trade records for a symbol after transactions are created.
+        
+        This is called after transactions are committed to ensure Trade records stay in sync.
+        
+        Logic:
+        1. Get all transactions for this symbol with a trade_id
+        2. Group by trade_id
+        3. For each trade_id:
+           - If Trade record doesn't exist: create it from buy transactions
+           - If position is closed (qty=0): close the Trade record
+           - If position still open: update Trade record with latest quantities
+        """
+        try:
+            # Get all transactions for this symbol
+            txns_stmt = select(Transaction).join(Order).where(
+                Transaction.symbol == symbol,
+                Order.fund_id == fund_id,
+                Transaction.trade_id.isnot(None)
+            ).order_by(Transaction.timestamp.asc())
+            
+            txns_result = await session.execute(txns_stmt)
+            transactions = txns_result.scalars().all()
+            
+            if not transactions:
+                logger.debug(f"No transactions with trade_id found for {symbol}")
+                return
+            
+            # Group transactions by trade_id
+            trades_txns = {}
+            for txn in transactions:
+                if txn.trade_id not in trades_txns:
+                    trades_txns[txn.trade_id] = []
+                trades_txns[txn.trade_id].append(txn)
+            
+            trade_builder = TradeBuilder(session)
+            
+            for trade_id, trade_txns in trades_txns.items():
+                # Check if Trade record exists
+                trade_result = await session.execute(
+                    select(Trade).where(Trade.id == trade_id)
+                )
+                existing_trade = trade_result.scalar_one_or_none()
+                
+                # Separate buy and sell transactions
+                buy_txns = [t for t in trade_txns if t.side == "buy"]
+                sell_txns = [t for t in trade_txns if t.side == "sell"]
+                
+                if not existing_trade and buy_txns:
+                    # Create new Trade record from buy transactions
+                    logger.info(f"🆕 Auto-creating Trade record {trade_id} for {symbol}")
+                    
+                    # Get the order for the first buy transaction
+                    first_buy_order_result = await session.execute(
+                        select(Order).where(Order.id == buy_txns[0].order_id)
+                    )
+                    first_buy_order = first_buy_order_result.scalar_one_or_none()
+                    
+                    if first_buy_order:
+                        await trade_builder.create_trade_from_entry(
+                            trade_id=trade_id,
+                            fund_id=fund_id,
+                            symbol=symbol,
+                            entry_order_id=first_buy_order.id,
+                            entry_transactions=buy_txns,
+                            strategy_id=first_buy_order.strategy_id if hasattr(first_buy_order, 'strategy_id') else None
+                        )
+                        await session.commit()
+                        logger.info(f"✅ Created Trade record {trade_id} for {symbol}")
+                
+                elif existing_trade and existing_trade.status == "open" and buy_txns:
+                    # Update existing open trade if more buy transactions came in (e.g., partial fills)
+                    # Recalculate entry metrics from all buy transactions
+                    total_quantity = sum(txn.quantity for txn in buy_txns)
+                    total_cost = sum(txn.total_value for txn in buy_txns)
+                    avg_entry_price = total_cost / total_quantity if total_quantity > 0 else existing_trade.entry_price
+                    
+                    if abs(existing_trade.entry_quantity - total_quantity) > 0.001:
+                        logger.info(f"🔄 Updating Trade record {trade_id} for {symbol}: qty {existing_trade.entry_quantity} -> {total_quantity}")
+                        existing_trade.entry_quantity = total_quantity
+                        existing_trade.entry_price = avg_entry_price
+                        await session.commit()
+                        logger.info(f"✅ Updated Trade record {trade_id} for {symbol}")
+                
+                # Check if position is closed
+                if existing_trade and existing_trade.status == "open" and sell_txns:
+                    # Calculate if position is closed
+                    position_qty = await get_position_quantity_from_transactions(session, fund_id, symbol)
+                    
+                    if position_qty < 0.001:  # Position is closed
+                        logger.info(f"🔒 Auto-closing Trade record {trade_id} for {symbol}")
+                        
+                        # Get the order for the first sell transaction
+                        first_sell_order_result = await session.execute(
+                            select(Order).where(Order.id == sell_txns[0].order_id)
+                        )
+                        first_sell_order = first_sell_order_result.scalar_one_or_none()
+                        
+                        if first_sell_order:
+                            await trade_builder.close_trade(
+                                trade_id=trade_id,
+                                exit_order_id=first_sell_order.id,
+                                exit_transactions=sell_txns
+                            )
+                            await session.commit()
+                            logger.info(f"✅ Closed Trade record {trade_id} for {symbol}")
+                
+        except Exception as e:
+            logger.error(f"Error auto-updating trades for {symbol}: {e}", exc_info=True)
+    
     async def sync_from_activities(
         self,
         session: AsyncSession,
@@ -442,6 +562,28 @@ class ActivitySyncService:
             "fills_processed": 0,  # TODO: implement processing
             "transactions_created": 0,
         }
+
+
+async def auto_update_trades_for_symbol(
+    session: AsyncSession,
+    fund_id: str,
+    symbol: str
+) -> None:
+    """
+    Standalone function to automatically create or update Trade records for a symbol.
+    
+    Call this after transactions are created to ensure Trade records stay in sync.
+    Can be called from tests, manual transaction creation, or anywhere transactions are made.
+    
+    Args:
+        session: Database session
+        fund_id: Fund ID
+        symbol: Stock symbol to update trades for
+    """
+    # Use the ActivitySyncService helper method
+    # Create a dummy service just to call the method (it doesn't need alpaca_service for this)
+    sync_service = ActivitySyncService(alpaca_service=None)  # type: ignore
+    await sync_service._auto_update_trades_for_symbol(session, fund_id, symbol)
 
 
 async def reconcile_on_startup(

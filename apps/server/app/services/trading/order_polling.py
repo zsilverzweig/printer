@@ -83,8 +83,11 @@ class OrderPollingService:
         """Poll all pending orders and update their status."""
         try:
             async with get_async_session() as session:
-                # Get all pending orders
-                stmt = select(Order).where(Order.status == "pending")
+                # Get all pending orders (exclude backtest orders - they're handled by backtest simulator)
+                stmt = select(Order).where(
+                    Order.status == "pending",
+                    Order.backtest_id == None  # Only poll live orders
+                )
                 result = await session.execute(stmt)
                 pending_orders = result.scalars().all()
                 

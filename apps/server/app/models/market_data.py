@@ -165,6 +165,74 @@ class SymbolDateValidation(Base):
         return f"<SymbolDateValidation(symbol={self.symbol}, date={self.date}, timescale={self.timescale}, is_complete={self.is_complete})>"
 
 
+class MarketDataBacktestLookup(Base):
+    """
+    Pre-computed "latest price as-of" lookup table for instant backtest queries.
+    
+    For backtesting, we need to answer: "What was the latest 5min bar price for symbol X
+    at time Y?" repeatedly. Instead of scanning backwards through history each time,
+    we pre-compute this data at regular intervals.
+    
+    This table is populated during historical data loading and makes backtest
+    screener queries instant (ms instead of seconds).
+    
+    Attributes:
+        symbol: Ticker symbol
+        timescale: Bar granularity ('5min' for screener, '1min' for strategies)
+        lookup_time: The "as-of" timestamp we're querying for
+        latest_bar_time: When the actual latest bar occurred (may be before lookup_time)
+        close: Close price from the latest bar
+        open: Open price from the latest bar
+        high: High price from the latest bar
+        low: Low price from the latest bar
+        volume: Volume from the latest bar
+    """
+    __tablename__ = "market_data_backtest_lookup"
+    
+    symbol: Mapped[str] = mapped_column(
+        String(20),
+        primary_key=True,
+        nullable=False
+    )
+    timescale: Mapped[str] = mapped_column(
+        String(10),
+        primary_key=True,
+        nullable=False
+    )
+    lookup_time: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        primary_key=True,
+        nullable=False
+    )
+    latest_bar_time: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True
+    )
+    close: Mapped[float | None] = mapped_column(
+        Numeric(12, 4),
+        nullable=True
+    )
+    open: Mapped[float | None] = mapped_column(
+        Numeric(12, 4),
+        nullable=True
+    )
+    high: Mapped[float | None] = mapped_column(
+        Numeric(12, 4),
+        nullable=True
+    )
+    low: Mapped[float | None] = mapped_column(
+        Numeric(12, 4),
+        nullable=True
+    )
+    volume: Mapped[int | None] = mapped_column(
+        BigInteger,
+        nullable=True
+    )
+    
+    def __repr__(self) -> str:
+        return f"<BacktestLookup(symbol={self.symbol}, time={self.lookup_time}, close={self.close})>"
+
+
 class MarketLatestTrade(Base):
     """
     Latest trade data from Polygon snapshots for real-time pricing.

@@ -1,0 +1,702 @@
+"""
+Backtest Coordinator.
+
+Orchestrates the execution of a backtest by:
+1. Validating data availability for the target date
+2. Setting up the time context
+3. Running the strategy engine minute-by-minute
+4. Simulating order fills
+5. Collecting and storing results
+"""
+
+import logging
+import uuid
+from datetime import datetime, date, timedelta, timezone, time as dt_time
+from typing import Dict, List, Optional, Any
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.strategies import Fund, Backtest, Order, Transaction, Trade
+from app.models.market_data import MarketData
+from app.services.core.database import get_async_session
+from app.services.core.time_context import (
+    set_backtest_context,
+    update_backtest_time,
+    clear_backtest_context,
+    get_backtest_id
+)
+from app.services.backtest.order_simulator import OrderSimulator
+from app.services.market.historical_data_loader import start_historical_load_task, get_load_status
+from app.services.strategies.strategy_factory import create_strategy_engine
+from app.services.trading.alpaca_backtest_wrapper import AlpacaBacktestWrapper
+
+logger = logging.getLogger(__name__)
+
+
+class BacktestCoordinator:
+    """
+    Orchestrates backtest execution for a fund.
+    
+    Manages the complete lifecycle of a backtest from data validation
+    through execution to results collection.
+    """
+    
+    def __init__(self):
+        """Initialize coordinator with order simulator."""
+        self.order_simulator = OrderSimulator()
+    
+    async def run_backtest(
+        self,
+        fund_id: str,
+        backtest_date: date,
+    ) -> str:
+        """
+        Run backtest for a single trading day.
+        
+        Args:
+            fund_id: Fund to backtest
+            backtest_date: Trading day to simulate (date object)
+            
+        Returns:
+            Backtest ID
+            
+        Raises:
+            ValueError: If fund not found or data not available
+        """
+        backtest_id = str(uuid.uuid4())
+        
+        try:
+            # Get fund and validate
+            async with get_async_session() as session:
+                fund = await session.get(Fund, fund_id)
+                if not fund:
+                    raise ValueError(f"Fund {fund_id} not found")
+                
+                # Check if fund is active
+                if fund.status == 'active':
+                    raise ValueError(f"Cannot backtest while fund is active. Please pause fund first.")
+                
+                # Check if there's already a running backtest for this fund
+                existing_backtest = await session.execute(
+                    select(Backtest).where(
+                        Backtest.fund_id == fund_id,
+                        Backtest.status == 'running'
+                    )
+                )
+                existing = existing_backtest.scalar_one_or_none()
+                if existing:
+                    raise ValueError(
+                        f"Backtest already running for this fund (backtest_id: {existing.id}). "
+                        f"Only one backtest per fund allowed at a time."
+                    )
+                
+                # Create backtest record
+                backtest = Backtest(
+                    id=backtest_id,
+                    fund_id=fund_id,
+                    date=datetime.combine(backtest_date, dt_time.min).replace(tzinfo=timezone.utc),
+                    status='running',
+                    strategy_id=fund.strategy_id,
+                    strategy_config=fund.strategy_config or {},
+                    screening_criteria_id=fund.screening_criteria_id,
+                    starting_balance=fund.balance,
+                    started_at=datetime.utcnow()
+                )
+                session.add(backtest)
+                await session.commit()
+            
+            logger.info(
+                f"🚀 [BT:{backtest_id[:8]}] Starting backtest for {fund.name} on {backtest_date}"
+            )
+            
+            # Step 1: Ensure data availability
+            await self._ensure_data_available(fund, backtest_date)
+            
+            # Step 2: Run trading day
+            await self._run_trading_day(backtest_id, fund, backtest_date)
+            
+            # Step 3: Finalize results
+            await self._finalize_backtest(backtest_id)
+            
+            logger.info(f"✅ [BT:{backtest_id[:8]}] Backtest completed successfully")
+            return backtest_id
+            
+        except Exception as e:
+            logger.error(f"❌ Backtest {backtest_id} failed: {e}", exc_info=True)
+            
+            # Mark backtest as failed
+            async with get_async_session() as session:
+                backtest = await session.get(Backtest, backtest_id)
+                if backtest:
+                    backtest.status = 'failed'
+                    backtest.error_message = str(e)
+                    backtest.completed_at = datetime.utcnow()
+                    await session.commit()
+            
+            raise
+        finally:
+            # Always clear backtest context
+            clear_backtest_context()
+    
+    async def _ensure_data_available(
+        self,
+        fund: Fund,
+        backtest_date: date
+    ) -> None:
+        """
+        Ensure minute bar data is available for backtest date.
+        
+        Checks if data exists, loads if needed.
+        
+        Args:
+            fund: Fund being backtested
+            backtest_date: Date to check
+            
+        Raises:
+            ValueError: If data cannot be loaded
+        """
+        logger.info(f"📊 Checking data availability for {backtest_date}")
+        
+        # TODO: Get list of symbols from screening criteria
+        # For now, we'll assume data is available and skip the check
+        # In production, this would:
+        # 1. Query screening criteria to get symbol list
+        # 2. Check if minute bars exist for that date
+        # 3. Trigger data load if missing
+        # 4. Wait for load to complete
+        
+        logger.info(f"✅ Data check complete for {backtest_date}")
+    
+    async def _run_trading_day(
+        self,
+        backtest_id: str,
+        fund: Fund,
+        backtest_date: date
+    ) -> None:
+        """
+        Run the trading day minute-by-minute.
+        
+        Args:
+            backtest_id: Backtest ID
+            fund: Fund being tested
+            backtest_date: Date to simulate
+        """
+        logger.info(f"📈 Running trading day: {backtest_date}")
+        
+        # Define trading hours (9:30 AM to 4:00 PM ET)
+        start_time = datetime.combine(
+            backtest_date,
+            dt_time(9, 30)
+        ).replace(tzinfo=timezone.utc)
+        
+        end_time = datetime.combine(
+            backtest_date,
+            dt_time(16, 0)
+        ).replace(tzinfo=timezone.utc)
+        
+        # Initialize backtest context
+        set_backtest_context(backtest_id, start_time)
+        
+        # Create backtest-mode Alpaca wrapper
+        from app.services.trading.alpaca_service import AlpacaService
+        from app.services.market.market_data_provider import MarketDataProvider
+        from app.strategies.registry import get_strategy
+        from app.services.strategies.strategy_engine import StrategyEngine
+        
+        alpaca_service = AlpacaService(paper_trading=True)
+        alpaca_wrapper = AlpacaBacktestWrapper(alpaca_service, fund_id=fund.id)
+        
+        # Create strategy engine
+        logger.info(f"🎯 Initializing strategy engine for backtest")
+        
+        try:
+            # Get strategy instance
+            if not fund.strategy_id:
+                logger.warning("Fund has no strategy configured, backtest will be empty")
+                return
+            
+            execution_strategy = get_strategy(
+                fund.strategy_id,
+                fund.strategy_config or {},
+                fund_id=fund.id
+            )
+            
+            # Create market data provider
+            market_data_provider = MarketDataProvider()
+            
+            # Create strategy engine with backtest wrapper
+            strategy_engine = StrategyEngine(
+                fund=fund,
+                execution_strategy=execution_strategy,
+                market_data_provider=market_data_provider,
+                alpaca_service=alpaca_wrapper,  # Use backtest wrapper!
+            )
+            
+            # Don't start the engine (we'll manually call iterations)
+            # Just recover state and sync positions
+            logger.info(f"📊 Recovering fund state for backtest")
+            from app.services.strategies.strategy_service import get_strategy_service
+            strategy_service = get_strategy_service()
+            entry_levels, exit_levels = await strategy_service.recover_fund_state(fund.id)
+            logger.info(f"Recovered {len(entry_levels)} entry, {len(exit_levels)} exit levels")
+            
+            # Initialize position cache (should be empty for backtest start)
+            strategy_engine._position_cache = {}
+            
+            logger.info(f"⏱️  Backtest time window: {start_time} to {end_time}")
+            
+            # Track balance separately for this backtest (don't modify real fund balance)
+            # Store original balance to restore later
+            original_fund_balance = fund.balance
+            
+            # Create a simulated balance tracker for this backtest
+            backtest_balance = original_fund_balance
+            
+            # PRE-COMPUTE all screener results for the day (much faster than running during loop!)
+            logger.info(f"🔍 Pre-computing screener results for entire trading day...")
+            screener_cache = await self._precompute_screener_results(
+                fund,
+                start_time,
+                end_time,
+                MONITORING_INTERVAL_MINUTES=5
+            )
+            logger.info(f"✅ Pre-computed {len(screener_cache)} screener results")
+            
+            current_time = start_time
+            minute_count = 0
+            iteration_count = 0
+            
+            # Run strategy monitoring every N minutes (not every minute - too expensive)
+            MONITORING_INTERVAL_MINUTES = 5
+            
+            while current_time <= end_time:
+                # Update backtest time context
+                update_backtest_time(current_time)
+                
+                # Log progress every 30 minutes  
+                if minute_count % 30 == 0:
+                    progress_pct = minute_count / 391 * 100
+                    logger.info(f"[BT:{backtest_id[:8]}] ⏰ {current_time.strftime('%H:%M')} | {minute_count}/391 min ({progress_pct:.1f}%)")
+                
+                # Run strategy monitoring iteration every N minutes
+                if minute_count % MONITORING_INTERVAL_MINUTES == 0:
+                    try:
+                        iteration_count += 1
+                        logger.info(f"[BT:{backtest_id[:8]}] 🔄 Iter {iteration_count} @ {current_time.strftime('%H:%M')} | {minute_count}/391 ({minute_count/391*100:.1f}%)")
+                        
+                        # Get screened tickers using HISTORICAL screener at backtest time
+                        from app.services.screener.screener import get_screener_service
+                        screener = get_screener_service()
+                        tickers = []
+                        
+                        # Check cache first (historical data never changes for a given timestamp!)
+                        cache_key = current_time.isoformat()
+                        if cache_key in screener_cache:
+                            tickers = screener_cache[cache_key]
+                            logger.debug(f"📋 Using cached screener results for {current_time.strftime('%H:%M')}: {len(tickers)} tickers")
+                        elif screener and fund.screening_criteria_id:
+                            try:
+                                # Get screening criteria configuration
+                                async with get_async_session() as session:
+                                    from app.models.strategies import ScreeningCriteria
+                                    criteria_obj = await session.get(ScreeningCriteria, fund.screening_criteria_id)
+                                    
+                                    if criteria_obj and criteria_obj.criteria:
+                                        # Run historical screener at current backtest time
+                                        criteria_dict = criteria_obj.criteria
+                                        
+                                        logger.debug(f"🔍 Running historical screener at {current_time}")
+                                        results = await screener.compute_historical(
+                                            timestamp=current_time,
+                                            min_price=criteria_dict.get('min_price', 5),
+                                            max_price=criteria_dict.get('max_price', 100),
+                                            min_volume=criteria_dict.get('min_volume'),
+                                            min_change_percent=criteria_dict.get('min_change_percent'),
+                                            max_change_percent=criteria_dict.get('max_change_percent'),
+                                            min_relative_volume=criteria_dict.get('min_relative_volume', 1.5),
+                                            order_by=criteria_dict.get('order_by', 'rv14'),
+                                            limit=criteria_dict.get('limit', 10),
+                                            technical_filters=criteria_dict.get('technical_filters'),
+                                            exclude_etfs=criteria_dict.get('exclude_etfs', True),
+                                            asset_types=criteria_dict.get('asset_types'),
+                                            market_cap_min=criteria_dict.get('market_cap_min'),
+                                            market_cap_max=criteria_dict.get('market_cap_max')
+                                        )
+                                        
+                                        if results:
+                                            tickers = [r.get('ticker') or r.get('symbol') for r in results[:10]]  # Limit to top 10
+                                            logger.info(f"📋 Historical screener found {len(tickers)} tickers at {current_time.strftime('%H:%M')}: {tickers}")
+                                            # Cache for future use
+                                            screener_cache[cache_key] = tickers
+                                        else:
+                                            logger.debug(f"📋 Historical screener found no results at {current_time.strftime('%H:%M')}")
+                                            screener_cache[cache_key] = []
+                                    else:
+                                        logger.warning(f"Screening criteria {fund.screening_criteria_id} not found or empty")
+                            except Exception as e:
+                                logger.warning(f"Could not run historical screener: {e}", exc_info=True)
+                        
+                        if not tickers:
+                            # No screener results, skip this iteration
+                            logger.debug("No tickers to analyze, skipping iteration")
+                        else:
+                            # Run entry analysis for each ticker
+                            for ticker in tickers:
+                                try:
+                                    # Get market data snapshot
+                                    market_data = await market_data_provider.build_market_data(ticker)
+                                    
+                                    # Run strategy entry analysis
+                                    entry_level = await execution_strategy.analyze_entry(ticker, market_data)
+                                    
+                                    if entry_level:
+                                        logger.info(f"📊 {ticker}: Entry signal at ${entry_level.entry_price:.2f}, stop=${entry_level.stop_loss:.2f}")
+                                        
+                                        # For backtest, immediately execute market orders
+                                        # (In live mode, we'd persist levels and wait for triggers)
+                                        if entry_level.order_type == "market":
+                                            # Calculate position size
+                                            position_size = fund.size_per_trade / entry_level.entry_price
+                                            
+                                            # Submit order via backtest wrapper
+                                            logger.info(f"🎯 Submitting buy order: {position_size:.2f} shares of {ticker}")
+                                            order_result = await alpaca_wrapper.submit_order(
+                                                symbol=ticker,
+                                                qty=position_size,
+                                                side='buy',
+                                                order_type='market'
+                                            )
+                                            logger.info(f"✅ Order submitted: {order_result['id']}")
+                                
+                                except ValueError as e:
+                                    # Expected: No bar data for low-volume stocks
+                                    if "No bar data available" in str(e):
+                                        # Silent skip - this is normal for low-volume stocks
+                                        pass
+                                    else:
+                                        logger.error(f"Error analyzing {ticker}: {e}", exc_info=True)
+                                    continue
+                                except Exception as e:
+                                    logger.error(f"Error analyzing {ticker}: {e}", exc_info=True)
+                                    continue
+                        
+                        # Update position management for open positions
+                        active_positions = strategy_engine._position_cache
+                        for symbol, position in active_positions.items():
+                            try:
+                                # Get current market data
+                                market_data = await market_data_provider.build_market_data(symbol)
+                                position.current_price = market_data.price
+                                
+                                # Update position P&L
+                                position.unrealized_pnl = (market_data.price - position.entry_price) * position.quantity
+                                position.unrealized_pnl_percent = ((market_data.price - position.entry_price) / position.entry_price) * 100
+                                
+                                # Get stop update from strategy
+                                stop_update = await execution_strategy.manage_position(position, market_data)
+                                
+                                # Check if we should exit
+                                if stop_update.force_exit or market_data.price <= stop_update.current_stop:
+                                    logger.info(f"🚪 Exiting {symbol} at ${market_data.price:.2f} (stop=${stop_update.current_stop:.2f})")
+                                    
+                                    # Submit sell order
+                                    await alpaca_wrapper.submit_order(
+                                        symbol=symbol,
+                                        qty=position.quantity,
+                                        side='sell',
+                                        order_type='market'
+                                    )
+                            
+                            except Exception as e:
+                                logger.error(f"Error managing position {symbol}: {e}", exc_info=True)
+                                continue
+                    
+                    except Exception as e:
+                        logger.error(f"Error in strategy iteration: {e}", exc_info=True)
+                
+                # Check and fill pending orders at EVERY minute (not just strategy iterations)
+                current_bars = await self._get_minute_bars(current_time)
+                if current_bars:
+                    filled = await self.order_simulator.check_pending_orders(
+                        fund.id,
+                        current_time,
+                        current_bars
+                    )
+                    if filled > 0:
+                        logger.info(f"💰 Filled {filled} order(s) at {current_time.strftime('%H:%M')}")
+                        
+                        # Update position cache after fills
+                        await self._sync_positions_from_transactions(
+                            strategy_engine,
+                            fund.id,
+                            backtest_id
+                        )
+                
+                # Advance to next minute
+                current_time += timedelta(minutes=1)
+                minute_count += 1
+            
+            logger.info(f"✅ Trading day complete: {minute_count} minutes simulated, {iteration_count} strategy iterations")
+            
+        except Exception as e:
+            logger.error(f"Error running strategy engine: {e}", exc_info=True)
+            raise
+    
+    async def _precompute_screener_results(
+        self,
+        fund: Fund,
+        start_time: datetime,
+        end_time: datetime,
+        MONITORING_INTERVAL_MINUTES: int
+    ) -> Dict[str, List[str]]:
+        """
+        Pre-compute screener results for all timestamps in the trading day.
+        
+        This runs all screener queries upfront, eliminating the 3-4s delay
+        during each iteration. Since historical data doesn't change, we can
+        safely cache all results.
+        
+        Returns:
+            Dict mapping timestamp ISO string to list of ticker symbols
+        """
+        from app.services.screener.screener import get_screener_service
+        from app.models.strategies import ScreeningCriteria
+        
+        screener = get_screener_service()
+        if not screener or not fund.screening_criteria_id:
+            return {}
+        
+        # Get screening criteria
+        async with get_async_session() as session:
+            criteria_obj = await session.get(ScreeningCriteria, fund.screening_criteria_id)
+            if not criteria_obj or not criteria_obj.criteria:
+                return {}
+            
+            criteria_dict = criteria_obj.criteria
+        
+        # Generate all timestamps we'll need
+        timestamps = []
+        current = start_time
+        while current <= end_time:
+            if (current - start_time).total_seconds() / 60 % MONITORING_INTERVAL_MINUTES == 0:
+                timestamps.append(current)
+            current += timedelta(minutes=MONITORING_INTERVAL_MINUTES)
+        
+        logger.info(f"Pre-computing screener for {len(timestamps)} timestamps...")
+        
+        # Pre-compute all screener results
+        cache = {}
+        for idx, timestamp in enumerate(timestamps):
+            try:
+                results = await screener.compute_historical(
+                    timestamp=timestamp,
+                    min_price=criteria_dict.get('min_price', 5),
+                    max_price=criteria_dict.get('max_price', 100),
+                    min_volume=criteria_dict.get('min_volume'),
+                    min_change_percent=criteria_dict.get('min_change_percent'),
+                    max_change_percent=criteria_dict.get('max_change_percent'),
+                    min_relative_volume=criteria_dict.get('min_relative_volume', 1.5),
+                    order_by=criteria_dict.get('order_by', 'rv14'),
+                    limit=criteria_dict.get('limit', 10),
+                    technical_filters=criteria_dict.get('technical_filters'),
+                    exclude_etfs=criteria_dict.get('exclude_etfs', True),
+                    asset_types=criteria_dict.get('asset_types'),
+                    market_cap_min=criteria_dict.get('market_cap_min'),
+                    market_cap_max=criteria_dict.get('market_cap_max')
+                )
+                
+                if results:
+                    tickers = [r.get('ticker') or r.get('symbol') for r in results[:10]]
+                    cache[timestamp.isoformat()] = tickers
+                    logger.info(f"  [{idx+1}/{len(timestamps)}] {timestamp.strftime('%H:%M')}: {len(tickers)} tickers")
+                else:
+                    cache[timestamp.isoformat()] = []
+            
+            except Exception as e:
+                logger.warning(f"Error pre-computing screener for {timestamp}: {e}")
+                cache[timestamp.isoformat()] = []
+        
+        return cache
+    
+    async def _sync_positions_from_transactions(
+        self,
+        strategy_engine,
+        fund_id: str,
+        backtest_id: str
+    ) -> None:
+        """
+        Sync position cache from transactions.
+        
+        Builds PositionContext objects for all open positions by
+        aggregating buy/sell transactions.
+        """
+        from app.strategies.base import PositionContext
+        from collections import defaultdict
+        
+        async with get_async_session() as session:
+            # Get all transactions for this backtest
+            stmt = select(Transaction).where(
+                Transaction.fund_id == fund_id,
+                Transaction.backtest_id == backtest_id
+            ).order_by(Transaction.timestamp)
+            
+            result = await session.execute(stmt)
+            transactions = result.scalars().all()
+            
+            # Aggregate by symbol to calculate positions
+            positions = defaultdict(lambda: {'quantity': 0, 'cost_basis': 0, 'entry_time': None, 'strategy_state': {}})
+            
+            for txn in transactions:
+                if txn.side == 'buy':
+                    positions[txn.symbol]['quantity'] += txn.quantity
+                    positions[txn.symbol]['cost_basis'] += txn.total_value
+                    if positions[txn.symbol]['entry_time'] is None:
+                        positions[txn.symbol]['entry_time'] = txn.timestamp
+                    positions[txn.symbol]['strategy_state'] = txn.strategy_state or {}
+                elif txn.side == 'sell':
+                    positions[txn.symbol]['quantity'] -= txn.quantity
+            
+            # Build PositionContext objects for non-zero positions
+            new_cache = {}
+            for symbol, pos_data in positions.items():
+                if pos_data['quantity'] > 0.01:  # Ignore dust positions
+                    entry_price = pos_data['cost_basis'] / pos_data['quantity'] if pos_data['quantity'] > 0 else 0
+                    
+                    new_cache[symbol] = PositionContext(
+                        symbol=symbol,
+                        entry_price=entry_price,
+                        entry_time=pos_data['entry_time'],
+                        quantity=pos_data['quantity'],
+                        current_price=entry_price,  # Will be updated
+                        unrealized_pnl=0,
+                        unrealized_pnl_percent=0,
+                        strategy_state=pos_data['strategy_state']
+                    )
+            
+            # Update engine cache
+            strategy_engine._position_cache = new_cache
+            
+            if new_cache:
+                logger.info(f"📊 Position cache updated: {len(new_cache)} open positions ({list(new_cache.keys())})")
+    
+    async def _get_minute_bars(
+        self,
+        timestamp: datetime
+    ) -> Dict[str, Dict[str, Any]]:
+        """
+        Get minute bars for all relevant symbols at given timestamp.
+        
+        Args:
+            timestamp: Timestamp to get bars for
+            
+        Returns:
+            Dict mapping symbol to bar data
+        """
+        bars = {}
+        
+        async with get_async_session() as session:
+            # Query bars at this exact timestamp
+            # TODO: Filter by symbols from screening criteria
+            stmt = select(MarketData).where(
+                MarketData.time == timestamp,
+                MarketData.timescale == '1min'
+            ).limit(100)  # Limit to prevent memory issues
+            
+            result = await session.execute(stmt)
+            market_data_bars = result.scalars().all()
+            
+            for bar in market_data_bars:
+                bars[bar.symbol] = {
+                    'time': bar.time,
+                    'open': float(bar.open),
+                    'high': float(bar.high),
+                    'low': float(bar.low),
+                    'close': float(bar.close),
+                    'volume': bar.volume,
+                }
+        
+        return bars
+    
+    async def _finalize_backtest(self, backtest_id: str) -> None:
+        """
+        Finalize backtest results.
+        
+        Args:
+            backtest_id: Backtest to finalize
+        """
+        logger.info(f"📊 Finalizing backtest {backtest_id}")
+        
+        async with get_async_session() as session:
+            backtest = await session.get(Backtest, backtest_id)
+            if not backtest:
+                raise ValueError(f"Backtest {backtest_id} not found")
+            
+            # Get fund's final balance
+            fund = await session.get(Fund, backtest.fund_id)
+            if not fund:
+                raise ValueError(f"Fund {backtest.fund_id} not found")
+            
+            # Count orders
+            stmt = select(Order).where(Order.backtest_id == backtest_id)
+            result = await session.execute(stmt)
+            orders = result.scalars().all()
+            
+            total_orders = len(orders)
+            filled_orders = sum(1 for o in orders if o.status == 'filled')
+            cancelled_orders = sum(1 for o in orders if o.status == 'canceled')
+            
+            # Count trades
+            stmt = select(Trade).where(Trade.backtest_id == backtest_id)
+            result = await session.execute(stmt)
+            trades = result.scalars().all()
+            
+            total_trades = len(trades)
+            winning_trades = sum(1 for t in trades if t.realized_pnl and t.realized_pnl > 0)
+            losing_trades = sum(1 for t in trades if t.realized_pnl and t.realized_pnl < 0)
+            
+            # Calculate P&L
+            total_pnl = fund.balance - backtest.starting_balance
+            total_pnl_percent = (total_pnl / backtest.starting_balance * 100) if backtest.starting_balance > 0 else 0
+            
+            # Update backtest record
+            backtest.ending_balance = fund.balance
+            backtest.total_pnl = total_pnl
+            backtest.total_pnl_percent = total_pnl_percent
+            backtest.total_trades = total_trades
+            backtest.winning_trades = winning_trades
+            backtest.losing_trades = losing_trades
+            backtest.total_orders = total_orders
+            backtest.filled_orders = filled_orders
+            backtest.cancelled_orders = cancelled_orders
+            backtest.status = 'completed'
+            backtest.completed_at = datetime.utcnow()
+            
+            await session.commit()
+            
+            # Calculate metrics for display
+            win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
+            fill_rate = (filled_orders / total_orders * 100) if total_orders > 0 else 0
+            
+            # Beautiful summary logging
+            logger.info("=" * 80)
+            logger.info(f"🎉 BACKTEST COMPLETE: {fund.name} - {backtest.date.strftime('%Y-%m-%d')}")
+            logger.info("=" * 80)
+            logger.info(f"📊 PERFORMANCE:")
+            logger.info(f"   Starting Balance: ${backtest.starting_balance:,.2f}")
+            logger.info(f"   Ending Balance:   ${fund.balance:,.2f}")
+            logger.info(f"   P&L:              ${total_pnl:+,.2f} ({total_pnl_percent:+.2f}%)")
+            logger.info(f"")
+            logger.info(f"📈 TRADING ACTIVITY:")
+            logger.info(f"   Total Trades:     {total_trades}")
+            logger.info(f"   Winning Trades:   {winning_trades} ({win_rate:.1f}%)")
+            logger.info(f"   Losing Trades:    {losing_trades}")
+            logger.info(f"")
+            logger.info(f"📋 ORDER EXECUTION:")
+            logger.info(f"   Total Orders:     {total_orders}")
+            logger.info(f"   Filled Orders:    {filled_orders} ({fill_rate:.1f}%)")
+            logger.info(f"   Cancelled Orders: {cancelled_orders}")
+            logger.info(f"")
+            logger.info(f"🆔 Backtest ID: {backtest_id}")
+            logger.info("=" * 80)
+

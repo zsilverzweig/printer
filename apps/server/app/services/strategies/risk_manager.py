@@ -10,6 +10,7 @@ from datetime import datetime, time as dt_time
 import pytz
 
 from app.strategies.base import PositionContext
+from app.services.core.time_context import get_current_time
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +66,8 @@ class RiskManager:
         
         try:
             tz = pytz.timezone(self.timezone)
-            now = datetime.now(tz)
+            # Use time context for backtesting support
+            now = get_current_time().replace(tzinfo=pytz.UTC).astimezone(tz)
             current_time = now.time()
             
             # Parse times like "09:30"
