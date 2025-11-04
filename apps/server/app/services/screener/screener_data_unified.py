@@ -201,7 +201,7 @@ async def fetch_screener_data_unified(
                     price_data[row[0]] = float(row[1]) if row[1] else None
                 
                 price_time = (datetime.now() - start_time).total_seconds()
-                logger.info(f"[UNIFIED] Got {len(price_data)} symbols with live trades ({price_time:.2f}s)")
+                logger.debug(f"[UNIFIED] Got {len(price_data)} symbols with live trades ({price_time:.2f}s)")
             
             # STEP 3: Fetch pre-calculated metrics
             start_time = datetime.now()
@@ -250,10 +250,10 @@ async def fetch_screener_data_unified(
                 }
             
             metrics_time = (datetime.now() - start_time).total_seconds()
-            logger.info(f"[UNIFIED] Got metrics for {len(metrics_map)} symbols ({metrics_time:.2f}s)")
+            logger.debug(f"[UNIFIED] Got metrics for {len(metrics_map)} symbols ({metrics_time:.2f}s)")
             
             # STEP 4: Combine into snapshot format and apply filters (in-memory, very fast)
-            logger.info(f"[UNIFIED] Combining {len(daily_data)} symbols with metrics, applying RV filter={min_relative_volume}")
+            logger.debug(f"[UNIFIED] Combining {len(daily_data)} symbols with metrics, applying RV filter={min_relative_volume}")
             snapshots = []
             filtered_by_rv = 0
             
@@ -298,7 +298,7 @@ async def fetch_screener_data_unified(
                     logger.debug(f"[UNIFIED] RV filter: {filtered_by_rv} symbols removed")
             
             # Single summary log
-            logger.info(f"[UNIFIED] → {len(snapshots)} snapshots ready")
+            logger.info(f"[UNIFIED] {len(snapshots)} snapshots ready")
             return snapshots
             
     except Exception as e:

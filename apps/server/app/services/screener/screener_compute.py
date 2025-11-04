@@ -215,8 +215,13 @@ class ScreenerCompute:
                     filtered_count += 1
                     continue
 
-            # NOTE: RV14 filtering now handled in unified data fetcher for efficiency
-            # Snapshots already filtered by min_relative_volume if specified
+            # Filter by minimum relative volume (if specified and not already filtered by fetcher)
+            if min_relative_volume is not None:
+                snapshot = snapshots_dict.get(ticker, {})
+                rv14 = snapshot.get("rv14", 0.0)
+                if rv14 < min_relative_volume:
+                    filtered_count += 1
+                    continue
 
             # Apply asset type filtering if specified
             if asset_types and len(asset_types) > 0:
@@ -297,12 +302,10 @@ class ScreenerCompute:
         
         # Log filtering statistics
         self.logger.info(
-            "Screener computed: processed=%s, missing_price=%s, filtered_by_exchange=%s, filtered_out=%s, final_rows=%s",
+            "Screener: %s processed → %s results (filtered: %s)",
             processed_count,
-            missing_price_count,
-            filtered_by_exchange,
-            filtered_count,
             len(rows),
+            filtered_count,
         )
         
         return rows[:limit]

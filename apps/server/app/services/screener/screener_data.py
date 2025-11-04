@@ -154,14 +154,11 @@ class ScreenerDataLoader:
             # Use unified fetcher (same pattern as historical screener)
             from app.services.screener.screener_data_unified import fetch_screener_data_unified
             
-            self.logger.info("[REALTIME SCREENER] Fetching data using unified fetcher...")
             snapshots = await fetch_screener_data_unified(
                 min_relative_volume=min_relative_volume
             )
             
-            if snapshots:
-                self.logger.info(f"[REALTIME SCREENER] Got {len(snapshots)} snapshots from unified fetcher")
-            else:
+            if not snapshots:
                 self.logger.warning("[REALTIME SCREENER] No snapshots from unified fetcher")
             
             return snapshots

@@ -115,7 +115,7 @@ class TestScreenerFilters:
             },
         ]
         
-        with patch('app.services.screener.screener.extract_snapshot_data') as mock_extract:
+        with patch('app.services.screener.screener_snapshot.extract_snapshot_data') as mock_extract:
             def extract_fn(snap):
                 return {
                     "ticker": snap["ticker"],
@@ -167,7 +167,7 @@ class TestScreenerFilters:
             },
         ]
         
-        with patch('app.services.screener.screener.extract_snapshot_data') as mock_extract:
+        with patch('app.services.screener.screener_snapshot.extract_snapshot_data') as mock_extract:
             def extract_fn(snap):
                 return {
                     "ticker": snap["ticker"],
@@ -212,7 +212,7 @@ class TestScreenerFilters:
             },
         ]
         
-        with patch('app.services.screener.screener.extract_snapshot_data') as mock_extract:
+        with patch('app.services.screener.screener_snapshot.extract_snapshot_data') as mock_extract:
             def extract_fn(snap):
                 return {
                     "ticker": snap["ticker"],
@@ -257,7 +257,7 @@ class TestScreenerFilters:
             },
         ]
         
-        with patch('app.services.screener.screener.extract_snapshot_data') as mock_extract:
+        with patch('app.services.screener.screener_snapshot.extract_snapshot_data') as mock_extract:
             def extract_fn(snap):
                 return {
                     "ticker": snap["ticker"],
@@ -301,7 +301,7 @@ class TestScreenerFilters:
             },
         ]
         
-        with patch('app.services.screener.screener.extract_snapshot_data') as mock_extract:
+        with patch('app.services.screener.screener_snapshot.extract_snapshot_data') as mock_extract:
             def extract_fn(snap):
                 return {
                     "ticker": snap["ticker"],
@@ -345,7 +345,7 @@ class TestScreenerFilters:
             },
         ]
         
-        with patch('app.services.screener.screener.extract_snapshot_data') as mock_extract:
+        with patch('app.services.screener.screener_snapshot.extract_snapshot_data') as mock_extract:
             def extract_fn(snap):
                 return {
                     "ticker": snap["ticker"],
@@ -400,7 +400,7 @@ class TestScreenerFilters:
             },
         ]
         
-        with patch('app.services.screener.screener.extract_snapshot_data') as mock_extract:
+        with patch('app.services.screener.screener_snapshot.extract_snapshot_data') as mock_extract:
             def extract_fn(snap):
                 return {
                     "ticker": snap["ticker"],
@@ -444,7 +444,7 @@ class TestScreenerFilters:
             },
         ]
         
-        with patch('app.services.screener.screener.extract_snapshot_data') as mock_extract:
+        with patch('app.services.screener.screener_snapshot.extract_snapshot_data') as mock_extract:
             def extract_fn(snap):
                 return {
                     "ticker": snap["ticker"],
@@ -500,7 +500,7 @@ class TestScreenerFilters:
             },
         ]
         
-        with patch('app.services.screener.screener.extract_snapshot_data') as mock_extract:
+        with patch('app.services.screener.screener_snapshot.extract_snapshot_data') as mock_extract:
             def extract_fn(snap):
                 return {
                     "ticker": snap["ticker"],
@@ -668,6 +668,7 @@ class TestScreenerFilters:
                     "price": snap["price"],
                     "volume": snap["volume"],
                     "exchange": snap["exchange"],
+                    "rv14": snap.get("rv14", 0.0),  # Include rv14 for relative volume filter
                 }
             mock_extract.side_effect = extract_fn
 
@@ -695,54 +696,43 @@ class TestHistoricalFilters:
         timestamp = datetime.now(timezone.utc) - timedelta(days=1)
         timestamp = timestamp.replace(hour=13, minute=30, second=0, microsecond=0)
         
-        with patch('app.services.core.database.get_async_session') as mock_session, \
-             patch('app.lib.market_queries.get_snapshot_at_time') as mock_snapshot, \
-             patch('app.lib.market_queries.get_daily_context') as mock_context, \
-             patch('app.lib.market_queries.get_historical_bars') as mock_bars:
-            
-            mock_db_session = AsyncMock()
-            mock_execute_result = MagicMock()
-            mock_execute_result.all.return_value = [("LOW",), ("HIGH",)]
-            mock_db_session.execute = AsyncMock(return_value=mock_execute_result)
-            mock_session.return_value.__aenter__.return_value = mock_db_session
-            
-            mock_snapshot.return_value = {
-                "LOW": {
-                    "time": timestamp,
-                    "open": 50.0,
-                    "high": 55.0,
-                    "low": 45.0,
-                    "close": 50.0,
-                    "volume": 1000000
-                },
-                "HIGH": {
-                    "time": timestamp,
-                    "open": 200.0,
-                    "high": 205.0,
-                    "low": 195.0,
-                    "close": 200.0,
-                    "volume": 1000000
-                },
-            }
-            
-            def context_fn(symbol, ts):
-                base_close = 50.0 if symbol == "LOW" else 200.0
-                return {
-                    "yesterday": {
-                        "date": (timestamp - timedelta(days=1)).date(),
-                        "open": base_close,
-                        "high": base_close + 5.0,
-                        "low": base_close - 5.0,
-                        "close": base_close,
-                        "volume": 5000000,
-                    },
-                    "ninety_day_high": base_close + 10.0,
-                    "ninety_day_low": base_close - 10.0,
-                    "has_data": True
+        # Mock the unified data fetcher used by historical screener
+        mock_snapshots = [
+            {
+                "ticker": "LOW",
+                "price": 50.0,
+                "day": {
+                    "o": 50.0,
+                    "h": 55.0,
+                    "l": 45.0,
+                    "c": 50.0,
+                    "v": 1000000
                 }
+            },
+            {
+                "ticker": "HIGH",
+                "price": 200.0,
+                "day": {
+                    "o": 200.0,
+                    "h": 205.0,
+                    "l": 195.0,
+                    "c": 200.0,
+                    "v": 1000000
+                }
+            },
+        ]
+        
+        with patch('app.services.screener.screener_data_unified.fetch_screener_data_unified') as mock_fetch:
+            mock_fetch.return_value = mock_snapshots
             
-            mock_context.side_effect = context_fn
-            mock_bars.return_value = []
+            # Mock the intraday volume method
+            async def mock_intraday_volume(symbols, ts):
+                return {}
+            
+            # Patch the method on the historical screener instance
+            original_method = getattr(screener.historical, '_get_accumulated_intraday_volume', None)
+            if original_method:
+                screener.historical._get_accumulated_intraday_volume = mock_intraday_volume
             
             results = await screener.compute_historical(
                 timestamp=timestamp,

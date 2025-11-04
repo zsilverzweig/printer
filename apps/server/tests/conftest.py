@@ -51,11 +51,26 @@ async def async_client(test_engine):
                 await session.close()
     
     # Monkey-patch in both the source module and router modules that import it
+    # Also patch in services that use it
     original_db_func = db_module.get_async_session
-    original_funds_func = funds_router.get_async_session
     
+    # Patch in database module (source)
     db_module.get_async_session = override_get_async_session
-    funds_router.get_async_session = override_get_async_session
+    
+    # Patch in router modules
+    try:
+        import app.routers.funds as funds_router
+        original_funds_func = funds_router.get_async_session
+        funds_router.get_async_session = override_get_async_session
+    except AttributeError:
+        pass  # get_async_session might not be imported directly
+    
+    # Patch in services that use it
+    try:
+        import app.services.market.historical_data_loader as historical_loader
+        historical_loader.get_async_session = override_get_async_session
+    except AttributeError:
+        pass
     
     try:
         transport = ASGITransport(app=app)

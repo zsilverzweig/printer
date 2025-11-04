@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  BarChart3,
   Bot,
   Briefcase,
   Building2,
@@ -83,6 +84,12 @@ export function MainAppSidebar() {
           title: "Screener",
           href: "/screener",
           icon: <Target className="h-4 w-4" />,
+        },
+        {
+          id: "performance",
+          title: "Performance",
+          href: "/performance",
+          icon: <BarChart3 className="h-4 w-4" />,
         },
       ],
     },

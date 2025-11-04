@@ -34,20 +34,66 @@ from app.services.market.historical_data_loader import (
 
 
 @pytest_asyncio.fixture
-async def clean_market_data(async_session):
+async def clean_market_data(async_session, test_engine):
     """Clean market data tables before each test."""
-    from sqlalchemy import delete
-    from app.models.market_data import MarketData
-    from app.models.assets import AssetLoadingStatus
+    from sqlalchemy import delete, inspect
+    from app.models.market_data import MarketData, Base as MarketDataBase
+    from app.models.assets import AssetLoadingStatus, Base as AssetsBase
+    from contextlib import asynccontextmanager
+    from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
+    import app.services.core.database as db_module
+    import app.services.market.historical_data_loader as historical_loader
+    
+    # Ensure tables exist
+    async with test_engine.begin() as conn:
+        await conn.run_sync(MarketDataBase.metadata.create_all)
+        await conn.run_sync(AssetsBase.metadata.create_all)
+    
+    # Patch get_async_session to use test database
+    test_session_factory = async_sessionmaker(
+        test_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+    
+    @asynccontextmanager
+    async def override_get_async_session():
+        async with test_session_factory() as session:
+            try:
+                yield session
+            except Exception:
+                await session.rollback()
+                raise
+            finally:
+                await session.close()
+    
+    original_db_func = db_module.get_async_session
+    original_loader_func = historical_loader.get_async_session
+    
+    db_module.get_async_session = override_get_async_session
+    historical_loader.get_async_session = override_get_async_session
     
     # Delete using SQLAlchemy ORM delete statements
-    await async_session.execute(delete(MarketData))
-    await async_session.execute(delete(AssetLoadingStatus))
-    await async_session.commit()
+    try:
+        await async_session.execute(delete(MarketData))
+        await async_session.execute(delete(AssetLoadingStatus))
+        await async_session.commit()
+    except Exception:
+        await async_session.rollback()
+    
     yield
-    await async_session.execute(delete(MarketData))
-    await async_session.execute(delete(AssetLoadingStatus))
-    await async_session.commit()
+    
+    # Cleanup after test
+    try:
+        await async_session.execute(delete(MarketData))
+        await async_session.execute(delete(AssetLoadingStatus))
+        await async_session.commit()
+    except Exception:
+        await async_session.rollback()
+    
+    # Restore original functions
+    db_module.get_async_session = original_db_func
+    historical_loader.get_async_session = original_loader_func
 
 
 class TestDatabaseStats:

@@ -43,10 +43,9 @@ class ScreenerBroadcaster:
         }
         
         self.logger.info(
-            "Broadcasting payload to %s subscribers; payload_length=%s; first_3=%s",
-            len(self.subscribers),
+            "Broadcasting %s results to %s subscribers",
             len(payload),
-            payload[:3] if payload else [],
+            len(self.subscribers),
         )
         
         # Broadcast to subscribers with error handling and cleanup

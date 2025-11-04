@@ -59,7 +59,7 @@ async def list_trades(
     Returns paginated list of trades with performance metrics.
     """
     try:
-        async for session in get_async_session():
+        async with get_async_session() as session:
             # Build query conditions
             conditions = []
             if fund_id:
@@ -127,7 +127,7 @@ async def get_trade(trade_id: str):
     Includes all linked orders and transactions.
     """
     try:
-        async for session in get_async_session():
+        async with get_async_session() as session:
             result = await session.execute(
                 select(Trade).where(Trade.id == trade_id)
             )
@@ -180,7 +180,7 @@ async def get_fund_metrics(
     Includes: win rate, Sharpe ratio, drawdown, streaks, and more.
     """
     try:
-        async for session in get_async_session():
+        async with get_async_session() as session:
             # Verify fund exists
             fund_result = await session.execute(
                 select(Fund).where(Fund.id == fund_id)
@@ -224,7 +224,7 @@ async def analyze_patterns(
     Shows which setups and patterns perform best.
     """
     try:
-        async for session in get_async_session():
+        async with get_async_session() as session:
             analyzer = PatternAnalyzer(session)
             patterns = await analyzer.analyze_patterns(
                 fund_id=fund_id,
@@ -251,7 +251,7 @@ async def analyze_pattern(
     Includes list of all trades using this pattern.
     """
     try:
-        async for session in get_async_session():
+        async with get_async_session() as session:
             analyzer = PatternAnalyzer(session)
             analysis = await analyzer.analyze_pattern_by_id(
                 screening_criteria_id=criteria_id,
@@ -274,7 +274,7 @@ async def comparative_analysis(
     Returns side-by-side metrics for easy comparison.
     """
     try:
-        async for session in get_async_session():
+        async with get_async_session() as session:
             # Parse fund IDs
             if fund_ids:
                 fund_id_list = [fid.strip() for fid in fund_ids.split(',')]
@@ -328,7 +328,7 @@ async def get_equity_curve(
     Returns time-series of cumulative P&L for visualization.
     """
     try:
-        async for session in get_async_session():
+        async with get_async_session() as session:
             # Build query
             conditions = [Trade.fund_id == fund_id, Trade.status == "closed"]
             if start_date:
@@ -392,7 +392,7 @@ async def get_performance_heatmap(
     Returns performance by hour and day of week for intraday optimization.
     """
     try:
-        async for session in get_async_session():
+        async with get_async_session() as session:
             calculator = PerformanceCalculator(session)
             metrics = await calculator.calculate_metrics(fund_id=fund_id)
             
@@ -422,7 +422,7 @@ async def rebuild_trades(fund_id: str):
     Useful for fixing data issues or reprocessing historical data.
     """
     try:
-        async for session in get_async_session():
+        async with get_async_session() as session:
             # Verify fund exists
             fund_result = await session.execute(
                 select(Fund).where(Fund.id == fund_id)
