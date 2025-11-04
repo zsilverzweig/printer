@@ -1641,6 +1641,13 @@ async def create_transfer(fund_id: str, transfer_input: CreateTransferInput) -> 
                     detail="transfer_type must be 'deposit' or 'withdrawal'"
                 )
             
+            # Block transfers when fund is actively trading
+            if fund.status == "active":
+                raise HTTPException(
+                    status_code=400,
+                    detail="Cannot transfer funds while trading is active. Stop the fund first."
+                )
+            
             # For withdrawals, check if fund has sufficient balance
             if transfer_input.transfer_type == "withdrawal":
                 if transfer_input.amount > fund.balance:

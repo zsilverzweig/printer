@@ -20,6 +20,7 @@ from app.services.trading.alpaca_service import AlpacaService
 from app.services.trading.order_lifecycle import OrderLifecycleManager
 from app.services.trading.reconciliation_service import get_reconciliation_service
 from app.services.trading.position_tracker import get_position_quantity_from_transactions
+from app.services.trading.constants import POSITION_EPSILON
 from app.services.events.event_broadcasting import (
     broadcast_error,
     broadcast_diagnostic,
@@ -319,7 +320,7 @@ class OrderExecutor:
                     session, self.fund_id, position.symbol
                 )
                 
-                if db_position_qty < 0.01:
+                if db_position_qty < POSITION_EPSILON:
                     logger.warning(
                         f"⚠️ No position in ledger for {position.symbol}. "
                         f"Skipping sell order to prevent over-selling."
@@ -328,7 +329,7 @@ class OrderExecutor:
                 
                 # If there's a discrepancy, use the MINIMUM of ledger and Alpaca quantity
                 # We can't sell more than Alpaca has available, so Alpaca quantity is the upper limit
-                if abs(db_position_qty - position.quantity) > 0.01:
+                if abs(db_position_qty - position.quantity) > POSITION_EPSILON:
                     # Use minimum to prevent over-selling
                     actual_quantity = min(db_position_qty, position.quantity)
                     
@@ -360,7 +361,7 @@ class OrderExecutor:
                     actual_quantity = position.quantity
             
             # Final validation: ensure we have a valid quantity to sell
-            if actual_quantity < 0.01:
+            if actual_quantity < POSITION_EPSILON:
                 logger.warning(
                     f"⚠️ Insufficient quantity to sell for {position.symbol}: "
                     f"calculated quantity {actual_quantity:.2f} is too small. "

@@ -11,6 +11,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.strategies import Transaction
+from app.services.trading.constants import (
+    POSITION_EPSILON,
+    FLOAT_COMPARISON_EPSILON,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -114,7 +118,7 @@ async def get_all_positions_from_transactions(
         active_positions = {
             symbol: qty 
             for symbol, qty in positions.items() 
-            if qty > 0.001  # Small epsilon for float comparison
+            if qty > FLOAT_COMPARISON_EPSILON
         }
         
         logger.debug(
@@ -173,8 +177,8 @@ async def sync_positions_from_broker(
             
             diff = broker_qty - ledger_qty
             
-            # Only report discrepancies > 0.01 shares (float tolerance)
-            if abs(diff) > 0.01:
+            # Only report discrepancies > POSITION_EPSILON shares (float tolerance)
+            if abs(diff) > POSITION_EPSILON:
                 discrepancies[symbol] = diff
                 logger.warning(
                     f"Position discrepancy for {symbol}: "
@@ -235,10 +239,10 @@ async def validate_position_for_trade(
             session, fund_id, symbol
         )
         
-        if current_position < 0.001:  # Epsilon check
+        if current_position < FLOAT_COMPARISON_EPSILON:
             return False, f"No position to sell (current: {current_position:.4f})"
         
-        if quantity > current_position + 0.01:  # Small tolerance
+        if quantity > current_position + POSITION_EPSILON:
             return False, (
                 f"Insufficient position: attempting to sell {quantity:.2f} "
                 f"but only own {current_position:.2f}"

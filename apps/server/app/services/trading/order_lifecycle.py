@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.strategies import Fund, Order
 from app.services.trading.position_tracker import get_position_quantity_from_transactions
+from app.services.trading.constants import BALANCE_EPSILON, POSITION_EPSILON, FLOAT_COMPARISON_EPSILON
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +78,7 @@ class OrderLifecycleManager:
             current_balance = db_fund.balance
             cached_balance = fund.balance
             
-            if abs(current_balance - cached_balance) > 0.01:
+            if abs(current_balance - cached_balance) > BALANCE_EPSILON:
                 logger.warning(
                     f"💰 Balance mismatch detected: cached=${cached_balance:.2f}, db=${current_balance:.2f}, "
                     f"diff=${current_balance - cached_balance:.2f}"
@@ -375,10 +376,10 @@ class OrderLifecycleManager:
                 session, fund_id, symbol
             )
             
-            if current_position < 0.001:  # Epsilon check
+            if current_position < FLOAT_COMPARISON_EPSILON:
                 return False, f"No position to sell (current: {current_position:.4f})"
             
-            if quantity > current_position + 0.01:  # Small tolerance
+            if quantity > current_position + POSITION_EPSILON:
                 return False, (
                     f"Insufficient position: attempting to sell {quantity:.2f} "
                     f"but only own {current_position:.2f}"

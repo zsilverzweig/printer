@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.strategies import Transaction, Fund, Order, Trade
 from app.services.core.time_context import get_current_time
 from app.services.trading.position_tracker import get_position_quantity_from_transactions
+from app.services.trading.constants import POSITION_EPSILON, FLOAT_COMPARISON_EPSILON
 from app.services.events.event_service import event_service
 
 logger = logging.getLogger(__name__)
@@ -239,14 +240,14 @@ async def create_transaction(
                 session, fund_id, symbol
             )
             
-            if quantity > actual_position + 0.01:  # Small epsilon for float math
+            if quantity > actual_position + POSITION_EPSILON:
                 logger.error(
                     f"🚨 OVER-SELL DETECTED: Attempting to sell {quantity} "
                     f"{symbol} but only own {actual_position:.2f}. Capping transaction."
                 )
                 quantity = max(0.0, actual_position)
             
-            if quantity <= 0.001:  # Epsilon check
+            if quantity <= FLOAT_COMPARISON_EPSILON:
                 logger.error(
                     f"❌ Cannot create sell transaction for {symbol} - "
                     f"no position to sell (actual: {actual_position:.2f})"
