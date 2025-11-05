@@ -322,7 +322,7 @@ class StrategyService:
         entry_levels = await self.get_active_entry_levels(fund_id)
         exit_levels = await self.get_active_exit_levels(fund_id)
         
-        logger.info(
+        logger.debug(
             f"Recovered state for fund {fund_id}: "
             f"{len(entry_levels)} entry level(s), {len(exit_levels)} exit level(s)"
         )

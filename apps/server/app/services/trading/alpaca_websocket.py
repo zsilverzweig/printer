@@ -126,7 +126,7 @@ class AlpacaWebSocketClient:
                 ping_interval=20,  # Ping every 20 seconds
                 ping_timeout=10,   # Wait 10 seconds for pong
             )
-            logger.info("✅ WebSocket connected")
+            logger.debug("WebSocket connected")
             self.reconnect_attempt = 0  # Reset on successful connection
             
             # Authenticate
@@ -178,7 +178,7 @@ class AlpacaWebSocketClient:
         data = json.loads(response)
         
         if data.get("stream") == "authorization" and data.get("data", {}).get("status") == "authorized":
-            logger.info("✅ WebSocket authenticated")
+            logger.debug("WebSocket authenticated")
         else:
             raise Exception(f"WebSocket authentication failed: {data}")
     
@@ -201,7 +201,7 @@ class AlpacaWebSocketClient:
         if data.get("stream") == "listening":
             streams = data.get("data", {}).get("streams", [])
             if "trade_updates" in streams:
-                logger.info("✅ Subscribed to trade_updates stream")
+                logger.debug("Subscribed to trade_updates stream")
             else:
                 logger.warning(f"⚠️  trade_updates not in subscribed streams: {streams}")
         else:

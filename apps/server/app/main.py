@@ -11,7 +11,7 @@ from fastapi import FastAPI, Request
 load_dotenv("env.local")
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from app.core import startup_init
+from app.services.core.startup_orchestrator import startup_application, get_orchestrator
 from app.routers import market, news, trading, events, admin, screener, strategies, funds, screening_criteria, db_admin, screener_metrics, analytics, backtests
 from app.routers.realtime import router as realtime_router
 from app.routers import ticker_states
@@ -92,124 +92,45 @@ async def log_requests(request: Request, call_next):
 
 @app.on_event("startup")
 async def on_startup() -> None:
+    """Execute application startup using the orchestrator."""
     # Fix duplicate logging handlers that may have been added by uvicorn
     _configure_logging()
     
-    await startup_init()
+    # Execute startup using orchestrator
+    orchestrator = await startup_application()
     
-    # Cancel any running backtests from previous server instance
-    from app.services.core.database import get_async_session
-    from app.models.strategies import Backtest
-    from sqlalchemy import select
-    
-    async with get_async_session() as session:
-        stmt = select(Backtest).where(Backtest.status == 'running')
-        result = await session.execute(stmt)
-        running_backtests = result.scalars().all()
-        
-        if running_backtests:
-            logger.info(f"🧹 Cleaning up {len(running_backtests)} interrupted backtest(s) from previous server instance")
-            for bt in running_backtests:
-                bt.status = 'cancelled'
-                bt.completed_at = datetime.utcnow()
-                bt.error_message = 'Server restarted'
-            await session.commit()
-            logger.info(f"✅ Cancelled {len(running_backtests)} interrupted backtest(s)")
-        else:
-            logger.debug("No interrupted backtests to clean up")
-    
-    # Initialize global screener service for strategy engines
-    from app.services.screener.screener import ScreenerService, set_screener_service
-    import app.core as core
-    
-    screener_service = ScreenerService(core.get_client(), interval_s=20)
-    await screener_service.start()
-    set_screener_service(screener_service)
-    
-    logger.info("✅ Server started (FastAPI + WebSocket + Screener)")
-    
-    # Initialize Alpaca WebSocket client for real-time order tracking
-    from app.services.trading.alpaca_service import AlpacaService
-    from app.services.trading.alpaca_websocket import AlpacaWebSocketClient
-    from app.services.trading.trade_event_handler import TradeEventHandler
-    from app.services.trading.reconciliation_service import ReconciliationService, set_reconciliation_service
-    
-    logger.info("Initializing Alpaca WebSocket client...")
-    alpaca_service = AlpacaService(paper_trading=True)  # Use paper trading for now
-    
-    # Create event handler
-    event_handler = TradeEventHandler()
-    
-    # Create and start WebSocket client
-    websocket_client = AlpacaWebSocketClient(
-        alpaca_service=alpaca_service,
-        event_handler=event_handler,
-        paper_trading=True
-    )
-    await websocket_client.connect()
-    
-    # Store global reference for shutdown
-    app.state.alpaca_websocket = websocket_client
-    logger.info("✓ Alpaca WebSocket client initialized and connected to trade_updates stream")
-    
-    # Initialize reconciliation service for manual position sync
-    logger.info("Initializing ReconciliationService...")
-    reconciliation_service = ReconciliationService(alpaca_service)
-    set_reconciliation_service(reconciliation_service)
-    logger.info("✓ ReconciliationService initialized (manual position reconciliation available)")
-    
-    # Load yesterday's market data (all timescales)
-    try:
-        # Import the loader function (use relative import from scripts directory)
-        import importlib.util
-        import os
-        import app.core as core_module
-        
-        script_path = os.path.join(os.path.dirname(__file__), '..', 'scripts', 'market_data_loader.py')
-        spec = importlib.util.spec_from_file_location("market_data_loader", script_path)
-        market_data_loader_module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(market_data_loader_module)
-        
-        # Database and Polygon client are already initialized, so pass False and use core API key
-        await market_data_loader_module.load_yesterday_data(
-            init_db_flag=False,  # Already initialized in startup_init()
-            api_key=core_module.API_KEY  # Use already-initialized API key
-        )
-    except Exception as e:
-        logger.error(f"❌ Failed to load yesterday's market data: {e}")
-        # Don't block startup if data loading fails
-        import traceback
-        logger.debug(traceback.format_exc())
-    
-    # Auto-start funds that were active before server restart
-    from app.services.core.fund_autostart import auto_start_active_funds
-    logger.info("Checking for active funds to auto-start...")
-    await auto_start_active_funds()
-    
-    # Log all registered routes
-    for route in app.routes:
-        logger.debug(f"Registered route: {route.path} ({getattr(route, 'methods', 'WEBSOCKET' if 'WebSocket' in str(type(route)) else 'UNKNOWN')})")
+    # Store services in app state for shutdown
+    if orchestrator.alpaca_websocket:
+        app.state.alpaca_websocket = orchestrator.alpaca_websocket
 
 
 @app.on_event("shutdown")
 async def on_shutdown() -> None:
     """Gracefully shutdown services on server stop."""
-    logger.info("🛑 Shutting down server...")
+    logger.info("Shutting down server...")
     
-    # Disconnect WebSocket
-    if hasattr(app.state, 'alpaca_websocket'):
-        websocket_client = app.state.alpaca_websocket
-        await websocket_client.disconnect()
-        logger.info("✓ Alpaca WebSocket client disconnected")
+    # Shutdown orchestrator services
+    orchestrator = get_orchestrator()
+    if orchestrator:
+        await orchestrator.shutdown()
 
 
 @app.get("/health")
 async def health() -> JSONResponse:
-    """Enhanced health check endpoint with backtest lookup status."""
+    """Enhanced health check endpoint with startup status and backtest lookup status."""
     from app.services.monitoring.health_monitor import get_health_monitor
     from datetime import datetime, timedelta, timezone
     
+    orchestrator = get_orchestrator()
     health_data = {"status": "ok"}
+    
+    # Add startup service status
+    if orchestrator:
+        health_data["startup"] = {
+            "services": orchestrator.get_service_status(),
+            "started_at": datetime.fromtimestamp(orchestrator.start_time).isoformat() if orchestrator.start_time else None,
+            "uptime_seconds": time.time() - orchestrator.start_time if orchestrator.start_time else None
+        }
     
     # Get backtest lookup status
     try:

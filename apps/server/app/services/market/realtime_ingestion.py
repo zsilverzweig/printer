@@ -116,7 +116,6 @@ class RealtimeIngestionService:
             logger.warning("Ingestion service already running")
             return
         
-        logger.info("Starting real-time ingestion service")
         self.is_running = True
         self.should_stop = False
         self.metrics.reset()

@@ -56,7 +56,7 @@ class AlpacaService:
             secret_key=secret_key
         )
         
-        logger.info(f"Alpaca trading client initialized ({mode_label} MODE)")
+        logger.debug(f"Alpaca trading client initialized ({mode_label} MODE)")
         
         # Double-check account is in expected mode
         try:
@@ -66,7 +66,7 @@ class AlpacaService:
                 raise RuntimeError("Expected paper trading account but got real account!")
             if not paper_trading and is_paper:
                 raise RuntimeError("Expected real trading account but got paper account!")
-            logger.info(f"✓ Account mode verified: {mode_label}")
+            logger.debug(f"Account mode verified: {mode_label}")
         except Exception as e:
             logger.error(f"Failed to verify account mode: {e}")
             raise
@@ -455,7 +455,7 @@ class AlpacaService:
                     "side": pos.side.value,
                 })
             
-            logger.info(f"Retrieved {len(positions_data)} positions")
+            logger.debug(f"Retrieved {len(positions_data)} positions")
             return positions_data
             
         except Exception as e:

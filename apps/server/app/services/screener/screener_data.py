@@ -95,7 +95,7 @@ class ScreenerDataLoader:
             # For backward compatibility, keep empty volume calculator
             self.volume_calculator = VolumeCalculator(self.volumes)
             
-            self.logger.info(f"Loaded OHLCV for {len(self.last_day_ohlc)} symbols from TimescaleDB")
+            self.logger.debug(f"Loaded OHLCV for {len(self.last_day_ohlc)} symbols from TimescaleDB")
             
         except Exception as e:
             self.logger.error(f"Failed to load from TimescaleDB: {e}", exc_info=True)

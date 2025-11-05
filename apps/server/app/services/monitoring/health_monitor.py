@@ -679,7 +679,7 @@ class MarketDataLoaderHealthCheck(BaseHealthCheck):
             import app.core as core_module
             
             # Run the comprehensive loader
-            self.logger.info("Running comprehensive market data loader in background...")
+            self.logger.debug("Running comprehensive market data loader in background...")
             
             await market_data_loader_module.load_comprehensive_data(
                 init_db_flag=False,  # Already initialized

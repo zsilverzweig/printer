@@ -79,9 +79,9 @@ class StrategyEngine:
         Raises:
             ValueError: If fund mode doesn't match Alpaca service mode
         """
-        logger.info(f"🔧 StrategyEngine.__init__ called for fund {fund.id}")
-        logger.info(
-            f"🔧 Fund object received: "
+        logger.debug(f"StrategyEngine.__init__ called for fund {fund.id}")
+        logger.debug(
+            f"Fund object received: "
             f"id={fund.id}, name={fund.name}, balance=${fund.balance:.2f}, "
             f"mode={fund.mode}, status={fund.status}, strategy={fund.strategy_id}"
         )
@@ -92,8 +92,8 @@ class StrategyEngine:
         
         # Use fund override if set, otherwise use default
         effective_size = fund.size_per_trade if fund.size_per_trade is not None else self.default_size_per_trade
-        logger.info(
-            f"🔧 Strategy config: "
+        logger.debug(
+            f"Strategy config: "
             f"strategy_id={fund.strategy_id}, "
             f"size_per_trade=${effective_size:.2f}, "
             f"max_bet_percent={fund.max_bet_percent}"
@@ -231,10 +231,11 @@ class StrategyEngine:
             logger.warning(f"Could not load default risk settings, using fallbacks: {e}")
         
         # Recover persisted state from DB
-        self.strategy_logger.fund_message("Recovering persisted levels from DB...")
+        self.strategy_logger.fund_message("Recovering persisted levels from DB...", "debug")
         entry_levels, exit_levels = await self.strategy_service.recover_fund_state(self.fund_id)
         self.strategy_logger.fund_message(
-            f"Recovered {len(entry_levels)} entry level(s), {len(exit_levels)} exit level(s)"
+            f"Recovered {len(entry_levels)} entry level(s), {len(exit_levels)} exit level(s)",
+            "debug"
         )
         
         # Sync positions from Alpaca
