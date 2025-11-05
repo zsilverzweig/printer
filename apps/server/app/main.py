@@ -38,23 +38,45 @@ app.add_middleware(
     expose_headers=["*"],
 )
 
-# Basic logging - only configure if not already configured
-# This prevents duplicate handlers when uvicorn reloads the application
-# Uvicorn may add its own handler, so we check if basicConfig was already called
+# Configure logging - uvicorn may have already set up handlers
+# We'll configure our format and deduplicate handlers in startup event
+logger = logging.getLogger("app.main")
+
+def _configure_logging():
+    """Configure logging format and remove duplicate handlers."""
+    import sys
+    
+    # Remove ALL existing handlers to start fresh
+    # This prevents uvicorn from adding duplicate handlers
+    for handler in logging.root.handlers[:]:
+        logging.root.removeHandler(handler)
+        handler.close()
+    
+    # Set the format for our handler
+    formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+    
+    # Add a single handler with our format
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setFormatter(formatter)
+    logging.root.addHandler(handler)
+    logging.root.setLevel(logging.INFO)
+    
+    # Also configure uvicorn's logger to use our handler
+    uvicorn_logger = logging.getLogger("uvicorn")
+    uvicorn_access_logger = logging.getLogger("uvicorn.access")
+    for logger in [uvicorn_logger, uvicorn_access_logger]:
+        # Remove any existing handlers
+        for h in logger.handlers[:]:
+            logger.removeHandler(h)
+            h.close()
+        # Set to use root logger's handlers (propagate=True is default)
+        logger.propagate = True
+        logger.setLevel(logging.INFO)
+
+# Configure logging at module load - but we'll reconfigure in startup to remove duplicates
+# This ensures basic logging works even if startup event doesn't fire
 if not logging.root.handlers:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-else:
-    # Check for duplicate StreamHandlers to stderr (common with uvicorn)
-    # Remove duplicates while keeping at least one handler
-    import sys
-    stream_handlers = [h for h in logging.root.handlers if isinstance(h, logging.StreamHandler) and h.stream == sys.stderr]
-    if len(stream_handlers) > 1:
-        # Keep only the first one, remove the rest to prevent duplicate log messages
-        for handler in stream_handlers[1:]:
-            logging.root.removeHandler(handler)
-            handler.close()  # Clean up the handler
-
-logger = logging.getLogger("app.main")
 
 
 @app.middleware("http")
@@ -69,6 +91,9 @@ async def log_requests(request: Request, call_next):
 
 @app.on_event("startup")
 async def on_startup() -> None:
+    # Fix duplicate logging handlers that may have been added by uvicorn
+    _configure_logging()
+    
     await startup_init()
     
     # Cancel any running backtests from previous server instance

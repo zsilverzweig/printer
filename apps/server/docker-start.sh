@@ -1,17 +1,17 @@
 #!/bin/bash
 set -e
 
-echo "🔄 Running database migrations..."
+# Run migrations (script will print its own status messages)
 python3 run_migrations.py
+exit_code=$?
 
-if [ $? -eq 0 ]; then
-    echo "✅ Migrations completed successfully"
+if [ $exit_code -eq 0 ]; then
     echo ""
     echo "🚀 Starting FastAPI server..."
     exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 else
     echo "❌ Migration failed, exiting..."
-    exit 1
+    exit $exit_code
 fi
 
 

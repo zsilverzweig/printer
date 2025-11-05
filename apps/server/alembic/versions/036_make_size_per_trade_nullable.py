@@ -16,21 +16,21 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # First, set all existing values to NULL (removing overrides)
+    # First, make size_per_trade nullable (remove NOT NULL constraint)
+    # This must be done before we can set values to NULL
+    op.alter_column('funds', 'size_per_trade',
+                    existing_type=sa.Float(),
+                    nullable=True,
+                    existing_server_default='1000.0')
+    
+    # Now that the column is nullable, set all existing values to NULL (removing overrides)
     op.execute("""
         UPDATE funds 
         SET size_per_trade = NULL, 
             max_order_age_seconds = NULL
     """)
     
-    # Make size_per_trade nullable (remove NOT NULL constraint)
-    op.alter_column('funds', 'size_per_trade',
-                    existing_type=sa.Float(),
-                    nullable=True,
-                    existing_server_default='1000.0')
-    
-    # max_order_age_seconds is already nullable, but ensure it's set to NULL
-    # (no change needed, just ensuring values are cleared)
+    # max_order_age_seconds is already nullable, so no column change needed
 
 
 def downgrade() -> None:
