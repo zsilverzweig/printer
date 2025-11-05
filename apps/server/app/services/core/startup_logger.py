@@ -162,9 +162,22 @@ class StartupLogger:
         separator = "=" * 60
         print(self._colorize(f"[STARTUP] {separator}", Colors.BOLD + Colors.CYAN), file=sys.stderr)
         print(self._colorize(f"[STARTUP] Startup Complete ({total_time:.2f}s)", Colors.BOLD + Colors.GREEN), file=sys.stderr)
-        print(f"[STARTUP] Services: {self._colorize(f'{services_ok} OK', Colors.GREEN)}, "
-              f"{self._colorize(f'{services_skip} SKIP', Colors.YELLOW)}, "
-              f"{self._colorize(f'{services_fail} FAIL', Colors.RED)}", file=sys.stderr)
+        
+        # Build services status line - only show non-zero counts
+        # If all OK (no skips, no failures), just say "All OK"
+        if services_fail == 0 and services_skip == 0:
+            print(f"[STARTUP] Services: {self._colorize('All OK', Colors.GREEN)}", file=sys.stderr)
+        else:
+            # Show only non-zero counts
+            service_parts = []
+            if services_ok > 0:
+                service_parts.append(self._colorize(f"{services_ok} OK", Colors.GREEN))
+            if services_skip > 0:
+                service_parts.append(self._colorize(f"{services_skip} SKIP", Colors.YELLOW))
+            if services_fail > 0:
+                service_parts.append(self._colorize(f"{services_fail} FAIL", Colors.RED))
+            print(f"[STARTUP] Services: {', '.join(service_parts)}", file=sys.stderr)
+        
         print(f"[STARTUP] Health: {self._colorize(health_status, Colors.GREEN)}", file=sys.stderr)
         print(f"[STARTUP] Active Funds: {self._colorize(str(active_funds), Colors.CYAN)}", file=sys.stderr)
         

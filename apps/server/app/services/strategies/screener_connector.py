@@ -63,23 +63,48 @@ class ScreenerConnector:
         """
         try:
             from app.services.screener.screener import get_screener_service
+            from app.services.core.database import get_async_session
+            from app.models.strategies import ScreeningCriteria as ScreeningCriteriaModel
+            from app.types import ScreenerCriteria
             
             screener = get_screener_service()
-            if not screener or not screener.cached_payload:
-                self.strategy_logger.fund_message("Screener not ready, no candidates", "debug")
+            if not screener:
+                self.strategy_logger.fund_message("Screener service not available, no candidates", "debug")
                 return []
             
-            screener_results = screener.cached_payload
-            self.strategy_logger.fund_message(
-                f"Screener has {len(screener_results)} total candidates",
-                "debug"
-            )
-            
-            # Apply fund's screening criteria if set
+            # If fund has specific screening criteria, run screener directly with that criteria
             if self.screening_criteria_id:
-                screener_results = await self._apply_screening_filters(screener_results)
+                async with get_async_session() as session:
+                    criteria_model = await session.get(ScreeningCriteriaModel, self.screening_criteria_id)
+                    
+                    if not criteria_model:
+                        logger.warning(f"[FUND {self.fund_id}] ScreeningCriteria {self.screening_criteria_id} not found")
+                        return []
+                    
+                    screener_name = criteria_model.name or "Unnamed"
+                    params = criteria_model.criteria or {}
+                    
+                    try:
+                        criteria = ScreenerCriteria(**params)
+                    except Exception as e:
+                        logger.error(f"[FUND {self.fund_id}] Invalid screening criteria: {e}")
+                        return []
+                    
+                    # Run screener directly with criteria - this fetches fresh data from TimescaleDB
+                    screener_results = await screener.compute_live_from_criteria(criteria)
+                    
+                    logger.info(
+                        f"[FUND {self.fund_id}] 📊 Screened: '{screener_name}' → {len(screener_results)} stocks"
+                    )
+            else:
+                # No specific criteria - use base screener cached payload (default filters)
+                if not screener.cached_payload:
+                    self.strategy_logger.fund_message("Screener not ready, no candidates", "debug")
+                    return []
+                
+                screener_results = screener.cached_payload
                 self.strategy_logger.fund_message(
-                    f"After filtering: {len(screener_results)} candidates",
+                    f"Screener has {len(screener_results)} total candidates (default filters)",
                     "debug"
                 )
             

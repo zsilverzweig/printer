@@ -5,17 +5,26 @@ import React from "react";
 
 import { ScreenerEditDialog } from "@/features/screener/components/screener-edit-dialog";
 import { ScreenerHeader } from "@/features/screener/components/screener-header";
+import { ScreenerIndex } from "@/features/screener/components/screener-index";
 import { ScreenerTable } from "@/features/screener/components/screener-table";
 import {
   useScreeners,
   type ScreeningCriteria,
 } from "@/features/screener/hooks/use-screeners";
 import type { StockData } from "@/features/screener/types";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/lib/components/ui/tabs";
 import { useScreenerData } from "@/lib/hooks/use-screener-data";
+import { useUrlTabs } from "@/lib/hooks/use-url-tabs";
 
 export default function ScreenerPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const [activeTab, setActiveTab] = useUrlTabs({ defaultTab: "screener" });
   const {
     screeners,
     loading: screenersLoading,
@@ -56,10 +65,32 @@ export default function ScreenerPage() {
     ScreeningCriteria["criteria"] | null
   >(null);
 
-  const selectedScreener = React.useMemo(
-    () => screeners.find((s) => s.id === selectedScreenerId) || null,
-    [screeners, selectedScreenerId]
-  );
+  const selectedScreener = React.useMemo(() => {
+    if (!selectedScreenerId || selectedScreenerId === "new") {
+      return null;
+    }
+    return screeners.find((s) => s.id === selectedScreenerId) || null;
+  }, [screeners, selectedScreenerId]);
+
+  // Clear selection if selected screener was deleted
+  React.useEffect(() => {
+    if (
+      selectedScreenerId &&
+      selectedScreenerId !== "new" &&
+      !selectedScreener
+    ) {
+      // Screener was deleted, clear selection
+      setSelectedScreenerId("");
+      try {
+        const params = new URLSearchParams(Array.from(searchParams.entries()));
+        params.delete("screener");
+        const query = params.toString();
+        router.replace(query ? `?${query}` : "?", { scroll: false });
+      } catch (e) {
+        // no-op on URL errors
+      }
+    }
+  }, [selectedScreenerId, selectedScreener, searchParams, router]);
 
   const isNewScreener = selectedScreenerId === "new";
 
@@ -223,7 +254,16 @@ export default function ScreenerPage() {
 
     const success = await deleteScreener(selectedScreener.id);
     if (success) {
+      // Clear selection and URL
       setSelectedScreenerId("");
+      try {
+        const params = new URLSearchParams(Array.from(searchParams.entries()));
+        params.delete("screener");
+        const query = params.toString();
+        router.replace(query ? `?${query}` : "?", { scroll: false });
+      } catch (e) {
+        // no-op on URL errors
+      }
     }
   };
 
@@ -291,47 +331,84 @@ export default function ScreenerPage() {
   };
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden">
-      <ScreenerHeader
-        screeners={screeners}
-        screenersLoading={screenersLoading}
-        selectedScreenerId={selectedScreenerId}
-        selectedScreener={selectedScreener}
-        isNewScreener={isNewScreener}
-        isEditMode={isEditMode}
-        editedName={editedName}
-        setEditedName={setEditedName}
-        editedDescription={editedDescription}
-        setEditedDescription={setEditedDescription}
-        currentFilters={currentFilters}
-        mode={mode}
-        historicalTimestamp={historicalTimestamp}
-        filtersModified={filtersModified}
-        savedFilters={savedFilters}
-        isConnected={isConnected}
-        runningScreener={runningScreener}
-        onScreenerSelect={handleScreenerSelect}
-        onSave={handleSave}
-        onCancel={handleCancel}
-        onOpenEditDialog={handleOpenEditDialog}
-        onSaveFilters={handleSaveFilters}
-        onDelete={handleDelete}
-        onModeChange={(newMode) => {
-          setMode(newMode);
-          if (newMode === "live") {
-            // Clear historical results when switching to live
-            setHistoricalResults(null);
-          } else {
-            // Clear live filtered results when switching to historical
-            setLiveFilteredResults(null);
-          }
-        }}
-        onTimestampChange={setHistoricalTimestamp}
-        onFilterChange={(updates) => {
-          setCurrentFilters({ ...currentFilters, ...updates });
-        }}
-        onRun={handleRun}
-      />
+    <div className="container mx-auto p-6">
+      <div className="mb-6">
+        <h1 className="text-3xl font-bold mb-2">Screener</h1>
+        <p className="text-muted-foreground">
+          Screen stocks based on custom criteria and filters
+        </p>
+      </div>
+
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="screener">Screener</TabsTrigger>
+          <TabsTrigger value="index">Index</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="screener" className="space-y-4 mt-6">
+          <ScreenerHeader
+            screeners={screeners}
+            screenersLoading={screenersLoading}
+            selectedScreenerId={selectedScreenerId}
+            selectedScreener={selectedScreener}
+            isNewScreener={isNewScreener}
+            isEditMode={isEditMode}
+            editedName={editedName}
+            setEditedName={setEditedName}
+            editedDescription={editedDescription}
+            setEditedDescription={setEditedDescription}
+            currentFilters={currentFilters}
+            mode={mode}
+            historicalTimestamp={historicalTimestamp}
+            filtersModified={filtersModified}
+            savedFilters={savedFilters}
+            isConnected={isConnected}
+            runningScreener={runningScreener}
+            onScreenerSelect={handleScreenerSelect}
+            onSave={handleSave}
+            onCancel={handleCancel}
+            onOpenEditDialog={handleOpenEditDialog}
+            onSaveFilters={handleSaveFilters}
+            onDelete={handleDelete}
+            onModeChange={(newMode) => {
+              setMode(newMode);
+              if (newMode === "live") {
+                // Clear historical results when switching to live
+                setHistoricalResults(null);
+              } else {
+                // Clear live filtered results when switching to historical
+                setLiveFilteredResults(null);
+              }
+            }}
+            onTimestampChange={setHistoricalTimestamp}
+            onFilterChange={(updates) => {
+              setCurrentFilters({ ...currentFilters, ...updates });
+            }}
+            onRun={handleRun}
+          />
+
+          <ScreenerTable
+            data={displayData}
+            mode={mode}
+            isConnected={isConnected}
+            historicalTimestamp={historicalTimestamp}
+            runningScreener={runningScreener}
+            selectedScreener={!!selectedScreener || isNewScreener}
+            isNewScreener={isNewScreener}
+          />
+        </TabsContent>
+
+        <TabsContent value="index" className="space-y-4 mt-6">
+          <ScreenerIndex
+            screeners={screeners}
+            loading={screenersLoading}
+            onScreenerSelect={(screenerId) => {
+              handleScreenerSelect(screenerId);
+              setActiveTab("screener");
+            }}
+          />
+        </TabsContent>
+      </Tabs>
 
       <ScreenerEditDialog
         open={editDialogOpen}
@@ -342,21 +419,6 @@ export default function ScreenerPage() {
         onDescriptionChange={setTempDescription}
         onSave={handleSaveFromDialog}
       />
-
-      {/* Results Table */}
-      <div className="flex-1 overflow-auto">
-        <div className="container mx-auto p-4">
-          <ScreenerTable
-            data={displayData}
-            mode={mode}
-            isConnected={isConnected}
-            historicalTimestamp={historicalTimestamp}
-            runningScreener={runningScreener}
-            selectedScreener={!!selectedScreener || isNewScreener}
-            isNewScreener={isNewScreener}
-          />
-        </div>
-      </div>
     </div>
   );
 }

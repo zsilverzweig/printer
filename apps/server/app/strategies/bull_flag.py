@@ -27,6 +27,7 @@ from app.strategies.base import (
     PositionContext,
 )
 from app.services.news.news_service import NewsService
+from app.lib.technical_analysis import calculate_macd
 
 logger = logging.getLogger(__name__)
 
@@ -69,8 +70,10 @@ class BullFlagStrategy(ExecutionStrategy):
     def description(self) -> str:
         return (
             "Warrior Trading bull flag strategy: Identifies strong upward moves (flagpole) "
-            "on high relative volume, followed by consolidation (flag) with lighter volume, "
-            "then enters on breakout above flag high. Typical hold time: 1-3 minutes."
+            "on high relative volume, followed by consolidation (flag) with lighter volume. "
+            "Waits for 2+ red candles in the dip, then enters when a green candle closes above "
+            "the last red candle's close (only if MACD is positive). Entry price updates every tick. "
+            "Typical hold time: 1-3 minutes."
         )
     
     @property
@@ -350,10 +353,13 @@ class BullFlagStrategy(ExecutionStrategy):
         market_data: MarketDataSnapshot
     ) -> Optional[EntryLevel]:
         """
-        Set entry at breakout level above flag high.
+        Set entry at close of last red candle in the dip, updating every tick.
         
         Warrior Trading entry rules:
-        - Entry on first candle making new high after consolidation
+        - Require 2+ red candles in the consolidation/dip phase
+        - Set entry price = close of last red candle (updates every tick)
+        - Enter when a green candle closes above the last red candle's close
+        - Only enter if MACD is still positive
         - Stop-loss: Just below lowest point of pullback within flag
         - Profit target: Retest of high of day (stored in metadata)
         """
@@ -385,12 +391,166 @@ class BullFlagStrategy(ExecutionStrategy):
             f"Flagpole high=${flagpole_high:.2f}, Flag=${flag_low:.2f}-${flag_high:.2f}"
         )
         
-        # Current price and recent bars for breakout confirmation
-        current_price = market_data.price
+        # Get bars in the flag consolidation phase (dip)
+        flag_start_idx = flagpole_end_idx + 1
+        flag_bars = bars[flag_start_idx:flag_end_idx + 1]
         
-        # Check if we're in breakout phase (price above flag high or very close)
-        # Entry should be slightly above flag high for limit order
-        entry_price = flag_high * 1.001  # 0.1% above flag high
+        if len(flag_bars) < 2:
+            logger.debug(f"🚩 [{ticker}] Entry analysis: Flag too short ({len(flag_bars)} bars)")
+            return None
+        
+        # Helper function to get OHLC values from a bar
+        def get_ohlc(bar: Dict[str, Any]) -> Tuple[float, float, float, float]:
+            """Get open, high, low, close from bar (handles different key formats)."""
+            o = bar.get('open', bar.get('o', 0))
+            h = bar.get('high', bar.get('h', 0))
+            l = bar.get('low', bar.get('l', 0))
+            c = bar.get('close', bar.get('c', 0))
+            return (o, h, l, c)
+        
+        # Require at least 2 consecutive red candles in the flag (dip)
+        consecutive_red = 0
+        max_consecutive_red = 0
+        last_consecutive_red_end_idx = -1
+        
+        for i, bar in enumerate(flag_bars):
+            o, h, l, c = get_ohlc(bar)
+            if c < o:  # Red candle
+                consecutive_red += 1
+                if consecutive_red > max_consecutive_red:
+                    max_consecutive_red = consecutive_red
+                    last_consecutive_red_end_idx = i + flag_start_idx
+            else:  # Not red, reset counter
+                consecutive_red = 0
+        
+        if max_consecutive_red < 2:
+            logger.debug(
+                f"🚩 [{ticker}] Entry analysis: Max consecutive red candles={max_consecutive_red} "
+                f"(need at least 2 consecutive)"
+            )
+            return None
+        
+        # Get the last red candle in the consecutive sequence - this is our entry price (updates every tick)
+        last_red_bar_in_flag = flag_bars[last_consecutive_red_end_idx - flag_start_idx]
+        _, _, _, last_red_close = get_ohlc(last_red_bar_in_flag)
+        entry_price = last_red_close
+        
+        logger.debug(
+            f"🚩 [{ticker}] Entry analysis: Found {max_consecutive_red} consecutive red candles in flag. "
+            f"Last red candle close=${entry_price:.2f} (entry price)"
+        )
+        
+        # Check for green candles since flag high - if more than 1 green candle and no entry triggered, invalidate
+        # BUT: if there's a new flag high (higher than original), we reset and can still enter
+        # Find the CURRENT flag high (may be higher than original if new high formed)
+        current_flag_high = flag_high
+        current_flag_high_idx = flag_end_idx
+        
+        # Check all bars (flag + after) to find the highest high since flag started
+        # This allows for a new flag high that resets the invalidation logic
+        for i in range(flag_start_idx, len(bars)):
+            bar = bars[i]
+            _, h, _, _ = get_ohlc(bar)
+            if h > current_flag_high:
+                current_flag_high = h
+                current_flag_high_idx = i
+        
+        # Find the bar index where current_flag_high occurred
+        flag_high_idx = -1
+        for i in range(flag_start_idx, len(bars)):
+            bar = bars[i]
+            _, h, _, _ = get_ohlc(bar)
+            # Check if this bar's high matches current_flag_high (with small tolerance)
+            if abs(h - current_flag_high) < current_flag_high * 0.001:  # Within 0.1% tolerance
+                flag_high_idx = i
+                # Use the last occurrence (most recent bar with this high)
+                break
+        
+        # If not found, use current_flag_high_idx
+        if flag_high_idx == -1:
+            flag_high_idx = current_flag_high_idx
+        
+        # Count green candles since the CURRENT flag high (in bars after flag_high_idx)
+        bars_since_flag_high = bars[flag_high_idx + 1:] if flag_high_idx + 1 < len(bars) else []
+        green_candles_since_flag_high = 0
+        
+        for bar in bars_since_flag_high:
+            o, _, _, c = get_ohlc(bar)
+            if c > o:  # Green candle
+                green_candles_since_flag_high += 1
+        
+        # If more than 1 green candle since CURRENT flag high and we haven't triggered entry, invalidate
+        # Note: If a new flag high formed (current_flag_high > flag_high), this resets the count
+        if green_candles_since_flag_high > 1:
+            logger.debug(
+                f"🚩 [{ticker}] Entry analysis: {green_candles_since_flag_high} green candle(s) since flag high "
+                f"${current_flag_high:.2f} - position invalidated (need entry on first green above red close)"
+            )
+            return None
+        
+        # Log if new flag high was found
+        if current_flag_high > flag_high:
+            logger.debug(
+                f"🚩 [{ticker}] Entry analysis: New flag high formed ${flag_high:.2f} → ${current_flag_high:.2f} "
+                f"(green candle count reset)"
+            )
+        
+        # Calculate MACD to check if it's positive
+        closes = [get_ohlc(bar)[3] for bar in bars]  # Extract closes
+        macd_data = calculate_macd(bars, fast_period=12, slow_period=26, signal_period=9)
+        macd_line = macd_data.get("macd", [])
+        
+        if not macd_line or len(macd_line) == 0:
+            logger.debug(f"🚩 [{ticker}] Entry analysis: MACD not available")
+            return None
+        
+        # Get the most recent MACD value
+        current_macd = macd_line[-1]
+        if current_macd is None:
+            logger.debug(f"🚩 [{ticker}] Entry analysis: Current MACD is None")
+            return None
+        
+        # MACD must be positive
+        if current_macd <= 0:
+            logger.debug(
+                f"🚩 [{ticker}] Entry analysis: MACD is not positive (MACD={current_macd:.3f})"
+            )
+            return None
+        
+        logger.debug(f"🚩 [{ticker}] Entry analysis: MACD is positive (MACD={current_macd:.3f}) ✅")
+        
+        # Check if we have a green candle that closed above the last red candle's close
+        # Look at bars after the last red candle in the consecutive sequence
+        bars_after_last_red = bars[last_consecutive_red_end_idx + 1:] if last_consecutive_red_end_idx + 1 < len(bars) else []
+        
+        green_above_red = False
+        if bars_after_last_red:
+            # Check the most recent completed candle
+            latest_bar = bars_after_last_red[-1]
+            o, h, l, c = get_ohlc(latest_bar)
+            
+            # Green candle = close > open, and close > last red candle's close
+            if c > o and c > entry_price:
+                green_above_red = True
+                logger.info(
+                    f"🚩 [{ticker}] Entry signal: Green candle closed at ${c:.2f} above "
+                    f"last red close ${entry_price:.2f} ✅"
+                )
+            else:
+                logger.debug(
+                    f"🚩 [{ticker}] Entry analysis: Latest bar close=${c:.2f}, open=${o:.2f}, "
+                    f"last red close=${entry_price:.2f} - waiting for green candle above red close"
+                )
+        else:
+            # No bars after last red yet, check current price
+            current_price = market_data.price
+            if current_price > entry_price:
+                logger.debug(
+                    f"🚩 [{ticker}] Entry analysis: Current price ${current_price:.2f} above "
+                    f"entry ${entry_price:.2f}, but no completed green candle yet"
+                )
+        
+        current_price = market_data.price
         
         # Check if price has already broken out significantly (might be too late)
         price_above_flag = ((current_price / flag_high - 1) * 100) if flag_high > 0 else 0

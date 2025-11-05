@@ -22,6 +22,7 @@ interface ScreenerEditDialogProps {
   onNameChange: (name: string) => void;
   onDescriptionChange: (description: string) => void;
   onSave: () => void;
+  isNew?: boolean;
 }
 
 export function ScreenerEditDialog({
@@ -32,14 +33,19 @@ export function ScreenerEditDialog({
   onNameChange,
   onDescriptionChange,
   onSave,
+  isNew = false,
 }: ScreenerEditDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
-          <DialogTitle>Edit Screener</DialogTitle>
+          <DialogTitle>
+            {isNew ? "Create Screener" : "Edit Screener"}
+          </DialogTitle>
           <DialogDescription>
-            Update the name and description for this screener.
+            {isNew
+              ? "Create a new screener with a name and description."
+              : "Update the name and description for this screener."}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-4">

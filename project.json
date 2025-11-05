@@ -58,34 +58,34 @@
     "docker:logs": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "docker-compose logs -f",
+        "command": "docker-compose logs -f --ansi always",
         "cwd": "{workspaceRoot}"
       },
-      "description": "View logs from all Docker services (follow mode)"
+      "description": "View logs from all Docker services (follow mode) with colors"
     },
     "docker:logs:web": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "docker-compose logs -f web",
+        "command": "docker logs -f printer-web",
         "cwd": "{workspaceRoot}"
       },
-      "description": "View logs from Next.js web service"
+      "description": "View logs from Next.js web service with colors"
     },
     "docker:logs:server": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "docker-compose logs -f server",
+        "command": "docker logs -f printer-server",
         "cwd": "{workspaceRoot}"
       },
-      "description": "View logs from FastAPI server service"
+      "description": "View logs from FastAPI server service with colors"
     },
     "docker:logs:db": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "docker-compose logs -f db",
+        "command": "docker logs -f printer-db",
         "cwd": "{workspaceRoot}"
       },
-      "description": "View logs from PostgreSQL database service"
+      "description": "View logs from PostgreSQL database service with colors"
     },
     "docker:ps": {
       "executor": "nx:run-commands",
