@@ -65,6 +65,8 @@ interface ValidationResult {
   alpaca_status?: string;
   db_status?: string;
   status_matches?: boolean;
+  trade_recreated?: boolean;
+  trade_recreation_error?: string;
 }
 
 interface FundOrdersProps {
@@ -132,6 +134,11 @@ export function FundOrders({ fundId }: FundOrdersProps) {
       if (!response.ok) throw new Error("Failed to validate order");
       const result: ValidationResult = await response.json();
       setValidationResults((prev) => new Map(prev).set(orderId, result));
+
+      // Refresh orders if trade was recreated
+      if (result.trade_recreated) {
+        await fetchOrders();
+      }
     } catch (err) {
       console.error("Error validating order:", err);
     } finally {
@@ -181,42 +188,65 @@ export function FundOrders({ fundId }: FundOrdersProps) {
     const result = validationResults.get(orderId);
     if (!result) return null;
 
+    // Show trade recreation status if present
+    const tradeStatus = result.trade_recreated ? (
+      <span className="text-xs text-green-600 font-semibold">
+        ✓ Trade recreated
+      </span>
+    ) : result.trade_recreation_error ? (
+      <span className="text-xs text-yellow-600">
+        ⚠ {result.trade_recreation_error}
+      </span>
+    ) : null;
+
     if (result.is_orphaned) {
       return (
-        <div className="flex items-center gap-2 text-red-600">
-          <XCircle className="h-4 w-4" />
-          <span className="text-sm">Orphaned: {result.reason}</span>
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-2 text-red-600">
+            <XCircle className="h-4 w-4" />
+            <span className="text-sm">Orphaned: {result.reason}</span>
+          </div>
+          {tradeStatus}
         </div>
       );
     }
 
     if (result.is_synced === false) {
       return (
-        <div className="flex items-center gap-2 text-red-600">
-          <XCircle className="h-4 w-4" />
-          <span className="text-sm">{result.reason}</span>
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-2 text-red-600">
+            <XCircle className="h-4 w-4" />
+            <span className="text-sm">{result.reason}</span>
+          </div>
+          {tradeStatus}
         </div>
       );
     }
 
     if (result.is_synced === true) {
       return (
-        <div className="flex items-center gap-2 text-green-600">
-          <CheckCircle className="h-4 w-4" />
-          <span className="text-sm">Synced</span>
-          {!result.status_matches && (
-            <span className="text-xs text-yellow-600">
-              (DB: {result.db_status} ≠ Alpaca: {result.alpaca_status})
-            </span>
-          )}
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-2 text-green-600">
+            <CheckCircle className="h-4 w-4" />
+            <span className="text-sm">Synced</span>
+            {!result.status_matches && (
+              <span className="text-xs text-yellow-600">
+                (DB: {result.db_status} ≠ Alpaca: {result.alpaca_status})
+              </span>
+            )}
+          </div>
+          {tradeStatus}
         </div>
       );
     }
 
     return (
-      <div className="flex items-center gap-2 text-gray-600">
-        <AlertTriangle className="h-4 w-4" />
-        <span className="text-sm">{result.reason}</span>
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center gap-2 text-gray-600">
+          <AlertTriangle className="h-4 w-4" />
+          <span className="text-sm">{result.reason}</span>
+        </div>
+        {tradeStatus}
       </div>
     );
   };

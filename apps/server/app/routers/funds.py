@@ -16,10 +16,12 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select, and_
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.strategies import Fund, ScreeningCriteria, Order, Transaction, Transfer, Trade
 from app.models.events import StrategyEngineEvent, Event
 from app.services.core.database import get_async_session
+from app.services.analytics.trade_builder import TradeBuilder
 from app.services.strategies.engine_registry import (
     register_engine,
     get_engine,
@@ -1469,10 +1471,192 @@ async def get_fund_positions(fund_id: str) -> dict:
         raise HTTPException(status_code=500, detail=str(e))
 
 
+async def _recreate_missing_trade(
+    session: AsyncSession,
+    order: Order,
+    trade_id: str
+) -> Optional[Trade]:
+    """
+    Attempt to recreate a missing trade record from order and transactions.
+    
+    Returns the created Trade if successful, None if not enough data available.
+    """
+    try:
+        # Get all transactions for this order
+        result = await session.execute(
+            select(Transaction).where(
+                Transaction.order_id == order.id
+            ).order_by(Transaction.timestamp)
+        )
+        order_transactions = result.scalars().all()
+        
+        if not order_transactions:
+            logger.debug(f"No transactions found for order {order.id}, cannot recreate trade")
+            return None
+        
+        trade_builder = TradeBuilder(session)
+        
+        if order.side == "buy":
+            # This is an entry order - look for matching exit transactions
+            # First, check if there's already an open trade for this symbol
+            existing_open_trade = await trade_builder.get_open_trade_for_symbol(
+                order.fund_id,
+                order.symbol
+            )
+            
+            if existing_open_trade:
+                # Trade already exists, just update the order's trade_id
+                order.trade_id = existing_open_trade.id
+                await session.flush()
+                return existing_open_trade
+            
+            # Create new trade from entry transactions
+            trade = await trade_builder.create_trade_from_entry(
+                trade_id=trade_id,
+                fund_id=order.fund_id,
+                symbol=order.symbol,
+                entry_order_id=order.id,
+                entry_transactions=list(order_transactions),
+                strategy_id=None,  # Will be None if not available
+                screening_criteria_id=None,
+                ai_confidence=None,
+                ai_reasoning=None,
+            )
+            
+            # Update order with trade_id
+            order.trade_id = trade_id
+            await session.flush()
+            
+            logger.info(f"✅ Recreated trade {trade_id} from buy order {order.id}")
+            return trade
+            
+        elif order.side == "sell":
+            # This is an exit order - need to find matching entry transactions
+            # Find buy transactions for this symbol that don't have a trade_id yet
+            # or find the open trade for this symbol
+            existing_open_trade = await trade_builder.get_open_trade_for_symbol(
+                order.fund_id,
+                order.symbol
+            )
+            
+            if existing_open_trade:
+                # Close the existing trade
+                trade = await trade_builder.close_trade(
+                    trade_id=existing_open_trade.id,
+                    exit_order_id=order.id,
+                    exit_transactions=list(order_transactions)
+                )
+                order.trade_id = trade.id
+                await session.flush()
+                
+                logger.info(f"✅ Recreated and closed trade {trade.id} from sell order {order.id}")
+                return trade
+            else:
+                # No open trade found - try to find matching buy transactions
+                # Get buy transactions for this symbol without trade_id, sorted by time
+                buy_result = await session.execute(
+                    select(Transaction).where(
+                        and_(
+                            Transaction.fund_id == order.fund_id,
+                            Transaction.symbol == order.symbol,
+                            Transaction.side == "buy",
+                            Transaction.trade_id.is_(None)
+                        )
+                    ).order_by(Transaction.timestamp)
+                )
+                buy_transactions = list(buy_result.scalars().all())
+                
+                if not buy_transactions:
+                    logger.debug(f"No matching buy transactions found for sell order {order.id}")
+                    return None
+                
+                # Match using FIFO - use the oldest buy transaction(s)
+                sell_qty = sum(txn.quantity for txn in order_transactions)
+                matched_buy_txns = []
+                remaining_qty = sell_qty
+                
+                for buy_txn in buy_transactions:
+                    if remaining_qty <= 0:
+                        break
+                    matched_buy_txns.append(buy_txn)
+                    remaining_qty -= buy_txn.quantity
+                
+                if remaining_qty > 0:
+                    # Partial match - still create the trade
+                    logger.warning(
+                        f"Partial match for trade {trade_id}: "
+                        f"sell qty {sell_qty}, matched buy qty {sell_qty - remaining_qty}"
+                    )
+                
+                # Create trade from matched buy and sell transactions
+                entry_qty = sum(txn.quantity for txn in matched_buy_txns)
+                entry_cost = sum(txn.total_value for txn in matched_buy_txns)
+                avg_entry_price = entry_cost / entry_qty if entry_qty > 0 else 0.0
+                entry_time = min(txn.timestamp for txn in matched_buy_txns)
+                entry_order_id = matched_buy_txns[0].order_id
+                
+                exit_qty = sum(txn.quantity for txn in order_transactions)
+                exit_proceeds = sum(txn.total_value for txn in order_transactions)
+                avg_exit_price = exit_proceeds / exit_qty if exit_qty > 0 else 0.0
+                exit_time = max(txn.timestamp for txn in order_transactions)
+                
+                realized_pnl = exit_proceeds - (avg_entry_price * min(entry_qty, exit_qty))
+                realized_pnl_percent = (realized_pnl / (avg_entry_price * min(entry_qty, exit_qty)) * 100) if avg_entry_price > 0 else 0.0
+                hold_duration = (exit_time - entry_time).total_seconds()
+                
+                trade = Trade(
+                    id=trade_id,
+                    fund_id=order.fund_id,
+                    symbol=order.symbol,
+                    entry_order_id=entry_order_id,
+                    entry_time=entry_time,
+                    entry_price=avg_entry_price,
+                    entry_quantity=entry_qty,
+                    exit_order_id=order.id,
+                    exit_time=exit_time,
+                    exit_price=avg_exit_price,
+                    exit_quantity=exit_qty,
+                    realized_pnl=realized_pnl,
+                    realized_pnl_percent=realized_pnl_percent,
+                    hold_duration_seconds=int(hold_duration),
+                    status="closed",
+                    trade_metadata={"recreated": True, "from_validation": True}
+                )
+                
+                session.add(trade)
+                
+                # Update transactions with trade_id
+                for txn in matched_buy_txns + order_transactions:
+                    txn.trade_id = trade_id
+                
+                # Update orders with trade_id
+                order.trade_id = trade_id
+                for buy_txn in matched_buy_txns:
+                    if buy_txn.order_id:
+                        buy_order_result = await session.execute(
+                            select(Order).where(Order.id == buy_txn.order_id)
+                        )
+                        buy_order = buy_order_result.scalar_one_or_none()
+                        if buy_order and not buy_order.trade_id:
+                            buy_order.trade_id = trade_id
+                
+                await session.flush()
+                
+                logger.info(f"✅ Recreated closed trade {trade_id} from sell order {order.id} with matched buy transactions")
+                return trade
+        
+        return None
+        
+    except Exception as e:
+        logger.error(f"Error recreating trade {trade_id} for order {order.id}: {e}", exc_info=True)
+        return None
+
+
 @router.post("/funds/{fund_id}/orders/{order_id}/validate")
 async def validate_order(fund_id: str, order_id: str) -> dict:
     """
     Validate an order against Alpaca to check if it's synced.
+    Also attempts to recreate missing trade records if the order has a trade_id but the trade doesn't exist.
     """
     try:
         async with get_async_session() as session:
@@ -1489,29 +1673,68 @@ async def validate_order(fund_id: str, order_id: str) -> dict:
             if not fund:
                 raise HTTPException(status_code=404, detail="Fund not found")
             
+            # Check if order has a trade_id but trade doesn't exist - try to recreate it
+            trade_recreated = False
+            trade_recreation_error = None
+            order_trade_id = order.trade_id  # Store before any commits to avoid detached object issues
+            if order_trade_id:
+                trade_result = await session.execute(
+                    select(Trade).where(Trade.id == order_trade_id)
+                )
+                existing_trade = trade_result.scalar_one_or_none()
+                
+                if not existing_trade:
+                    # Trade is missing - try to recreate it
+                    logger.info(f"Trade {order_trade_id} is missing for order {order_id}, attempting to recreate...")
+                    recreated_trade = await _recreate_missing_trade(
+                        session,
+                        order,
+                        order_trade_id
+                    )
+                    
+                    if recreated_trade:
+                        await session.commit()
+                        trade_recreated = True
+                        logger.info(f"✅ Successfully recreated trade {order_trade_id} for order {order_id}")
+                    else:
+                        # Revert any changes if trade creation failed
+                        await session.rollback()
+                        trade_recreation_error = "Could not recreate trade: insufficient transaction data"
+                        logger.warning(f"⚠️  Failed to recreate trade {order_trade_id} for order {order_id}")
+            
             # Check if we can validate (need Alpaca order ID)
             if not order.alpaca_order_id or order.alpaca_order_id.strip() == "":
-                return {
+                response = {
                     "order_id": order_id,
                     "is_synced": False,
                     "is_orphaned": True,
                     "reason": "Missing Alpaca order ID",
                 }
+                if trade_recreated:
+                    response["trade_recreated"] = True
+                elif trade_recreation_error:
+                    response["trade_recreation_error"] = trade_recreation_error
+                return response
             
             # Get engine to access Alpaca service
             engine = get_engine(fund_id)
             if not engine:
-                return {
+                response = {
                     "order_id": order_id,
                     "is_synced": None,
                     "reason": "Fund is not running, cannot validate",
                 }
+                if trade_recreated:
+                    response["trade_recreated"] = True
+                elif trade_recreation_error:
+                    response["trade_recreation_error"] = trade_recreation_error
+                return response
             
             # Query Alpaca
             try:
                 alpaca_order = engine.alpaca_service.client.get_order_by_id(order.alpaca_order_id)
                 
-                return {
+                response = {
                     "order_id": order_id,
                     "is_synced": True,
                     "is_orphaned": False,
@@ -1519,15 +1742,25 @@ async def validate_order(fund_id: str, order_id: str) -> dict:
                     "db_status": order.status,
                     "status_matches": str(alpaca_order.status.value).lower() == order.status.lower(),
                 }
+                if trade_recreated:
+                    response["trade_recreated"] = True
+                elif trade_recreation_error:
+                    response["trade_recreation_error"] = trade_recreation_error
+                return response
             
             except Exception as e:
                 if "not found" in str(e).lower() or "404" in str(e):
-                    return {
+                    response = {
                         "order_id": order_id,
                         "is_synced": False,
                         "is_orphaned": True,
                         "reason": "Order not found in Alpaca",
                     }
+                    if trade_recreated:
+                        response["trade_recreated"] = True
+                    elif trade_recreation_error:
+                        response["trade_recreation_error"] = trade_recreation_error
+                    return response
                 raise
     
     except HTTPException:

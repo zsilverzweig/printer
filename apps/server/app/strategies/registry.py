@@ -146,6 +146,25 @@ def _auto_register_strategies() -> None:
     except ImportError as e:
         logger.warning(f"Failed to import WyckoffStrategy: {e}")
     
+    # Technical indicator strategies
+    try:
+        from app.strategies.rsi_mean_reversion import RSIMeanReversionStrategy
+        register_strategy(RSIMeanReversionStrategy)
+    except ImportError as e:
+        logger.warning(f"Failed to import RSIMeanReversionStrategy: {e}")
+    
+    try:
+        from app.strategies.ema_crossover import EMACrossoverStrategy
+        register_strategy(EMACrossoverStrategy)
+    except ImportError as e:
+        logger.warning(f"Failed to import EMACrossoverStrategy: {e}")
+    
+    try:
+        from app.strategies.macd_momentum import MACDMomentumStrategy
+        register_strategy(MACDMomentumStrategy)
+    except ImportError as e:
+        logger.warning(f"Failed to import MACDMomentumStrategy: {e}")
+    
     # Old strategies archived - uncomment when needed
     # try:
     #     from app.strategies.archived.failed_equal_highs_old import FailedEqualHighsBreakoutStrategy
