@@ -40,8 +40,20 @@ app.add_middleware(
 
 # Basic logging - only configure if not already configured
 # This prevents duplicate handlers when uvicorn reloads the application
+# Uvicorn may add its own handler, so we check if basicConfig was already called
 if not logging.root.handlers:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+else:
+    # Check for duplicate StreamHandlers to stderr (common with uvicorn)
+    # Remove duplicates while keeping at least one handler
+    import sys
+    stream_handlers = [h for h in logging.root.handlers if isinstance(h, logging.StreamHandler) and h.stream == sys.stderr]
+    if len(stream_handlers) > 1:
+        # Keep only the first one, remove the rest to prevent duplicate log messages
+        for handler in stream_handlers[1:]:
+            logging.root.removeHandler(handler)
+            handler.close()  # Clean up the handler
+
 logger = logging.getLogger("app.main")
 
 
