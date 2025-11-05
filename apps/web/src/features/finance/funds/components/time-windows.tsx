@@ -12,12 +12,6 @@ import { Fund } from "@printer/shared";
 
 import { fundService } from "../services/fund-service";
 
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/lib/components/ui/card";
 import { Input } from "@/lib/components/ui/input";
 import { Label } from "@/lib/components/ui/label";
 import {
@@ -93,81 +87,77 @@ export function TimeWindows({
     }
   };
 
+  const content = (
+    <div>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <div className="space-y-1.5">
+          <Label htmlFor="tradingStartTime">Start Time</Label>
+          <Input
+            id="tradingStartTime"
+            type="time"
+            value={tradingStartTime}
+            onChange={(e) => setTradingStartTime(e.target.value)}
+            onBlur={() => {
+              void saveIfChanged();
+            }}
+            disabled={isSaving}
+            placeholder="09:30"
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="tradingEndTime">End Time</Label>
+          <Input
+            id="tradingEndTime"
+            type="time"
+            value={tradingEndTime}
+            onChange={(e) => setTradingEndTime(e.target.value)}
+            onBlur={() => {
+              void saveIfChanged();
+            }}
+            disabled={isSaving}
+            placeholder="16:00"
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="timezone">Timezone</Label>
+          <Select
+            value={timezone}
+            onValueChange={(value) => {
+              setTimezone(value);
+              void saveIfChanged({ timezone: value });
+            }}
+            disabled={isSaving}
+          >
+            <SelectTrigger id="timezone">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="America/New_York">
+                Eastern Time (ET)
+              </SelectItem>
+              <SelectItem value="America/Chicago">Central Time (CT)</SelectItem>
+              <SelectItem value="America/Denver">Mountain Time (MT)</SelectItem>
+              <SelectItem value="America/Los_Angeles">
+                Pacific Time (PT)
+              </SelectItem>
+              <SelectItem value="UTC">UTC</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
-    <Card>
+    <div className="space-y-2">
       {error && (
-        <div className="rounded-lg bg-red-50 dark:bg-red-950/30 p-4 text-sm text-red-800 dark:text-red-200">
+        <div className="rounded-lg bg-red-50 dark:bg-red-950/30 p-2 text-xs text-red-800 dark:text-red-200">
           {error}
         </div>
       )}
-
-      <CardHeader>
-        <CardTitle>Time Windows</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <div className="space-y-1.5">
-            <Label htmlFor="tradingStartTime">Start Time</Label>
-            <Input
-              id="tradingStartTime"
-              type="time"
-              value={tradingStartTime}
-              onChange={(e) => setTradingStartTime(e.target.value)}
-              onBlur={() => {
-                void saveIfChanged();
-              }}
-              disabled={isSaving}
-              placeholder="09:30"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="tradingEndTime">End Time</Label>
-            <Input
-              id="tradingEndTime"
-              type="time"
-              value={tradingEndTime}
-              onChange={(e) => setTradingEndTime(e.target.value)}
-              onBlur={() => {
-                void saveIfChanged();
-              }}
-              disabled={isSaving}
-              placeholder="16:00"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="timezone">Timezone</Label>
-            <Select
-              value={timezone}
-              onValueChange={(value) => {
-                setTimezone(value);
-                void saveIfChanged({ timezone: value });
-              }}
-              disabled={isSaving}
-            >
-              <SelectTrigger id="timezone">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="America/New_York">
-                  Eastern Time (ET)
-                </SelectItem>
-                <SelectItem value="America/Chicago">
-                  Central Time (CT)
-                </SelectItem>
-                <SelectItem value="America/Denver">
-                  Mountain Time (MT)
-                </SelectItem>
-                <SelectItem value="America/Los_Angeles">
-                  Pacific Time (PT)
-                </SelectItem>
-                <SelectItem value="UTC">UTC</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
+      {content}
+    </div>
   );
 }

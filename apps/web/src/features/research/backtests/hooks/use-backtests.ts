@@ -7,7 +7,12 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { backtestService } from "../services/backtest-service";
-import { Backtest, RunBacktestRequest } from "../types";
+import {
+  Backtest,
+  MultiStrategyBacktestRequest,
+  MultiStrategyBacktestResponse,
+  RunBacktestRequest,
+} from "../types";
 
 export function useBacktests(fundId?: string, status?: string) {
   const [backtests, setBacktests] = useState<Backtest[]>([]);
@@ -48,6 +53,30 @@ export function useBacktests(fundId?: string, status?: string) {
     []
   );
 
+  const runMultiStrategyBacktest = useCallback(
+    async (
+      request: MultiStrategyBacktestRequest
+    ): Promise<MultiStrategyBacktestResponse> => {
+      try {
+        setError(null);
+        const result = await backtestService.runMultiStrategyBacktest(request);
+        // Refresh to show new backtests
+        setTimeout(() => {
+          loadBacktests();
+        }, 2000);
+        return result;
+      } catch (err) {
+        const errorMessage =
+          err instanceof Error
+            ? err.message
+            : "Failed to run multi-strategy backtest";
+        setError(errorMessage);
+        throw new Error(errorMessage);
+      }
+    },
+    [loadBacktests]
+  );
+
   const refresh = useCallback(() => {
     loadBacktests();
   }, [loadBacktests]);
@@ -57,6 +86,7 @@ export function useBacktests(fundId?: string, status?: string) {
     loading,
     error,
     runBacktest,
+    runMultiStrategyBacktest,
     refresh,
   };
 }

@@ -27,12 +27,14 @@ interface FundBasicInfoEditorProps {
   fund: Fund;
   onUpdate: () => void;
   onSavingChange?: (saving: boolean) => void;
+  noCard?: boolean;
 }
 
 export function FundBasicInfoEditor({
   fund,
   onUpdate,
   onSavingChange,
+  noCard = false,
 }: FundBasicInfoEditorProps) {
   const [name, setName] = useState(fund.name);
   const [description, setDescription] = useState(fund.description || "");
@@ -108,78 +110,84 @@ export function FundBasicInfoEditor({
     setError(null);
   };
 
+  const content = (
+    <div className="space-y-4">
+      {error && (
+        <div className="rounded-md bg-red-50 dark:bg-red-950/50 p-3 text-sm text-red-800 dark:text-red-200 border border-red-200 dark:border-red-800">
+          {error}
+        </div>
+      )}
+
+      <div className="space-y-2">
+        <Label htmlFor="name">Fund Name</Label>
+        <div className="flex items-center gap-2">
+          <IconColorPicker
+            selectedIcon={selectedIcon}
+            selectedColor={selectedColor}
+            onIconChange={(val) => {
+              setSelectedIcon(val);
+              void saveIfChanged({ selectedIcon: val });
+            }}
+            onColorChange={(val) => {
+              setSelectedColor(val);
+              void saveIfChanged({ selectedColor: val });
+            }}
+            disabled={isSaving}
+          />
+          <Input
+            id="name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onBlur={() => {
+              void saveIfChanged();
+            }}
+            disabled={isSaving}
+            placeholder="e.g., Momentum Breakout Fund"
+            className="flex-1"
+          />
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="description">Description</Label>
+        <Textarea
+          id="description"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          onBlur={() => {
+            void saveIfChanged();
+          }}
+          disabled={isSaving}
+          placeholder="Brief description of the fund's strategy or purpose"
+          rows={3}
+        />
+      </div>
+
+      {hasChanges && (
+        <div className="flex gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleReset}
+            disabled={isSaving}
+          >
+            Reset
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+
+  if (noCard) {
+    return content;
+  }
+
   return (
     <Card>
       <CardHeader>
         <CardTitle>Fund Information</CardTitle>
       </CardHeader>
-      <CardContent>
-        <div className="space-y-4">
-          {error && (
-            <div className="rounded-md bg-red-50 dark:bg-red-950/50 p-3 text-sm text-red-800 dark:text-red-200 border border-red-200 dark:border-red-800">
-              {error}
-            </div>
-          )}
-
-          <div className="space-y-2">
-            <Label htmlFor="name">Fund Name</Label>
-            <div className="flex items-center gap-2">
-              <IconColorPicker
-                selectedIcon={selectedIcon}
-                selectedColor={selectedColor}
-                onIconChange={(val) => {
-                  setSelectedIcon(val);
-                  void saveIfChanged({ selectedIcon: val });
-                }}
-                onColorChange={(val) => {
-                  setSelectedColor(val);
-                  void saveIfChanged({ selectedColor: val });
-                }}
-                disabled={isSaving}
-              />
-              <Input
-                id="name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                onBlur={() => {
-                  void saveIfChanged();
-                }}
-                disabled={isSaving}
-                placeholder="e.g., Momentum Breakout Fund"
-                className="flex-1"
-              />
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="description">Description</Label>
-            <Textarea
-              id="description"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              onBlur={() => {
-                void saveIfChanged();
-              }}
-              disabled={isSaving}
-              placeholder="Brief description of the fund's strategy or purpose"
-              rows={3}
-            />
-          </div>
-
-          {hasChanges && (
-            <div className="flex gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleReset}
-                disabled={isSaving}
-              >
-                Reset
-              </Button>
-            </div>
-          )}
-        </div>
-      </CardContent>
+      <CardContent>{content}</CardContent>
     </Card>
   );
 }

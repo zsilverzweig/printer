@@ -18,7 +18,7 @@ from pydantic import BaseModel
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.strategies import Fund, ScreeningCriteria, Order, Transaction, Transfer, Trade
+from app.models.strategies import Fund, ScreeningCriteria, Order, Transaction, Transfer, Trade, DefaultRiskSettings
 from app.models.events import StrategyEngineEvent, Event
 from app.services.core.database import get_async_session
 from app.services.analytics.trade_builder import TradeBuilder
@@ -131,7 +131,7 @@ class FundResponse(BaseModel):
     max_order_age_seconds: Optional[int]
     
     # Position sizing
-    size_per_trade: float
+    size_per_trade: Optional[float]
     min_bet_percent: Optional[float]
     max_bet_percent: Optional[float]
     max_total_exposure: Optional[float]
@@ -280,6 +280,31 @@ def serialize_transfer(transfer: Transfer) -> dict:
         "transfer_type": transfer.transfer_type,
         "notes": transfer.notes,
         "timestamp": transfer.timestamp.isoformat() + "Z",
+    }
+
+
+def serialize_trade(trade: Trade) -> dict:
+    """Convert a Trade model instance to a response dict."""
+    return {
+        "id": trade.id,
+        "fund_id": trade.fund_id,
+        "symbol": trade.symbol,
+        "entry_time": trade.entry_time.isoformat() + "Z" if trade.entry_time else None,
+        "exit_time": trade.exit_time.isoformat() + "Z" if trade.exit_time else None,
+        "entry_price": trade.entry_price,
+        "exit_price": trade.exit_price,
+        "entry_quantity": trade.entry_quantity,
+        "exit_quantity": trade.exit_quantity,
+        "realized_pnl": trade.realized_pnl,
+        "realized_pnl_percent": trade.realized_pnl_percent,
+        "hold_duration_seconds": trade.hold_duration_seconds,
+        "status": trade.status,
+        "strategy_id": trade.strategy_id,
+        "screening_criteria_id": trade.screening_criteria_id,
+        "ai_confidence": trade.ai_confidence,
+        "commission_fees": trade.commission_fees,
+        "max_adverse_excursion": trade.max_adverse_excursion,
+        "max_favorable_excursion": trade.max_favorable_excursion,
     }
 
 
@@ -1178,6 +1203,43 @@ async def get_fund_transactions(fund_id: str, limit: int = 100) -> List[dict]:
             return [serialize_transaction(txn) for txn in transactions]
     except Exception as e:
         logger.error(f"Error getting transactions for fund {fund_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/funds/{fund_id}/trades")
+async def get_fund_trades(
+    fund_id: str,
+    status: Optional[str] = None,
+    limit: int = 100
+) -> List[dict]:
+    """Get trades for a fund."""
+    try:
+        async with get_async_session() as session:
+            # Verify fund exists
+            fund = await session.get(Fund, fund_id)
+            if not fund:
+                raise HTTPException(status_code=404, detail="Fund not found")
+            
+            from sqlalchemy import select
+            stmt = (
+                select(Trade)
+                .where(Trade.fund_id == fund_id)
+            )
+            
+            # Filter by status if provided
+            if status:
+                stmt = stmt.where(Trade.status == status)
+            
+            stmt = stmt.order_by(Trade.entry_time.desc()).limit(limit)
+            
+            result = await session.execute(stmt)
+            trades = result.scalars().all()
+            
+            return [serialize_trade(trade) for trade in trades]
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting trades for fund {fund_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -2719,5 +2781,260 @@ async def reset_fund(fund_id: str) -> dict:
         raise
     except Exception as e:
         logger.error(f"Error resetting fund {fund_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/funds/{fund_id}")
+async def delete_fund(fund_id: str) -> dict:
+    """
+    Delete a fund and all its associated data.
+    
+    This will:
+    - Delete all strategy engine events
+    - Delete all trades
+    - Delete all orders
+    - Delete all transactions
+    - Delete all transfers
+    - Delete all AI costs
+    - Delete the fund itself
+    
+    Fund must be stopped (not actively trading) to delete.
+    """
+    try:
+        # Check if fund is actively trading
+        engine = get_engine(fund_id)
+        if engine:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot delete fund while it is actively trading. Stop the fund first."
+            )
+        
+        async with get_async_session() as session:
+            # Get fund
+            fund = await session.get(Fund, fund_id)
+            if not fund:
+                raise HTTPException(status_code=404, detail="Fund not found")
+            
+            fund_name = fund.name
+            
+            # Delete all related records (same as reset)
+            from sqlalchemy import select, delete, func
+            from app.models.strategies import AICost
+            
+            # Count records before deletion
+            events_count = await session.scalar(
+                select(func.count()).select_from(StrategyEngineEvent).where(StrategyEngineEvent.fund_id == fund_id)
+            ) or 0
+            trades_count = await session.scalar(
+                select(func.count()).select_from(Trade).where(Trade.fund_id == fund_id)
+            ) or 0
+            orders_count = await session.scalar(
+                select(func.count()).select_from(Order).where(Order.fund_id == fund_id)
+            ) or 0
+            transactions_count = await session.scalar(
+                select(func.count()).select_from(Transaction).where(Transaction.fund_id == fund_id)
+            ) or 0
+            transfers_count = await session.scalar(
+                select(func.count()).select_from(Transfer).where(Transfer.fund_id == fund_id)
+            ) or 0
+            ai_costs_count = await session.scalar(
+                select(func.count()).select_from(AICost).where(AICost.fund_id == fund_id)
+            ) or 0
+            
+            logger.info(
+                f"🗑️ DELETE REQUEST for fund {fund_id} ({fund_name}): "
+                f"{events_count} strategy engine events, {trades_count} trades, {orders_count} orders, "
+                f"{transactions_count} transactions, {transfers_count} transfers, "
+                f"{ai_costs_count} AI costs"
+            )
+            
+            # Delete in correct order due to foreign key constraints
+            # 1. Delete strategy engine events
+            strategy_events_stmt = select(StrategyEngineEvent.id).where(StrategyEngineEvent.fund_id == fund_id)
+            result = await session.execute(strategy_events_stmt)
+            event_ids = [row[0] for row in result.all()]
+            
+            # Delete child records (StrategyEngineEvent)
+            await session.execute(
+                delete(StrategyEngineEvent).where(StrategyEngineEvent.fund_id == fund_id)
+            )
+            
+            # Delete parent records (Event) if any were found
+            if event_ids:
+                await session.execute(
+                    delete(Event).where(Event.id.in_(event_ids))
+                )
+            
+            # 2. Delete transactions (they reference both trades and orders)
+            await session.execute(
+                delete(Transaction).where(Transaction.fund_id == fund_id)
+            )
+            
+            # 3. Delete trades (they reference orders via entry_order_id/exit_order_id)
+            await session.execute(
+                delete(Trade).where(Trade.fund_id == fund_id)
+            )
+            
+            # 4. Delete orders (no longer referenced by transactions or trades)
+            await session.execute(
+                delete(Order).where(Order.fund_id == fund_id)
+            )
+            
+            # 5. Delete transfers (independent)
+            await session.execute(
+                delete(Transfer).where(Transfer.fund_id == fund_id)
+            )
+            
+            # 6. Delete AI costs
+            await session.execute(
+                delete(AICost).where(AICost.fund_id == fund_id)
+            )
+            
+            # 7. Delete the fund itself
+            await session.delete(fund)
+            
+            await session.commit()
+            
+            logger.info(
+                f"✅ DELETE COMPLETE: {fund_name} - "
+                f"Deleted {events_count} events, {trades_count} trades, {orders_count} orders, "
+                f"{transactions_count} transactions, {transfers_count} transfers, "
+                f"{ai_costs_count} AI costs, and the fund itself"
+            )
+            
+            return {
+                "success": True,
+                "fund_id": fund_id,
+                "fund_name": fund_name,
+                "deleted": {
+                    "events": events_count,
+                    "trades": trades_count,
+                    "orders": orders_count,
+                    "transactions": transactions_count,
+                    "transfers": transfers_count,
+                    "ai_costs": ai_costs_count,
+                },
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting fund {fund_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class DefaultRiskSettingsInput(BaseModel):
+    """Input model for updating default risk settings."""
+    max_loss_percent: Optional[float] = None
+    max_loss_dollars: Optional[float] = None
+    max_giveback_percent: Optional[float] = None
+    max_order_age_seconds: Optional[int] = None
+    size_per_trade: Optional[float] = None
+    min_bet_percent: Optional[float] = None
+    max_bet_percent: Optional[float] = None
+    max_total_exposure: Optional[float] = None
+
+
+class DefaultRiskSettingsResponse(BaseModel):
+    """Response model for default risk settings."""
+    max_loss_percent: Optional[float]
+    max_loss_dollars: Optional[float]
+    max_giveback_percent: Optional[float]
+    max_order_age_seconds: int
+    size_per_trade: float
+    min_bet_percent: Optional[float]
+    max_bet_percent: Optional[float]
+    max_total_exposure: Optional[float]
+    updated_at: str
+
+    class Config:
+        from_attributes = True
+
+
+@router.get("/default-risk-settings", response_model=DefaultRiskSettingsResponse)
+async def get_default_risk_settings():
+    """Get default risk management settings."""
+    try:
+        async with get_async_session() as session:
+            stmt = select(DefaultRiskSettings).where(DefaultRiskSettings.id == 'default')
+            result = await session.execute(stmt)
+            settings = result.scalar_one_or_none()
+            
+            if not settings:
+                # Create default record if it doesn't exist
+                settings = DefaultRiskSettings(
+                    id='default',
+                    max_order_age_seconds=60,
+                    size_per_trade=1000.0
+                )
+                session.add(settings)
+                await session.commit()
+                await session.refresh(settings)
+            
+            return DefaultRiskSettingsResponse(
+                max_loss_percent=settings.max_loss_percent,
+                max_loss_dollars=settings.max_loss_dollars,
+                max_giveback_percent=settings.max_giveback_percent,
+                max_order_age_seconds=settings.max_order_age_seconds,
+                size_per_trade=settings.size_per_trade,
+                min_bet_percent=settings.min_bet_percent,
+                max_bet_percent=settings.max_bet_percent,
+                max_total_exposure=settings.max_total_exposure,
+                updated_at=settings.updated_at.isoformat() if settings.updated_at else datetime.now(timezone.utc).isoformat()
+            )
+    except Exception as e:
+        logger.error(f"Error getting default risk settings: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/default-risk-settings", response_model=DefaultRiskSettingsResponse)
+async def update_default_risk_settings(input: DefaultRiskSettingsInput):
+    """Update default risk management settings."""
+    try:
+        async with get_async_session() as session:
+            stmt = select(DefaultRiskSettings).where(DefaultRiskSettings.id == 'default')
+            result = await session.execute(stmt)
+            settings = result.scalar_one_or_none()
+            
+            if not settings:
+                # Create default record if it doesn't exist
+                settings = DefaultRiskSettings(id='default')
+                session.add(settings)
+            
+            # Update only provided fields
+            if input.max_loss_percent is not None:
+                settings.max_loss_percent = input.max_loss_percent
+            if input.max_loss_dollars is not None:
+                settings.max_loss_dollars = input.max_loss_dollars
+            if input.max_giveback_percent is not None:
+                settings.max_giveback_percent = input.max_giveback_percent
+            if input.max_order_age_seconds is not None:
+                settings.max_order_age_seconds = input.max_order_age_seconds
+            if input.size_per_trade is not None:
+                settings.size_per_trade = input.size_per_trade
+            if input.min_bet_percent is not None:
+                settings.min_bet_percent = input.min_bet_percent
+            if input.max_bet_percent is not None:
+                settings.max_bet_percent = input.max_bet_percent
+            if input.max_total_exposure is not None:
+                settings.max_total_exposure = input.max_total_exposure
+            
+            settings.updated_at = datetime.now(timezone.utc)
+            
+            await session.commit()
+            await session.refresh(settings)
+            
+            return DefaultRiskSettingsResponse(
+                max_loss_percent=settings.max_loss_percent,
+                max_loss_dollars=settings.max_loss_dollars,
+                max_giveback_percent=settings.max_giveback_percent,
+                max_order_age_seconds=settings.max_order_age_seconds,
+                size_per_trade=settings.size_per_trade,
+                min_bet_percent=settings.min_bet_percent,
+                max_bet_percent=settings.max_bet_percent,
+                max_total_exposure=settings.max_total_exposure,
+                updated_at=settings.updated_at.isoformat()
+            )
+    except Exception as e:
+        logger.error(f"Error updating default risk settings: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 

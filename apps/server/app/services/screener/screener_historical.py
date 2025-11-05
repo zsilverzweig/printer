@@ -36,6 +36,8 @@ class ScreenerHistorical:
         asset_types: Optional[List[str]] = None,
         market_cap_min: Optional[int] = None,
         market_cap_max: Optional[int] = None,
+        float_min: Optional[int] = None,
+        float_max: Optional[int] = None,
     ) -> List[dict]:
         """Compute screener results at a specific historical timestamp.
         
@@ -72,6 +74,8 @@ class ScreenerHistorical:
                 target_timestamp=timestamp,
                 market_cap_min=market_cap_min,
                 market_cap_max=market_cap_max,
+                float_min=float_min,
+                float_max=float_max,
                 asset_types=asset_types,
                 min_relative_volume=min_relative_volume
             )

@@ -6,7 +6,7 @@
 
 "use client";
 
-import { Play, RefreshCw } from "lucide-react";
+import { Layers, Play, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/lib/components/ui/button";
@@ -17,34 +17,35 @@ import {
   CardHeader,
   CardTitle,
 } from "@/lib/components/ui/card";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/lib/components/ui/select";
 import { toastError, toastSuccess } from "@/lib/utils/toast";
 
 import { useBacktests } from "../hooks/use-backtests";
-import { Backtest, RunBacktestRequest } from "../types";
+import {
+  Backtest,
+  MultiStrategyBacktestRequest,
+  RunBacktestRequest,
+} from "../types";
 import { BacktestDetailsDialog } from "./backtest-details-dialog";
 import { BacktestsTable } from "./backtests-table";
+import { MultiStrategyBacktestDialog } from "./multi-strategy-backtest-dialog";
 import { RunBacktestDialog } from "./run-backtest-dialog";
 
 export function BacktestManagement() {
-  const [selectedStatus, setSelectedStatus] = useState<string>("all");
-  const [selectedFundId, setSelectedFundId] = useState<string>("all");
   const [showRunDialog, setShowRunDialog] = useState(false);
   const [selectedBacktest, setSelectedBacktest] = useState<Backtest | null>(
     null
   );
   const [showDetailsDialog, setShowDetailsDialog] = useState(false);
+  const [showMultiStrategyDialog, setShowMultiStrategyDialog] = useState(false);
 
-  const { backtests, loading, error, runBacktest, refresh } = useBacktests(
-    selectedFundId !== "all" ? selectedFundId : undefined,
-    selectedStatus !== "all" ? selectedStatus : undefined
-  );
+  const {
+    backtests,
+    loading,
+    error,
+    runBacktest,
+    runMultiStrategyBacktest,
+    refresh,
+  } = useBacktests();
 
   const handleRunBacktest = async (request: RunBacktestRequest) => {
     try {
@@ -57,6 +58,29 @@ export function BacktestManagement() {
       }, 1000);
     } catch (err) {
       toastError(err instanceof Error ? err.message : "Failed to run backtest");
+      throw err; // Re-throw to let dialog handle it
+    }
+  };
+
+  const handleRunMultiStrategyBacktest = async (
+    request: MultiStrategyBacktestRequest
+  ) => {
+    try {
+      const result = await runMultiStrategyBacktest(request);
+      toastSuccess(
+        `Multi-strategy backtest started: ${result.summary.totalCombinations} combinations`
+      );
+      setShowMultiStrategyDialog(false);
+      // Refresh after a delay to see the new backtests
+      setTimeout(() => {
+        refresh();
+      }, 2000);
+    } catch (err) {
+      toastError(
+        err instanceof Error
+          ? err.message
+          : "Failed to run multi-strategy backtest"
+      );
       throw err; // Re-throw to let dialog handle it
     }
   };
@@ -95,51 +119,16 @@ export function BacktestManagement() {
             />
             Refresh
           </Button>
-          <Button onClick={() => setShowRunDialog(true)}>
+          <Button variant="outline" onClick={() => setShowRunDialog(true)}>
             <Play className="h-4 w-4 mr-2" />
             Run Backtest
           </Button>
+          <Button onClick={() => setShowMultiStrategyDialog(true)}>
+            <Layers className="h-4 w-4 mr-2" />
+            Multi-Strategy Backtest
+          </Button>
         </div>
       </div>
-
-      {/* Filters */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Filters</CardTitle>
-          <CardDescription>Filter backtests by fund or status</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center gap-4">
-            <div className="flex-1">
-              <label className="text-sm font-medium mb-2 block">Status</label>
-              <Select value={selectedStatus} onValueChange={setSelectedStatus}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Statuses</SelectItem>
-                  <SelectItem value="running">Running</SelectItem>
-                  <SelectItem value="completed">Completed</SelectItem>
-                  <SelectItem value="failed">Failed</SelectItem>
-                  <SelectItem value="cancelled">Cancelled</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex-1">
-              <label className="text-sm font-medium mb-2 block">Fund ID</label>
-              <Select value={selectedFundId} onValueChange={setSelectedFundId}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Funds</SelectItem>
-                  {/* Fund IDs would be loaded from funds service if needed */}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
 
       {/* Error Display */}
       {error && (
@@ -173,6 +162,12 @@ export function BacktestManagement() {
         open={showRunDialog}
         onOpenChange={setShowRunDialog}
         onSubmit={handleRunBacktest}
+      />
+
+      <MultiStrategyBacktestDialog
+        open={showMultiStrategyDialog}
+        onOpenChange={setShowMultiStrategyDialog}
+        onSubmit={handleRunMultiStrategyBacktest}
       />
 
       <BacktestDetailsDialog

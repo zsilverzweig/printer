@@ -28,6 +28,7 @@ import { useFunds } from "../hooks/use-funds";
 
 import { AlpacaBalanceSummary } from "./alpaca-balance-summary";
 import { CreateFundDialog } from "./create-fund-dialog";
+import { DefaultRiskManagement } from "./default-risk-management";
 import { FundPerformanceOverview } from "./fund-performance-overview";
 import { FundsTable } from "./funds-table";
 
@@ -98,9 +99,10 @@ export function FundManagement() {
         onValueChange={setActiveTab}
         className="space-y-6"
       >
-        <TabsList className="grid w-full grid-cols-2">
+        <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="performance">Performance</TabsTrigger>
+          <TabsTrigger value="configuration">Configuration</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-6">
@@ -178,6 +180,10 @@ export function FundManagement() {
             funds={funds}
             isActive={activeTab === "performance"}
           />
+        </TabsContent>
+
+        <TabsContent value="configuration" className="space-y-6">
+          <DefaultRiskManagement />
         </TabsContent>
       </Tabs>
 

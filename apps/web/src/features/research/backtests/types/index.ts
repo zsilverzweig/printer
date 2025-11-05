@@ -89,3 +89,48 @@ export interface BacktestTradesResponse {
   trades: BacktestTrade[];
   total: number;
 }
+
+export interface StrategyScreenerCombo {
+  strategyId: string;
+  strategyConfig?: Record<string, any>;
+  screeningCriteriaId?: string | null;
+}
+
+export interface MultiStrategyBacktestRequest {
+  fundTemplateId: string;
+  date: string; // YYYY-MM-DD format
+  combinations: StrategyScreenerCombo[];
+}
+
+export interface MultiStrategyBacktestResult {
+  backtestId?: string | null;
+  fundId?: string | null;
+  strategyId: string;
+  screeningCriteriaId?: string | null;
+  status: string;
+  startingBalance?: number;
+  endingBalance?: number;
+  totalPnl?: number;
+  totalPnlPercent?: number;
+  totalTrades?: number;
+  winningTrades?: number;
+  losingTrades?: number;
+  error?: string;
+}
+
+export interface MultiStrategyBacktestSummary {
+  totalCombinations: number;
+  successful: number;
+  failed: number;
+  totalPnl: number;
+  totalTrades: number;
+  winningTrades: number;
+  losingTrades: number;
+  winRate: number;
+}
+
+export interface MultiStrategyBacktestResponse {
+  parentRunId: string;
+  backtests: MultiStrategyBacktestResult[];
+  summary: MultiStrategyBacktestSummary;
+}

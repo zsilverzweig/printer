@@ -1,7 +1,7 @@
 """add transaction indexes for position queries
 
-Revision ID: 20251104_172549
-Revises: 20251104_073000
+Revision ID: 031
+Revises: 030
 Create Date: 2025-11-04 17:25:49
 
 Adds composite indexes on transactions table to improve performance of position
@@ -14,8 +14,8 @@ from alembic import op
 import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
-revision: str = '20251104_172549'
-down_revision: Union[str, None] = '20251104_073000'
+revision: str = '031'
+down_revision: Union[str, None] = '030'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

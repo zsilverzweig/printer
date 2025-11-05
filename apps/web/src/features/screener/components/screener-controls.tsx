@@ -211,6 +211,53 @@ export function ScreenerControls({
           <span className="text-muted-foreground">M</span>
         </div>
 
+        {/* Float Range */}
+        <div className="flex items-center gap-1 bg-muted/30 px-2 py-1 rounded">
+          <Label className="text-xs font-medium">Float:</Label>
+          <Input
+            type="number"
+            step="100"
+            placeholder="Min"
+            value={
+              filters.float_min ? (filters.float_min / 1000000).toString() : ""
+            }
+            onChange={(e) =>
+              handleFilterUpdate(
+                "float_min",
+                e.target.value ? parseInt(e.target.value) * 1000000 : undefined
+              )
+            }
+            onBlur={() => {
+              if (mode === "live" && !loading) onRun();
+            }}
+            className="w-24 h-7 text-xs"
+            disabled={loading}
+            title="Minimum public float in millions (e.g., 1000 for $1B)"
+          />
+          <span className="text-muted-foreground">M to</span>
+          <Input
+            type="number"
+            step="100"
+            placeholder="Max"
+            value={
+              filters.float_max ? (filters.float_max / 1000000).toString() : ""
+            }
+            onChange={(e) =>
+              handleFilterUpdate(
+                "float_max",
+                e.target.value ? parseInt(e.target.value) * 1000000 : undefined
+              )
+            }
+            onBlur={() => {
+              if (mode === "live" && !loading) onRun();
+            }}
+            className="w-24 h-7 text-xs"
+            disabled={loading}
+            title="Maximum public float in millions (e.g., 100000 for $100B)"
+          />
+          <span className="text-muted-foreground">M</span>
+        </div>
+
         {/* Min Volume */}
         <div className="flex items-center gap-1 bg-muted/30 px-2 py-1 rounded">
           <Label className="text-xs font-medium">Min Volume:</Label>

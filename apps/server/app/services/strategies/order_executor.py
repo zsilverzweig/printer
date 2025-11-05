@@ -102,9 +102,11 @@ class OrderExecutor:
             
             # Calculate position size
             fund_balance = self.fund.balance
+            # Use fund override if set, otherwise use default (1000.0)
+            size_per_trade = self.fund.size_per_trade if self.fund.size_per_trade is not None else 1000.0
             position_size, quantity = self.position_sizer.calculate_position_size(
                 fund_balance=fund_balance,
-                size_per_trade=self.fund.size_per_trade,
+                size_per_trade=size_per_trade,
                 confidence=signal.confidence,
                 current_price=market_data.price,
                 min_bet_percent=self.fund.min_bet_percent,
@@ -181,7 +183,7 @@ class OrderExecutor:
                     fund_name=self.fund.name,
                     message=f"Preparing to buy {quantity} shares of {symbol}",
                     fund_balance=fund_balance,
-                    size_per_trade=self.fund.size_per_trade,
+                    size_per_trade=size_per_trade,
                     max_bet_percent=self.fund.max_bet_percent,
                     calculated_position_size=position_size,
                     share_price=market_data.price,

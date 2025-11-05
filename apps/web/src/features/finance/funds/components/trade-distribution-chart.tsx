@@ -44,7 +44,7 @@ export function TradeDistributionChart({
   trades,
   height = 300,
 }: TradeDistributionChartProps) {
-  const { bins, stats, fundColorMap } = useMemo(() => {
+  const { bins, stats, fundColorMap, uniqueFundIds } = useMemo(() => {
     // Extract trade returns from closed trades with realized P&L
     const closedTrades = trades.filter(
       (trade) =>

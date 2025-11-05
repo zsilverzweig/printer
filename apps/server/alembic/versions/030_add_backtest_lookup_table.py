@@ -1,7 +1,7 @@
 """add backtest lookup table
 
-Revision ID: 20251104_073000
-Revises: 20251104_055008
+Revision ID: 030
+Revises: 029
 Create Date: 2025-11-04 07:30:00
 
 Creates a pre-computed 1min lookup table for instant "latest price as-of" queries
@@ -17,8 +17,8 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision: str = '20251104_073000'
-down_revision: Union[str, None] = '20251104_055008'
+revision: str = '030'
+down_revision: Union[str, None] = '029'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

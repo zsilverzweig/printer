@@ -8,7 +8,7 @@ critical system components.
 import asyncio
 import logging
 from abc import ABC, abstractmethod
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, date
 from typing import Dict, List, Optional
 
 from sqlalchemy import select, text
@@ -338,68 +338,275 @@ class BacktestDataHealthCheck(BaseHealthCheck):
     
     Ensures we have pre-computed snapshot data for the previous trading day,
     allowing fast backtests without real-time population.
+    
+    Automatically triggers population for missing dates.
     """
     
     def __init__(self):
         super().__init__("backtest_data")
+        self._populating: bool = False
+        self._populating_indicators: bool = False
+        self._last_population_task: Optional[asyncio.Task] = None
+        self._last_indicators_task: Optional[asyncio.Task] = None
+        self._population_progress: Dict = {}
+        self._indicators_progress: Dict = {}
+    
+    def _get_previous_trading_days(self, count: int = 7) -> List[date]:
+        """Get the last N trading days (excluding weekends, but not holidays)."""
+        today = datetime.now(timezone.utc).date()
+        days = []
+        current = today - timedelta(days=1)
+        
+        while len(days) < count and current >= today - timedelta(days=30):
+            # Skip weekends
+            if current.weekday() < 5:  # 0-4 = Monday-Friday
+                days.append(current)
+            current -= timedelta(days=1)
+        
+        return days
+    
+    async def _check_coverage_for_dates(self, dates: List[date], session: AsyncSession) -> Dict:
+        """Check lookup coverage for a list of dates."""
+        coverage = {}
+        
+        for target_date in dates:
+            start_dt = datetime.combine(target_date, datetime.min.time()).replace(hour=9, minute=30, tzinfo=timezone.utc)
+            end_dt = datetime.combine(target_date, datetime.min.time()).replace(hour=16, minute=0, tzinfo=timezone.utc)
+            
+            result = await session.execute(text("""
+                SELECT 
+                    COUNT(*) as total_rows,
+                    COUNT(DISTINCT symbol) as symbols,
+                    COUNT(DISTINCT lookup_time) as minutes
+                FROM market_data_backtest_lookup
+                WHERE lookup_time >= :start_dt
+                  AND lookup_time <= :end_dt
+                  AND timescale = '1min';
+            """), {"start_dt": start_dt, "end_dt": end_dt})
+            
+            row = result.first()
+            total_rows = row[0]
+            symbols = row[1]
+            minutes = row[2]
+            
+            # We expect ~391 minutes (9:30-16:00) and substantial data
+            is_complete = total_rows > 10000 and minutes >= 300
+            
+            coverage[target_date.isoformat()] = {
+                "has_data": total_rows > 0,
+                "is_complete": is_complete,
+                "total_rows": total_rows,
+                "symbols": symbols,
+                "minutes": minutes,
+                "expected_minutes": 391
+            }
+        
+        return coverage
+    
+    async def _check_indicators_coverage_for_dates(self, dates: List[date], session: AsyncSession) -> Dict:
+        """Check technical indicators coverage for a list of dates."""
+        coverage = {}
+        
+        for target_date in dates:
+            start_dt = datetime.combine(target_date, datetime.min.time()).replace(hour=9, minute=30, tzinfo=timezone.utc)
+            end_dt = datetime.combine(target_date, datetime.min.time()).replace(hour=16, minute=0, tzinfo=timezone.utc)
+            
+            # Check for 1min timescale (primary for backtesting)
+            result = await session.execute(text("""
+                SELECT 
+                    COUNT(*) as total_rows,
+                    COUNT(DISTINCT symbol) as symbols,
+                    COUNT(DISTINCT time) as minutes
+                FROM technical_indicators
+                WHERE time >= :start_dt
+                  AND time <= :end_dt
+                  AND timescale = '1min';
+            """), {"start_dt": start_dt, "end_dt": end_dt})
+            
+            row = result.first()
+            total_rows = row[0]
+            symbols = row[1]
+            minutes = row[2]
+            
+            # We expect substantial data
+            is_complete = total_rows > 10000 and minutes >= 300
+            
+            coverage[target_date.isoformat()] = {
+                "has_data": total_rows > 0,
+                "is_complete": is_complete,
+                "total_rows": total_rows,
+                "symbols": symbols,
+                "minutes": minutes,
+                "expected_minutes": 391
+            }
+        
+        return coverage
+    
+    async def _populate_missing_dates(self, dates: List[date]) -> None:
+        """Populate lookup table for missing dates in background."""
+        if self._populating:
+            self.logger.debug("Population already in progress, skipping")
+            return
+        
+        self._populating = True
+        try:
+            from app.services.backtest.backtest_lookup_service import populate_lookup_for_date
+            
+            for target_date in dates:
+                try:
+                    self._population_progress[target_date.isoformat()] = {
+                        "status": "populating",
+                        "started_at": datetime.now(timezone.utc).isoformat()
+                    }
+                    
+                    self.logger.info(f"📊 Populating backtest lookup for {target_date}")
+                    result = await populate_lookup_for_date(target_date, timescale='1min')
+                    
+                    self._population_progress[target_date.isoformat()] = {
+                        "status": "completed",
+                        "started_at": self._population_progress[target_date.isoformat()].get("started_at"),
+                        "completed_at": datetime.now(timezone.utc).isoformat(),
+                        "result": result
+                    }
+                    
+                    self.logger.info(f"✅ Completed population for {target_date}: {result['total_rows']:,} rows")
+                    
+                except Exception as e:
+                    self.logger.error(f"❌ Failed to populate {target_date}: {e}", exc_info=True)
+                    self._population_progress[target_date.isoformat()] = {
+                        "status": "failed",
+                        "started_at": self._population_progress.get(target_date.isoformat(), {}).get("started_at"),
+                        "error": str(e)
+                    }
+                    
+        finally:
+            self._populating = False
+    
+    async def _populate_missing_indicators(self, dates: List[date], timescale: str = '1min') -> None:
+        """Populate technical indicators for missing dates in background."""
+        if self._populating_indicators:
+            self.logger.debug("Indicators population already in progress, skipping")
+            return
+        
+        self._populating_indicators = True
+        try:
+            from app.services.backtest.technical_indicators_service import populate_indicators_for_date
+            
+            for target_date in dates:
+                try:
+                    key = f"{target_date.isoformat()}_{timescale}"
+                    self._indicators_progress[key] = {
+                        "status": "populating",
+                        "started_at": datetime.now(timezone.utc).isoformat()
+                    }
+                    
+                    self.logger.info(f"📊 Populating technical indicators for {target_date} ({timescale})")
+                    result = await populate_indicators_for_date(target_date, timescale=timescale)
+                    
+                    self._indicators_progress[key] = {
+                        "status": "completed",
+                        "started_at": self._indicators_progress[key].get("started_at"),
+                        "completed_at": datetime.now(timezone.utc).isoformat(),
+                        "result": result
+                    }
+                    
+                    self.logger.info(f"✅ Completed indicators population for {target_date}: {result['total_rows']:,} rows")
+                    
+                except Exception as e:
+                    self.logger.error(f"❌ Failed to populate indicators for {target_date}: {e}", exc_info=True)
+                    key = f"{target_date.isoformat()}_{timescale}"
+                    self._indicators_progress[key] = {
+                        "status": "failed",
+                        "started_at": self._indicators_progress.get(key, {}).get("started_at"),
+                        "error": str(e)
+                    }
+                    
+        finally:
+            self._populating_indicators = False
     
     async def check(self) -> HealthCheckResult:
-        """Check if backtest lookup data exists for yesterday."""
+        """Check if backtest lookup data and technical indicators exist, populate if missing."""
         try:
             async with get_async_session() as session:
-                # Find previous trading day (skip weekends)
-                today = datetime.now(timezone.utc).date()
-                yesterday = today - timedelta(days=1)
+                # Check last 7 trading days
+                recent_dates = self._get_previous_trading_days(count=7)
                 
-                # Skip back to Friday if weekend
-                while yesterday.weekday() >= 5:  # 5=Saturday, 6=Sunday
-                    yesterday -= timedelta(days=1)
+                # Check backtest lookup coverage
+                lookup_coverage = await self._check_coverage_for_dates(recent_dates, session)
                 
-                # Check if we have lookup data for yesterday
-                result = await session.execute(text("""
-                    SELECT 
-                        COUNT(*) as total_rows,
-                        COUNT(DISTINCT symbol) as symbols,
-                        COUNT(DISTINCT lookup_time) as minutes
-                    FROM market_data_backtest_lookup
-                    WHERE DATE(lookup_time) = :target_date
-                      AND timescale = '1min';
-                """), {"target_date": yesterday})
+                # Check technical indicators coverage
+                indicators_coverage = await self._check_indicators_coverage_for_dates(recent_dates, session)
                 
-                row = result.first()
-                total_rows = row[0]
-                symbols = row[1]
-                minutes = row[2]
+                # Find dates that need lookup population
+                missing_lookup_dates = []
+                for date_str, info in lookup_coverage.items():
+                    if not info["is_complete"]:
+                        target_date = datetime.fromisoformat(date_str).date()
+                        missing_lookup_dates.append(target_date)
                 
-                # We expect ~391 minutes (9:30-16:00) and 1000+ symbols
-                is_healthy = total_rows > 100000 and minutes >= 300
+                # Find dates that need indicators population
+                missing_indicators_dates = []
+                for date_str, info in indicators_coverage.items():
+                    if not info["is_complete"]:
+                        target_date = datetime.fromisoformat(date_str).date()
+                        missing_indicators_dates.append(target_date)
                 
+                # Trigger population for missing lookup data (non-blocking)
+                if missing_lookup_dates and not self._populating:
+                    self.logger.info(f"🔧 Found {len(missing_lookup_dates)} dates needing lookup population: {[d.isoformat() for d in missing_lookup_dates]}")
+                    self._last_population_task = asyncio.create_task(
+                        self._populate_missing_dates(missing_lookup_dates)
+                    )
+                
+                # Trigger population for missing indicators (non-blocking)
+                if missing_indicators_dates and not self._populating_indicators:
+                    self.logger.info(f"🔧 Found {len(missing_indicators_dates)} dates needing indicators population: {[d.isoformat() for d in missing_indicators_dates]}")
+                    self._last_indicators_task = asyncio.create_task(
+                        self._populate_missing_indicators(missing_indicators_dates, timescale='1min')
+                    )
+                
+                # Check yesterday specifically for health status
+                yesterday = recent_dates[0] if recent_dates else None
+                yesterday_lookup = lookup_coverage.get(yesterday.isoformat() if yesterday else "", {})
+                yesterday_indicators = indicators_coverage.get(yesterday.isoformat() if yesterday else "", {})
+                
+                # Overall health: both lookup and indicators should be complete for yesterday
+                lookup_healthy = yesterday_lookup.get("is_complete", False) if yesterday else False
+                indicators_healthy = yesterday_indicators.get("is_complete", False) if yesterday else False
+                is_healthy = lookup_healthy and indicators_healthy
+                
+                # Prepare message
                 if is_healthy:
-                    return HealthCheckResult(
-                        check_name=self.name,
-                        is_healthy=True,
-                        message=f"Backtest data ready for {yesterday}: {symbols:,} symbols × {minutes} minutes = {total_rows:,} rows",
-                        details={
-                            "date": yesterday.isoformat(),
-                            "total_rows": total_rows,
-                            "symbols": symbols,
-                            "minutes": minutes
-                        }
-                    )
+                    lookup_complete = sum(1 for info in lookup_coverage.values() if info.get("is_complete", False))
+                    indicators_complete = sum(1 for info in indicators_coverage.values() if info.get("is_complete", False))
+                    message = f"Backtest data healthy: {lookup_complete}/{len(recent_dates)} lookup days, {indicators_complete}/{len(recent_dates)} indicators days complete"
                 else:
-                    return HealthCheckResult(
-                        check_name=self.name,
-                        is_healthy=False,
-                        message=f"Backtest data incomplete for {yesterday}: only {total_rows:,} rows",
-                        details={
-                            "date": yesterday.isoformat(),
-                            "total_rows": total_rows,
-                            "symbols": symbols,
-                            "minutes": minutes,
-                            "expected_rows": ">100000",
-                            "expected_minutes": 391
-                        }
-                    )
+                    issues = []
+                    if missing_lookup_dates:
+                        issues.append(f"{len(missing_lookup_dates)} lookup date(s)")
+                    if missing_indicators_dates:
+                        issues.append(f"{len(missing_indicators_dates)} indicators date(s)")
+                    if issues:
+                        message = f"Populating: {', '.join(issues)}"
+                    else:
+                        message = f"Backtest data incomplete for {yesterday.isoformat() if yesterday else 'recent dates'}"
+                
+                return HealthCheckResult(
+                    check_name=self.name,
+                    is_healthy=is_healthy,
+                    message=message,
+                    details={
+                        "lookup_coverage": lookup_coverage,
+                        "indicators_coverage": indicators_coverage,
+                        "missing_lookup_dates": [d.isoformat() for d in missing_lookup_dates],
+                        "missing_indicators_dates": [d.isoformat() for d in missing_indicators_dates],
+                        "populating_lookup": self._populating,
+                        "populating_indicators": self._populating_indicators,
+                        "lookup_progress": self._population_progress,
+                        "indicators_progress": self._indicators_progress,
+                        "recent_dates_checked": [d.isoformat() for d in recent_dates]
+                    }
+                )
         
         except Exception as e:
             return HealthCheckResult(
@@ -545,6 +752,13 @@ class HealthMonitorService:
         """Register a health check to run periodically."""
         self.checks.append(check)
         self.logger.debug(f"Registered health check: {check.name}")
+    
+    def get_check(self, name: str) -> Optional[BaseHealthCheck]:
+        """Get a registered health check by name."""
+        for check in self.checks:
+            if check.name == name:
+                return check
+        return None
     
     async def run_all_checks(self) -> List[HealthCheckResult]:
         """Run all registered health checks and return results."""

@@ -10,12 +10,6 @@
 import { Fund, UpdateFundInput } from "@printer/shared";
 import { useEffect, useState } from "react";
 
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/lib/components/ui/card";
 import { Label } from "@/lib/components/ui/label";
 import {
   Select,
@@ -120,88 +114,87 @@ export function AIModelSelector({
 
   const displayValue = selectedModel || "default";
 
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>AI Model Override</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-4">
-          {error && (
-            <div className="rounded-md bg-red-50 dark:bg-red-950/50 p-3 text-sm text-red-800 dark:text-red-200 border border-red-200 dark:border-red-800">
-              {error}
-            </div>
-          )}
+  const content = (
+    <div className="space-y-3">
+      <Select
+        value={displayValue}
+        onValueChange={handleModelChange}
+        disabled={isSaving}
+      >
+        <SelectTrigger id="ai-model">
+          <SelectValue placeholder="Select AI model..." />
+        </SelectTrigger>
+        <SelectContent>
+          {modelOptions.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <p className="text-xs text-muted-foreground">
+        Override the default AI model used by the strategy engine. This will be
+        used for all AI decisions unless the strategy specifies otherwise.
+      </p>
 
-          <div className="space-y-2">
-            <Label htmlFor="ai-model">AI Model</Label>
-            <Select
-              value={displayValue}
-              onValueChange={handleModelChange}
-              disabled={isSaving}
-            >
-              <SelectTrigger id="ai-model">
-                <SelectValue placeholder="Select AI model..." />
-              </SelectTrigger>
-              <SelectContent>
-                {modelOptions.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground">
-              Override the default AI model used by the strategy engine. This
-              will be used for all AI decisions unless the strategy specifies
-              otherwise.
-            </p>
+      {selectedModel && (
+        <div className="rounded-md bg-muted/50 p-2 text-xs">
+          <div className="font-medium mb-1">Selected Model Details</div>
+          <div className="space-y-1 text-muted-foreground">
+            {(() => {
+              const modelKey = modelKeyMap[selectedModel];
+              const model = modelKey ? AI_MODELS[modelKey] : null;
+              if (!model) return null;
+              return (
+                <>
+                  <div>
+                    Model: <span className="font-mono">{model.name}</span>
+                  </div>
+                  <div>
+                    Context Window: {model.contextWindow.toLocaleString()}{" "}
+                    tokens
+                  </div>
+                  <div>
+                    Cost: ${(model.costPerInputToken * 1000000).toFixed(2)}
+                    /M input tokens, $
+                    {(model.costPerOutputToken * 1000000).toFixed(2)}/M output
+                    tokens
+                  </div>
+                </>
+              );
+            })()}
           </div>
-
-          {selectedModel && (
-            <div className="rounded-md bg-muted/50 p-3 text-sm">
-              <div className="font-medium mb-1">Selected Model Details</div>
-              <div className="space-y-1 text-xs text-muted-foreground">
-                {(() => {
-                  const modelKey = modelKeyMap[selectedModel];
-                  const model = modelKey ? AI_MODELS[modelKey] : null;
-                  if (!model) return null;
-                  return (
-                    <>
-                      <div>
-                        Model: <span className="font-mono">{model.name}</span>
-                      </div>
-                      <div>
-                        Context Window: {model.contextWindow.toLocaleString()}{" "}
-                        tokens
-                      </div>
-                      <div>
-                        Cost: ${(model.costPerInputToken * 1000000).toFixed(2)}
-                        /M input tokens, $
-                        {(model.costPerOutputToken * 1000000).toFixed(2)}/M
-                        output tokens
-                      </div>
-                    </>
-                  );
-                })()}
-              </div>
-            </div>
-          )}
-
-          {hasChanges && (
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={handleReset}
-                disabled={isSaving}
-                className="text-xs text-muted-foreground hover:text-foreground underline"
-              >
-                Reset
-              </button>
-            </div>
-          )}
         </div>
-      </CardContent>
-    </Card>
+      )}
+
+      {hasChanges && (
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={handleReset}
+            disabled={isSaving}
+            className="text-xs text-muted-foreground hover:text-foreground underline"
+          >
+            Reset
+          </button>
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <div className="space-y-2">
+      {error && (
+        <div className="rounded-md bg-red-50 dark:bg-red-950/50 p-2 text-xs text-red-800 dark:text-red-200 border border-red-200 dark:border-red-800">
+          {error}
+        </div>
+      )}
+      <div className="space-y-2">
+        <Label htmlFor="ai-model" className="text-sm">
+          AI Model
+        </Label>
+        {content}
+      </div>
+    </div>
   );
 }

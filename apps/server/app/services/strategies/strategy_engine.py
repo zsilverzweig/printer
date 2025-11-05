@@ -39,7 +39,7 @@ from app.services.strategies.order_executor import OrderExecutor
 from app.services.strategies.level_monitor import LevelMonitor
 from app.services.strategies.screener_connector import ScreenerConnector
 from app.lib.strategy_logger import StrategyLogger
-from app.models.strategies import Fund, Order, Transaction
+from app.models.strategies import Fund, Order, Transaction, DefaultRiskSettings
 from app.services.core.database import get_async_session
 from app.types import ScreenerCriteria
 from sqlalchemy import select
@@ -85,10 +85,17 @@ class StrategyEngine:
             f"id={fund.id}, name={fund.name}, balance=${fund.balance:.2f}, "
             f"mode={fund.mode}, status={fund.status}, strategy={fund.strategy_id}"
         )
+        # Load default risk settings for fallback values
+        # Note: Loading from database is deferred to async initialization in start()
+        self.default_size_per_trade = 1000.0  # Fallback default
+        self.default_max_order_age_seconds = 60  # Fallback default
+        
+        # Use fund override if set, otherwise use default
+        effective_size = fund.size_per_trade if fund.size_per_trade is not None else self.default_size_per_trade
         logger.info(
             f"🔧 Strategy config: "
             f"strategy_id={fund.strategy_id}, "
-            f"size_per_trade=${fund.size_per_trade:.2f}, "
+            f"size_per_trade=${effective_size:.2f}, "
             f"max_bet_percent={fund.max_bet_percent}"
         )
         
@@ -210,6 +217,18 @@ class StrategyEngine:
         
         # Refresh fund balance
         await self.refresh_fund_balance()
+        
+        # Load default risk settings from database (best effort)
+        try:
+            async with get_async_session() as session:
+                stmt = select(DefaultRiskSettings).where(DefaultRiskSettings.id == 'default')
+                result = await session.execute(stmt)
+                default_settings = result.scalar_one_or_none()
+                if default_settings:
+                    self.default_size_per_trade = default_settings.size_per_trade
+                    self.default_max_order_age_seconds = default_settings.max_order_age_seconds
+        except Exception as e:
+            logger.warning(f"Could not load default risk settings, using fallbacks: {e}")
         
         # Recover persisted state from DB
         self.strategy_logger.fund_message("Recovering persisted levels from DB...")
@@ -340,7 +359,8 @@ class StrategyEngine:
             try:
                 # Cancel stale orders
                 pending_orders = await self.get_pending_orders()
-                max_age = self.fund.max_order_age_seconds or 60
+                # Use fund override if set, otherwise use default
+                max_age = self.fund.max_order_age_seconds if self.fund.max_order_age_seconds is not None else self.default_max_order_age_seconds
                 await self.order_executor.cancel_stale_orders(max_age, pending_orders)
                 
                 # Get screened tickers

@@ -9,12 +9,6 @@
 import { ExecutionStrategy, Fund } from "@printer/shared";
 import { useEffect, useState } from "react";
 
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/lib/components/ui/card";
 import { Label } from "@/lib/components/ui/label";
 import {
   Select,
@@ -120,58 +114,54 @@ export function StrategySelection({
     JSON.stringify(executionConfig) !==
       JSON.stringify(fund?.strategyConfig || {});
 
+  const content = (
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <Label htmlFor="executionStrategy">Strategy Type</Label>
+        <Select
+          value={executionStrategyId}
+          onValueChange={(val) => {
+            setExecutionStrategyId(val);
+            void saveIfChanged({ executionStrategyId: val });
+          }}
+          disabled={isSaving}
+        >
+          <SelectTrigger id="executionStrategy">
+            <SelectValue placeholder="Select a strategy" />
+          </SelectTrigger>
+          <SelectContent>
+            {executionStrategies.map((strat) => (
+              <SelectItem key={strat.id} value={strat.id}>
+                {strat.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {selectedStrategy && (
+        <div className="rounded-lg bg-muted/50 p-2 space-y-1 text-xs">
+          <p className="font-medium">{selectedStrategy.name}</p>
+          <p className="text-muted-foreground">
+            {selectedStrategy.description}
+          </p>
+          <div className="flex gap-4 text-muted-foreground">
+            <span>Type: {selectedStrategy.strategyType}</span>
+            <span>Timeframe: {selectedStrategy.expectedTimeframe}</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-2">
       {error && (
-        <div className="rounded-lg bg-red-50 dark:bg-red-950/30 p-4 text-sm text-red-800 dark:text-red-200">
+        <div className="rounded-lg bg-red-50 dark:bg-red-950/30 p-2 text-xs text-red-800 dark:text-red-200">
           {error}
         </div>
       )}
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Strategy</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="executionStrategy">Strategy Type</Label>
-            <Select
-              value={executionStrategyId}
-              onValueChange={(val) => {
-                setExecutionStrategyId(val);
-                void saveIfChanged({ executionStrategyId: val });
-              }}
-              disabled={isSaving}
-            >
-              <SelectTrigger id="executionStrategy">
-                <SelectValue placeholder="Select a strategy" />
-              </SelectTrigger>
-              <SelectContent>
-                {executionStrategies.map((strat) => (
-                  <SelectItem key={strat.id} value={strat.id}>
-                    {strat.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {selectedStrategy && (
-            <div className="rounded-lg bg-muted p-4 space-y-2">
-              <p className="text-sm font-medium">{selectedStrategy.name}</p>
-              <p className="text-sm text-muted-foreground">
-                {selectedStrategy.description}
-              </p>
-              <div className="flex gap-4 text-xs text-muted-foreground">
-                <span>Type: {selectedStrategy.strategyType}</span>
-                <span>Timeframe: {selectedStrategy.expectedTimeframe}</span>
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Autosaves; no explicit save button */}
+      {content}
     </div>
   );
 }

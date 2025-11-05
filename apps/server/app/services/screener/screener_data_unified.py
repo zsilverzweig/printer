@@ -20,6 +20,8 @@ async def fetch_screener_data_unified(
     target_timestamp: Optional[datetime] = None,
     market_cap_min: Optional[int] = None,
     market_cap_max: Optional[int] = None,
+    float_min: Optional[int] = None,
+    float_max: Optional[int] = None,
     asset_types: Optional[List[str]] = None,
     min_relative_volume: Optional[float] = None,
 ) -> List[Dict[str, Any]]:
@@ -131,24 +133,26 @@ async def fetch_screener_data_unified(
                 logger.warning(f"[UNIFIED] No daily data for {prev_trading_day}")
                 return []
             
-            # STEP 1.5: Apply market cap filtering if specified
-            if market_cap_min is not None or market_cap_max is not None:
+            # STEP 1.5: Apply database filters if specified (market cap, float, asset types)
+            if market_cap_min is not None or market_cap_max is not None or float_min is not None or float_max is not None:
                 from app.services.screener.ticker_filter import get_filtered_tickers, FilterCriteria
                 
                 logger.info(
-                    f"[UNIFIED] Applying market cap filter: min={market_cap_min}, max={market_cap_max}"
+                    f"[UNIFIED] Applying database filters: market_cap=({market_cap_min}, {market_cap_max}), float=({float_min}, {float_max})"
                 )
                 
                 criteria = FilterCriteria(
                     asset_types=asset_types if asset_types else None,
                     market_cap_min=market_cap_min,
                     market_cap_max=market_cap_max,
+                    float_min=float_min,
+                    float_max=float_max,
                 )
                 
                 allowed_tickers = await get_filtered_tickers(criteria)
                 allowed_tickers_set = set(allowed_tickers)
                 
-                # Filter daily_data to only include tickers that pass market cap filter
+                # Filter daily_data to only include tickers that pass database filters
                 original_count = len(daily_data)
                 daily_data = {
                     symbol: data
@@ -157,7 +161,7 @@ async def fetch_screener_data_unified(
                 }
                 
                 logger.info(
-                    f"[UNIFIED] Market cap filter reduced symbols from {original_count} to {len(daily_data)}"
+                    f"[UNIFIED] Database filters reduced symbols from {original_count} to {len(daily_data)}"
                 )
                 
                 if not daily_data:
@@ -250,20 +254,151 @@ async def fetch_screener_data_unified(
                 }
             
             metrics_time = (datetime.now() - start_time).total_seconds()
-            logger.debug(f"[UNIFIED] Got metrics for {len(metrics_map)} symbols ({metrics_time:.2f}s)")
+            logger.info(f"[UNIFIED] Got metrics for {len(metrics_map)}/{len(symbols_list)} symbols ({metrics_time:.2f}s)")
             
-            # STEP 4: Combine into snapshot format and apply filters (in-memory, very fast)
-            logger.debug(f"[UNIFIED] Combining {len(daily_data)} symbols with metrics, applying RV filter={min_relative_volume}")
+            if len(metrics_map) == 0 and mode == "historical":
+                logger.error(
+                    f"[UNIFIED] ❌ No metrics found for {prev_trading_day} (historical mode). "
+                    f"Metrics must be calculated for this date before backtesting. "
+                    f"RV filter requires metrics to function."
+                )
+            
+            # STEP 4: For LIVE mode, calculate RV14 using TODAY's accumulated volume vs 14-day average
+            # This is critical: we should use TODAY's volume for TODAY's screening, not yesterday's!
+            if mode == "live":
+                # Get today's accumulated volume from 5min bars
+                today = datetime.now(timezone.utc).date()
+                today_start = datetime.combine(today, datetime.min.time(), tzinfo=timezone.utc)
+                today_end = datetime.now(timezone.utc)
+                
+                logger.info(f"[UNIFIED] Calculating RV14 for live mode using TODAY's volume (from {today_start} to {today_end})")
+                
+                # Get accumulated volume for today from 5min bars
+                volume_result = await session.execute(
+                    text("""
+                        SELECT 
+                            symbol,
+                            SUM(volume) as today_volume
+                        FROM market_data
+                        WHERE timescale = '5min'
+                          AND time >= :today_start
+                          AND time <= :today_end
+                          AND symbol = ANY(:symbols)
+                        GROUP BY symbol
+                    """),
+                    {"today_start": today_start, "today_end": today_end, "symbols": list(daily_data.keys())}
+                )
+                
+                today_volumes = {row[0]: float(row[1]) if row[1] else 0.0 for row in volume_result}
+                logger.info(f"[UNIFIED] Got today's accumulated volume for {len(today_volumes)} symbols")
+                
+                # Calculate 14-day average volume for each symbol
+                cutoff_date = today - timedelta(days=16)  # Get 15 days (today + 14 prior)
+                
+                avg_result = await session.execute(
+                    text("""
+                        WITH daily_volumes AS (
+                            SELECT 
+                                symbol,
+                                time::date as date,
+                                volume,
+                                ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY time DESC) as rn
+                            FROM market_data
+                            WHERE symbol = ANY(:symbols)
+                              AND timescale = '1day'
+                              AND time::date < :today
+                              AND time::date >= :cutoff_date
+                            ORDER BY symbol, time DESC
+                        ),
+                        volume_avgs AS (
+                            SELECT 
+                                symbol,
+                                AVG(CASE WHEN rn BETWEEN 1 AND 14 THEN volume END) as avg_14d
+                            FROM daily_volumes
+                            WHERE rn <= 14
+                            GROUP BY symbol
+                            HAVING COUNT(*) >= 14  -- Need at least 14 days
+                        )
+                        SELECT symbol, avg_14d
+                        FROM volume_avgs
+                    """),
+                    {"symbols": list(daily_data.keys()), "today": today, "cutoff_date": cutoff_date}
+                )
+                
+                avg_volumes = {row[0]: float(row[1]) if row[1] else 0.0 for row in avg_result}
+                logger.info(f"[UNIFIED] Got 14-day averages for {len(avg_volumes)} symbols")
+                
+                # Calculate RV14 for live mode: today's volume / 14-day average
+                # IMPORTANT: Only calculate RV14 if we have actual volume today. If today's volume is 0,
+                # set RV14 to 0 rather than using yesterday's value (which would be misleading).
+                for symbol in daily_data.keys():
+                    today_vol = today_volumes.get(symbol, 0.0)
+                    avg_14d = avg_volumes.get(symbol, 0.0)
+                    
+                    # Only calculate RV14 if we have actual volume today
+                    if today_vol > 0 and avg_14d > 0:
+                        live_rv14 = today_vol / avg_14d
+                        logger.debug(f"[UNIFIED] {symbol}: live RV14 = {today_vol:.0f} / {avg_14d:.0f} = {live_rv14:.2f}")
+                    else:
+                        # No volume today (pre-market/early morning) = no valid RV14
+                        live_rv14 = 0.0
+                        if today_vol == 0:
+                            logger.debug(f"[UNIFIED] {symbol}: RV14 = 0 (no volume today yet, pre-market)")
+                        elif avg_14d == 0:
+                            logger.debug(f"[UNIFIED] {symbol}: RV14 = 0 (insufficient history for 14-day average)")
+                    
+                    # Update metrics_map with live-calculated RV14
+                    if symbol not in metrics_map:
+                        metrics_map[symbol] = {}
+                    metrics_map[symbol]["rv14"] = live_rv14
+                    # Keep rv30/rv60 from metrics table if available, otherwise 0
+                    if "rv30" not in metrics_map[symbol]:
+                        metrics_map[symbol]["rv30"] = 0.0
+                    if "rv60" not in metrics_map[symbol]:
+                        metrics_map[symbol]["rv60"] = 0.0
+                
+                logger.info(f"[UNIFIED] Calculated live RV14 for {len(daily_data)} symbols")
+            else:
+                # Historical mode: Calculate RV14 on-the-fly for symbols missing from metrics table
+                symbols_missing_metrics = [
+                    symbol for symbol in daily_data.keys()
+                    if symbol not in metrics_map
+                ]
+                
+                if symbols_missing_metrics:
+                    logger.info(f"[UNIFIED] Calculating RV14 on-the-fly for {len(symbols_missing_metrics)} symbols missing from metrics table")
+                    from app.services.screener.screener_volume import TimescaleVolumeCalculator
+                    
+                    volume_calc = TimescaleVolumeCalculator(lookback_days=30)
+                    on_the_fly_rv14 = await volume_calc.calculate_rv14_batch(symbols_missing_metrics)
+                    
+                    # Update metrics_map with on-the-fly calculated values
+                    for symbol, rv14_value in on_the_fly_rv14.items():
+                        metrics_map[symbol] = {
+                            "rv14": rv14_value,
+                            "rv30": 0.0,  # Not calculated on-the-fly, would need separate query
+                            "rv60": 0.0,  # Not calculated on-the-fly, would need separate query
+                        }
+                    
+                    logger.info(f"[UNIFIED] Calculated RV14 for {len(on_the_fly_rv14)}/{len(symbols_missing_metrics)} symbols")
+            
+            # STEP 5: Combine into snapshot format and apply filters (in-memory, very fast)
+            logger.info(f"[UNIFIED] Combining {len(daily_data)} symbols with metrics, applying RV filter={min_relative_volume}")
             snapshots = []
             filtered_by_rv = 0
+            filtered_by_no_close = 0
+            symbols_without_metrics = 0
             
             for symbol, daily in daily_data.items():
                 # Skip if no daily close
                 if not daily.get("close"):
+                    filtered_by_no_close += 1
                     continue
                 
                 # Get metrics for this symbol
                 metrics = metrics_map.get(symbol, {})
+                if not metrics:
+                    symbols_without_metrics += 1
                 
                 # Apply relative volume filter if specified
                 if min_relative_volume is not None:
@@ -293,9 +428,18 @@ async def fetch_screener_data_unified(
                 
                 snapshots.append(snapshot)
             
-            if min_relative_volume is not None:
-                if filtered_by_rv > 100:  # Only log if significant filtering
-                    logger.debug(f"[UNIFIED] RV filter: {filtered_by_rv} symbols removed")
+            if filtered_by_rv > 0:
+                logger.warning(
+                    f"[UNIFIED] RV filter removed {filtered_by_rv} symbols "
+                    f"(min_relative_volume={min_relative_volume})"
+                )
+            if filtered_by_no_close > 0:
+                logger.debug(f"[UNIFIED] Skipped {filtered_by_no_close} symbols without daily close")
+            if symbols_without_metrics > 0 and mode == "historical":
+                logger.warning(
+                    f"[UNIFIED] {symbols_without_metrics} symbols have no metrics "
+                    f"(metrics not calculated for {prev_trading_day})"
+                )
             
             # Single summary log
             logger.info(f"[UNIFIED] {len(snapshots)} snapshots ready")

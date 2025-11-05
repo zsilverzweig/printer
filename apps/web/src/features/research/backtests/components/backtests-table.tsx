@@ -8,8 +8,10 @@
 
 import {
   ColumnDef,
+  ColumnFiltersState,
   flexRender,
   getCoreRowModel,
+  getFilteredRowModel,
   getSortedRowModel,
   SortingState,
   useReactTable,
@@ -21,11 +23,21 @@ import {
   Copy,
   Eye,
   RefreshCw,
+  Search,
+  X,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { Badge } from "@/lib/components/ui/badge";
 import { Button } from "@/lib/components/ui/button";
+import { Input } from "@/lib/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/lib/components/ui/select";
 import {
   Table,
   TableBody,
@@ -120,6 +132,32 @@ export function BacktestsTable({
   const [sorting, setSorting] = useState<SortingState>([
     { id: "date", desc: true },
   ]);
+  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
+  const [globalFilter, setGlobalFilter] = useState("");
+
+  // Extract unique values for filters
+  const uniqueStatuses = useMemo(
+    () => Array.from(new Set(backtests.map((bt) => bt.status))),
+    [backtests]
+  );
+  const uniqueStrategies = useMemo(
+    () =>
+      Array.from(
+        new Set(backtests.map((bt) => bt.strategyId).filter(Boolean))
+      ).sort(),
+    [backtests]
+  );
+  const uniqueScreeners = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          backtests
+            .map((bt) => bt.screeningCriteriaName || bt.screeningCriteriaId)
+            .filter(Boolean)
+        )
+      ).sort(),
+    [backtests]
+  );
 
   const columns = useMemo<ColumnDef<Backtest>[]>(
     () => [
@@ -152,11 +190,21 @@ export function BacktestsTable({
       {
         accessorKey: "fundName",
         header: "Fund",
+        filterFn: (row, id, value) => {
+          const fundName = row.original.fundName || "";
+          const fundId = row.original.fundId || "";
+          const searchValue = value.toLowerCase();
+          return (
+            fundName.toLowerCase().includes(searchValue) ||
+            fundId.toLowerCase().includes(searchValue)
+          );
+        },
         cell: ({ row }) => {
           const backtest = row.original;
-          const fundName = backtest.fundName || backtest.fundId.slice(0, 8) + "...";
+          const fundName =
+            backtest.fundName || backtest.fundId.slice(0, 8) + "...";
           const fundId = backtest.fundId;
-          
+
           const handleCopy = async (e: React.MouseEvent) => {
             e.stopPropagation();
             try {
@@ -196,6 +244,43 @@ export function BacktestsTable({
         },
       },
       {
+        accessorKey: "strategyId",
+        header: "Strategy",
+        cell: ({ row }) => {
+          const strategyId = row.original.strategyId;
+          return (
+            <div className="font-mono text-xs text-muted-foreground">
+              {strategyId || "—"}
+            </div>
+          );
+        },
+        filterFn: (row, id, value) => {
+          if (!value || value === "all") return true;
+          return row.original.strategyId === value;
+        },
+      },
+      {
+        accessorKey: "screeningCriteriaName",
+        header: "Screener",
+        cell: ({ row }) => {
+          const screenerName =
+            row.original.screeningCriteriaName ||
+            row.original.screeningCriteriaId ||
+            "—";
+          return <div className="text-sm">{screenerName}</div>;
+        },
+        filterFn: (row, id, value) => {
+          if (!value || value === "all") return true;
+          const screenerName = row.original.screeningCriteriaName || "";
+          const screenerId = row.original.screeningCriteriaId || "";
+          return (
+            screenerName === value ||
+            screenerId === value ||
+            screenerName.toLowerCase().includes(value.toLowerCase())
+          );
+        },
+      },
+      {
         accessorKey: "status",
         header: ({ column }) => {
           return (
@@ -227,6 +312,10 @@ export function BacktestsTable({
               )}
             </Badge>
           );
+        },
+        filterFn: (row, id, value) => {
+          if (!value || value === "all") return true;
+          return row.original.status === value;
         },
       },
       {
@@ -449,11 +538,39 @@ export function BacktestsTable({
     columns,
     state: {
       sorting,
+      columnFilters,
+      globalFilter,
     },
     onSortingChange: setSorting,
+    onColumnFiltersChange: setColumnFilters,
+    onGlobalFilterChange: setGlobalFilter,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
   });
+
+  const statusFilter = table.getColumn("status")?.getFilterValue() as
+    | string
+    | undefined;
+  const strategyFilter = table.getColumn("strategyId")?.getFilterValue() as
+    | string
+    | undefined;
+  const screenerFilter = table
+    .getColumn("screeningCriteriaName")
+    ?.getFilterValue() as string | undefined;
+
+  const hasActiveFilters =
+    statusFilter ||
+    strategyFilter ||
+    screenerFilter ||
+    globalFilter ||
+    columnFilters.length > 0;
+
+  const clearFilters = () => {
+    setGlobalFilter("");
+    setColumnFilters([]);
+    table.resetColumnFilters();
+  };
 
   if (backtests.length === 0 && !loading) {
     return (
@@ -466,54 +583,169 @@ export function BacktestsTable({
   }
 
   return (
-    <div className="rounded-md border">
-      <Table>
-        <TableHeader>
-          {table.getHeaderGroups().map((headerGroup) => (
-            <TableRow key={headerGroup.id}>
-              {headerGroup.headers.map((header) => (
-                <TableHead key={header.id}>
-                  {header.isPlaceholder
-                    ? null
-                    : flexRender(
-                        header.column.columnDef.header,
-                        header.getContext()
-                      )}
-                </TableHead>
+    <div className="space-y-4">
+      {/* Filters */}
+      <div className="flex flex-wrap items-center gap-3 p-4 border rounded-md bg-muted/30">
+        {/* Global Search */}
+        <div className="relative flex-1 min-w-[200px]">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Search funds, strategies..."
+            value={globalFilter}
+            onChange={(e) => setGlobalFilter(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+
+        {/* Status Filter */}
+        <Select
+          value={(statusFilter as string) || "all"}
+          onValueChange={(value) =>
+            table
+              .getColumn("status")
+              ?.setFilterValue(value === "all" ? undefined : value)
+          }
+        >
+          <SelectTrigger className="w-[140px]">
+            <SelectValue placeholder="Status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Statuses</SelectItem>
+            {uniqueStatuses.map((status) => (
+              <SelectItem key={status} value={status}>
+                {status.charAt(0).toUpperCase() + status.slice(1)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {/* Strategy Filter */}
+        {uniqueStrategies.length > 0 && (
+          <Select
+            value={(strategyFilter as string) || "all"}
+            onValueChange={(value) =>
+              table
+                .getColumn("strategyId")
+                ?.setFilterValue(value === "all" ? undefined : value)
+            }
+          >
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Strategy" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Strategies</SelectItem>
+              {uniqueStrategies.map((strategy) => (
+                <SelectItem key={strategy} value={strategy}>
+                  {strategy}
+                </SelectItem>
               ))}
-            </TableRow>
-          ))}
-        </TableHeader>
-        <TableBody>
-          {loading && backtests.length === 0 ? (
-            <TableRow>
-              <TableCell colSpan={columns.length} className="h-24 text-center">
-                Loading backtests...
-              </TableCell>
-            </TableRow>
-          ) : table.getRowModel().rows?.length ? (
-            table.getRowModel().rows.map((row) => (
-              <TableRow
-                key={row.id}
-                data-state={row.getIsSelected() && "selected"}
-                className="hover:bg-muted/50"
-              >
-                {row.getVisibleCells().map((cell) => (
-                  <TableCell key={cell.id}>
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </TableCell>
+            </SelectContent>
+          </Select>
+        )}
+
+        {/* Screener Filter */}
+        {uniqueScreeners.length > 0 && (
+          <Select
+            value={(screenerFilter as string) || "all"}
+            onValueChange={(value) =>
+              table
+                .getColumn("screeningCriteriaName")
+                ?.setFilterValue(value === "all" ? undefined : value)
+            }
+          >
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Screener" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Screeners</SelectItem>
+              {uniqueScreeners.map((screener) => (
+                <SelectItem key={screener} value={screener}>
+                  {screener}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+
+        {/* Clear Filters */}
+        {hasActiveFilters && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={clearFilters}
+            className="gap-2"
+          >
+            <X className="h-4 w-4" />
+            Clear
+          </Button>
+        )}
+
+        {/* Results Count */}
+        <div className="ml-auto text-sm text-muted-foreground">
+          {table.getFilteredRowModel().rows.length} of {backtests.length}{" "}
+          backtests
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="rounded-md border">
+        <Table>
+          <TableHeader>
+            {table.getHeaderGroups().map((headerGroup) => (
+              <TableRow key={headerGroup.id}>
+                {headerGroup.headers.map((header) => (
+                  <TableHead key={header.id}>
+                    {header.isPlaceholder
+                      ? null
+                      : flexRender(
+                          header.column.columnDef.header,
+                          header.getContext()
+                        )}
+                  </TableHead>
                 ))}
               </TableRow>
-            ))
-          ) : (
-            <TableRow>
-              <TableCell colSpan={columns.length} className="h-24 text-center">
-                No results.
-              </TableCell>
-            </TableRow>
-          )}
-        </TableBody>
-      </Table>
+            ))}
+          </TableHeader>
+          <TableBody>
+            {loading && backtests.length === 0 ? (
+              <TableRow>
+                <TableCell
+                  colSpan={columns.length}
+                  className="h-24 text-center"
+                >
+                  Loading backtests...
+                </TableCell>
+              </TableRow>
+            ) : table.getRowModel().rows?.length ? (
+              table.getRowModel().rows.map((row) => (
+                <TableRow
+                  key={row.id}
+                  data-state={row.getIsSelected() && "selected"}
+                  className="hover:bg-muted/50"
+                >
+                  {row.getVisibleCells().map((cell) => (
+                    <TableCell key={cell.id}>
+                      {flexRender(
+                        cell.column.columnDef.cell,
+                        cell.getContext()
+                      )}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))
+            ) : (
+              <TableRow>
+                <TableCell
+                  colSpan={columns.length}
+                  className="h-24 text-center"
+                >
+                  No results.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </div>
     </div>
   );
 }

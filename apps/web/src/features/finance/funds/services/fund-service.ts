@@ -255,9 +255,14 @@ export const fundService = {
    * Delete a fund
    */
   async deleteFund(id: string): Promise<void> {
-    // Note: Delete endpoint not yet implemented in backend
-    // This is a placeholder for future implementation
-    throw new Error("Delete fund not yet implemented");
+    const response = await fetch(`${API_BASE}/api/funds/${id}`, {
+      method: "DELETE",
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || "Failed to delete fund");
+    }
   },
 
   /**

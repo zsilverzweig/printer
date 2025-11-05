@@ -1,7 +1,7 @@
 """add_fund_name_and_screener_name_to_backtest
 
-Revision ID: 7528416b81bc
-Revises: 20251104_073000
+Revision ID: 032
+Revises: 030
 Create Date: 2025-11-04 03:18:20.416966
 
 """
@@ -10,8 +10,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = '7528416b81bc'
-down_revision = '20251104_073000'
+revision = '032'
+down_revision = '030'
 branch_labels = None
 depends_on = None
 

@@ -14,13 +14,11 @@ import { Fund } from "@printer/shared";
 
 import { useFundDetails } from "../hooks/use-fund-details";
 import { fundService } from "../services/fund-service";
-
 import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/lib/components/ui/card";
+  riskManagementService,
+  type DefaultRiskSettings,
+} from "../services/risk-management-service";
+
 import { Input } from "@/lib/components/ui/input";
 import { Label } from "@/lib/components/ui/label";
 
@@ -46,6 +44,41 @@ export function RiskManagement({
   const { details } = useFundDetails(fundId);
   const fundBalance = details?.fund?.balance || fund.balance || 0;
 
+  // Get merged settings (defaults + fund overrides)
+  const [mergedSettings, setMergedSettings] = useState<DefaultRiskSettings>({
+    maxLossPercent: null,
+    maxLossDollars: null,
+    maxGivebackPercent: null,
+    maxOrderAgeSeconds: 60,
+    sizePerTrade: 1000,
+    minBetPercent: null,
+    maxBetPercent: null,
+    maxTotalExposure: null,
+  });
+
+  useEffect(() => {
+    const loadMergedSettings = async () => {
+      const merged = await riskManagementService.mergeWithDefaults({
+        maxLossPercent: fund.maxLossPercent ?? undefined,
+        maxLossDollars: fund.maxLossDollars ?? undefined,
+        maxGivebackPercent: fund.maxGivebackPercent ?? undefined,
+        maxOrderAgeSeconds: fund.maxOrderAgeSeconds ?? undefined,
+        sizePerTrade: fund.sizePerTrade ?? undefined,
+        minBetPercent: fund.minBetPercent ?? undefined,
+        maxBetPercent: fund.maxBetPercent ?? undefined,
+        maxTotalExposure: fund.maxTotalExposure ?? undefined,
+      });
+      setMergedSettings(merged);
+    };
+    void loadMergedSettings();
+  }, [fund]);
+
+  // Track which fields are overridden vs using defaults
+  const isOverridden = (field: keyof typeof mergedSettings): boolean => {
+    const fundField = field as keyof Fund;
+    return fund[fundField] !== null && fund[fundField] !== undefined;
+  };
+
   const [maxLossPercent, setMaxLossPercent] = useState("");
   const [maxLossDollars, setMaxLossDollars] = useState("");
   const [maxGivebackPercent, setMaxGivebackPercent] = useState("");
@@ -60,36 +93,41 @@ export function RiskManagement({
 
   useEffect(() => {
     if (fund) {
+      // Use merged settings for display, but track overrides separately
       setMaxLossPercent(
-        fund.maxLossPercent != null ? fund.maxLossPercent.toString() : ""
-      );
-      setMaxLossDollars(
-        fund.maxLossDollars != null ? fund.maxLossDollars.toString() : ""
-      );
-      setMaxGivebackPercent(
-        fund.maxGivebackPercent != null
-          ? fund.maxGivebackPercent.toString()
+        mergedSettings.maxLossPercent != null
+          ? mergedSettings.maxLossPercent.toString()
           : ""
       );
-      setMaxOrderAgeSeconds(
-        fund.maxOrderAgeSeconds != null
-          ? fund.maxOrderAgeSeconds.toString()
-          : "60"
+      setMaxLossDollars(
+        mergedSettings.maxLossDollars != null
+          ? mergedSettings.maxLossDollars.toString()
+          : ""
       );
-      setSizePerTrade(
-        fund.sizePerTrade != null ? fund.sizePerTrade.toString() : "1000"
+      setMaxGivebackPercent(
+        mergedSettings.maxGivebackPercent != null
+          ? mergedSettings.maxGivebackPercent.toString()
+          : ""
       );
+      setMaxOrderAgeSeconds(mergedSettings.maxOrderAgeSeconds.toString());
+      setSizePerTrade(mergedSettings.sizePerTrade.toString());
       setMinBetPercent(
-        fund.minBetPercent != null ? fund.minBetPercent.toString() : ""
+        mergedSettings.minBetPercent != null
+          ? mergedSettings.minBetPercent.toString()
+          : ""
       );
       setMaxBetPercent(
-        fund.maxBetPercent != null ? fund.maxBetPercent.toString() : ""
+        mergedSettings.maxBetPercent != null
+          ? mergedSettings.maxBetPercent.toString()
+          : ""
       );
       setMaxTotalExposure(
-        fund.maxTotalExposure != null ? fund.maxTotalExposure.toString() : ""
+        mergedSettings.maxTotalExposure != null
+          ? mergedSettings.maxTotalExposure.toString()
+          : ""
       );
     }
-  }, [fund]);
+  }, [fund, mergedSettings]);
 
   // Validate inputs and generate warnings
   useEffect(() => {
@@ -187,6 +225,7 @@ export function RiskManagement({
       return;
     }
 
+    const defaults = await riskManagementService.getDefaults();
     const parsed = {
       maxLossPercent: maxLossPercent ? parseFloat(maxLossPercent) : null,
       maxLossDollars: maxLossDollars ? parseFloat(maxLossDollars) : null,
@@ -195,30 +234,72 @@ export function RiskManagement({
         : null,
       maxOrderAgeSeconds: maxOrderAgeSeconds
         ? parseInt(maxOrderAgeSeconds)
-        : 60,
-      sizePerTrade: sizePerTrade ? parseFloat(sizePerTrade) : 1000,
+        : null,
+      sizePerTrade: sizePerTrade ? parseFloat(sizePerTrade) : null,
       minBetPercent: minBetPercent ? parseFloat(minBetPercent) : null,
       maxBetPercent: maxBetPercent ? parseFloat(maxBetPercent) : null,
       maxTotalExposure: maxTotalExposure ? parseFloat(maxTotalExposure) : null,
     } as const;
 
-    const differs =
-      (fund.maxLossPercent ?? null) !== parsed.maxLossPercent ||
-      (fund.maxLossDollars ?? null) !== parsed.maxLossDollars ||
-      (fund.maxGivebackPercent ?? null) !== parsed.maxGivebackPercent ||
-      (fund.maxOrderAgeSeconds ?? 60) !== parsed.maxOrderAgeSeconds ||
-      (fund.sizePerTrade ?? 1000) !== parsed.sizePerTrade ||
-      (fund.minBetPercent ?? null) !== parsed.minBetPercent ||
-      (fund.maxBetPercent ?? null) !== parsed.maxBetPercent ||
-      (fund.maxTotalExposure ?? null) !== parsed.maxTotalExposure;
+    // Build update object: only include values that differ from defaults
+    // If a value matches the default, set it to null to clear the override
+    const update: Partial<typeof parsed> = {};
 
-    if (!differs) return;
+    if (parsed.maxLossPercent !== defaults.maxLossPercent) {
+      update.maxLossPercent = parsed.maxLossPercent;
+    } else if (isOverridden("maxLossPercent")) {
+      update.maxLossPercent = null; // Clear override
+    }
+
+    if (parsed.maxLossDollars !== defaults.maxLossDollars) {
+      update.maxLossDollars = parsed.maxLossDollars;
+    } else if (isOverridden("maxLossDollars")) {
+      update.maxLossDollars = null;
+    }
+
+    if (parsed.maxGivebackPercent !== defaults.maxGivebackPercent) {
+      update.maxGivebackPercent = parsed.maxGivebackPercent;
+    } else if (isOverridden("maxGivebackPercent")) {
+      update.maxGivebackPercent = null;
+    }
+
+    if (parsed.maxOrderAgeSeconds !== defaults.maxOrderAgeSeconds) {
+      update.maxOrderAgeSeconds = parsed.maxOrderAgeSeconds;
+    } else if (isOverridden("maxOrderAgeSeconds")) {
+      update.maxOrderAgeSeconds = null;
+    }
+
+    if (parsed.sizePerTrade !== defaults.sizePerTrade) {
+      update.sizePerTrade = parsed.sizePerTrade;
+    } else if (isOverridden("sizePerTrade")) {
+      update.sizePerTrade = null;
+    }
+
+    if (parsed.minBetPercent !== defaults.minBetPercent) {
+      update.minBetPercent = parsed.minBetPercent;
+    } else if (isOverridden("minBetPercent")) {
+      update.minBetPercent = null;
+    }
+
+    if (parsed.maxBetPercent !== defaults.maxBetPercent) {
+      update.maxBetPercent = parsed.maxBetPercent;
+    } else if (isOverridden("maxBetPercent")) {
+      update.maxBetPercent = null;
+    }
+
+    if (parsed.maxTotalExposure !== defaults.maxTotalExposure) {
+      update.maxTotalExposure = parsed.maxTotalExposure;
+    } else if (isOverridden("maxTotalExposure")) {
+      update.maxTotalExposure = null;
+    }
+
+    if (Object.keys(update).length === 0) return;
 
     try {
       setIsSaving(true);
       onSavingChange?.(true);
       setError(null);
-      await fundService.updateFund(fundId, parsed);
+      await fundService.updateFund(fundId, update);
       onUpdate();
     } catch (err) {
       console.error("Error saving risk management:", err);
@@ -232,199 +313,236 @@ export function RiskManagement({
   const getWarningsForField = (field: string) =>
     warnings.filter((w) => w.field === field);
 
-  return (
+  const content = (
     <div className="space-y-4">
-      {error && (
-        <div className="rounded-lg bg-red-50 dark:bg-red-950/30 p-4 text-sm text-red-800 dark:text-red-200">
-          {error}
-        </div>
-      )}
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Risk Parameters</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            <div className="space-y-1.5">
+      <div>
+        <h3 className="text-sm font-medium mb-4">Risk Parameters</h3>
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
               <Label htmlFor="maxLossPercent">Max Loss % Per Day</Label>
-              <Input
-                id="maxLossPercent"
-                type="number"
-                step="0.1"
-                value={maxLossPercent}
-                onChange={(e) => setMaxLossPercent(e.target.value)}
-                onBlur={saveIfChanged}
-                disabled={isSaving}
-                placeholder="2.0 (optional)"
-              />
+              {!isOverridden("maxLossPercent") && (
+                <span className="text-xs text-muted-foreground">(default)</span>
+              )}
             </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="maxLossDollars">Max Loss $ Per Day</Label>
-              <Input
-                id="maxLossDollars"
-                type="number"
-                step="1"
-                value={maxLossDollars}
-                onChange={(e) => setMaxLossDollars(e.target.value)}
-                onBlur={saveIfChanged}
-                disabled={isSaving}
-                placeholder="500 (optional)"
-              />
-              {getWarningsForField("maxLossDollars").map((warning, idx) => (
-                <div
-                  key={idx}
-                  className={`flex items-start gap-2 text-xs ${
-                    warning.severity === "error"
-                      ? "text-red-600"
-                      : "text-yellow-600"
-                  }`}
-                >
-                  <AlertCircle className="h-3 w-3 mt-0.5 flex-shrink-0" />
-                  <span>{warning.message}</span>
-                </div>
-              ))}
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="maxGivebackPercent">Max Giveback %</Label>
-              <Input
-                id="maxGivebackPercent"
-                type="number"
-                step="0.1"
-                value={maxGivebackPercent}
-                onChange={(e) => setMaxGivebackPercent(e.target.value)}
-                onBlur={saveIfChanged}
-                disabled={isSaving}
-                placeholder="30.0 (optional)"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="maxOrderAgeSeconds">Max Order Age (sec)</Label>
-              <Input
-                id="maxOrderAgeSeconds"
-                type="number"
-                step="10"
-                min="10"
-                value={maxOrderAgeSeconds}
-                onChange={(e) => setMaxOrderAgeSeconds(e.target.value)}
-                onBlur={saveIfChanged}
-                disabled={isSaving}
-                placeholder="60"
-              />
-            </div>
+            <Input
+              id="maxLossPercent"
+              type="number"
+              step="0.1"
+              value={maxLossPercent}
+              onChange={(e) => setMaxLossPercent(e.target.value)}
+              onBlur={saveIfChanged}
+              disabled={isSaving}
+              placeholder="2.0 (optional)"
+            />
           </div>
-        </CardContent>
-      </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Position Sizing</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-1.5">
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="maxLossDollars">Max Loss $ Per Day</Label>
+              {!isOverridden("maxLossDollars") && (
+                <span className="text-xs text-muted-foreground">(default)</span>
+              )}
+            </div>
+            <Input
+              id="maxLossDollars"
+              type="number"
+              step="1"
+              value={maxLossDollars}
+              onChange={(e) => setMaxLossDollars(e.target.value)}
+              onBlur={saveIfChanged}
+              disabled={isSaving}
+              placeholder="500 (optional)"
+            />
+            {getWarningsForField("maxLossDollars").map((warning, idx) => (
+              <div
+                key={idx}
+                className={`flex items-start gap-2 text-xs ${
+                  warning.severity === "error"
+                    ? "text-red-600"
+                    : "text-yellow-600"
+                }`}
+              >
+                <AlertCircle className="h-3 w-3 mt-0.5 flex-shrink-0" />
+                <span>{warning.message}</span>
+              </div>
+            ))}
+          </div>
+
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="maxGivebackPercent">Max Giveback %</Label>
+              {!isOverridden("maxGivebackPercent") && (
+                <span className="text-xs text-muted-foreground">(default)</span>
+              )}
+            </div>
+            <Input
+              id="maxGivebackPercent"
+              type="number"
+              step="0.1"
+              value={maxGivebackPercent}
+              onChange={(e) => setMaxGivebackPercent(e.target.value)}
+              onBlur={saveIfChanged}
+              disabled={isSaving}
+              placeholder="30.0 (optional)"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="maxOrderAgeSeconds">Max Order Age (sec)</Label>
+              {!isOverridden("maxOrderAgeSeconds") && (
+                <span className="text-xs text-muted-foreground">(default)</span>
+              )}
+            </div>
+            <Input
+              id="maxOrderAgeSeconds"
+              type="number"
+              step="10"
+              min="10"
+              value={maxOrderAgeSeconds}
+              onChange={(e) => setMaxOrderAgeSeconds(e.target.value)}
+              onBlur={saveIfChanged}
+              disabled={isSaving}
+              placeholder="60"
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="pt-4 border-t">
+        <h3 className="text-sm font-medium mb-4">Position Sizing</h3>
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
               <Label htmlFor="sizePerTrade">
                 Size Per Trade ($) <span className="text-red-500">*</span>
               </Label>
-              <Input
-                id="sizePerTrade"
-                type="number"
-                step="100"
-                value={sizePerTrade}
-                onChange={(e) => setSizePerTrade(e.target.value)}
-                onBlur={saveIfChanged}
-                disabled={isSaving}
-                placeholder="1000"
-                required
-              />
-              {getWarningsForField("sizePerTrade").map((warning, idx) => (
-                <div
-                  key={idx}
-                  className={`flex items-start gap-2 text-xs ${
-                    warning.severity === "error"
-                      ? "text-red-600"
-                      : "text-yellow-600"
-                  }`}
-                >
-                  <AlertCircle className="h-3 w-3 mt-0.5 flex-shrink-0" />
-                  <span>{warning.message}</span>
-                </div>
-              ))}
+              {!isOverridden("sizePerTrade") && (
+                <span className="text-xs text-muted-foreground">(default)</span>
+              )}
             </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="maxTotalExposure">Max Total Exposure ($)</Label>
-              <Input
-                id="maxTotalExposure"
-                type="number"
-                step="1000"
-                value={maxTotalExposure}
-                onChange={(e) => setMaxTotalExposure(e.target.value)}
-                onBlur={saveIfChanged}
-                disabled={isSaving}
-                placeholder="5000 (optional)"
-              />
-              {getWarningsForField("maxTotalExposure").map((warning, idx) => (
-                <div
-                  key={idx}
-                  className={`flex items-start gap-2 text-xs ${
-                    warning.severity === "error"
-                      ? "text-red-600"
-                      : "text-yellow-600"
-                  }`}
-                >
-                  <AlertCircle className="h-3 w-3 mt-0.5 flex-shrink-0" />
-                  <span>{warning.message}</span>
-                </div>
-              ))}
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="minBetPercent">Min Bet % of Fund</Label>
-              <Input
-                id="minBetPercent"
-                type="number"
-                step="0.1"
-                value={minBetPercent}
-                onChange={(e) => setMinBetPercent(e.target.value)}
-                onBlur={saveIfChanged}
-                disabled={isSaving}
-                placeholder="1.0 (optional)"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="maxBetPercent">Max Bet % of Fund</Label>
-              <Input
-                id="maxBetPercent"
-                type="number"
-                step="0.1"
-                value={maxBetPercent}
-                onChange={(e) => setMaxBetPercent(e.target.value)}
-                onBlur={saveIfChanged}
-                disabled={isSaving}
-                placeholder="5.0 (optional)"
-              />
-              {getWarningsForField("maxBetPercent").map((warning, idx) => (
-                <div
-                  key={idx}
-                  className={`flex items-start gap-2 text-xs ${
-                    warning.severity === "error"
-                      ? "text-red-600"
-                      : "text-yellow-600"
-                  }`}
-                >
-                  <AlertCircle className="h-3 w-3 mt-0.5 flex-shrink-0" />
-                  <span>{warning.message}</span>
-                </div>
-              ))}
-            </div>
+            <Input
+              id="sizePerTrade"
+              type="number"
+              step="100"
+              value={sizePerTrade}
+              onChange={(e) => setSizePerTrade(e.target.value)}
+              onBlur={saveIfChanged}
+              disabled={isSaving}
+              placeholder="1000"
+              required
+            />
+            {getWarningsForField("sizePerTrade").map((warning, idx) => (
+              <div
+                key={idx}
+                className={`flex items-start gap-2 text-xs ${
+                  warning.severity === "error"
+                    ? "text-red-600"
+                    : "text-yellow-600"
+                }`}
+              >
+                <AlertCircle className="h-3 w-3 mt-0.5 flex-shrink-0" />
+                <span>{warning.message}</span>
+              </div>
+            ))}
           </div>
-        </CardContent>
-      </Card>
+
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="maxTotalExposure">Max Total Exposure ($)</Label>
+              {!isOverridden("maxTotalExposure") && (
+                <span className="text-xs text-muted-foreground">(default)</span>
+              )}
+            </div>
+            <Input
+              id="maxTotalExposure"
+              type="number"
+              step="1000"
+              value={maxTotalExposure}
+              onChange={(e) => setMaxTotalExposure(e.target.value)}
+              onBlur={saveIfChanged}
+              disabled={isSaving}
+              placeholder="5000 (optional)"
+            />
+            {getWarningsForField("maxTotalExposure").map((warning, idx) => (
+              <div
+                key={idx}
+                className={`flex items-start gap-2 text-xs ${
+                  warning.severity === "error"
+                    ? "text-red-600"
+                    : "text-yellow-600"
+                }`}
+              >
+                <AlertCircle className="h-3 w-3 mt-0.5 flex-shrink-0" />
+                <span>{warning.message}</span>
+              </div>
+            ))}
+          </div>
+
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="minBetPercent">Min Bet % of Fund</Label>
+              {!isOverridden("minBetPercent") && (
+                <span className="text-xs text-muted-foreground">(default)</span>
+              )}
+            </div>
+            <Input
+              id="minBetPercent"
+              type="number"
+              step="0.1"
+              value={minBetPercent}
+              onChange={(e) => setMinBetPercent(e.target.value)}
+              onBlur={saveIfChanged}
+              disabled={isSaving}
+              placeholder="1.0 (optional)"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="maxBetPercent">Max Bet % of Fund</Label>
+              {!isOverridden("maxBetPercent") && (
+                <span className="text-xs text-muted-foreground">(default)</span>
+              )}
+            </div>
+            <Input
+              id="maxBetPercent"
+              type="number"
+              step="0.1"
+              value={maxBetPercent}
+              onChange={(e) => setMaxBetPercent(e.target.value)}
+              onBlur={saveIfChanged}
+              disabled={isSaving}
+              placeholder="5.0 (optional)"
+            />
+            {getWarningsForField("maxBetPercent").map((warning, idx) => (
+              <div
+                key={idx}
+                className={`flex items-start gap-2 text-xs ${
+                  warning.severity === "error"
+                    ? "text-red-600"
+                    : "text-yellow-600"
+                }`}
+              >
+                <AlertCircle className="h-3 w-3 mt-0.5 flex-shrink-0" />
+                <span>{warning.message}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="space-y-4">
+      {error && (
+        <div className="rounded-lg bg-red-50 dark:bg-red-950/30 p-2 text-xs text-red-800 dark:text-red-200">
+          {error}
+        </div>
+      )}
+      {content}
     </div>
   );
 }

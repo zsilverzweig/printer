@@ -6,12 +6,20 @@
 
 "use client";
 
-import { Play, Square, TrendingDown, TrendingUp } from "lucide-react";
+import { Play, Square, Trash2, TrendingDown, TrendingUp } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { Badge } from "@/lib/components/ui/badge";
 import { Button } from "@/lib/components/ui/button";
+import { Checkbox } from "@/lib/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/lib/components/ui/select";
 import {
   Table,
   TableBody,
@@ -34,12 +42,17 @@ interface FundsTableProps {
 interface FundRowProps {
   fund: Fund;
   onStartStop: (fundId: string, isTrading: boolean) => Promise<void>;
+  selected: boolean;
+  onSelect: (fundId: string, selected: boolean) => void;
 }
 
-function FundRow({ fund, onStartStop }: FundRowProps) {
+function FundRow({ fund, onStartStop, selected, onSelect }: FundRowProps) {
   const [actionLoading, setActionLoading] = useState(false);
   const modeColor = fund.mode === "sim" ? "bg-blue-500" : "bg-green-500";
   const modeLabel = fund.mode === "sim" ? "SIM" : "REAL";
+
+  // Check if this is a backtest fund (name contains "_backtest_")
+  const isBacktestFund = fund.name.includes("_backtest_");
 
   // Connect to real-time WebSocket for fund data
   const { data, isConnecting, error } = useFundRealtime(fund.id);
@@ -68,8 +81,19 @@ function FundRow({ fund, onStartStop }: FundRowProps) {
     }
   };
 
+  const handleCheckboxChange = (checked: boolean) => {
+    onSelect(fund.id, checked);
+  };
+
   return (
     <TableRow className="cursor-pointer hover:bg-muted/50">
+      <TableCell className="w-12">
+        <Checkbox
+          checked={selected}
+          onCheckedChange={handleCheckboxChange}
+          onClick={(e) => e.stopPropagation()}
+        />
+      </TableCell>
       <TableCell className="max-w-md">
         <Link
           href={`/funds/${fund.id}`}
@@ -190,6 +214,91 @@ function FundRow({ fund, onStartStop }: FundRowProps) {
 
 export function FundsTable({ funds, onRefresh }: FundsTableProps) {
   const [bulkActionLoading, setBulkActionLoading] = useState(false);
+  const [selectedFundIds, setSelectedFundIds] = useState<Set<string>>(
+    new Set()
+  );
+  const [filterType, setFilterType] = useState<"all" | "backtest" | "regular">(
+    "all"
+  );
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
+  // Filter funds based on type
+  const filteredFunds = useMemo(() => {
+    if (filterType === "all") return funds;
+    if (filterType === "backtest") {
+      return funds.filter((f) => f.name.includes("_backtest_"));
+    }
+    // regular
+    return funds.filter((f) => !f.name.includes("_backtest_"));
+  }, [funds, filterType]);
+
+  const handleSelectFund = (fundId: string, selected: boolean) => {
+    setSelectedFundIds((prev) => {
+      const next = new Set(prev);
+      if (selected) {
+        next.add(fundId);
+      } else {
+        next.delete(fundId);
+      }
+      return next;
+    });
+  };
+
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedFundIds(new Set(filteredFunds.map((f) => f.id)));
+    } else {
+      setSelectedFundIds(new Set());
+    }
+  };
+
+  const handleDeleteSelected = async () => {
+    if (selectedFundIds.size === 0) return;
+
+    const confirmMessage = `Are you sure you want to delete ${selectedFundIds.size} fund(s)? This action cannot be undone.`;
+    if (!confirm(confirmMessage)) return;
+
+    setDeleteLoading(true);
+    let successCount = 0;
+    let errorCount = 0;
+
+    try {
+      const results = await Promise.allSettled(
+        Array.from(selectedFundIds).map((fundId) =>
+          fundService.deleteFund(fundId)
+        )
+      );
+
+      results.forEach((result, index) => {
+        if (result.status === "fulfilled") {
+          successCount++;
+        } else {
+          errorCount++;
+          const fundId = Array.from(selectedFundIds)[index];
+          const fund = funds.find((f) => f.id === fundId);
+          toastError("Delete Failed", {
+            description: `Failed to delete ${fund?.name || fundId}: ${
+              result.reason instanceof Error
+                ? result.reason.message
+                : "Unknown error"
+            }`,
+          });
+        }
+      });
+
+      if (successCount > 0) {
+        toastSuccess("Funds Deleted", {
+          description: `${successCount} fund(s) deleted successfully${
+            errorCount > 0 ? `, ${errorCount} failed` : ""
+          }`,
+        });
+        setSelectedFundIds(new Set());
+        onRefresh?.();
+      }
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
 
   const handleStartStop = async (fundId: string, isTrading: boolean) => {
     try {
@@ -303,42 +412,86 @@ export function FundsTable({ funds, onRefresh }: FundsTableProps) {
     );
   }
 
+  const allSelected =
+    filteredFunds.length > 0 && selectedFundIds.size === filteredFunds.length;
+  const someSelected =
+    selectedFundIds.size > 0 && selectedFundIds.size < filteredFunds.length;
+
   return (
     <div className="space-y-4">
-      <div className="flex justify-end gap-2">
-        <Button
-          size="sm"
-          variant="default"
-          onClick={handleStartAll}
-          disabled={bulkActionLoading || funds.length === 0}
-        >
-          {bulkActionLoading ? (
-            <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent mr-2" />
-          ) : (
-            <Play className="h-4 w-4 mr-2" />
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-2">
+          <Select
+            value={filterType}
+            onValueChange={(value) => setFilterType(value as typeof filterType)}
+          >
+            <SelectTrigger className="w-48">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Funds</SelectItem>
+              <SelectItem value="regular">Regular Funds</SelectItem>
+              <SelectItem value="backtest">Backtest Funds</SelectItem>
+            </SelectContent>
+          </Select>
+          {selectedFundIds.size > 0 && (
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={handleDeleteSelected}
+              disabled={deleteLoading}
+            >
+              {deleteLoading ? (
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent mr-2" />
+              ) : (
+                <Trash2 className="h-4 w-4 mr-2" />
+              )}
+              Delete Selected ({selectedFundIds.size})
+            </Button>
           )}
-          Start All
-        </Button>
-        <Button
-          size="sm"
-          variant="destructive"
-          onClick={handleStopAll}
-          disabled={bulkActionLoading || funds.length === 0}
-        >
-          {bulkActionLoading ? (
-            <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent mr-2" />
-          ) : (
-            <Square className="h-4 w-4 mr-2" />
-          )}
-          Stop All
-        </Button>
+        </div>
+        <div className="flex gap-2">
+          <Button
+            size="sm"
+            variant="default"
+            onClick={handleStartAll}
+            disabled={bulkActionLoading || filteredFunds.length === 0}
+          >
+            {bulkActionLoading ? (
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent mr-2" />
+            ) : (
+              <Play className="h-4 w-4 mr-2" />
+            )}
+            Start All
+          </Button>
+          <Button
+            size="sm"
+            variant="destructive"
+            onClick={handleStopAll}
+            disabled={bulkActionLoading || filteredFunds.length === 0}
+          >
+            {bulkActionLoading ? (
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent mr-2" />
+            ) : (
+              <Square className="h-4 w-4 mr-2" />
+            )}
+            Stop All
+          </Button>
+        </div>
       </div>
 
       <div className="rounded-md border">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-[45%]">Fund</TableHead>
+              <TableHead className="w-12">
+                <Checkbox
+                  checked={allSelected}
+                  indeterminate={someSelected}
+                  onCheckedChange={handleSelectAll}
+                />
+              </TableHead>
+              <TableHead className="w-[40%]">Fund</TableHead>
               <TableHead className="text-right w-[20%]">
                 Assets Under Management
               </TableHead>
@@ -348,13 +501,26 @@ export function FundsTable({ funds, onRefresh }: FundsTableProps) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {funds.map((fund) => (
-              <FundRow
-                key={fund.id}
-                fund={fund}
-                onStartStop={handleStartStop}
-              />
-            ))}
+            {filteredFunds.length === 0 ? (
+              <TableRow>
+                <TableCell
+                  colSpan={6}
+                  className="text-center py-8 text-muted-foreground"
+                >
+                  No funds match the selected filter.
+                </TableCell>
+              </TableRow>
+            ) : (
+              filteredFunds.map((fund) => (
+                <FundRow
+                  key={fund.id}
+                  fund={fund}
+                  onStartStop={handleStartStop}
+                  selected={selectedFundIds.has(fund.id)}
+                  onSelect={handleSelectFund}
+                />
+              ))
+            )}
           </TableBody>
         </Table>
       </div>

@@ -167,6 +167,8 @@ class ScreenerService:
         asset_types: Optional[List[str]] = None,
         market_cap_min: Optional[int] = None,
         market_cap_max: Optional[int] = None,
+        float_min: Optional[int] = None,
+        float_max: Optional[int] = None,
     ) -> List[dict]:
         """Compute screener results at a specific historical timestamp.
         
@@ -187,6 +189,8 @@ class ScreenerService:
             asset_types=asset_types,
             market_cap_min=market_cap_min,
             market_cap_max=market_cap_max,
+            float_min=float_min,
+            float_max=float_max,
         )
     
     async def compute_live(
@@ -204,6 +208,8 @@ class ScreenerService:
         asset_types: Optional[List[str]] = None,
         market_cap_min: Optional[int] = None,
         market_cap_max: Optional[int] = None,
+        float_min: Optional[int] = None,
+        float_max: Optional[int] = None,
     ) -> List[dict]:
         """Compute screener results from the latest live data.
         
@@ -241,6 +247,8 @@ class ScreenerService:
             asset_types=asset_types,
             market_cap_min=market_cap_min,
             market_cap_max=market_cap_max,
+            float_min=float_min,
+            float_max=float_max,
         )
 
     async def compute_live_with_criteria(self, params: Dict[str, Any]) -> List[dict]:
@@ -259,6 +267,8 @@ class ScreenerService:
             asset_types=params.get("asset_types"),
             market_cap_min=params.get("market_cap_min"),
             market_cap_max=params.get("market_cap_max"),
+            float_min=params.get("float_min"),
+            float_max=params.get("float_max"),
         )
 
     async def compute_historical_with_criteria(
@@ -282,6 +292,8 @@ class ScreenerService:
             asset_types=params.get("asset_types"),
             market_cap_min=params.get("market_cap_min"),
             market_cap_max=params.get("market_cap_max"),
+            float_min=params.get("float_min"),
+            float_max=params.get("float_max"),
         )
 
     async def compute_live_from_criteria(self, criteria: ScreenerCriteria) -> List[dict]:
@@ -300,6 +312,8 @@ class ScreenerService:
             asset_types=criteria.asset_types,
             market_cap_min=criteria.market_cap_min,
             market_cap_max=criteria.market_cap_max,
+            float_min=criteria.float_min,
+            float_max=criteria.float_max,
         )
 
     async def compute_historical_from_criteria(
@@ -323,6 +337,8 @@ class ScreenerService:
             asset_types=criteria.asset_types,
             market_cap_min=criteria.market_cap_min,
             market_cap_max=criteria.market_cap_max,
+            float_min=criteria.float_min,
+            float_max=criteria.float_max,
         )
     
     # WebSocket subscriber management

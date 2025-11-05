@@ -48,10 +48,10 @@ export interface Fund {
   maxLossPercent?: number | null; // Max loss % per day
   maxLossDollars?: number | null; // Max loss $ per day
   maxGivebackPercent?: number | null; // Max loss from high water mark
-  maxOrderAgeSeconds?: number | null; // Cancel pending orders after this many seconds
+  maxOrderAgeSeconds?: number | null; // Cancel pending orders after this many seconds (override to default)
 
   // Position sizing
-  sizePerTrade: number; // Default position size (required)
+  sizePerTrade?: number | null; // Default position size (override to default)
   minBetPercent?: number | null; // Min % of fund per trade
   maxBetPercent?: number | null; // Max % of fund per trade
   maxTotalExposure?: number | null; // Max total $ in positions
@@ -95,6 +95,8 @@ export interface ScreeningCriteriaParams {
   asset_types?: string[]; // e.g., ["CS", "ETF"]
   market_cap_min?: number; // Min market cap in dollars
   market_cap_max?: number; // Max market cap in dollars
+  float_min?: number; // Min public float in dollars
+  float_max?: number; // Max public float in dollars
   sic_codes?: string[]; // Industry SIC codes
 
   // Real-time screener filters (price/volume dynamics)

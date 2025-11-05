@@ -6,7 +6,7 @@ Provides endpoints for running backtests, querying results, and managing backtes
 
 import logging
 from datetime import date, datetime
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -25,6 +25,24 @@ router = APIRouter()
 class RunBacktestRequest(BaseModel):
     fund_id: str
     date: str  # YYYY-MM-DD format
+
+
+class StrategyScreenerCombo(BaseModel):
+    strategy_id: str
+    strategy_config: dict = {}
+    screening_criteria_id: Optional[str] = None
+
+
+class MultiStrategyBacktestRequest(BaseModel):
+    fund_template_id: str
+    date: str  # YYYY-MM-DD format
+    combinations: List[StrategyScreenerCombo]
+
+
+class MultiStrategyBacktestResponse(BaseModel):
+    parent_run_id: str
+    backtests: List[Dict[str, Any]]
+    summary: Dict[str, Any]
 
 
 class BacktestResponse(BaseModel):
@@ -227,6 +245,59 @@ async def get_backtest_trades(backtest_id: str, limit: int = 100):
             "trades": [_serialize_trade(trade) for trade in trades],
             "total": len(trades)
         }
+
+
+@router.post("/run-multi", response_model=MultiStrategyBacktestResponse)
+async def run_multi_strategy_backtest(request: MultiStrategyBacktestRequest):
+    """
+    Run backtests for multiple strategy/screener combinations on the same day.
+    
+    Each combination gets its own temporary backtest fund (created from template),
+    runs independently with the same starting balance, and results are linked
+    via parent_run_id.
+    
+    Args:
+        request: Multi-strategy backtest configuration
+        
+    Returns:
+        Summary with all backtest results and aggregated statistics
+    """
+    try:
+        # Parse date
+        backtest_date = datetime.strptime(request.date, "%Y-%m-%d").date()
+        
+        # Validate template fund exists
+        async with get_async_session() as session:
+            template_fund = await session.get(Fund, request.fund_template_id)
+            if not template_fund:
+                raise HTTPException(status_code=404, detail=f"Template fund {request.fund_template_id} not found")
+        
+        # Convert combinations to dict format
+        combinations = [
+            {
+                "strategy_id": combo.strategy_id,
+                "strategy_config": combo.strategy_config,
+                "screening_criteria_id": combo.screening_criteria_id,
+            }
+            for combo in request.combinations
+        ]
+        
+        # Run multi-strategy backtest
+        coordinator = BacktestCoordinator()
+        result = await coordinator.run_multi_strategy_backtest(
+            template_fund_id=request.fund_template_id,
+            backtest_date=backtest_date,
+            combinations=combinations
+        )
+        
+        return result
+    
+    except ValueError as e:
+        logger.error(f"Validation error running multi-strategy backtest: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error running multi-strategy backtest: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to run multi-strategy backtest: {str(e)}")
 
 
 @router.get("")

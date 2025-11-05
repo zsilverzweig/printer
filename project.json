@@ -101,7 +101,104 @@
         "command": "docker-compose up --build --force-recreate",
         "cwd": "{workspaceRoot}"
       },
-      "description": "Rebuild and restart all Docker services (force recreate containers)"
+      "description": "Rebuild and restart all Docker services (uses cache, force recreate containers)"
+    },
+    "docker:rebuild:force": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "docker-compose build --no-cache && docker-compose up --force-recreate",
+        "cwd": "{workspaceRoot}"
+      },
+      "description": "Force rebuild all Docker services (no cache)"
+    },
+    "rebuild": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "docker-compose build $SERVICE && docker-compose up -d $SERVICE",
+        "cwd": "{workspaceRoot}",
+        "env": {
+          "SERVICE": "${SERVICE:-}"
+        }
+      },
+      "description": "Rebuild a specific Docker service with cache (usage: SERVICE=web nx rebuild printer)"
+    },
+    "rebuild:web": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": ["docker-compose build web", "docker-compose up -d web"],
+        "cwd": "{workspaceRoot}",
+        "parallel": false
+      },
+      "description": "Rebuild and restart the web service (uses cache if package.json unchanged)"
+    },
+    "rebuild:web:force": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": [
+          "docker-compose build --no-cache web",
+          "docker-compose up -d web"
+        ],
+        "cwd": "{workspaceRoot}",
+        "parallel": false
+      },
+      "description": "Force rebuild web service (no cache)"
+    },
+    "install:web": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "docker-compose exec -T web npm install",
+        "cwd": "{workspaceRoot}"
+      },
+      "description": "Install new npm packages in running web container (fast - no rebuild needed)"
+    },
+    "rebuild:server": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": [
+          "docker-compose build server",
+          "docker-compose up -d server"
+        ],
+        "cwd": "{workspaceRoot}",
+        "parallel": false
+      },
+      "description": "Rebuild and restart the server service (uses cache if requirements.txt unchanged)"
+    },
+    "rebuild:server:force": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": [
+          "docker-compose build --no-cache server",
+          "docker-compose up -d server"
+        ],
+        "cwd": "{workspaceRoot}",
+        "parallel": false
+      },
+      "description": "Force rebuild server service (no cache)"
+    },
+    "rebuild:db": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": ["docker-compose build db", "docker-compose up -d db"],
+        "cwd": "{workspaceRoot}",
+        "parallel": false
+      },
+      "description": "Rebuild and restart the database service"
+    },
+    "up": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "docker-compose up -d",
+        "cwd": "{workspaceRoot}"
+      },
+      "description": "Start all Docker services (shorthand for docker:up:detached)"
+    },
+    "down": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "docker-compose down",
+        "cwd": "{workspaceRoot}"
+      },
+      "description": "Stop all Docker services (shorthand for docker:down)"
     }
   }
 }

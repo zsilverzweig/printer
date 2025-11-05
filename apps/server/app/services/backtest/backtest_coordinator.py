@@ -36,6 +36,96 @@ from app.services.events.event_service import event_service
 logger = logging.getLogger(__name__)
 
 
+async def create_backtest_fund_from_template(
+    template_fund: Fund,
+    strategy_id: str,
+    strategy_config: dict,
+    screening_criteria_id: Optional[str],
+    parent_run_id: str,
+    combo_index: int
+) -> str:
+    """
+    Create a temporary backtest fund from a template fund.
+    
+    Args:
+        template_fund: The fund template to copy from
+        strategy_id: Strategy ID for this combination
+        strategy_config: Strategy configuration
+        screening_criteria_id: Screening criteria ID for this combination
+        parent_run_id: Parent run ID for grouping
+        combo_index: Index of this combination in the run
+        
+    Returns:
+        Created fund ID
+    """
+    fund_id = str(uuid.uuid4())
+    
+    # Get screening criteria name if exists
+    screening_criteria_name = None
+    if screening_criteria_id:
+        async with get_async_session() as session:
+            criteria = await session.get(ScreeningCriteria, screening_criteria_id)
+            if criteria:
+                screening_criteria_name = criteria.name
+    
+    # Create fund name
+    fund_name = f"{template_fund.name}_backtest_{parent_run_id[:8]}_{strategy_id}_{combo_index}"
+    
+    # Default values for backtest funds
+    DEFAULT_BALANCE = 10000.0  # $10k default starting balance
+    DEFAULT_SIZE_PER_TRADE = 500.0  # $500 per trade (5% of $10k)
+    DEFAULT_TRADING_START = "09:30"
+    DEFAULT_TRADING_END = "16:00"
+    DEFAULT_TIMEZONE = "America/New_York"
+    
+    # Use template's balance if > 0, otherwise use default
+    initial_balance = template_fund.balance if template_fund.balance > 0 else DEFAULT_BALANCE
+    
+    # Use template's size_per_trade if set, otherwise use default
+    # Note: size_per_trade is now an override, so None means use default
+    size_per_trade = template_fund.size_per_trade if template_fund.size_per_trade is not None else DEFAULT_SIZE_PER_TRADE
+    
+    # Use template's trading hours if set, otherwise use defaults
+    trading_start_time = template_fund.trading_start_time or DEFAULT_TRADING_START
+    trading_end_time = template_fund.trading_end_time or DEFAULT_TRADING_END
+    timezone = template_fund.timezone or DEFAULT_TIMEZONE
+    
+    async with get_async_session() as session:
+        backtest_fund = Fund(
+            id=fund_id,
+            name=fund_name,
+            description=f"Backtest fund for {template_fund.name}",
+            mode=template_fund.mode,
+            balance=initial_balance,  # Use default if template has no balance
+            status="paused",  # Must be paused for backtests
+            archived=True,  # Hide from normal fund lists
+            icon=template_fund.icon,
+            icon_color=template_fund.icon_color,
+            strategy_id=strategy_id,
+            strategy_config=strategy_config,
+            screening_criteria_id=screening_criteria_id,
+            max_loss_percent=template_fund.max_loss_percent,
+            max_loss_dollars=template_fund.max_loss_dollars,
+            max_giveback_percent=template_fund.max_giveback_percent,
+            max_order_age_seconds=template_fund.max_order_age_seconds,
+            size_per_trade=size_per_trade,
+            min_bet_percent=template_fund.min_bet_percent,
+            max_bet_percent=template_fund.max_bet_percent,
+            max_total_exposure=template_fund.max_total_exposure,
+            trading_start_time=trading_start_time,
+            trading_end_time=trading_end_time,
+            timezone=timezone,
+        )
+        session.add(backtest_fund)
+        await session.commit()
+        
+        logger.info(
+            f"Created backtest fund: {fund_id} ({fund_name}) "
+            f"with balance=${initial_balance:,.2f}, size_per_trade=${size_per_trade:,.2f}"
+        )
+        return fund_id
+
+
 class BacktestCoordinator:
     """
     Orchestrates backtest execution for a fund.
@@ -164,6 +254,164 @@ class BacktestCoordinator:
         finally:
             # Always clear backtest context
             clear_backtest_context()
+    
+    async def run_multi_strategy_backtest(
+        self,
+        template_fund_id: str,
+        backtest_date: date,
+        combinations: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """
+        Run backtests for multiple strategy/screener combinations on the same day.
+        
+        Each combination:
+        - Gets its own temporary backtest fund (created from template)
+        - Runs independently with the same starting balance
+        - Results are linked via parent_run_id
+        
+        Args:
+            template_fund_id: Fund template to use as base configuration
+            backtest_date: Trading day to simulate
+            combinations: List of dicts with keys:
+                - strategy_id: str
+                - strategy_config: dict (optional)
+                - screening_criteria_id: Optional[str]
+                
+        Returns:
+            Dict with:
+                - parent_run_id: str
+                - backtests: List of backtest results
+                - summary: Aggregated statistics
+        """
+        parent_run_id = str(uuid.uuid4())
+        backtest_results = []
+        backtest_fund_ids = []
+        
+        try:
+            # Get template fund
+            async with get_async_session() as session:
+                template_fund = await session.get(Fund, template_fund_id)
+                if not template_fund:
+                    raise ValueError(f"Template fund {template_fund_id} not found")
+                
+                # Validate template is paused
+                if template_fund.status == 'active':
+                    raise ValueError(f"Cannot backtest while template fund is active. Please pause fund first.")
+            
+            logger.info(
+                f"🚀 [MULTI-BT:{parent_run_id[:8]}] Starting multi-strategy backtest for {template_fund.name} "
+                f"on {backtest_date} with {len(combinations)} combinations"
+            )
+            
+            # Run each combination
+            for idx, combo in enumerate(combinations):
+                strategy_id = combo.get("strategy_id")
+                strategy_config = combo.get("strategy_config", {})
+                screening_criteria_id = combo.get("screening_criteria_id")
+                
+                if not strategy_id:
+                    logger.warning(f"Skipping combination {idx}: missing strategy_id")
+                    continue
+                
+                try:
+                    logger.info(
+                        f"[MULTI-BT:{parent_run_id[:8]}] Running combination {idx+1}/{len(combinations)}: "
+                        f"strategy={strategy_id}, screener={screening_criteria_id}"
+                    )
+                    
+                    # Create temporary backtest fund
+                    backtest_fund_id = await create_backtest_fund_from_template(
+                        template_fund=template_fund,
+                        strategy_id=strategy_id,
+                        strategy_config=strategy_config,
+                        screening_criteria_id=screening_criteria_id,
+                        parent_run_id=parent_run_id,
+                        combo_index=idx
+                    )
+                    backtest_fund_ids.append(backtest_fund_id)
+                    
+                    # Run backtest
+                    backtest_id = await self.run_backtest(backtest_fund_id, backtest_date)
+                    
+                    # Update backtest metadata with parent_run_id
+                    async with get_async_session() as session:
+                        backtest = await session.get(Backtest, backtest_id)
+                        if backtest:
+                            backtest.backtest_metadata = backtest.backtest_metadata or {}
+                            backtest.backtest_metadata["parent_run_id"] = parent_run_id
+                            backtest.backtest_metadata["combo_index"] = idx
+                            backtest.backtest_metadata["strategy_id"] = strategy_id
+                            backtest.backtest_metadata["screening_criteria_id"] = screening_criteria_id
+                            await session.commit()
+                            
+                            # Get serialized backtest
+                            backtest_results.append({
+                                "backtest_id": backtest_id,
+                                "fund_id": backtest_fund_id,
+                                "strategy_id": strategy_id,
+                                "screening_criteria_id": screening_criteria_id,
+                                "status": backtest.status,
+                                "starting_balance": backtest.starting_balance,
+                                "ending_balance": backtest.ending_balance,
+                                "total_pnl": backtest.total_pnl,
+                                "total_pnl_percent": backtest.total_pnl_percent,
+                                "total_trades": backtest.total_trades,
+                                "winning_trades": backtest.winning_trades,
+                                "losing_trades": backtest.losing_trades,
+                            })
+                    
+                    logger.info(
+                        f"[MULTI-BT:{parent_run_id[:8]}] ✅ Combination {idx+1} completed: "
+                        f"backtest_id={backtest_id[:8]}, P&L={backtest.total_pnl_percent:+.2f}%"
+                    )
+                    
+                except Exception as e:
+                    logger.error(
+                        f"[MULTI-BT:{parent_run_id[:8]}] ❌ Combination {idx+1} failed: {e}",
+                        exc_info=True
+                    )
+                    # Continue with other combinations
+                    backtest_results.append({
+                        "backtest_id": None,
+                        "fund_id": None,
+                        "strategy_id": strategy_id,
+                        "screening_criteria_id": screening_criteria_id,
+                        "status": "failed",
+                        "error": str(e),
+                    })
+            
+            # Calculate summary statistics
+            successful_backtests = [r for r in backtest_results if r.get("status") == "completed"]
+            total_pnl = sum(r.get("total_pnl", 0) for r in successful_backtests)
+            total_trades = sum(r.get("total_trades", 0) for r in successful_backtests)
+            winning_trades = sum(r.get("winning_trades", 0) for r in successful_backtests)
+            
+            summary = {
+                "total_combinations": len(combinations),
+                "successful": len(successful_backtests),
+                "failed": len(backtest_results) - len(successful_backtests),
+                "total_pnl": total_pnl,
+                "total_trades": total_trades,
+                "winning_trades": winning_trades,
+                "losing_trades": sum(r.get("losing_trades", 0) for r in successful_backtests),
+                "win_rate": (winning_trades / total_trades * 100) if total_trades > 0 else 0,
+            }
+            
+            logger.info(
+                f"✅ [MULTI-BT:{parent_run_id[:8]}] Multi-strategy backtest complete: "
+                f"{summary['successful']}/{summary['total_combinations']} successful, "
+                f"Total P&L: ${total_pnl:+.2f}"
+            )
+            
+            return {
+                "parent_run_id": parent_run_id,
+                "backtests": backtest_results,
+                "summary": summary,
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Multi-strategy backtest {parent_run_id} failed: {e}", exc_info=True)
+            raise
     
     async def _ensure_data_available(
         self,
@@ -295,7 +543,17 @@ class BacktestCoordinator:
                 end_time,
                 MONITORING_INTERVAL_MINUTES=5
             )
-            logger.info(f"✅ Pre-computed {len(screener_cache)} screener results")
+            total_tickers_in_cache = sum(len(tickers) for tickers in screener_cache.values())
+            logger.info(
+                f"✅ Pre-computed {len(screener_cache)} screener results "
+                f"with {total_tickers_in_cache} total ticker entries "
+                f"(avg {total_tickers_in_cache/len(screener_cache) if screener_cache else 0:.1f} tickers per iteration)"
+            )
+            
+            if not fund.screening_criteria_id:
+                logger.warning(f"[BT:{backtest_id[:8]}] ⚠️  Fund has no screening_criteria_id - strategy will not receive any tickers!")
+            elif total_tickers_in_cache == 0:
+                logger.warning(f"[BT:{backtest_id[:8]}] ⚠️  Screener returned 0 tickers for entire day! Check screener criteria and data availability.")
             
             current_time = start_time
             minute_count = 0
@@ -360,12 +618,13 @@ class BacktestCoordinator:
                                         
                                         if results:
                                             tickers = [r.get('ticker') or r.get('symbol') for r in results[:10]]  # Limit to top 10
-                                            logger.info(f"📋 Historical screener found {len(tickers)} tickers at {current_time.strftime('%H:%M')}: {tickers}")
+                                            logger.info(f"[BT:{backtest_id[:8]}] 📋 Historical screener found {len(tickers)} tickers at {current_time.strftime('%H:%M')}: {tickers}")
                                             # Cache for future use
                                             screener_cache[cache_key] = tickers
                                         else:
-                                            logger.debug(f"📋 Historical screener found no results at {current_time.strftime('%H:%M')}")
+                                            logger.info(f"[BT:{backtest_id[:8]}] 📋 Historical screener found no results at {current_time.strftime('%H:%M')}")
                                             screener_cache[cache_key] = []
+                                        logger.info(f"[BT:{backtest_id[:8]}] 📊 Screener returned {len(tickers)} tickers for iteration {iteration_count}")
                                     else:
                                         logger.warning(f"Screening criteria {fund.screening_criteria_id} not found or empty")
                             except Exception as e:
@@ -373,11 +632,17 @@ class BacktestCoordinator:
                         
                         if not tickers:
                             # No screener results, skip this iteration
-                            logger.debug("No tickers to analyze, skipping iteration")
+                            logger.warning(f"[BT:{backtest_id[:8]}] ⚠️  No tickers from screener at {current_time.strftime('%H:%M')}, skipping iteration")
                         else:
+                            logger.info(f"[BT:{backtest_id[:8]}] 📋 Analyzing {len(tickers)} tickers from screener: {tickers[:5]}{'...' if len(tickers) > 5 else ''}")
+                            entry_signals_found = 0
                             # Run entry analysis for each ticker
+                            if not tickers:
+                                logger.warning(f"[BT:{backtest_id[:8]}] ⚠️  No tickers to process for iteration {iteration_count}")
+                            
                             for ticker in tickers:
                                 try:
+                                    logger.debug(f"[BT:{backtest_id[:8]}] 📊 Analyzing {ticker} for entry signal")
                                     # Get market data snapshot
                                     market_data = await market_data_provider.build_market_data(ticker)
                                     
@@ -385,35 +650,58 @@ class BacktestCoordinator:
                                     entry_level = await execution_strategy.analyze_entry(ticker, market_data)
                                     
                                     if entry_level:
-                                        logger.info(f"📊 {ticker}: Entry signal at ${entry_level.entry_price:.2f}, stop=${entry_level.stop_loss:.2f}")
+                                        entry_signals_found += 1
+                                        logger.info(f"[BT:{backtest_id[:8]}] 📊 {ticker}: Entry signal at ${entry_level.entry_price:.2f}, stop=${entry_level.stop_loss:.2f}")
                                         
                                         # For backtest, immediately execute market orders
                                         # (In live mode, we'd persist levels and wait for triggers)
                                         if entry_level.order_type == "market":
                                             # Calculate position size
-                                            position_size = fund.size_per_trade / entry_level.entry_price
+                                            # Use fund override if set, otherwise use default
+                                            effective_size = fund.size_per_trade if fund.size_per_trade is not None else DEFAULT_SIZE_PER_TRADE
+                                            position_size = effective_size / entry_level.entry_price
+                                            
+                                            # Check if we have enough cash
+                                            if backtest_balance < effective_size:
+                                                logger.warning(f"[BT:{backtest_id[:8]}] ⚠️  Insufficient balance (${backtest_balance:.2f}) for trade (${effective_size:.2f}), skipping")
+                                                continue
                                             
                                             # Submit order via backtest wrapper
-                                            logger.info(f"🎯 Submitting buy order: {position_size:.2f} shares of {ticker}")
-                                            order_result = await alpaca_wrapper.submit_order(
-                                                symbol=ticker,
-                                                qty=position_size,
-                                                side='buy',
-                                                order_type='market'
-                                            )
-                                            logger.info(f"✅ Order submitted: {order_result['id']}")
+                                            logger.info(f"[BT:{backtest_id[:8]}] 🎯 Submitting buy order: {position_size:.2f} shares of {ticker} @ ${entry_level.entry_price:.2f} (${effective_size:.2f})")
+                                            try:
+                                                order_result = await alpaca_wrapper.submit_order(
+                                                    symbol=ticker,
+                                                    qty=position_size,
+                                                    side='buy',
+                                                    order_type='market'
+                                                )
+                                                logger.info(f"[BT:{backtest_id[:8]}] ✅ Order submitted: {order_result['id']}")
+                                            except Exception as order_error:
+                                                logger.error(
+                                                    f"[BT:{backtest_id[:8]}] ❌ Failed to submit order for {ticker}: {order_error}",
+                                                    exc_info=True
+                                                )
+                                                # Continue with other tickers even if one fails
+                                                continue
+                                    else:
+                                        logger.debug(f"[BT:{backtest_id[:8]}] ❌ {ticker}: No entry signal from strategy")
                                 
                                 except ValueError as e:
                                     # Expected: No bar data for low-volume stocks
                                     if "No bar data available" in str(e):
                                         # Silent skip - this is normal for low-volume stocks
-                                        pass
+                                        logger.debug(f"[BT:{backtest_id[:8]}] ⚠️  {ticker}: No bar data available (skipping)")
                                     else:
-                                        logger.error(f"Error analyzing {ticker}: {e}", exc_info=True)
+                                        logger.error(f"[BT:{backtest_id[:8]}] ❌ Error analyzing {ticker}: {e}", exc_info=True)
                                     continue
                                 except Exception as e:
-                                    logger.error(f"Error analyzing {ticker}: {e}", exc_info=True)
+                                    logger.error(f"[BT:{backtest_id[:8]}] ❌ Error analyzing {ticker}: {e}", exc_info=True)
                                     continue
+                            
+                            if entry_signals_found > 0:
+                                logger.info(f"[BT:{backtest_id[:8]}] ✅ Found {entry_signals_found} entry signal(s) from {len(tickers)} tickers")
+                            else:
+                                logger.debug(f"[BT:{backtest_id[:8]}] ℹ️  No entry signals from {len(tickers)} tickers at this iteration")
                         
                         # Update position management for open positions
                         active_positions = strategy_engine._position_cache

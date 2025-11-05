@@ -151,6 +151,8 @@ async def run_screener_with_inline_criteria(
         asset_types = criteria.asset_types
         market_cap_min = criteria.market_cap_min
         market_cap_max = criteria.market_cap_max
+        float_min = criteria.float_min
+        float_max = criteria.float_max
         order_by = criteria.order_by or "rv14"
         limit = criteria.limit or 200
         
@@ -198,7 +200,9 @@ async def run_screener_with_inline_criteria(
                     exclude_etfs=exclude_etfs,
                     asset_types=asset_types,
                     market_cap_min=market_cap_min,
-                    market_cap_max=market_cap_max
+                    market_cap_max=market_cap_max,
+                    float_min=float_min,
+                    float_max=float_max
                 )
             else:
                 # Historical mode: query TimescaleDB
@@ -220,7 +224,9 @@ async def run_screener_with_inline_criteria(
                     exclude_etfs=exclude_etfs,
                     asset_types=asset_types,
                     market_cap_min=market_cap_min,
-                    market_cap_max=market_cap_max
+                    market_cap_max=market_cap_max,
+                    float_min=float_min,
+                    float_max=float_max
                 )
                 
                 logger.info(f"[ENDPOINT] compute_historical returned {len(results)} results")
@@ -324,6 +330,8 @@ async def run_screener_with_criteria(
         asset_types = params.asset_types
         market_cap_min = params.market_cap_min
         market_cap_max = params.market_cap_max
+        float_min = params.float_min
+        float_max = params.float_max
         order_by = params.order_by or "rv14"
         limit = params.limit or 200
         min_relative_volume = params.min_relative_volume
@@ -365,7 +373,9 @@ async def run_screener_with_criteria(
                     exclude_etfs=exclude_etfs,
                     asset_types=asset_types,
                     market_cap_min=market_cap_min,
-                    market_cap_max=market_cap_max
+                    market_cap_max=market_cap_max,
+                    float_min=float_min,
+                    float_max=float_max
                 )
             else:
                 # Historical mode: query TimescaleDB
@@ -385,7 +395,9 @@ async def run_screener_with_criteria(
                     exclude_etfs=exclude_etfs,
                     asset_types=asset_types,
                     market_cap_min=market_cap_min,
-                    market_cap_max=market_cap_max
+                    market_cap_max=market_cap_max,
+                    float_min=float_min,
+                    float_max=float_max
                 )
         else:
             # Live mode: use same code path as strategy engine

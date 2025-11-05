@@ -973,6 +973,181 @@ class MarketDataService:
             "trade_count": int(bar.trade_count) if bar.trade_count else None,
         }
     
+    async def get_technical_indicators(
+        self,
+        symbol: str,
+        timescale: str = "1min",
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None,
+        lookback_minutes: int = 60
+    ) -> List[Dict[str, Any]]:
+        """
+        Get pre-calculated technical indicators for a symbol.
+        
+        Falls back to on-the-fly calculation if pre-computed data is missing.
+        
+        Args:
+            symbol: Stock ticker symbol
+            timescale: Bar granularity ("1min", "5min", "15min")
+            start_time: Optional explicit start time
+            end_time: Optional explicit end time (defaults to now)
+            lookback_minutes: How far back to fetch (ignored if start_time provided)
+        
+        Returns:
+            List of indicator dicts with keys: time, ema_12, ema_26, vwap, macd_line,
+            macd_signal, macd_histogram, rsi_14, atr_14
+        """
+        # Calculate time window
+        if end_time is None:
+            end_time = get_current_time()
+            if end_time.tzinfo is None:
+                end_time = end_time.replace(tzinfo=timezone.utc)
+        if start_time is None:
+            start_time = end_time - timedelta(minutes=lookback_minutes)
+        
+        try:
+            async with get_async_session() as session:
+                # Try to fetch from pre-computed table
+                result = await session.execute(text("""
+                    SELECT 
+                        time,
+                        ema_12,
+                        ema_26,
+                        vwap,
+                        macd_line,
+                        macd_signal,
+                        macd_histogram,
+                        rsi_14,
+                        atr_14
+                    FROM technical_indicators
+                    WHERE symbol = :symbol
+                      AND timescale = :timescale
+                      AND time >= :start_time
+                      AND time <= :end_time
+                    ORDER BY time ASC;
+                """), {
+                    "symbol": symbol,
+                    "timescale": timescale,
+                    "start_time": start_time,
+                    "end_time": end_time
+                })
+                
+                rows = result.fetchall()
+                
+                if rows and len(rows) > 0:
+                    # Return pre-computed indicators
+                    indicators = []
+                    for row in rows:
+                        indicators.append({
+                            "time": row[0],
+                            "ema_12": float(row[1]) if row[1] is not None else None,
+                            "ema_26": float(row[2]) if row[2] is not None else None,
+                            "vwap": float(row[3]) if row[3] is not None else None,
+                            "macd_line": float(row[4]) if row[4] is not None else None,
+                            "macd_signal": float(row[5]) if row[5] is not None else None,
+                            "macd_histogram": float(row[6]) if row[6] is not None else None,
+                            "rsi_14": float(row[7]) if row[7] is not None else None,
+                            "atr_14": float(row[8]) if row[8] is not None else None,
+                        })
+                    
+                    logger.debug(f"Retrieved {len(indicators)} pre-computed indicators for {symbol}")
+                    return indicators
+                
+                # Fallback to on-the-fly calculation
+                logger.debug(f"No pre-computed indicators found for {symbol}, calculating on-the-fly")
+                bars = await self.get_bars(symbol, timeframe=timescale, start_time=start_time, end_time=end_time)
+                
+                if not bars:
+                    return []
+                
+                # Calculate indicators
+                from app.lib.technical_analysis import (
+                    calculate_ema,
+                    calculate_vwap,
+                    calculate_macd,
+                    calculate_rsi,
+                    average_true_range
+                )
+                
+                ema_12_values = calculate_ema(bars, period=12, price_key="close")
+                ema_26_values = calculate_ema(bars, period=26, price_key="close")
+                vwap_values = calculate_vwap(bars, reset_daily=True)
+                macd_results = calculate_macd(bars, fast_period=12, slow_period=26, signal_period=9)
+                rsi_values = calculate_rsi(bars, period=14, price_key="close")
+                
+                # Calculate ATR
+                atr_values = []
+                for i in range(len(bars)):
+                    if i >= 14:
+                        atr = average_true_range(bars[:i+1], period=14)
+                        atr_values.append(atr)
+                    else:
+                        atr_values.append(None)
+                
+                # Combine into indicator dicts
+                indicators = []
+                for i, bar in enumerate(bars):
+                    indicators.append({
+                        "time": bar["timestamp"],
+                        "ema_12": ema_12_values[i] if i < len(ema_12_values) else None,
+                        "ema_26": ema_26_values[i] if i < len(ema_26_values) else None,
+                        "vwap": vwap_values[i] if i < len(vwap_values) else None,
+                        "macd_line": macd_results["macd"][i] if i < len(macd_results["macd"]) else None,
+                        "macd_signal": macd_results["signal"][i] if i < len(macd_results["signal"]) else None,
+                        "macd_histogram": macd_results["histogram"][i] if i < len(macd_results["histogram"]) else None,
+                        "rsi_14": rsi_values[i] if i < len(rsi_values) else None,
+                        "atr_14": atr_values[i] if i < len(atr_values) else None,
+                    })
+                
+                return indicators
+                
+        except Exception as e:
+            logger.error(f"Error getting technical indicators for {symbol}: {e}", exc_info=True)
+            return []
+    
+    async def get_indicators_batch(
+        self,
+        symbols: List[str],
+        timescale: str = "1min",
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None,
+        lookback_minutes: int = 60
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Get pre-calculated technical indicators for multiple symbols.
+        
+        Args:
+            symbols: List of stock ticker symbols
+            timescale: Bar granularity ("1min", "5min", "15min")
+            start_time: Optional explicit start time
+            end_time: Optional explicit end time (defaults to now)
+            lookback_minutes: How far back to fetch (ignored if start_time provided)
+        
+        Returns:
+            Dict mapping symbol to list of indicator dicts
+        """
+        results = {}
+        
+        # Process in parallel for better performance
+        tasks = [
+            self.get_technical_indicators(
+                symbol, timescale=timescale, start_time=start_time,
+                end_time=end_time, lookback_minutes=lookback_minutes
+            )
+            for symbol in symbols
+        ]
+        
+        indicator_lists = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        for symbol, indicators in zip(symbols, indicator_lists):
+            if isinstance(indicators, Exception):
+                logger.error(f"Error getting indicators for {symbol}: {indicators}")
+                results[symbol] = []
+            else:
+                results[symbol] = indicators
+        
+        return results
+    
     def get_metrics(self) -> Dict[str, Any]:
         """
         Get service performance metrics.

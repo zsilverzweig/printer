@@ -1,7 +1,7 @@
 """add backtest support
 
-Revision ID: 20251104_055008
-Revises: 
+Revision ID: 029
+Revises: 028
 Create Date: 2025-11-04 05:50:08
 
 """
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision: str = '20251104_055008'
+revision: str = '029'
 down_revision: Union[str, None] = '028'  # Previous migration: add_trade_model
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None

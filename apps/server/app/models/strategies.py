@@ -59,10 +59,10 @@ class Fund(Base):
     max_loss_percent: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
     max_loss_dollars: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
     max_giveback_percent: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
-    max_order_age_seconds: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, default=60)
+    max_order_age_seconds: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, default=None)
     
     # Position sizing
-    size_per_trade: Mapped[float] = mapped_column(Float, nullable=False, default=1000.0)
+    size_per_trade: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
     min_bet_percent: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
     max_bet_percent: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
     max_total_exposure: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
@@ -331,6 +331,43 @@ class AICost(Base):
         DateTime, 
         nullable=False, 
         default=datetime.utcnow
+    )
+
+
+class DefaultRiskSettings(Base):
+    """
+    Default risk management settings for all funds.
+    
+    Provides default values that apply to all funds unless overridden by fund-specific settings.
+    There should only be one record in this table (singleton pattern).
+    """
+    __tablename__ = "default_risk_settings"
+    
+    # Singleton - only one record with id = 'default'
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default='default')
+    
+    # Risk parameters (nullable - None means no limit)
+    max_loss_percent: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
+    max_loss_dollars: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
+    max_giveback_percent: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
+    max_order_age_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=60)
+    
+    # Position sizing
+    size_per_trade: Mapped[float] = mapped_column(Float, nullable=False, default=1000.0)
+    min_bet_percent: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
+    max_bet_percent: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
+    max_total_exposure: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
+    
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, 
+        nullable=False, 
+        default=datetime.utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, 
+        nullable=False, 
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow
     )
 
 

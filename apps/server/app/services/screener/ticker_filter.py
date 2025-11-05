@@ -26,11 +26,15 @@ class FilterCriteria:
         asset_types: Optional[List[str]] = None,
         market_cap_min: Optional[int] = None,
         market_cap_max: Optional[int] = None,
+        float_min: Optional[int] = None,
+        float_max: Optional[int] = None,
         sic_codes: Optional[List[str]] = None,
     ):
         self.asset_types = asset_types or []
         self.market_cap_min = market_cap_min
         self.market_cap_max = market_cap_max
+        self.float_min = float_min
+        self.float_max = float_max
         self.sic_codes = sic_codes or []
 
 
@@ -54,10 +58,12 @@ async def get_filtered_tickers(criteria: FilterCriteria) -> List[str]:
         >>> print(tickers)  # ['AAPL', 'GOOGL', ...]
     """
     logger.info(
-        "Filtering tickers: asset_types=%s, market_cap=(%s, %s), sic_codes=%s",
+        "Filtering tickers: asset_types=%s, market_cap=(%s, %s), float=(%s, %s), sic_codes=%s",
         criteria.asset_types,
         criteria.market_cap_min,
         criteria.market_cap_max,
+        criteria.float_min,
+        criteria.float_max,
         criteria.sic_codes
     )
     
@@ -74,6 +80,12 @@ async def get_filtered_tickers(criteria: FilterCriteria) -> List[str]:
             conditions.append(TickerDetails.market_cap >= criteria.market_cap_min)
         if criteria.market_cap_max is not None:
             conditions.append(TickerDetails.market_cap <= criteria.market_cap_max)
+        
+        # Filter by public float range
+        if criteria.float_min is not None:
+            conditions.append(TickerDetails.public_float >= criteria.float_min)
+        if criteria.float_max is not None:
+            conditions.append(TickerDetails.public_float <= criteria.float_max)
         
         # Filter by SIC codes (industry)
         if criteria.sic_codes:

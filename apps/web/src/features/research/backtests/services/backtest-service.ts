@@ -9,6 +9,8 @@ import type {
   BacktestListResponse,
   BacktestOrdersResponse,
   BacktestTradesResponse,
+  MultiStrategyBacktestRequest,
+  MultiStrategyBacktestResponse,
   RunBacktestRequest,
 } from "../types";
 
@@ -27,7 +29,8 @@ function parseBacktest(data: any): Backtest {
     strategyId: data.strategy_id ?? data.strategyId,
     strategyConfig: data.strategy_config ?? data.strategyConfig,
     screeningCriteriaId: data.screening_criteria_id ?? data.screeningCriteriaId,
-    screeningCriteriaName: data.screening_criteria_name ?? data.screeningCriteriaName,
+    screeningCriteriaName:
+      data.screening_criteria_name ?? data.screeningCriteriaName,
     startingBalance: Number(data.starting_balance ?? data.startingBalance ?? 0),
     endingBalance: data.ending_balance ?? data.endingBalance,
     totalPnl: data.total_pnl ?? data.totalPnl,
@@ -189,6 +192,41 @@ export const backtestService = {
         status: t.status,
       })),
       total: data.total ?? data.trades.length,
+    };
+  },
+
+  /**
+   * Run multi-strategy backtest
+   */
+  async runMultiStrategyBacktest(
+    request: MultiStrategyBacktestRequest
+  ): Promise<MultiStrategyBacktestResponse> {
+    const response = await fetch(`${API_BASE}/api/backtests/run-multi`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        fund_template_id: request.fundTemplateId,
+        date: request.date,
+        combinations: request.combinations.map((c) => ({
+          strategy_id: c.strategyId,
+          strategy_config: c.strategyConfig || {},
+          screening_criteria_id: c.screeningCriteriaId || null,
+        })),
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || "Failed to run multi-strategy backtest");
+    }
+
+    const data = await response.json();
+    return {
+      parentRunId: data.parent_run_id ?? data.parentRunId,
+      backtests: data.backtests || [],
+      summary: data.summary || {},
     };
   },
 };

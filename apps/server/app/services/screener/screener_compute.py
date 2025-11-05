@@ -37,6 +37,8 @@ class ScreenerCompute:
         asset_types: Optional[List[str]] = None,
         market_cap_min: Optional[int] = None,
         market_cap_max: Optional[int] = None,
+        float_min: Optional[int] = None,
+        float_max: Optional[int] = None,
     ) -> List[dict]:
         """Compute filtered and sorted screener results from market snapshots.
 
@@ -55,6 +57,8 @@ class ScreenerCompute:
             asset_types: Optional list of asset types to include (e.g., ["CS", "ETF"])
             market_cap_min: Minimum market cap filter (in dollars)
             market_cap_max: Maximum market cap filter (in dollars)
+            float_min: Minimum public float filter (in dollars)
+            float_max: Maximum public float filter (in dollars)
 
         Returns:
             List of screener result dictionaries
@@ -133,31 +137,35 @@ class ScreenerCompute:
             else set(price_map.keys())
         )
 
-        # Apply market cap filtering if specified
-        if market_cap_min is not None or market_cap_max is not None:
+        # Apply database filtering if specified (market cap, float, asset types)
+        if market_cap_min is not None or market_cap_max is not None or float_min is not None or float_max is not None:
             from app.services.screener.ticker_filter import get_filtered_tickers, FilterCriteria
 
             self.logger.info(
-                "Applying market cap filter: min=%s, max=%s",
+                "Applying database filters: market_cap=(%s, %s), float=(%s, %s)",
                 market_cap_min,
-                market_cap_max
+                market_cap_max,
+                float_min,
+                float_max
             )
 
             criteria = FilterCriteria(
                 asset_types=asset_types if asset_types else None,
                 market_cap_min=market_cap_min,
                 market_cap_max=market_cap_max,
+                float_min=float_min,
+                float_max=float_max,
             )
 
             allowed_tickers = await get_filtered_tickers(criteria)
             allowed_tickers_set = set(allowed_tickers)
 
-            # Filter tickers_to_process to only include those that meet market cap criteria
+            # Filter tickers_to_process to only include those that meet database criteria
             original_count = len(tickers_to_process)
             tickers_to_process = tickers_to_process & allowed_tickers_set
 
             self.logger.info(
-                "Market cap filter reduced tickers from %d to %d",
+                "Database filters reduced tickers from %d to %d",
                 original_count,
                 len(tickers_to_process)
             )
