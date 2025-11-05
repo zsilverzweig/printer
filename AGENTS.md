@@ -156,3 +156,74 @@ This ensures that:
 - In live mode: Returns real current time
 - In backtest mode: Returns the simulated backtest time
 - Services can work correctly in both contexts without modification
+
+## Datetime Timezone Consistency
+
+**CRITICAL: We are moving to timezone-aware UTC datetimes everywhere**
+
+### Standard Practice
+
+- ✅ **ALWAYS** use `get_current_time()` which returns `datetime.now(timezone.utc)` (timezone-aware)
+- ✅ **ALWAYS** use timezone-aware datetimes for all business logic
+- ✅ **ALWAYS** use `DateTime(timezone=True)` in database models that need timezone awareness
+- ❌ **NEVER** use `datetime.utcnow()` (returns timezone-naive)
+- ❌ **NEVER** use `datetime.now()` without timezone parameter
+
+### Model Defaults
+
+For database models:
+
+- **Timezone-aware columns** (`DateTime(timezone=True)`): Use `utcnow_aware()` helper function
+
+  ```python
+  def utcnow_aware() -> datetime:
+      return datetime.now(timezone.utc)
+
+  created_at: Mapped[datetime] = mapped_column(
+      DateTime(timezone=True),
+      default=utcnow_aware
+  )
+  ```
+
+- **Timezone-naive columns** (`DateTime` without timezone): Use `utcnow_naive()` helper function
+
+  ```python
+  def utcnow_naive() -> datetime:
+      return datetime.utcnow()
+
+  created_at: Mapped[datetime] = mapped_column(
+      DateTime,  # TIMESTAMP WITHOUT TIME ZONE
+      default=utcnow_naive
+  )
+  ```
+
+**Note**: The Event model (`app.models.events`) has been migrated to use `DateTime(timezone=True)` as of migration 038. All datetime columns are now timezone-aware.
+
+### Common Patterns
+
+```python
+from app.services.core.time_context import get_current_time
+
+# ✅ Getting current time
+now = get_current_time()  # Returns timezone-aware UTC datetime
+
+# ✅ Comparing times (both must be timezone-aware)
+if get_current_time() > order.submitted_at:
+    # order.submitted_at is timezone-aware from DB
+    pass
+
+# ✅ Calculating time differences
+age_seconds = (get_current_time() - order.submitted_at).total_seconds()
+
+# ❌ DON'T DO THIS
+now = datetime.utcnow()  # Timezone-naive - will cause errors when mixing with aware datetimes
+now = datetime.now()  # No timezone - will cause errors
+```
+
+### Validation
+
+Startup validation automatically checks for datetime violations. If you see violations, fix them by:
+
+1. Replacing `datetime.utcnow()` with `get_current_time()`
+2. Replacing `datetime.now()` with `get_current_time()`
+3. Ensuring model defaults use appropriate helper functions

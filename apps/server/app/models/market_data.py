@@ -5,10 +5,15 @@ Provides SQLAlchemy models for storing historical candlestick data
 from Polygon API with 1-minute granularity and extended hours support.
 """
 
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 
 from sqlalchemy import BigInteger, Boolean, Date, DateTime, Integer, Numeric, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+
+def utcnow_aware() -> datetime:
+    """Return timezone-aware UTC datetime for model defaults."""
+    return datetime.now(timezone.utc)
 
 
 class Base(DeclarativeBase):
@@ -154,7 +159,7 @@ class SymbolDateValidation(Base):
     validated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=datetime.utcnow
+        default=utcnow_aware
     )
     notes: Mapped[str | None] = mapped_column(
         Text,
@@ -280,7 +285,7 @@ class MarketLatestTrade(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=datetime.utcnow
+        default=utcnow_aware
     )
     
     def __repr__(self) -> str:

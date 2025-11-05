@@ -11,6 +11,7 @@ import logging
 from typing import Dict, Any, Optional
 from datetime import datetime
 
+from app.services.core.time_context import get_current_time
 from app.services.trading.alpaca_service import AlpacaService
 from app.services.trading.trading_reconciliation_service import TradingReconciliationService
 from app.services.trading.position_tracker import get_position_quantity_from_transactions
@@ -384,7 +385,7 @@ class ReconciliationService:
                         # Use a nominal price since we're just reconciling the position
                         # Generate a short order_id (max 36 chars for DB constraint)
                         # Format: "recon_SYMBOL_YYYYMMDDHHMMSS" (e.g., "recon_DDD_20251104172920")
-                        now = datetime.utcnow()
+                        now = get_current_time()
                         short_timestamp = now.strftime("%Y%m%d%H%M%S")  # 14 chars
                         synthetic_order_id = f"recon_{symbol}_{short_timestamp}"  # Max ~25 chars
                         

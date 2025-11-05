@@ -13,6 +13,7 @@ from datetime import datetime
 from typing import Dict, List, Optional
 
 from app.services.core.startup_logger import get_startup_logger, Status
+from app.services.core.time_context import get_current_time
 
 
 class StartupOrchestrator:
@@ -97,6 +98,26 @@ class StartupOrchestrator:
             self.services["Database"] = Status.FAIL
             self.logger.log_error("Database", e)
             raise
+        
+        # Validate datetime usage
+        try:
+            from app.services.core.datetime_validator import DatetimeValidator
+            from pathlib import Path
+            
+            # Get codebase root (apps/server directory)
+            codebase_root = Path(__file__).parent.parent.parent.parent
+            
+            validator = DatetimeValidator(codebase_root)
+            
+            if not validator.validate():
+                self.warnings.append("Datetime usage violations detected - check logs")
+                self.logger.log_service("Datetime Validation", Status.WARN, "Violations found")
+            else:
+                self.logger.log_service("Datetime Validation", Status.OK, "All checks passed")
+        except Exception as e:
+            import logging
+            logging.warning(f"Datetime validation error: {e}")
+            self.warnings.append("Could not run datetime validation")
     
     async def _phase_data_services(self) -> None:
         """Phase 2: Initialize data services (health monitor, ingestion, etc.)."""
@@ -220,7 +241,7 @@ class StartupOrchestrator:
                 if running_backtests:
                     for bt in running_backtests:
                         bt.status = 'cancelled'
-                        bt.completed_at = datetime.utcnow()
+                        bt.completed_at = get_current_time()
                         bt.error_message = 'Server restarted'
                     await session.commit()
                     self.services["Backtest Cleanup"] = Status.OK

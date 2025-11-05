@@ -14,6 +14,8 @@ import time
 from typing import Dict, List, Optional, Set
 from datetime import datetime
 
+from app.services.core.time_context import get_current_time
+
 import httpx
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -55,8 +57,8 @@ async def start_asset_loading_task(sample_mode: bool = False) -> Dict[str, any]:
         status = AssetLoadingStatus(
             task_type="asset_loading",
             status="running",
-            started_at=datetime.utcnow(),
-            last_updated=datetime.utcnow()
+            started_at=get_current_time(),
+            last_updated=get_current_time()
         )
         session.add(status)
         await session.commit()
@@ -97,8 +99,8 @@ async def cancel_asset_loading_task() -> bool:
             .where(AssetLoadingStatus.task_type == "asset_loading")
             .values(
                 status="cancelled",
-                completed_at=datetime.utcnow(),
-                last_updated=datetime.utcnow()
+                completed_at=get_current_time(),
+                last_updated=get_current_time()
             )
         )
         await session.commit()
@@ -132,7 +134,7 @@ async def get_loading_status() -> Optional[Dict]:
             status.processed_tickers > 0 and 
             status.started_at):
             
-            elapsed = (datetime.utcnow() - status.started_at).total_seconds()
+            elapsed = (get_current_time() - status.started_at).total_seconds()
             rate = status.processed_tickers / elapsed
             remaining_tickers = status.total_tickers - status.processed_tickers
             estimated_seconds = remaining_tickers / rate if rate > 0 else None
@@ -427,7 +429,7 @@ async def _load_single_ticker_details(client: httpx.AsyncClient, ticker: str) ->
                 for key, value in ticker_data.items():
                     if value is not None:
                         setattr(existing, key, value)
-                existing.updated_at = datetime.utcnow()
+                existing.updated_at = get_current_time()
             else:
                 # Create new record
                 ticker_details = TickerDetails(**ticker_data)
@@ -464,7 +466,7 @@ async def _update_status(
     async with get_async_session() as session:
         update_data = {
             "status": status,
-            "last_updated": datetime.utcnow()
+            "last_updated": get_current_time()
         }
         
         if phase is not None:
@@ -478,7 +480,7 @@ async def _update_status(
         if error_message is not None:
             update_data["error_message"] = error_message
         if status in ["completed", "failed", "cancelled"]:
-            update_data["completed_at"] = datetime.utcnow()
+            update_data["completed_at"] = get_current_time()
         
         await session.execute(
             update(AssetLoadingStatus)

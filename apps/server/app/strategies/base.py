@@ -90,7 +90,8 @@ class PositionContext:
     
     def time_in_position_minutes(self) -> float:
         """Get time in position in minutes."""
-        return (datetime.utcnow() - self.entry_time).total_seconds() / 60.0
+        from app.services.core.time_context import get_current_time
+        return (get_current_time() - self.entry_time).total_seconds() / 60.0
 
 
 class ExecutionStrategy(ABC):

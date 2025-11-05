@@ -115,13 +115,15 @@ class StrategyMonitoringState(Base):
     
     def mark_triggered(self, price: float) -> None:
         """Mark this level as triggered."""
-        self.triggered_at = datetime.utcnow()
+        from app.services.core.time_context import get_current_time
+        self.triggered_at = get_current_time()
         self.trigger_price = price
         self.is_active = False
     
     def deactivate(self, reason: str) -> None:
         """Deactivate this monitoring state."""
-        self.deactivated_at = datetime.utcnow()
+        from app.services.core.time_context import get_current_time
+        self.deactivated_at = get_current_time()
         self.deactivation_reason = reason
         self.is_active = False
 

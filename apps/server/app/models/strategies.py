@@ -9,12 +9,29 @@ Provides SQLAlchemy models for:
 - Trade: Master record for complete trades with performance metrics
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 import json
 
 from sqlalchemy import String, Float, DateTime, Integer, Text, ForeignKey, JSON
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+
+def utcnow_aware() -> datetime:
+    """Return timezone-aware UTC datetime for model defaults."""
+    return datetime.now(timezone.utc)
+
+
+def utcnow_naive() -> datetime:
+    """
+    Return timezone-naive UTC datetime for model defaults.
+    
+    Used for DateTime columns without timezone=True (TIMESTAMP WITHOUT TIME ZONE).
+    Note: This function is deprecated - all datetime columns should use timezone-aware.
+    """
+    # Convert timezone-aware to naive for backward compatibility
+    from app.services.core.time_context import get_current_time
+    return get_current_time().replace(tzinfo=None)
 
 
 class Base(DeclarativeBase):
@@ -76,18 +93,18 @@ class Fund(Base):
     total_ai_cost: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     ai_cost_mtd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)  # Month-to-date
     ai_cost_ytd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)  # Year-to-date
-    last_ai_cost_reset: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    last_ai_cost_reset: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, 
+        DateTime(timezone=True), 
         nullable=False, 
-        default=datetime.utcnow
+        default=utcnow_aware
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, 
+        DateTime(timezone=True), 
         nullable=False, 
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow
+        default=utcnow_aware,
+        onupdate=utcnow_aware
     )
 
 
@@ -109,15 +126,15 @@ class ScreeningCriteria(Base):
     criteria: Mapped[dict] = mapped_column(JSON, nullable=False)
     
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, 
+        DateTime(timezone=True), 
         nullable=False, 
-        default=datetime.utcnow
+        default=utcnow_aware
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, 
+        DateTime(timezone=True), 
         nullable=False, 
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow
+        default=utcnow_aware,
+        onupdate=utcnow_aware
     )
 
 
@@ -159,15 +176,15 @@ class Order(Base):
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, 
+        DateTime(timezone=True), 
         nullable=False, 
-        default=datetime.utcnow
+        default=utcnow_aware
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, 
+        DateTime(timezone=True), 
         nullable=False, 
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow
+        default=utcnow_aware,
+        onupdate=utcnow_aware
     )
 
 
@@ -202,9 +219,9 @@ class Transaction(Base):
     # e.g., {"entry_reason": "breakout", "has_scaled_out": false, "scale_in_count": 0}
     
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, 
+        DateTime(timezone=True), 
         nullable=False, 
-        default=datetime.utcnow
+        default=utcnow_aware
     )
 
 
@@ -223,12 +240,12 @@ class Transfer(Base):
     amount: Mapped[float] = mapped_column(Float, nullable=False)
     transfer_type: Mapped[str] = mapped_column(String(20), nullable=False)  # deposit/withdrawal
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True, default=datetime.utcnow)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True, default=utcnow_aware)
     
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, 
+        DateTime(timezone=True), 
         nullable=False, 
-        default=datetime.utcnow
+        default=utcnow_aware
     )
 
 
@@ -286,15 +303,15 @@ class Trade(Base):
     trade_metadata: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, 
+        DateTime(timezone=True), 
         nullable=False, 
-        default=datetime.utcnow
+        default=utcnow_aware
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, 
+        DateTime(timezone=True), 
         nullable=False, 
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow
+        default=utcnow_aware,
+        onupdate=utcnow_aware
     )
 
 
@@ -322,15 +339,15 @@ class AICost(Base):
     cost: Mapped[float] = mapped_column(Float, nullable=False)
     
     # Timing
-    timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     
     # Additional context
     extra_data: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, 
+        DateTime(timezone=True), 
         nullable=False, 
-        default=datetime.utcnow
+        default=utcnow_aware
     )
 
 
@@ -359,15 +376,15 @@ class DefaultRiskSettings(Base):
     max_total_exposure: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
     
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, 
+        DateTime(timezone=True), 
         nullable=False, 
-        default=datetime.utcnow
+        default=utcnow_aware
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, 
+        DateTime(timezone=True), 
         nullable=False, 
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow
+        default=utcnow_aware,
+        onupdate=utcnow_aware
     )
 
 
@@ -408,8 +425,8 @@ class Backtest(Base):
     cancelled_orders: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     
     # Timing
-    started_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
-    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow_aware)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     
     # Error tracking
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -418,15 +435,15 @@ class Backtest(Base):
     backtest_metadata: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, 
+        DateTime(timezone=True), 
         nullable=False, 
-        default=datetime.utcnow
+        default=utcnow_aware
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, 
+        DateTime(timezone=True), 
         nullable=False, 
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow
+        default=utcnow_aware,
+        onupdate=utcnow_aware
     )
 
 
@@ -463,13 +480,13 @@ class TickerState(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), 
         nullable=False, 
-        default=datetime.utcnow
+        default=utcnow_aware
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), 
         nullable=False, 
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow
+        default=utcnow_aware,
+        onupdate=utcnow_aware
     )
     
     def to_dict(self) -> dict:

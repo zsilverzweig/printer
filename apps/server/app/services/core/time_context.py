@@ -42,9 +42,12 @@ class BacktestContext:
         
         Args:
             backtest_id: Unique identifier for this backtest run
-            current_time: Simulated current time for the backtest
+            current_time: Simulated current time for the backtest (will be made timezone-aware if naive)
         """
         self.backtest_id = backtest_id
+        # Ensure timezone-aware
+        if current_time.tzinfo is None:
+            current_time = current_time.replace(tzinfo=timezone.utc)
         self.current_time = current_time
         self.is_backtest = True
     
@@ -59,13 +62,19 @@ def get_current_time() -> datetime:
     This is the primary function that services should use instead of
     datetime.utcnow() or datetime.now().
     
+    Returns timezone-aware UTC datetime for consistency with database.
+    
     Returns:
-        Current backtest time if in backtest mode, otherwise real UTC time
+        Current backtest time if in backtest mode (timezone-aware), 
+        otherwise real UTC time (timezone-aware)
     """
     ctx = _backtest_context.get()
     if ctx:
+        # Ensure backtest time is timezone-aware
+        if ctx.current_time.tzinfo is None:
+            ctx.current_time = ctx.current_time.replace(tzinfo=timezone.utc)
         return ctx.current_time
-    return datetime.utcnow()
+    return datetime.now(timezone.utc)
 
 
 def set_backtest_context(backtest_id: str, current_time: datetime) -> None:
@@ -91,11 +100,14 @@ def update_backtest_time(current_time: datetime) -> None:
     Raises ValueError if not in backtest mode.
     
     Args:
-        current_time: New simulated current time
+        current_time: New simulated current time (will be made timezone-aware if naive)
     """
     ctx = _backtest_context.get()
     if not ctx:
         raise ValueError("Cannot update time: not in backtest mode")
+    # Ensure timezone-aware
+    if current_time.tzinfo is None:
+        current_time = current_time.replace(tzinfo=timezone.utc)
     ctx.current_time = current_time
 
 

@@ -9,6 +9,8 @@ import logging
 import uuid
 from datetime import datetime
 from typing import Any, Callable, Dict, Optional
+
+from app.services.core.time_context import get_current_time
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -239,7 +241,7 @@ class OrderLifecycleManager:
         """
         try:
             order_id = str(uuid.uuid4())
-            submitted_at = datetime.utcnow()
+            submitted_at = get_current_time()
             
             order = Order(
                 id=order_id,

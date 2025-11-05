@@ -9,6 +9,8 @@ from datetime import datetime, time, timedelta
 from typing import Dict, List, Optional, Tuple
 from zoneinfo import ZoneInfo
 
+from app.services.core.time_context import get_current_time
+
 
 class IntervalTracker:
     """Track last execution times and check intervals."""
@@ -32,7 +34,7 @@ class IntervalTracker:
         Returns:
             True if interval has passed or this is first execution
         """
-        now = datetime.now()
+        now = get_current_time()
         last_time = self._last_times.get(key)
         
         if last_time is None:
@@ -48,7 +50,7 @@ class IntervalTracker:
         Args:
             key: Unique identifier for the action
         """
-        self._last_times[key] = datetime.now()
+        self._last_times[key] = get_current_time()
     
     def reset(self, key: str) -> None:
         """
@@ -89,7 +91,7 @@ class IntervalTracker:
         if last_time is None:
             return None
         
-        return (datetime.now() - last_time).total_seconds() / 60.0
+        return (get_current_time() - last_time).total_seconds() / 60.0
 
 
 def is_within_trading_window(
@@ -113,7 +115,7 @@ def is_within_trading_window(
             (time(9, 35), time(11, 30)),   # Morning session
             (time(13, 30), time(15, 30)),  # Afternoon session
         ]
-        is_within_trading_window(datetime.now(), windows)
+        is_within_trading_window(get_current_time(), windows)
     """
     if not windows:
         return True  # No restrictions
@@ -152,7 +154,7 @@ def seconds_until_bar_close(
         Seconds until bar closes (negative if bar already closed)
     """
     if current_time is None:
-        current_time = datetime.now()
+        current_time = get_current_time()
     
     # Ensure both datetimes have timezone info for comparison
     if bar_start.tzinfo is None:
@@ -231,7 +233,7 @@ def minutes_since(start_time: datetime) -> float:
     Returns:
         Minutes elapsed (can be negative if start_time is in future)
     """
-    now = datetime.now()
+    now = get_current_time()
     
     # Ensure timezone compatibility
     if start_time.tzinfo is None and now.tzinfo is not None:

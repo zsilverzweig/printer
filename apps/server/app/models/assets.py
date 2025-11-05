@@ -6,11 +6,16 @@ Provides SQLAlchemy models for:
 - AssetLoadingStatus: Progress tracking for background loading tasks
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import String, Float, DateTime, Integer, Boolean, Text, BigInteger, Date, Index
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+
+def utcnow_aware() -> datetime:
+    """Return timezone-aware UTC datetime for model defaults."""
+    return datetime.now(timezone.utc)
 
 
 class Base(DeclarativeBase):
@@ -78,15 +83,15 @@ class TickerDetails(Base):
     
     # Metadata
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, 
+        DateTime(timezone=True), 
         nullable=False, 
-        default=datetime.utcnow
+        default=utcnow_aware
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, 
+        DateTime(timezone=True), 
         nullable=False, 
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow
+        default=utcnow_aware,
+        onupdate=utcnow_aware
     )
     
     # Indexes for common filtering operations
@@ -137,13 +142,13 @@ class AssetLoadingStatus(Base):
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     
     # Timestamps
-    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     last_updated: Mapped[datetime] = mapped_column(
-        DateTime, 
+        DateTime(timezone=True), 
         nullable=False, 
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow
+        default=utcnow_aware,
+        onupdate=utcnow_aware
     )
     
     # Index for status queries

@@ -9,6 +9,8 @@ import logging
 import uuid
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
+
+from app.services.core.time_context import get_current_time
 from sqlalchemy import select, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -149,7 +151,7 @@ class TradeBuilder:
         trade.realized_pnl_percent = realized_pnl_percent
         trade.hold_duration_seconds = int(hold_duration)
         trade.status = "closed"
-        trade.updated_at = datetime.utcnow()
+        trade.updated_at = get_current_time()
         
         await self.session.flush()
         

@@ -8,6 +8,8 @@ import logging
 import uuid
 from datetime import datetime
 from typing import Optional, Dict, Any
+
+from app.services.core.time_context import get_current_time
 from sqlalchemy.orm import Session
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -111,7 +113,7 @@ def record_ai_cost(
         completion_tokens=completion_tokens,
         total_tokens=total_tokens,
         cost=cost,
-        timestamp=datetime.utcnow(),
+        timestamp=get_current_time(),
         extra_data=metadata or {},
     )
     
@@ -176,7 +178,7 @@ async def record_ai_cost_async(
         completion_tokens=completion_tokens,
         total_tokens=total_tokens,
         cost=cost,
-        timestamp=datetime.utcnow(),
+        timestamp=get_current_time(),
         extra_data=metadata or {},
     )
     
@@ -333,7 +335,7 @@ def reset_periodic_costs(db: Session, period: str = 'month') -> None:
             fund.ai_cost_mtd = 0.0
             logger.info(f"Reset YTD AI costs for fund {fund.id} ({fund.name})")
         
-        fund.last_ai_cost_reset = datetime.utcnow()
+        fund.last_ai_cost_reset = get_current_time()
     
     db.commit()
 

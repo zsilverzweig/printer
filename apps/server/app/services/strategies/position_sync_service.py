@@ -14,6 +14,8 @@ Responsibilities:
 import logging
 from datetime import datetime
 from typing import Dict, Set, Optional, Tuple
+
+from app.services.core.time_context import get_current_time
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 def _get_utc_timestamp() -> str:
     """Get current UTC timestamp as ISO string."""
-    return datetime.utcnow().isoformat() + "Z"
+    return get_current_time().isoformat() + "Z"
 
 
 class PositionSyncService:
@@ -279,7 +281,7 @@ class PositionSyncService:
                 
                 if context is None:
                     # No position history
-                    return 0.0, datetime.utcnow(), {}, None
+                    return 0.0, get_current_time(), {}, None
                 
                 return (
                     context["entry_price"],
@@ -290,5 +292,5 @@ class PositionSyncService:
         
         except Exception as e:
             logger.error(f"Error getting position details for {symbol}: {e}", exc_info=True)
-            return 0.0, datetime.utcnow(), {}, None
+            return 0.0, get_current_time(), {}, None
 

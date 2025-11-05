@@ -10,6 +10,7 @@ import logging
 from typing import List, Dict, Optional, Tuple
 from datetime import datetime
 
+from app.services.core.time_context import get_current_time
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -108,7 +109,7 @@ class StrategyService:
             if state:
                 # Update existing
                 state.current_stop_loss = stop_update.current_stop
-                state.updated_at = datetime.utcnow()
+                state.updated_at = get_current_time()
                 state_id = state.id
                 logger.debug(f"Updated management state: {symbol} stop=${stop_update.current_stop:.2f}")
             else:

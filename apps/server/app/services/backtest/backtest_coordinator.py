@@ -12,6 +12,8 @@ Orchestrates the execution of a backtest by:
 import logging
 import uuid
 from datetime import datetime, date, timedelta, timezone, time as dt_time
+
+from app.services.core.time_context import get_current_time
 from typing import Dict, List, Optional, Any
 
 from sqlalchemy import select
@@ -202,7 +204,7 @@ class BacktestCoordinator:
                     screening_criteria_id=fund.screening_criteria_id,
                     screening_criteria_name=screening_criteria_name,  # Snapshot screener name
                     starting_balance=fund.balance,
-                    started_at=datetime.utcnow()
+                    started_at=get_current_time()
                 )
                 session.add(backtest)
                 await session.commit()
@@ -247,7 +249,7 @@ class BacktestCoordinator:
                 if backtest:
                     backtest.status = 'failed'
                     backtest.error_message = str(e)
-                    backtest.completed_at = datetime.utcnow()
+                    backtest.completed_at = get_current_time()
                     await session.commit()
             
             raise
@@ -1024,7 +1026,7 @@ class BacktestCoordinator:
             backtest.filled_orders = filled_orders
             backtest.cancelled_orders = cancelled_orders
             backtest.status = 'completed'
-            backtest.completed_at = datetime.utcnow()
+            backtest.completed_at = get_current_time()
             
             # Update fund balance to reflect backtest result
             fund.balance = backtest.ending_balance

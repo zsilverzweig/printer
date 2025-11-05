@@ -15,6 +15,8 @@ from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+
+from app.services.core.time_context import get_current_time
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -1002,7 +1004,7 @@ async def stop_and_liquidate(fund_id: str) -> dict:
                                 quantity=quantity,
                                 order_type="market",
                                 status="pending",
-                                submitted_at=datetime.utcnow(),
+                                submitted_at=get_current_time(),
                             )
                             session.add(liquidation_order)
                             
@@ -1963,7 +1965,7 @@ async def create_transfer(fund_id: str, transfer_input: CreateTransferInput) -> 
                 amount=transfer_input.amount,
                 transfer_type=transfer_input.transfer_type,
                 notes=transfer_input.notes,
-                timestamp=datetime.utcnow(),
+                timestamp=get_current_time(),
             )
             session.add(transfer)
             
@@ -2285,7 +2287,7 @@ async def close_orphaned_position(fund_id: str, symbol: str) -> dict:
                 quantity=net_quantity,
                 price=exit_price,  # Use actual exit price from Alpaca or entry price as fallback
                 total_value=net_quantity * exit_price,
-                timestamp=datetime.utcnow(),
+                timestamp=get_current_time(),
                 high_water_mark=None,
                 strategy_state={
                     "source": "orphaned_cleanup", 
@@ -2306,8 +2308,8 @@ async def close_orphaned_position(fund_id: str, symbol: str) -> dict:
                 quantity=net_quantity,
                 order_type="manual_cleanup",
                 status="filled",
-                submitted_at=datetime.utcnow(),
-                filled_at=datetime.utcnow(),
+                submitted_at=get_current_time(),
+                filled_at=get_current_time(),
                 filled_qty=net_quantity,
                 filled_avg_price=avg_entry_price,
             )
@@ -2497,7 +2499,7 @@ async def close_all_orphaned_positions(fund_id: str) -> dict:
                         quantity=net_quantity,
                         price=exit_price,
                         total_value=net_quantity * exit_price,
-                        timestamp=datetime.utcnow(),
+                        timestamp=get_current_time(),
                         high_water_mark=None,
                         strategy_state={
                             "source": "orphaned_cleanup_batch",
@@ -2518,8 +2520,8 @@ async def close_all_orphaned_positions(fund_id: str) -> dict:
                         quantity=net_quantity,
                         order_type="manual_cleanup",
                         status="filled",
-                        submitted_at=datetime.utcnow(),
-                        filled_at=datetime.utcnow(),
+                        submitted_at=get_current_time(),
+                        filled_at=get_current_time(),
                         filled_qty=net_quantity,
                         filled_avg_price=avg_entry_price,
                     )

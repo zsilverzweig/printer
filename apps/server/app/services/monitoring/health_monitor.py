@@ -9,6 +9,8 @@ import asyncio
 import logging
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta, timezone, date
+
+from app.services.core.time_context import get_current_time
 from typing import Dict, List, Optional
 
 from sqlalchemy import select, text
@@ -34,7 +36,7 @@ class HealthCheckResult:
         self.is_healthy = is_healthy
         self.message = message
         self.details = details or {}
-        self.timestamp = datetime.now(timezone.utc)
+        self.timestamp = get_current_time()
     
     def __repr__(self) -> str:
         status = "✅ HEALTHY" if self.is_healthy else "❌ UNHEALTHY"
@@ -150,7 +152,7 @@ class MarketDataHealthCheck(BaseHealthCheck):
                 }
             
             last_bar = row[0]
-            now = datetime.now(timezone.utc)
+            now = get_current_time()
             age_minutes = (now - last_bar).total_seconds() / 60
             
             # During market hours (9:30 AM - 4:00 PM ET, Mon-Fri), data should be recent
@@ -179,7 +181,7 @@ class MarketDataHealthCheck(BaseHealthCheck):
         the data is complete (which may not be available from Polygon).
         """
         try:
-            cutoff_date = datetime.now(timezone.utc).date() - timedelta(days=self.lookback_days)
+            cutoff_date = get_current_time().date() - timedelta(days=self.lookback_days)
             
             # Count symbols with ANY validation records in lookback period
             result = await session.execute(
@@ -256,8 +258,8 @@ class MarketDataHealthCheck(BaseHealthCheck):
         2. Trading days with missing validation records
         """
         try:
-            cutoff_date = datetime.now(timezone.utc).date() - timedelta(days=self.lookback_days)
-            today = datetime.now(timezone.utc).date()
+            cutoff_date = get_current_time().date() - timedelta(days=self.lookback_days)
+            today = get_current_time().date()
             
             # Check 1: Find active symbols with NO validation records at all
             result = await session.execute(
@@ -456,7 +458,7 @@ class BacktestDataHealthCheck(BaseHealthCheck):
                 try:
                     self._population_progress[target_date.isoformat()] = {
                         "status": "populating",
-                        "started_at": datetime.now(timezone.utc).isoformat()
+                        "started_at": get_current_time().isoformat()
                     }
                     
                     self.logger.info(f"📊 Populating backtest lookup for {target_date}")
@@ -465,7 +467,7 @@ class BacktestDataHealthCheck(BaseHealthCheck):
                     self._population_progress[target_date.isoformat()] = {
                         "status": "completed",
                         "started_at": self._population_progress[target_date.isoformat()].get("started_at"),
-                        "completed_at": datetime.now(timezone.utc).isoformat(),
+                        "completed_at": get_current_time().isoformat(),
                         "result": result
                     }
                     
@@ -497,7 +499,7 @@ class BacktestDataHealthCheck(BaseHealthCheck):
                     key = f"{target_date.isoformat()}_{timescale}"
                     self._indicators_progress[key] = {
                         "status": "populating",
-                        "started_at": datetime.now(timezone.utc).isoformat()
+                        "started_at": get_current_time().isoformat()
                     }
                     
                     self.logger.info(f"📊 Populating technical indicators for {target_date} ({timescale})")
@@ -506,7 +508,7 @@ class BacktestDataHealthCheck(BaseHealthCheck):
                     self._indicators_progress[key] = {
                         "status": "completed",
                         "started_at": self._indicators_progress[key].get("started_at"),
-                        "completed_at": datetime.now(timezone.utc).isoformat(),
+                        "completed_at": get_current_time().isoformat(),
                         "result": result
                     }
                     
@@ -686,7 +688,7 @@ class MarketDataLoaderHealthCheck(BaseHealthCheck):
                 api_key=core_module.API_KEY
             )
             
-            self._last_completed = datetime.now(timezone.utc)
+            self._last_completed = get_current_time()
             self._last_error = None
             self.logger.info("Market data loader completed successfully")
             
@@ -713,7 +715,7 @@ class MarketDataLoaderHealthCheck(BaseHealthCheck):
             )
         
         # Start new background task
-        self._last_run = datetime.now(timezone.utc)
+        self._last_run = get_current_time()
         self._running_task = asyncio.create_task(self._run_loader_background())
         
         return HealthCheckResult(

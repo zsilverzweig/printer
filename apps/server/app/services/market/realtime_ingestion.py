@@ -8,6 +8,8 @@ and batch inserts into TimescaleDB with automatic validation tracking.
 import asyncio
 import logging
 from datetime import datetime, date, timezone, timedelta
+
+from app.services.core.time_context import get_current_time
 from typing import Dict, List, Optional, Set
 from collections import defaultdict
 
@@ -43,11 +45,11 @@ class IngestionMetrics:
         self.last_batch_latency_ms = 0.0
         self.errors = 0
         self.last_message_time = None
-        self.started_at = datetime.now(timezone.utc)
+        self.started_at = get_current_time()
     
     def to_dict(self) -> Dict:
         """Export metrics as dictionary."""
-        now = datetime.now(timezone.utc)
+        now = get_current_time()
         uptime_seconds = (now - self.started_at).total_seconds() if self.started_at else 0
         
         return {
@@ -203,7 +205,7 @@ class RealtimeIngestionService:
                                 loop
                             )
                             self.metrics.messages_received += 1
-                            self.metrics.last_message_time = datetime.now(timezone.utc)
+                            self.metrics.last_message_time = get_current_time()
                     
                     except Exception as e:
                         logger.error(f"Error handling WebSocket message: {e}")
@@ -249,9 +251,9 @@ class RealtimeIngestionService:
                     continue
                 
                 # Process batch
-                start_time = datetime.now(timezone.utc)
+                start_time = get_current_time()
                 bars_inserted = await self._process_batch(messages)
-                end_time = datetime.now(timezone.utc)
+                end_time = get_current_time()
                 
                 # Update metrics
                 latency_ms = (end_time - start_time).total_seconds() * 1000
@@ -564,7 +566,7 @@ class RealtimeIngestionService:
         async with get_async_session() as session:
             try:
                 # Get current counts from database for today's data
-                today = datetime.now(timezone.utc).date()
+                today = get_current_time().date()
                 recent_cutoff = today - timedelta(days=2)
                 
                 result = await session.execute(
@@ -607,7 +609,7 @@ class RealtimeIngestionService:
                         expected_bars=expected_bars,
                         first_bar_time=first_bar,
                         last_bar_time=last_bar,
-                        validated_at=datetime.now(timezone.utc)
+                        validated_at=get_current_time()
                     )
                     stmt = stmt.on_conflict_do_update(
                         index_elements=["symbol", "date"],

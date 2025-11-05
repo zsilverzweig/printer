@@ -11,6 +11,8 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
+from app.services.core.time_context import get_current_time
+
 from sqlalchemy import select
 
 from app.strategies.base import EntryLevel, StopUpdate, MarketDataSnapshot, PositionContext
@@ -133,7 +135,7 @@ class OrderExecutor:
             # CRITICAL: Validate AND create order in SINGLE transaction
             order_id = str(uuid.uuid4())
             trade_id = str(uuid.uuid4())  # Generate new trade_id for opening position
-            submitted_at = datetime.utcnow()
+            submitted_at = get_current_time()
             
             try:
                 async with get_async_session() as session:
@@ -277,7 +279,7 @@ class OrderExecutor:
                 self.fund_id,
                 symbol,
                 signal.entry_price,
-                datetime.utcnow(),
+                get_current_time(),
                 StopUpdate(current_stop=signal.stop_loss)
             )
             self.strategy_logger.log(symbol, f"Initial stop set: ${signal.stop_loss:.2f}")
@@ -396,7 +398,7 @@ class OrderExecutor:
             
             # Create order record
             order_id = str(uuid.uuid4())
-            submitted_at = datetime.utcnow()
+            submitted_at = get_current_time()
             
             logger.info(f"📝 Creating sell order record: {position.symbol} sell {actual_quantity} shares")
             
@@ -559,7 +561,7 @@ class OrderExecutor:
             if not pending_orders:
                 return
             
-            now = datetime.utcnow()
+            now = get_current_time()
             
             for order in pending_orders:
                 # Calculate order age

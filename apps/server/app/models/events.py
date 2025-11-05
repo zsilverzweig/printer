@@ -6,11 +6,16 @@ Uses joined table inheritance pattern:
 - Specialized tables (AITradeEvent, AlpacaTradeEvent) with specific fields
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import String, Float, DateTime, Integer, Boolean, Text, ForeignKey
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+
+def utcnow_aware() -> datetime:
+    """Return timezone-aware UTC datetime for model defaults."""
+    return datetime.now(timezone.utc)
 
 
 class Base(DeclarativeBase):
@@ -32,11 +37,11 @@ class Event(Base):
     
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     event_type: Mapped[str] = mapped_column(String(50), nullable=False)
-    timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, 
+        DateTime(timezone=True), 
         nullable=False, 
-        default=datetime.utcnow
+        default=utcnow_aware
     )
     
     __mapper_args__ = {
@@ -108,8 +113,8 @@ class AlpacaTradeEvent(Event):
     filled_qty: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     filled_avg_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     status: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
-    submitted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-    filled_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    submitted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    filled_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     
     __mapper_args__ = {

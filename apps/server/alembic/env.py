@@ -39,8 +39,18 @@ if config.config_file_name is not None:
 
 
 def get_url():
-    """Get database URL from environment variable."""
-    return os.getenv("DATABASE_URL", "postgresql+asyncpg://localhost:5432/printer_events")
+    """Get database URL from environment variable.
+    
+    DATABASE_URL should be set via environment variables (docker-compose.yml or env.local).
+    Falls back to Docker service name 'db' if not set (for Docker environments).
+    """
+    url = os.getenv("DATABASE_URL")
+    if url:
+        return url
+    
+    # Fallback: assume Docker environment (service name 'db')
+    # This should rarely be needed as DATABASE_URL should always be set
+    return "postgresql+asyncpg://postgres:postgres@db:5432/printer_events"
 
 
 def run_migrations_offline() -> None:

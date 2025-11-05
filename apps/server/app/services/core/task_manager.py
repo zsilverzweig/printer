@@ -8,6 +8,8 @@ Used by strategies to track long-running operations and cached data.
 import asyncio
 import logging
 from datetime import datetime, timedelta
+
+from app.services.core.time_context import get_current_time
 from typing import Any, Coroutine, Dict, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -187,7 +189,7 @@ class CacheWithExpiry:
         value, timestamp = self._cache[key]
         
         # Check if expired
-        age = (datetime.now() - timestamp).total_seconds()
+        age = (get_current_time() - timestamp).total_seconds()
         if age > self._ttl:
             # Remove expired entry
             del self._cache[key]
@@ -204,7 +206,7 @@ class CacheWithExpiry:
             key: Cache key
             value: Value to cache
         """
-        self._cache[key] = (value, datetime.now())
+        self._cache[key] = (value, get_current_time())
     
     def clear(self, key: str) -> None:
         """
@@ -233,7 +235,7 @@ class CacheWithExpiry:
             return None
         
         _, timestamp = self._cache[key]
-        return (datetime.now() - timestamp).total_seconds()
+        return (get_current_time() - timestamp).total_seconds()
     
     def is_fresh(self, key: str) -> bool:
         """
@@ -254,7 +256,7 @@ class CacheWithExpiry:
         Returns:
             Number of entries removed
         """
-        now = datetime.now()
+        now = get_current_time()
         expired_keys = []
         
         for key, (_, timestamp) in self._cache.items():

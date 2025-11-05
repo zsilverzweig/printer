@@ -9,6 +9,7 @@ import logging
 from datetime import datetime, timezone, timedelta, date
 from typing import List, Dict, Any, Optional
 
+from app.services.core.time_context import get_current_time
 from sqlalchemy import text
 from app.services.core.database import get_async_session
 
@@ -86,14 +87,14 @@ async def fetch_screener_data_unified(
                     """)
                 )
                 row = result.fetchone()
-                prev_trading_day = row[0] if row and row[0] else (datetime.now(timezone.utc).date() - timedelta(days=1))
+                prev_trading_day = row[0] if row and row[0] else (get_current_time().date() - timedelta(days=1))
         
         logger.debug(f"[UNIFIED] Live: {prev_trading_day}")
     
     try:
         async with get_async_session() as session:
             # STEP 1: Get ALL daily OHLCV in ONE query (10K+ symbols in < 1 second)
-            start_time = datetime.now()
+            start_time = get_current_time()
             # OPTIMIZED: Use time range instead of date cast for efficient index usage
             day_start = datetime.combine(prev_trading_day, datetime.min.time(), tzinfo=timezone.utc)
             day_end = day_start + timedelta(days=1)
@@ -126,7 +127,7 @@ async def fetch_screener_data_unified(
                     "volume": int(row[5]) if row[5] else 0
                 }
             
-            daily_time = (datetime.now() - start_time).total_seconds()
+            daily_time = (get_current_time() - start_time).total_seconds()
             logger.debug(f"[UNIFIED] Daily: {len(daily_data)} symbols ({daily_time:.2f}s)")
             
             if not daily_data:
@@ -169,7 +170,7 @@ async def fetch_screener_data_unified(
                     return []
             
             # STEP 2: Get current price data (mode-specific, also ONE query)
-            start_time = datetime.now()
+            start_time = get_current_time()
             if mode == "historical":
                 # Historical: Get 5min bars at timestamp via MarketDataService
                 from app.services.market.market_data_service import get_market_data_service
@@ -186,7 +187,7 @@ async def fetch_screener_data_unified(
                     at_timestamp=target_timestamp
                 )
                 
-                price_time = (datetime.now() - start_time).total_seconds()
+                price_time = (get_current_time() - start_time).total_seconds()
                 logger.info(f"[UNIFIED] Got {len(price_data)} symbols with 5min data ({price_time:.2f}s)")
             else:
                 # Live: Get latest trades
@@ -204,11 +205,11 @@ async def fetch_screener_data_unified(
                 for row in result:
                     price_data[row[0]] = float(row[1]) if row[1] else None
                 
-                price_time = (datetime.now() - start_time).total_seconds()
+                price_time = (get_current_time() - start_time).total_seconds()
                 logger.debug(f"[UNIFIED] Got {len(price_data)} symbols with live trades ({price_time:.2f}s)")
             
             # STEP 3: Fetch pre-calculated metrics
-            start_time = datetime.now()
+            start_time = get_current_time()
             symbols_list = list(daily_data.keys())
             
             result = await session.execute(
@@ -253,7 +254,7 @@ async def fetch_screener_data_unified(
                     "volume_trend": row[18]
                 }
             
-            metrics_time = (datetime.now() - start_time).total_seconds()
+            metrics_time = (get_current_time() - start_time).total_seconds()
             logger.info(f"[UNIFIED] Got metrics for {len(metrics_map)}/{len(symbols_list)} symbols ({metrics_time:.2f}s)")
             
             if len(metrics_map) == 0 and mode == "historical":
@@ -267,9 +268,10 @@ async def fetch_screener_data_unified(
             # This is critical: we should use TODAY's volume for TODAY's screening, not yesterday's!
             if mode == "live":
                 # Get today's accumulated volume from 5min bars
-                today = datetime.now(timezone.utc).date()
+                now = get_current_time()
+                today = now.date()
                 today_start = datetime.combine(today, datetime.min.time(), tzinfo=timezone.utc)
-                today_end = datetime.now(timezone.utc)
+                today_end = now
                 
                 logger.info(f"[UNIFIED] Calculating RV14 for live mode using TODAY's volume (from {today_start} to {today_end})")
                 

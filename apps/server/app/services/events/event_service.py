@@ -9,6 +9,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 
+from app.services.core.time_context import get_current_time
 from sqlalchemy import select
 
 from app.models.events import AITradeEvent, AlpacaTradeEvent, StrategyEngineEvent
@@ -69,9 +70,11 @@ class EventService:
         """
         try:
             if timestamp is None:
-                timestamp = datetime.utcnow()
+                timestamp = get_current_time()
             else:
-                timestamp = _normalize_datetime(timestamp)
+                # Ensure timestamp is timezone-aware
+                if timestamp.tzinfo is None:
+                    timestamp = timestamp.replace(tzinfo=timezone.utc)
             
             event = AITradeEvent(
                 timestamp=timestamp,
@@ -140,15 +143,19 @@ class EventService:
         """
         try:
             if timestamp is None:
-                timestamp = datetime.utcnow()
+                timestamp = get_current_time()
             else:
-                timestamp = _normalize_datetime(timestamp)
+                # Ensure timestamp is timezone-aware
+                if timestamp.tzinfo is None:
+                    timestamp = timestamp.replace(tzinfo=timezone.utc)
             
-            # Normalize optional datetime fields
+            # Ensure optional datetime fields are timezone-aware
             if submitted_at is not None:
-                submitted_at = _normalize_datetime(submitted_at)
+                if submitted_at.tzinfo is None:
+                    submitted_at = submitted_at.replace(tzinfo=timezone.utc)
             if filled_at is not None:
-                filled_at = _normalize_datetime(filled_at)
+                if filled_at.tzinfo is None:
+                    filled_at = filled_at.replace(tzinfo=timezone.utc)
             
             event = AlpacaTradeEvent(
                 timestamp=timestamp,
@@ -219,9 +226,11 @@ class EventService:
         """
         try:
             if timestamp is None:
-                timestamp = datetime.utcnow()
+                timestamp = get_current_time()
             else:
-                timestamp = _normalize_datetime(timestamp)
+                # Ensure timestamp is timezone-aware
+                if timestamp.tzinfo is None:
+                    timestamp = timestamp.replace(tzinfo=timezone.utc)
             
             # Serialize event_data to JSON if provided
             event_data_json = json.dumps(event_data) if event_data else None

@@ -7,6 +7,8 @@ historical market data, indicators, news, and float information.
 """
 
 from datetime import datetime, timedelta
+
+from app.services.core.time_context import get_current_time
 from typing import Any, Callable, Dict, List, Optional
 import logging
 import asyncio
@@ -445,7 +447,7 @@ class MarketDataProvider:
             return MarketDataSnapshot(
                 symbol=symbol,
                 price=current_price,
-                timestamp=datetime.now(),
+                timestamp=get_current_time(),
                 bid=quote.get("bid"),
                 ask=quote.get("ask"),
                 bars=bars,

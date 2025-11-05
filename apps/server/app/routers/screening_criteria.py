@@ -12,6 +12,8 @@ from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, status, Query
 from pydantic import BaseModel
+
+from app.services.core.time_context import get_current_time
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -175,7 +177,7 @@ async def run_screener_with_inline_criteria(
             logger.info("[ENDPOINT] Screener service available, checking if recent timestamp...")
             # If timestamp is very recent (within last 5 minutes), use live mode instead
             # This ensures we get the most up-to-date data and matches live screener behavior
-            now = datetime.now(timezone.utc) if timestamp.tzinfo else datetime.utcnow()
+            now = get_current_time()
             if timestamp.tzinfo is None:
                 timestamp = timestamp.replace(tzinfo=timezone.utc)
             
@@ -350,7 +352,7 @@ async def run_screener_with_criteria(
             
             # If timestamp is very recent (within last 5 minutes), use live mode instead
             # This ensures we get the most up-to-date data and matches live screener behavior
-            now = datetime.now(timezone.utc) if timestamp.tzinfo else datetime.utcnow()
+            now = get_current_time()
             if timestamp.tzinfo is None:
                 timestamp = timestamp.replace(tzinfo=timezone.utc)
             
@@ -587,8 +589,8 @@ async def create_screening_criteria(request: CreateScreeningCriteriaRequest) -> 
                 name=request.name,
                 description=request.description,
                 criteria=request.criteria.model_dump(exclude_none=True),
-                created_at=datetime.utcnow(),
-                updated_at=datetime.utcnow()
+                created_at=get_current_time(),
+                updated_at=get_current_time()
             )
             
             session.add(criteria)
@@ -650,7 +652,7 @@ async def update_screening_criteria(
             if request.criteria is not None:
                 criteria.criteria = request.criteria.model_dump(exclude_none=True)
             
-            criteria.updated_at = datetime.utcnow()
+            criteria.updated_at = get_current_time()
             
             await session.commit()
             await session.refresh(criteria)
