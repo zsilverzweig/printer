@@ -38,8 +38,10 @@ app.add_middleware(
     expose_headers=["*"],
 )
 
-# Basic logging
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+# Basic logging - only configure if not already configured
+# This prevents duplicate handlers when uvicorn reloads the application
+if not logging.root.handlers:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("app.main")
 
 

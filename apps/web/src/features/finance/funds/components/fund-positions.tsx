@@ -56,16 +56,6 @@ import {
   TableRow,
 } from "@/lib/components/ui/table";
 
-interface AlpacaPosition {
-  symbol: string;
-  qty: number;
-  avg_entry_price: number;
-  current_price: number;
-  market_value: number;
-  unrealized_pl: number;
-  unrealized_plpc: number;
-}
-
 interface DatabasePosition {
   symbol: string;
   qty: number;
@@ -74,161 +64,13 @@ interface DatabasePosition {
 
 interface PositionsData {
   fund_id: string;
-  fund_mode: string;
-  is_running: boolean;
-  alpaca_positions: AlpacaPosition[];
   database_positions: DatabasePosition[];
-  sync_issues: {
-    in_alpaca_not_db: string[];
-    in_db_not_alpaca: string[];
-  };
-  has_sync_issues: boolean;
 }
 
 interface FundPositionsProps {
   fundId: string;
 }
 
-interface CloseOrphanedPositionButtonProps {
-  fundId: string;
-  symbol: string;
-  onSuccess: () => void;
-}
-
-function CloseOrphanedPositionButton({
-  fundId,
-  symbol,
-  onSuccess,
-}: CloseOrphanedPositionButtonProps) {
-  const [isClosing, setIsClosing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [showDialog, setShowDialog] = useState(false);
-
-  const handleClose = async () => {
-    try {
-      setIsClosing(true);
-      setError(null);
-
-      const response = await fetch(
-        `http://localhost:8000/api/funds/${fundId}/positions/${symbol}/close-orphaned`,
-        { method: "POST" }
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || "Failed to close position");
-      }
-
-      const result = await response.json();
-      console.log("Position closed:", result);
-
-      // Show success message with details
-      if (result.price_source === "alpaca_order") {
-        console.log(
-          `✅ Found Alpaca order! Exit price: $${result.exit_price.toFixed(
-            2
-          )}, ` + `P&L: $${result.realized_pl.toFixed(2)}`
-        );
-      } else {
-        console.log(
-          `⚠️  Using breakeven price (no matching Alpaca order found)`
-        );
-      }
-
-      // Close dialog and refresh positions
-      setShowDialog(false);
-      onSuccess();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to close position");
-      console.error("Error closing position:", err);
-    } finally {
-      setIsClosing(false);
-    }
-  };
-
-  return (
-    <>
-      <AlertDialog open={showDialog} onOpenChange={setShowDialog}>
-        <AlertDialogTrigger asChild>
-          <Button
-            variant="outline"
-            size="sm"
-            className="border-orange-300 text-orange-600 hover:bg-orange-50 hover:text-orange-700 dark:border-orange-800 dark:text-orange-400 dark:hover:bg-orange-950/30"
-          >
-            <Trash2 className="h-3 w-3 mr-1" />
-            Close Out
-          </Button>
-        </AlertDialogTrigger>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-orange-600" />
-              Close Orphaned Position?
-            </AlertDialogTitle>
-            <AlertDialogDescription className="space-y-3">
-              <p>
-                This will create a closing transaction for{" "}
-                <strong>{symbol}</strong> to zero out the position in the
-                database.
-              </p>
-              <div className="rounded-md bg-orange-50 dark:bg-orange-950/30 p-3 text-sm space-y-2">
-                <p className="font-semibold text-orange-900 dark:text-orange-200">
-                  What this does:
-                </p>
-                <ul className="list-disc list-inside space-y-1 text-orange-800 dark:text-orange-300">
-                  <li>
-                    Creates a matching sell transaction to close the database
-                    position
-                  </li>
-                  <li>
-                    Finds the matching Alpaca sell order to get the actual exit
-                    price
-                  </li>
-                  <li>
-                    If no matching order found, uses the average entry price
-                    (breakeven)
-                  </li>
-                  <li>Returns the sale proceeds to your fund balance</li>
-                  <li>Leaves an audit trail in your transaction history</li>
-                </ul>
-              </div>
-              <div className="rounded-md bg-blue-50 dark:bg-blue-950/30 p-3 text-sm">
-                <p className="font-semibold text-blue-900 dark:text-blue-200 mb-1">
-                  Why use this?
-                </p>
-                <p className="text-blue-800 dark:text-blue-300">
-                  This position exists in your database but not in Alpaca. This
-                  usually happens when a position was sold in Alpaca but the
-                  sync failed, or it was manually closed outside the trading
-                  system.
-                </p>
-              </div>
-              {error && (
-                <div className="rounded-md bg-red-50 dark:bg-red-950/30 p-3 text-sm text-red-800 dark:text-red-300">
-                  <p className="font-semibold mb-1">Error:</p>
-                  <p>{error}</p>
-                </div>
-              )}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={isClosing}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(e) => {
-                e.preventDefault();
-                handleClose();
-              }}
-              disabled={isClosing}
-              className="bg-orange-600 hover:bg-orange-700 text-white"
-            >
-              {isClosing ? "Closing..." : "Close Position"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </>
-  );
-}
 
 export function FundPositions({ fundId }: FundPositionsProps) {
   const [data, setData] = useState<PositionsData | null>(null);

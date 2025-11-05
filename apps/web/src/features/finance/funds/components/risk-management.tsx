@@ -56,22 +56,49 @@ export function RiskManagement({
     maxTotalExposure: null,
   });
 
+  // Cache defaults to avoid repeated API calls
+  const [defaultsCache, setDefaultsCache] =
+    useState<DefaultRiskSettings | null>(null);
+
+  // Load defaults once on mount
   useEffect(() => {
-    const loadMergedSettings = async () => {
-      const merged = await riskManagementService.mergeWithDefaults({
-        maxLossPercent: fund.maxLossPercent ?? undefined,
-        maxLossDollars: fund.maxLossDollars ?? undefined,
-        maxGivebackPercent: fund.maxGivebackPercent ?? undefined,
-        maxOrderAgeSeconds: fund.maxOrderAgeSeconds ?? undefined,
-        sizePerTrade: fund.sizePerTrade ?? undefined,
-        minBetPercent: fund.minBetPercent ?? undefined,
-        maxBetPercent: fund.maxBetPercent ?? undefined,
-        maxTotalExposure: fund.maxTotalExposure ?? undefined,
-      });
-      setMergedSettings(merged);
+    const loadDefaults = async () => {
+      if (!defaultsCache) {
+        const defaults = await riskManagementService.getDefaults();
+        setDefaultsCache(defaults);
+      }
     };
-    void loadMergedSettings();
-  }, [fund]);
+    void loadDefaults();
+  }, [defaultsCache]);
+
+  // Update merged settings when fund changes (using specific fields to avoid unnecessary re-renders)
+  useEffect(() => {
+    if (!defaultsCache) return; // Wait for defaults to load
+
+    const merged = {
+      maxLossPercent: fund.maxLossPercent ?? defaultsCache.maxLossPercent,
+      maxLossDollars: fund.maxLossDollars ?? defaultsCache.maxLossDollars,
+      maxGivebackPercent:
+        fund.maxGivebackPercent ?? defaultsCache.maxGivebackPercent,
+      maxOrderAgeSeconds:
+        fund.maxOrderAgeSeconds ?? defaultsCache.maxOrderAgeSeconds,
+      sizePerTrade: fund.sizePerTrade ?? defaultsCache.sizePerTrade,
+      minBetPercent: fund.minBetPercent ?? defaultsCache.minBetPercent,
+      maxBetPercent: fund.maxBetPercent ?? defaultsCache.maxBetPercent,
+      maxTotalExposure: fund.maxTotalExposure ?? defaultsCache.maxTotalExposure,
+    };
+    setMergedSettings(merged);
+  }, [
+    fund.maxLossPercent,
+    fund.maxLossDollars,
+    fund.maxGivebackPercent,
+    fund.maxOrderAgeSeconds,
+    fund.sizePerTrade,
+    fund.minBetPercent,
+    fund.maxBetPercent,
+    fund.maxTotalExposure,
+    defaultsCache,
+  ]);
 
   // Track which fields are overridden vs using defaults
   const isOverridden = (field: keyof typeof mergedSettings): boolean => {
@@ -225,7 +252,9 @@ export function RiskManagement({
       return;
     }
 
-    const defaults = await riskManagementService.getDefaults();
+    // Use cached defaults or fetch if not available
+    const defaults =
+      defaultsCache || (await riskManagementService.getDefaults());
     const parsed = {
       maxLossPercent: maxLossPercent ? parseFloat(maxLossPercent) : null,
       maxLossDollars: maxLossDollars ? parseFloat(maxLossDollars) : null,
@@ -415,9 +444,7 @@ export function RiskManagement({
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
-              <Label htmlFor="sizePerTrade">
-                Size Per Trade ($) <span className="text-red-500">*</span>
-              </Label>
+              <Label htmlFor="sizePerTrade">Size Per Trade ($)</Label>
               {!isOverridden("sizePerTrade") && (
                 <span className="text-xs text-muted-foreground">(default)</span>
               )}
@@ -430,8 +457,7 @@ export function RiskManagement({
               onChange={(e) => setSizePerTrade(e.target.value)}
               onBlur={saveIfChanged}
               disabled={isSaving}
-              placeholder="1000"
-              required
+              placeholder="1000 (optional)"
             />
             {getWarningsForField("sizePerTrade").map((warning, idx) => (
               <div

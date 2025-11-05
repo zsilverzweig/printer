@@ -2950,7 +2950,7 @@ class DefaultRiskSettingsResponse(BaseModel):
         from_attributes = True
 
 
-@router.get("/default-risk-settings", response_model=DefaultRiskSettingsResponse)
+@router.get("/funds/default-risk-settings", response_model=DefaultRiskSettingsResponse)
 async def get_default_risk_settings():
     """Get default risk management settings."""
     try:
@@ -2986,7 +2986,7 @@ async def get_default_risk_settings():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.put("/default-risk-settings", response_model=DefaultRiskSettingsResponse)
+@router.put("/funds/default-risk-settings", response_model=DefaultRiskSettingsResponse)
 async def update_default_risk_settings(input: DefaultRiskSettingsInput):
     """Update default risk management settings."""
     try:
