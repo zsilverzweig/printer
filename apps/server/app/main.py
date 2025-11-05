@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core import startup_init
 from app.routers import market, news, trading, events, admin, screener, strategies, funds, screening_criteria, db_admin, screener_metrics, analytics, backtests
 from app.routers.realtime import router as realtime_router
+from app.routers import ticker_states
 import logging
 import time
 
@@ -335,6 +336,7 @@ app.include_router(strategies.router)
 app.include_router(funds.router, prefix="/api", tags=["funds"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"])  # Trade analytics and performance
 app.include_router(backtests.router, prefix="/api/backtests", tags=["backtests"])  # Backtest execution and results
+app.include_router(ticker_states.router, prefix="/api", tags=["ticker-states"])  # Ticker lifecycle state tracking
 
 # Include realtime/WebSocket router
 app.include_router(realtime_router)

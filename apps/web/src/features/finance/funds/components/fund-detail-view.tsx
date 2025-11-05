@@ -33,6 +33,7 @@ import { FundOverview } from "./fund-overview";
 import { FundPositions } from "./fund-positions";
 import { FundTrades } from "./fund-trades";
 import { SetupEditor } from "./setup-editor";
+import { TickerLifecycleView } from "./ticker-lifecycle-view";
 
 interface FundDetailViewProps {
   fundId: string;
@@ -173,13 +174,14 @@ export function FundDetailView({ fundId }: FundDetailViewProps) {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-2 md:grid-cols-7 gap-1">
+        <TabsList className="grid w-full grid-cols-2 md:grid-cols-8 gap-1">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="configuration">Configuration</TabsTrigger>
           <TabsTrigger value="activity">Activity</TabsTrigger>
           <TabsTrigger value="positions">Positions</TabsTrigger>
           <TabsTrigger value="orders">Orders</TabsTrigger>
           <TabsTrigger value="trades">Trades</TabsTrigger>
+          <TabsTrigger value="ticker-lifecycle">Lifecycle</TabsTrigger>
           <TabsTrigger value="ledger">Ledger</TabsTrigger>
         </TabsList>
 
@@ -218,6 +220,10 @@ export function FundDetailView({ fundId }: FundDetailViewProps) {
 
         <TabsContent value="trades" className="space-y-6">
           <FundTrades fundId={fundId} />
+        </TabsContent>
+
+        <TabsContent value="ticker-lifecycle" className="space-y-6">
+          <TickerLifecycleView fundId={fundId} />
         </TabsContent>
 
         <TabsContent value="ledger" className="space-y-6">

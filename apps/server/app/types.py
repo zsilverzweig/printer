@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import TypedDict, Optional, List, Dict, Any
+from enum import Enum
 from pydantic import BaseModel
 
 
@@ -81,3 +82,37 @@ class ScreenerCriteria(BaseModel):
 
     # Technical analysis filters
     technical_filters: Optional[Dict[str, Any]] = None
+
+
+class TickerStateTransitionCode(str, Enum):
+    """Structured codes for ticker state transitions."""
+    # Screened state
+    SCREENER_PASSED = "screener_passed"
+    SCREENER_UPDATED = "screener_updated"
+    
+    # Setup state
+    SETUP_STARTED = "setup_started"
+    SETUP_PASSED = "setup_passed"
+    SETUP_FAILED_NEWS = "setup_failed_news"
+    SETUP_FAILED_PATTERN = "setup_failed_pattern"
+    SETUP_FAILED_PRICE = "setup_failed_price"
+    SETUP_FAILED_CHANGE = "setup_failed_change"
+    SETUP_FAILED_RV = "setup_failed_rv"
+    SETUP_FAILED_OTHER = "setup_failed_other"
+    
+    # Entered state
+    ENTRY_LEVEL_CREATED = "entry_level_created"
+    ENTRY_LEVEL_UPDATED = "entry_level_updated"
+    
+    # Filled state
+    ENTRY_ORDER_FILLED = "entry_order_filled"
+    
+    # Exited state
+    EXIT_ORDER_FILLED = "exit_order_filled"
+    STOP_LOSS_TRIGGERED = "stop_loss_triggered"
+    TAKE_PROFIT_TRIGGERED = "take_profit_triggered"
+    MANUAL_CLOSE = "manual_close"
+    
+    # Removed state
+    DROPPED_FROM_SCREENER = "dropped_from_screener"
+    SCREENER_NO_LONGER_PASSES = "screener_no_longer_passes"

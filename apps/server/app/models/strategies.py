@@ -430,3 +430,61 @@ class Backtest(Base):
     )
 
 
+class TickerState(Base):
+    """
+    Track ticker lifecycle state through the strategy execution pipeline.
+    
+    States: screened -> setup -> entered -> filled -> exited
+    Also tracks removed tickers that drop out of screener.
+    """
+    __tablename__ = "ticker_states"
+    
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    fund_id: Mapped[str] = mapped_column(String(36), ForeignKey("funds.id", ondelete="CASCADE"), nullable=False, index=True)
+    ticker: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
+    current_state: Mapped[str] = mapped_column(String(20), nullable=False, index=True)  # 'screened', 'setup', 'entered', 'filled', 'exited', 'removed'
+    
+    # State transition history (array of transition records)
+    state_transitions: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    
+    # Tracking fields
+    last_screened_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    entry_level_id: Mapped[Optional[str]] = mapped_column(
+        String(36), 
+        ForeignKey("strategy_monitoring_state.id", ondelete="SET NULL"), 
+        nullable=True
+    )
+    trade_id: Mapped[Optional[str]] = mapped_column(
+        String(36), 
+        ForeignKey("trades.id", ondelete="SET NULL"), 
+        nullable=True
+    )
+    
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), 
+        nullable=False, 
+        default=datetime.utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), 
+        nullable=False, 
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow
+    )
+    
+    def to_dict(self) -> dict:
+        """Convert to dictionary for API responses."""
+        return {
+            'id': self.id,
+            'fund_id': self.fund_id,
+            'ticker': self.ticker,
+            'current_state': self.current_state,
+            'state_transitions': self.state_transitions or [],
+            'last_screened_at': self.last_screened_at.isoformat() if self.last_screened_at else None,
+            'entry_level_id': self.entry_level_id,
+            'trade_id': self.trade_id,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+

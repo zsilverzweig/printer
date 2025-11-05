@@ -10,9 +10,10 @@ from typing import List, Dict, Any, Optional
 from app.strategies.base import ExecutionStrategy, MarketDataSnapshot, EntryLevel, PositionContext
 from app.services.market.market_data_provider import MarketDataProvider
 from app.services.strategies.strategy_service import StrategyService
+from app.services.strategies.ticker_state_service import get_ticker_state_service
 from app.services.strategies.risk_manager import RiskManager
 from app.lib.strategy_logger import StrategyLogger
-from app.types import ScreenerCriteria
+from app.types import ScreenerCriteria, TickerStateTransitionCode
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +52,7 @@ class ScreenerConnector:
         self.market_data_provider = market_data_provider
         self.strategy_logger = strategy_logger
         self.risk_manager = risk_manager
+        self.ticker_state_service = get_ticker_state_service()
     
     async def get_screened_tickers(self) -> List[str]:
         """
@@ -86,6 +88,9 @@ class ScreenerConnector:
             
             if tickers:
                 self.strategy_logger.fund_message(f"📊 {len(tickers)} ticker(s) from screener")
+            
+            # Sync ticker states with screener results
+            await self.ticker_state_service.sync_screener_tickers(self.fund_id, tickers)
             
             return tickers
         
@@ -125,6 +130,33 @@ class ScreenerConnector:
             self.strategy_logger.fund_message(
                 f"🔍 Setup phase: {len(filtered_tickers)}/{len(tickers)} ticker(s) passed"
             )
+            
+            # Transition tickers based on setup results
+            # Note: Strategy should provide transition codes via setup failures
+            # For now, we'll transition all passing tickers to 'setup' state
+            # Individual strategies can provide more detailed transition codes
+            filtered_set = set(filtered_tickers)
+            for ticker in tickers:
+                if ticker in filtered_set:
+                    # Ticker passed setup
+                    await self.ticker_state_service.transition_ticker(
+                        fund_id=self.fund_id,
+                        ticker=ticker,
+                        to_state="setup",
+                        transition_code=TickerStateTransitionCode.SETUP_PASSED.value,
+                        description="Ticker passed setup phase analysis"
+                    )
+                else:
+                    # Ticker failed setup - transition to removed
+                    # Note: Strategies should provide specific failure codes
+                    # For now, use generic code
+                    await self.ticker_state_service.transition_ticker(
+                        fund_id=self.fund_id,
+                        ticker=ticker,
+                        to_state="removed",
+                        transition_code=TickerStateTransitionCode.SETUP_FAILED_OTHER.value,
+                        description="Ticker failed setup phase analysis"
+                    )
             
             return filtered_tickers
         
@@ -186,6 +218,16 @@ class ScreenerConnector:
                             self.fund_id,
                             ticker,
                             entry_level
+                        )
+                        
+                        # Transition ticker to 'entered' state
+                        await self.ticker_state_service.transition_ticker(
+                            fund_id=self.fund_id,
+                            ticker=ticker,
+                            to_state="entered",
+                            transition_code=TickerStateTransitionCode.ENTRY_LEVEL_CREATED.value,
+                            description=f"Entry level created: ${entry_level.entry_price:.2f} (stop: ${entry_level.stop_loss:.2f})",
+                            entry_level_id=state_id
                         )
                         
                         self.strategy_logger.entry_level_set(

@@ -15,12 +15,12 @@ export type {
   ExecutionStrategy,
   // Core entities
   Fund,
-  FundOrder,
-  FundTransaction,
   // Enums and literal types
   FundMode,
+  FundOrder,
   FundStatus,
   FundTradingStatus,
+  FundTransaction,
   FundTransfer,
   // Composite types
   FundWithStrategy,
@@ -37,3 +37,33 @@ export type {
   UpdateSetupInput,
   UpdateStrategyInput,
 } from "@printer/shared";
+
+// Ticker Lifecycle State Types
+export type TickerState =
+  | "screened"
+  | "setup"
+  | "entered"
+  | "filled"
+  | "exited"
+  | "removed";
+
+export interface StateTransition {
+  fromState: TickerState | null;
+  toState: TickerState;
+  transitionCode: string;
+  description: string;
+  timestamp: string;
+}
+
+export interface TickerStateRecord {
+  id: string;
+  fundId: string;
+  ticker: string;
+  currentState: TickerState;
+  stateTransitions: StateTransition[];
+  lastScreenedAt: string | null;
+  entryLevelId: string | null;
+  tradeId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}

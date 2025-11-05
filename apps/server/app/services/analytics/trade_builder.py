@@ -13,6 +13,8 @@ from sqlalchemy import select, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.strategies import Trade, Transaction, Order, Fund
+from app.services.strategies.ticker_state_service import get_ticker_state_service
+from app.types import TickerStateTransitionCode
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +24,7 @@ class TradeBuilder:
     
     def __init__(self, session: AsyncSession):
         self.session = session
+        self.ticker_state_service = get_ticker_state_service()
     
     async def create_trade_from_entry(
         self,
@@ -76,6 +79,19 @@ class TradeBuilder:
         
         self.session.add(trade)
         await self.session.flush()
+        
+        # Transition ticker to 'filled' state
+        try:
+            await self.ticker_state_service.transition_ticker(
+                fund_id=fund_id,
+                ticker=symbol,
+                to_state="filled",
+                transition_code=TickerStateTransitionCode.ENTRY_ORDER_FILLED.value,
+                description=f"Entry order filled: {total_quantity:.2f} shares @ ${avg_entry_price:.2f}",
+                trade_id=trade_id
+            )
+        except Exception as e:
+            logger.warning(f"Failed to transition ticker state for {symbol}: {e}")
         
         logger.info(
             f"Created trade {trade_id} for {symbol}: "
@@ -136,6 +152,33 @@ class TradeBuilder:
         trade.updated_at = datetime.utcnow()
         
         await self.session.flush()
+        
+        # Transition ticker to 'exited' state
+        # Determine exit reason from trade metadata if available
+        exit_code = TickerStateTransitionCode.EXIT_ORDER_FILLED.value
+        exit_description = f"Position closed: {total_quantity:.2f} shares @ ${avg_exit_price:.2f}, P&L=${realized_pnl:.2f}"
+        
+        trade_metadata = trade.trade_metadata or {}
+        if trade_metadata.get("exit_reason") == "stop_loss":
+            exit_code = TickerStateTransitionCode.STOP_LOSS_TRIGGERED.value
+            exit_description = f"Stop loss triggered: {total_quantity:.2f} shares @ ${avg_exit_price:.2f}"
+        elif trade_metadata.get("exit_reason") == "take_profit":
+            exit_code = TickerStateTransitionCode.TAKE_PROFIT_TRIGGERED.value
+            exit_description = f"Take profit triggered: {total_quantity:.2f} shares @ ${avg_exit_price:.2f}"
+        elif trade_metadata.get("exit_reason") == "manual":
+            exit_code = TickerStateTransitionCode.MANUAL_CLOSE.value
+            exit_description = f"Manual close: {total_quantity:.2f} shares @ ${avg_exit_price:.2f}"
+        
+        try:
+            await self.ticker_state_service.mark_ticker_exited(
+                fund_id=trade.fund_id,
+                ticker=trade.symbol,
+                trade_id=trade_id,
+                transition_code=exit_code,
+                description=exit_description
+            )
+        except Exception as e:
+            logger.warning(f"Failed to transition ticker state to exited for {trade.symbol}: {e}")
         
         logger.info(
             f"Closed trade {trade_id} for {trade.symbol}: "

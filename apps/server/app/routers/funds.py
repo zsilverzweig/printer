@@ -859,12 +859,16 @@ async def start_trading(fund_id: str) -> dict:
                     detail="Fund has no strategy configured. Please configure a strategy first."
                 )
             
+            size_per_trade_str = f"${fund.size_per_trade:.2f}" if fund.size_per_trade is not None else "N/A"
+            max_bet_str = str(fund.max_bet_percent) if fund.max_bet_percent is not None else "N/A"
+            min_bet_str = str(fund.min_bet_percent) if fund.min_bet_percent is not None else "N/A"
+            
             logger.info(
                 f"🎬 START REQUEST: Strategy config: "
                 f"strategy_id={fund.strategy_id}, "
-                f"size_per_trade=${fund.size_per_trade:.2f}, "
-                f"max_bet_percent={fund.max_bet_percent}, "
-                f"min_bet_percent={fund.min_bet_percent}"
+                f"size_per_trade={size_per_trade_str}, "
+                f"max_bet_percent={max_bet_str}, "
+                f"min_bet_percent={min_bet_str}"
             )
             
             # Create and start engine
