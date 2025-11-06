@@ -57,7 +57,6 @@ function FundRow({ fund, onStartStop, selected, onSelect }: FundRowProps) {
   // Connect to real-time WebSocket for fund data
   const { data, isConnecting, error } = useFundRealtime(fund.id);
   const performance = data.performance;
-  const tradingStatus = data.tradingStatus;
 
   // Calculate display values
   const loading = isConnecting || !performance;
@@ -68,14 +67,15 @@ function FundRow({ fund, onStartStop, selected, onSelect }: FundRowProps) {
   const dayChange = performance?.dayChange ?? 0;
   const dayChangePercent = performance?.dayChangePercent ?? 0;
   const isPositive = dayChange >= 0;
-  const isTrading = tradingStatus?.trading ?? false;
+  // Use fund.status from database (active/paused) instead of WebSocket trading status
+  const isActive = fund.status === "active";
 
   const handleStartStop = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setActionLoading(true);
     try {
-      await onStartStop(fund.id, isTrading);
+      await onStartStop(fund.id, isActive);
     } finally {
       setActionLoading(false);
     }
@@ -173,29 +173,25 @@ function FundRow({ fund, onStartStop, selected, onSelect }: FundRowProps) {
         )}
       </TableCell>
       <TableCell className="text-center">
-        {loading ? (
-          <span className="text-xs text-muted-foreground">-</span>
-        ) : (
-          <span
-            className={`font-semibold ${
-              isTrading ? "text-green-600" : "text-red-600"
-            }`}
-          >
-            {isTrading ? "Trading" : "Stopped"}
-          </span>
-        )}
+        <span
+          className={`font-semibold ${
+            isActive ? "text-green-600" : "text-gray-600"
+          }`}
+        >
+          {isActive ? "Active" : "Paused"}
+        </span>
       </TableCell>
       <TableCell className="text-center">
         <Button
           size="sm"
-          variant={isTrading ? "destructive" : "default"}
+          variant={isActive ? "destructive" : "default"}
           onClick={handleStartStop}
-          disabled={actionLoading || loading}
+          disabled={actionLoading}
           className="min-w-[80px]"
         >
           {actionLoading ? (
             <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-          ) : isTrading ? (
+          ) : isActive ? (
             <>
               <Square className="h-4 w-4 mr-1.5" />
               Stop

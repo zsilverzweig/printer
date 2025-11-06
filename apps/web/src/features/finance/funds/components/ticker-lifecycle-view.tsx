@@ -95,7 +95,7 @@ export function TickerLifecycleView({ fundId }: TickerLifecycleViewProps) {
   const [fundStatus, setFundStatus] = useState<"active" | "paused" | null>(
     null
   );
-  const [groupByState, setGroupByState] = useState(false);
+  const [groupByState, setGroupByState] = useState(true);
 
   const loadStates = async () => {
     try {
@@ -280,6 +280,91 @@ export function TickerLifecycleView({ fundId }: TickerLifecycleViewProps) {
             {formatDateTime(row.original.lastScreenedAt)}
           </div>
         ),
+      },
+      {
+        accessorKey: "entryLevelId",
+        header: ({ column }) => {
+          return (
+            <Button
+              variant="ghost"
+              onClick={() =>
+                column.toggleSorting(column.getIsSorted() === "asc")
+              }
+              className="-ml-4 h-8"
+            >
+              Entry Level
+              {column.getIsSorted() === "asc" ? (
+                <ArrowUp className="ml-2 h-4 w-4" />
+              ) : column.getIsSorted() === "desc" ? (
+                <ArrowDown className="ml-2 h-4 w-4" />
+              ) : (
+                <ArrowUpDown className="ml-2 h-4 w-4" />
+              )}
+            </Button>
+          );
+        },
+        cell: ({ row }) => (
+          <div className="text-xs text-muted-foreground">
+            {row.original.entryLevelId || "—"}
+          </div>
+        ),
+      },
+      {
+        accessorKey: "tradeId",
+        header: ({ column }) => {
+          return (
+            <Button
+              variant="ghost"
+              onClick={() =>
+                column.toggleSorting(column.getIsSorted() === "asc")
+              }
+              className="-ml-4 h-8"
+            >
+              Trade ID
+              {column.getIsSorted() === "asc" ? (
+                <ArrowUp className="ml-2 h-4 w-4" />
+              ) : column.getIsSorted() === "desc" ? (
+                <ArrowDown className="ml-2 h-4 w-4" />
+              ) : (
+                <ArrowUpDown className="ml-2 h-4 w-4" />
+              )}
+            </Button>
+          );
+        },
+        cell: ({ row }) => (
+          <div className="text-xs text-muted-foreground">
+            {row.original.tradeId || "—"}
+          </div>
+        ),
+      },
+      {
+        id: "latestTransition",
+        header: "Latest Transition",
+        cell: ({ row }) => {
+          const transitions = row.original.stateTransitions || [];
+          const latest =
+            transitions.length > 0 ? transitions[transitions.length - 1] : null;
+          if (!latest)
+            return <div className="text-xs text-muted-foreground">—</div>;
+
+          return (
+            <div className="text-xs">
+              <div className="flex items-center gap-2 mb-1">
+                <Badge variant="outline" className="text-xs">
+                  {latest.transitionCode}
+                </Badge>
+                <span className="text-muted-foreground">
+                  {formatDateTime(latest.timestamp)}
+                </span>
+              </div>
+              {latest.description && (
+                <div className="text-muted-foreground truncate max-w-[200px]">
+                  {latest.description}
+                </div>
+              )}
+            </div>
+          );
+        },
       },
       {
         accessorKey: "updatedAt",
