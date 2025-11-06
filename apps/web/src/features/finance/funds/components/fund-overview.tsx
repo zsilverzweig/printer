@@ -314,6 +314,7 @@ export function FundOverview({
                     <li>All order history will be cleared</li>
                     <li>All transaction records will be deleted</li>
                     <li>All transfer history will be removed</li>
+                    <li>All ticker lifecycle stages will be cleared</li>
                     <li>Balance will be reset to $0.00</li>
                   </ul>
                   <p className="font-semibold text-red-600 dark:text-red-400 pt-2">

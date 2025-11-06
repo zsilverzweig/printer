@@ -16,16 +16,30 @@ import {
   type SortingState,
 } from "@tanstack/react-table";
 import {
+  AlertTriangle,
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
   ChevronDown,
   ChevronRight,
+  Group,
   RefreshCw,
+  Trash2,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/lib/components/ui/alert-dialog";
 import { Badge } from "@/lib/components/ui/badge";
 import { Button } from "@/lib/components/ui/button";
 import {
@@ -51,6 +65,7 @@ import {
   TableRow,
 } from "@/lib/components/ui/table";
 
+import { fundService } from "../services/fund-service";
 import { tickerStateService } from "../services/ticker-state-service";
 import type { TickerState, TickerStateRecord } from "../types";
 
@@ -75,6 +90,12 @@ export function TickerLifecycleView({ fundId }: TickerLifecycleViewProps) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [stateFilter, setStateFilter] = useState<TickerState | "all">("all");
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  const [isClearing, setIsClearing] = useState(false);
+  const [showClearDialog, setShowClearDialog] = useState(false);
+  const [fundStatus, setFundStatus] = useState<"active" | "paused" | null>(
+    null
+  );
+  const [groupByState, setGroupByState] = useState(false);
 
   const loadStates = async () => {
     try {
@@ -96,9 +117,40 @@ export function TickerLifecycleView({ fundId }: TickerLifecycleViewProps) {
     }
   };
 
+  const loadFundStatus = async () => {
+    try {
+      const fund = await fundService.getFund(fundId);
+      setFundStatus(fund?.status || null);
+    } catch (err) {
+      console.error("Error loading fund status:", err);
+    }
+  };
+
+  const handleClearLifecycle = async () => {
+    try {
+      setIsClearing(true);
+      await fundService.clearLifecycleStages(fundId);
+      setShowClearDialog(false);
+      await loadStates(); // Refresh the states list
+    } catch (err) {
+      console.error("Error clearing lifecycle stages:", err);
+      alert(
+        err instanceof Error
+          ? err.message
+          : "Failed to clear lifecycle stages. Make sure the fund is paused first."
+      );
+    } finally {
+      setIsClearing(false);
+    }
+  };
+
   useEffect(() => {
     void loadStates();
   }, [fundId, stateFilter]);
+
+  useEffect(() => {
+    void loadFundStatus();
+  }, [fundId]);
 
   const formatDateTime = (dateStr: string | null) => {
     if (!dateStr) return "—";
@@ -273,6 +325,49 @@ export function TickerLifecycleView({ fundId }: TickerLifecycleViewProps) {
     },
   });
 
+  // Group states by currentState when grouping is enabled
+  const groupedStates = useMemo(() => {
+    if (!groupByState) return null;
+
+    const grouped = states.reduce((acc, state) => {
+      const stateKey = state.currentState;
+      if (!acc[stateKey]) {
+        acc[stateKey] = [];
+      }
+      acc[stateKey].push(state);
+      return acc;
+    }, {} as Record<TickerState, TickerStateRecord[]>);
+
+    // Order states in a logical flow
+    const stateOrder: TickerState[] = [
+      "screened",
+      "setup",
+      "entered",
+      "filled",
+      "exited",
+      "removed",
+    ];
+
+    return stateOrder
+      .filter((state) => grouped[state] && grouped[state].length > 0)
+      .map((state) => ({
+        state,
+        records: grouped[state],
+      }));
+  }, [states, groupByState]);
+
+  // Create a table instance for grouped records to properly render cells
+  const groupedData = useMemo(() => {
+    if (!groupByState || !groupedStates) return [];
+    return groupedStates.flatMap((g) => g.records);
+  }, [groupByState, groupedStates]);
+
+  const groupedTable = useReactTable({
+    data: groupedData,
+    columns,
+    getCoreRowModel: getCoreRowModel(),
+  });
+
   if (loading) {
     return (
       <Card>
@@ -331,10 +426,69 @@ export function TickerLifecycleView({ fundId }: TickerLifecycleViewProps) {
                   <SelectItem value="removed">Removed</SelectItem>
                 </SelectContent>
               </Select>
+              <Button
+                variant={groupByState ? "default" : "outline"}
+                size="sm"
+                onClick={() => setGroupByState(!groupByState)}
+              >
+                <Group className="h-4 w-4 mr-2" />
+                {groupByState ? "Ungroup" : "Group by State"}
+              </Button>
               <Button variant="outline" size="sm" onClick={loadStates}>
                 <RefreshCw className="h-4 w-4 mr-2" />
                 Refresh
               </Button>
+              <AlertDialog
+                open={showClearDialog}
+                onOpenChange={setShowClearDialog}
+              >
+                <AlertDialogTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={fundStatus === "active" || isClearing}
+                    className="border-red-300 text-red-600 hover:bg-red-50 hover:text-red-700 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/30"
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    {isClearing ? "Clearing..." : "Clear Lifecycle"}
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle className="flex items-center gap-2">
+                      <AlertTriangle className="h-5 w-5 text-red-600" />
+                      Clear Lifecycle Stages?
+                    </AlertDialogTitle>
+                    <AlertDialogDescription className="space-y-2">
+                      <p>
+                        This will permanently delete all ticker lifecycle stages
+                        for this fund:
+                      </p>
+                      <ul className="list-disc list-inside space-y-1 text-sm">
+                        <li>All ticker state records will be deleted</li>
+                        <li>
+                          All lifecycle transition history will be cleared
+                        </li>
+                      </ul>
+                      <p className="font-semibold text-red-600 dark:text-red-400 pt-2">
+                        This action cannot be undone!
+                      </p>
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel disabled={isClearing}>
+                      Cancel
+                    </AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={handleClearLifecycle}
+                      disabled={isClearing}
+                      className="bg-red-600 hover:bg-red-700 text-white"
+                    >
+                      {isClearing ? "Clearing..." : "Clear Lifecycle"}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </div>
           </div>
         </CardHeader>
@@ -343,6 +497,156 @@ export function TickerLifecycleView({ fundId }: TickerLifecycleViewProps) {
             <div className="text-center py-8 text-muted-foreground">
               No ticker states found. Execute the strategy to see ticker
               lifecycle tracking.
+            </div>
+          ) : groupByState && groupedStates ? (
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  {table.getHeaderGroups().map((headerGroup) => (
+                    <TableRow key={headerGroup.id}>
+                      {headerGroup.headers.map((header) => (
+                        <TableHead key={header.id}>
+                          {header.isPlaceholder
+                            ? null
+                            : flexRender(
+                                header.column.columnDef.header,
+                                header.getContext()
+                              )}
+                        </TableHead>
+                      ))}
+                    </TableRow>
+                  ))}
+                </TableHeader>
+                <TableBody>
+                  {groupedStates.map((group) => (
+                    <>
+                      <TableRow
+                        key={`group-${group.state}`}
+                        className="bg-muted/50"
+                      >
+                        <TableCell
+                          colSpan={columns.length}
+                          className="font-semibold py-3"
+                        >
+                          <div className="flex items-center gap-2">
+                            <Badge
+                              variant="outline"
+                              className={
+                                stateColors[group.state] ||
+                                "bg-gray-100 text-gray-800"
+                              }
+                            >
+                              {group.state.charAt(0).toUpperCase() +
+                                group.state.slice(1)}
+                            </Badge>
+                            <span className="text-sm text-muted-foreground">
+                              ({group.records.length} ticker
+                              {group.records.length !== 1 ? "s" : ""})
+                            </span>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                      {group.records.map((stateRecord) => {
+                        const row = groupedTable
+                          .getRowModel()
+                          .rows.find((r) => r.original.id === stateRecord.id);
+                        if (!row) return null;
+
+                        return (
+                          <>
+                            <TableRow
+                              key={stateRecord.id}
+                              className="cursor-pointer hover:bg-muted/50"
+                              onClick={() => {
+                                router.push(
+                                  `/ticker?ticker=${stateRecord.ticker}`
+                                );
+                              }}
+                            >
+                              {row.getVisibleCells().map((cell) => (
+                                <TableCell key={cell.id}>
+                                  {flexRender(
+                                    cell.column.columnDef.cell,
+                                    cell.getContext()
+                                  )}
+                                </TableCell>
+                              ))}
+                            </TableRow>
+                            {expandedRows.has(stateRecord.id) && (
+                              <TableRow>
+                                <TableCell
+                                  colSpan={columns.length}
+                                  className="bg-muted/30"
+                                >
+                                  <div className="py-4 px-4">
+                                    <h4 className="font-semibold mb-2">
+                                      Transition History
+                                    </h4>
+                                    <div className="space-y-2">
+                                      {stateRecord.stateTransitions.length ===
+                                      0 ? (
+                                        <p className="text-sm text-muted-foreground">
+                                          No transitions yet
+                                        </p>
+                                      ) : (
+                                        stateRecord.stateTransitions.map(
+                                          (transition, idx) => (
+                                            <div
+                                              key={idx}
+                                              className="text-sm border-l-2 border-gray-300 pl-3 py-1"
+                                            >
+                                              <div className="flex items-center gap-2">
+                                                <Badge
+                                                  variant="outline"
+                                                  className="text-xs"
+                                                >
+                                                  {transition.transitionCode}
+                                                </Badge>
+                                                <span className="text-muted-foreground">
+                                                  {formatDateTime(
+                                                    transition.timestamp
+                                                  )}
+                                                </span>
+                                              </div>
+                                              <div className="mt-1">
+                                                {transition.fromState ? (
+                                                  <span className="text-muted-foreground">
+                                                    {transition.fromState} →{" "}
+                                                  </span>
+                                                ) : null}
+                                                <span className="font-medium">
+                                                  {transition.toState}
+                                                </span>
+                                              </div>
+                                              <div className="mt-1 text-muted-foreground">
+                                                {transition.description}
+                                              </div>
+                                            </div>
+                                          )
+                                        )
+                                      )}
+                                    </div>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            )}
+                          </>
+                        );
+                      })}
+                    </>
+                  ))}
+                  {groupedStates.length === 0 && (
+                    <TableRow>
+                      <TableCell
+                        colSpan={columns.length}
+                        className="h-24 text-center"
+                      >
+                        No tickers found.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
             </div>
           ) : (
             <div className="rounded-md border">

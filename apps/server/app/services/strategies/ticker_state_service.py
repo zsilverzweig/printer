@@ -94,8 +94,15 @@ class TickerStateService:
             Updated TickerState
         """
         async with get_async_session() as session:
-            # Get or create ticker state
-            state = await self.get_ticker_state(fund_id, ticker)
+            # Get or create ticker state (load within same session)
+            stmt = select(TickerState).where(
+                and_(
+                    TickerState.fund_id == fund_id,
+                    TickerState.ticker == ticker.upper()
+                )
+            )
+            result = await session.execute(stmt)
+            state = result.scalar_one_or_none()
             
             if state is None:
                 # Create new state

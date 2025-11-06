@@ -21,6 +21,9 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 function parseFundDates(data: any): Fund {
   return {
     ...data,
+    // Core fields
+    status: data.status ?? "paused", // Ensure status is preserved
+    archived: data.archived ?? false,
     // Convert snake_case to camelCase
     icon: data.icon,
     iconColor: data.icon_color ?? data.iconColor,
@@ -38,6 +41,14 @@ function parseFundDates(data: any): Fund {
     tradingStartTime: data.trading_start_time ?? data.tradingStartTime,
     tradingEndTime: data.trading_end_time ?? data.tradingEndTime,
     timezone: data.timezone,
+    // AI cost tracking
+    totalAiCost: data.total_ai_cost ?? data.totalAiCost ?? 0,
+    aiCostMtd: data.ai_cost_mtd ?? data.aiCostMtd ?? 0,
+    aiCostYtd: data.ai_cost_ytd ?? data.aiCostYtd ?? 0,
+    lastAiCostReset: data.last_ai_cost_reset
+      ? new Date(data.last_ai_cost_reset)
+      : data.lastAiCostReset ?? null,
+    // Dates
     createdAt: new Date(data.created_at || data.createdAt),
     updatedAt: new Date(data.updated_at || data.updatedAt),
   };
@@ -472,6 +483,41 @@ export const fundService = {
       },
       oldBalance: data.old_balance,
       newBalance: data.new_balance,
+    };
+  },
+
+  /**
+   * Clear all ticker lifecycle stages for a fund
+   * Fund must be paused (not trading) to clear lifecycle stages
+   */
+  async clearLifecycleStages(fundId: string): Promise<{
+    success: boolean;
+    fundId: string;
+    fundName: string;
+    deleted: {
+      tickerStates: number;
+    };
+  }> {
+    const response = await fetch(
+      `${API_BASE}/api/funds/${fundId}/clear-lifecycle`,
+      {
+        method: "POST",
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || "Failed to clear lifecycle stages");
+    }
+
+    const data = await response.json();
+    return {
+      success: data.success,
+      fundId: data.fund_id,
+      fundName: data.fund_name,
+      deleted: {
+        tickerStates: data.deleted.ticker_states,
+      },
     };
   },
 };

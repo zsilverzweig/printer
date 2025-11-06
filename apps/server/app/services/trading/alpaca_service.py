@@ -655,10 +655,12 @@ class AlpacaService:
         self,
         activity_types: str = "FILL",
         after: Optional[str] = None,
-        limit: int = 100
+        limit: Optional[int] = None,
+        page_size: int = 100,
+        max_pages: Optional[int] = None
     ) -> list[Dict[str, Any]]:
         """
-        Get account activities (fills, transactions) from Alpaca.
+        Get account activities (fills, transactions) from Alpaca with pagination support.
         
         This is the SOURCE OF TRUTH for what actually happened.
         Use this to reconcile positions and catch missed fills.
@@ -666,7 +668,9 @@ class AlpacaService:
         Args:
             activity_types: Type of activities to fetch (default: "FILL")
             after: ISO 8601 timestamp to fetch activities after
-            limit: Maximum number of activities to return
+            limit: Maximum total number of activities to return (None = all available)
+            page_size: Number of activities per page (default: 100, max: 100)
+            max_pages: Maximum number of pages to fetch (None = unlimited, respects limit)
         
         Returns:
             List of activity dictionaries with details of each fill
@@ -675,43 +679,75 @@ class AlpacaService:
             raise ValueError("Alpaca client not initialized. Check API credentials.")
         
         try:
-            # Build query parameters
-            params = {
-                "activity_types": activity_types,
-                "page_size": limit,
-            }
-            if after:
-                params["after"] = after
+            # Clamp page_size to Alpaca's maximum
+            page_size = min(page_size, 100)
             
-            # Make direct REST API call since alpaca-py doesn't have get_activities
-            # Using the underlying REST client
-            # Note: client already adds /v2 prefix, so just use /account/activities
-            response = self.client.get(f"/account/activities", params)
+            all_activities = []
+            page_token = None
+            pages_fetched = 0
             
-            # Response is already a list of dicts
-            activities = response if isinstance(response, list) else []
-            
-            # Normalize the activity data
-            activity_list = []
-            for activity in activities:
-                activity_dict = {
-                    "id": activity.get("id"),
-                    "activity_type": activity.get("activity_type"),
-                    "transaction_time": activity.get("transaction_time"),
-                    "type": activity.get("type"),
-                    "price": float(activity.get("price")) if activity.get("price") else None,
-                    "qty": float(activity.get("qty")) if activity.get("qty") else None,
-                    "side": activity.get("side"),
-                    "symbol": activity.get("symbol"),
-                    "leaves_qty": float(activity.get("leaves_qty")) if activity.get("leaves_qty") else None,
-                    "order_id": activity.get("order_id"),
-                    "cum_qty": float(activity.get("cum_qty")) if activity.get("cum_qty") else None,
-                    "order_status": activity.get("order_status"),
+            while True:
+                # Build query parameters
+                params = {
+                    "activity_types": activity_types,
+                    "page_size": page_size,
                 }
-                activity_list.append(activity_dict)
+                if after:
+                    params["after"] = after
+                if page_token:
+                    params["page_token"] = page_token
+                
+                # Make direct REST API call since alpaca-py doesn't have get_activities
+                # Using the underlying REST client
+                # Note: client already adds /v2 prefix, so just use /account/activities
+                response = self.client.get(f"/account/activities", params)
+                
+                # Alpaca API can return either:
+                # 1. A list directly (older format or single page)
+                # 2. A dict with 'activities' and 'next_page_token' (newer paginated format)
+                if isinstance(response, dict):
+                    activities = response.get("activities", [])
+                    page_token = response.get("next_page_token")
+                else:
+                    # Response is a list of dicts (no pagination info)
+                    activities = response if isinstance(response, list) else []
+                    page_token = None
+                
+                # Normalize the activity data
+                for activity in activities:
+                    activity_dict = {
+                        "id": activity.get("id"),
+                        "activity_type": activity.get("activity_type"),
+                        "transaction_time": activity.get("transaction_time"),
+                        "type": activity.get("type"),
+                        "price": float(activity.get("price")) if activity.get("price") else None,
+                        "qty": float(activity.get("qty")) if activity.get("qty") else None,
+                        "side": activity.get("side"),
+                        "symbol": activity.get("symbol"),
+                        "leaves_qty": float(activity.get("leaves_qty")) if activity.get("leaves_qty") else None,
+                        "order_id": activity.get("order_id"),
+                        "cum_qty": float(activity.get("cum_qty")) if activity.get("cum_qty") else None,
+                        "order_status": activity.get("order_status"),
+                    }
+                    all_activities.append(activity_dict)
+                
+                pages_fetched += 1
+                
+                # Check if we should continue paginating
+                if limit and len(all_activities) >= limit:
+                    # Trim to limit
+                    all_activities = all_activities[:limit]
+                    break
+                
+                if max_pages and pages_fetched >= max_pages:
+                    break
+                
+                # If no page_token, we've reached the end
+                if not page_token:
+                    break
             
-            logger.info(f"Retrieved {len(activity_list)} activities from Alpaca")
-            return activity_list
+            logger.info(f"Retrieved {len(all_activities)} activities from Alpaca ({pages_fetched} page(s))")
+            return all_activities
             
         except Exception as e:
             logger.error(f"Failed to fetch account activities: {e}", exc_info=True)

@@ -20,7 +20,7 @@ from app.services.core.time_context import get_current_time
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.strategies import Fund, ScreeningCriteria, Order, Transaction, Transfer, Trade, DefaultRiskSettings
+from app.models.strategies import Fund, ScreeningCriteria, Order, Transaction, Transfer, Trade, DefaultRiskSettings, TickerState
 from app.models.events import StrategyEngineEvent, Event
 from app.services.core.database import get_async_session
 from app.services.analytics.trade_builder import TradeBuilder
@@ -2673,6 +2673,7 @@ async def reset_fund(fund_id: str) -> dict:
     - Delete all orders
     - Delete all transactions
     - Delete all transfers
+    - Delete all ticker lifecycle stages
     - Set balance to 0
     
     Fund must be stopped (not actively trading) to reset.
@@ -2691,6 +2692,13 @@ async def reset_fund(fund_id: str) -> dict:
             fund = await session.get(Fund, fund_id)
             if not fund:
                 raise HTTPException(status_code=404, detail="Fund not found")
+            
+            # Check fund status
+            if fund.status == "active":
+                raise HTTPException(
+                    status_code=400,
+                    detail="Cannot reset fund while it is active. Pause the fund first."
+                )
             
             # Delete all related records
             from sqlalchemy import select, delete, func
@@ -2711,11 +2719,15 @@ async def reset_fund(fund_id: str) -> dict:
             transfers_count = await session.scalar(
                 select(func.count()).select_from(Transfer).where(Transfer.fund_id == fund_id)
             ) or 0
+            ticker_states_count = await session.scalar(
+                select(func.count()).select_from(TickerState).where(TickerState.fund_id == fund_id)
+            ) or 0
             
             logger.info(
                 f"🔄 RESET REQUEST for fund {fund_id} ({fund.name}): "
                 f"{events_count} strategy engine events, {trades_count} trades, {orders_count} orders, "
-                f"{transactions_count} transactions, {transfers_count} transfers, current balance: ${fund.balance:.2f}"
+                f"{transactions_count} transactions, {transfers_count} transfers, {ticker_states_count} ticker states, "
+                f"current balance: ${fund.balance:.2f}"
             )
             
             # Delete in correct order due to foreign key constraints
@@ -2756,6 +2768,11 @@ async def reset_fund(fund_id: str) -> dict:
                 delete(Transfer).where(Transfer.fund_id == fund_id)
             )
             
+            # 6. Delete ticker states (lifecycle stages)
+            await session.execute(
+                delete(TickerState).where(TickerState.fund_id == fund_id)
+            )
+            
             # Reset balance
             old_balance = fund.balance
             fund.balance = 0.0
@@ -2765,7 +2782,8 @@ async def reset_fund(fund_id: str) -> dict:
             logger.info(
                 f"✅ Fund {fund_id} ({fund.name}) reset complete: "
                 f"Deleted {events_count} strategy engine events, {trades_count} trades, {orders_count} orders, "
-                f"{transactions_count} transactions, {transfers_count} transfers. Balance: ${old_balance:.2f} → $0.00"
+                f"{transactions_count} transactions, {transfers_count} transfers, {ticker_states_count} ticker states. "
+                f"Balance: ${old_balance:.2f} → $0.00"
             )
             
             return {
@@ -2778,6 +2796,7 @@ async def reset_fund(fund_id: str) -> dict:
                     "orders": orders_count,
                     "transactions": transactions_count,
                     "transfers": transfers_count,
+                    "ticker_states": ticker_states_count,
                 },
                 "old_balance": old_balance,
                 "new_balance": 0.0,
@@ -2787,6 +2806,77 @@ async def reset_fund(fund_id: str) -> dict:
         raise
     except Exception as e:
         logger.error(f"Error resetting fund {fund_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/funds/{fund_id}/clear-lifecycle")
+async def clear_lifecycle_stages(fund_id: str) -> dict:
+    """
+    Clear all ticker lifecycle stages for a fund.
+    
+    This will:
+    - Delete all ticker state records (lifecycle stages)
+    
+    Fund must be paused (not actively trading) to clear lifecycle stages.
+    """
+    try:
+        # Check if fund is actively trading
+        engine = get_engine(fund_id)
+        if engine:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot clear lifecycle stages while fund is actively trading. Pause the fund first."
+            )
+        
+        async with get_async_session() as session:
+            # Get fund
+            fund = await session.get(Fund, fund_id)
+            if not fund:
+                raise HTTPException(status_code=404, detail="Fund not found")
+            
+            # Check fund status
+            if fund.status == "active":
+                raise HTTPException(
+                    status_code=400,
+                    detail="Cannot clear lifecycle stages while fund is active. Pause the fund first."
+                )
+            
+            # Count ticker states before deletion
+            from sqlalchemy import select, delete, func
+            ticker_states_count = await session.scalar(
+                select(func.count()).select_from(TickerState).where(TickerState.fund_id == fund_id)
+            ) or 0
+            
+            logger.info(
+                f"🔄 CLEAR LIFECYCLE REQUEST for fund {fund_id} ({fund.name}): "
+                f"{ticker_states_count} ticker states to delete"
+            )
+            
+            # Delete ticker states
+            await session.execute(
+                delete(TickerState).where(TickerState.fund_id == fund_id)
+            )
+            
+            await session.commit()
+            
+            logger.info(
+                f"✅ Lifecycle stages cleared for fund {fund_id} ({fund.name}): "
+                f"Deleted {ticker_states_count} ticker states"
+            )
+            
+            return {
+                "success": True,
+                "fund_id": fund_id,
+                "fund_name": fund.name,
+                "deleted": {
+                    "ticker_states": ticker_states_count,
+                },
+            }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error clearing lifecycle stages for fund {fund_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 

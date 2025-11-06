@@ -12,6 +12,8 @@ Currently, when strategies have compilation errors (syntax errors, import failur
 
 4. **Running funds affected**: If a strategy file is modified and breaks, it can affect funds that are already running.
 
+5. **Watcher/reload failures**: The uvicorn `--reload` watcher (used in Docker dev environment) automatically restarts the server when files change. If a strategy file is edited with a syntax error, the watcher triggers a reload, but the server fails to start because the registry import fails during the reload process.
+
 ## Solution
 
 Implement isolated strategy loading with graceful degradation:
@@ -39,8 +41,16 @@ Implement isolated strategy loading with graceful degradation:
   - Validates syntax using `ast.parse()` before importing
   - Logs errors without crashing
 - Modify `_auto_register_strategies()` to use safe imports and continue on failure
+  - **CRITICAL**: This must work at module import time (when registry.py is first imported) to prevent watcher/reload failures
+  - Wrap the entire auto-registration in try/except to ensure the module can be imported even if all strategies are broken
 - Add `list_all_strategies()` to return both working and broken strategies
 - Add `reload_strategy()` function for hot-reloading
+
+**Key Requirement**: The registry module itself must be importable even if strategy files have syntax errors. This ensures:
+
+- Server can start successfully
+- Uvicorn `--reload` watcher can successfully restart the server
+- Other parts of the system that import the registry don't break
 
 ### Phase 2: Lazy Loading Support
 
@@ -71,6 +81,11 @@ Implement isolated strategy loading with graceful degradation:
 - Verify other strategies still work when one is broken
 - Test hot-reload functionality
 - Verify running funds continue when their strategy file is broken (they should fail gracefully)
+- **Test watcher/reload scenario**:
+  - Start server with `--reload` flag
+  - Edit a strategy file to introduce a syntax error
+  - Verify the watcher detects the change and successfully restarts the server (server should start, strategy should be marked broken)
+  - Fix the syntax error and verify the watcher reloads and the strategy becomes available again
 
 ## Files to Modify
 
@@ -85,3 +100,4 @@ Implement isolated strategy loading with graceful degradation:
 - Other strategies continue to work normally
 - Hot-reload allows fixing strategies without server restart
 - Running funds fail gracefully with clear error messages if their strategy breaks
+- **Watcher/reload resilience**: Uvicorn `--reload` watcher can successfully restart the server even when strategy files have syntax errors (server starts, broken strategies are marked, other functionality works)

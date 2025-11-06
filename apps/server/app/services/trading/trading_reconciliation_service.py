@@ -146,7 +146,8 @@ class TradingReconciliationService:
         self,
         session: AsyncSession,
         fund_id: str,
-        lookback_hours: int = 24
+        lookback_hours: int = 24,
+        symbol_filter: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
         Query Alpaca's Activities API for fills that might be missing from our DB.
@@ -155,6 +156,15 @@ class TradingReconciliationService:
         - Partial fills we missed
         - Fills that occurred during downtime
         - Fractional share adjustments
+        
+        Args:
+            session: Database session
+            fund_id: Fund UUID
+            lookback_hours: How many hours back to look for activities
+            symbol_filter: Optional symbol to filter by (for optimization when reconciling specific symbol)
+        
+        Returns:
+            List of fill dictionaries matching this fund's orders
         """
         if not self.alpaca_service.is_available():
             logger.warning("Alpaca service not available, cannot fetch activities")
@@ -165,13 +175,14 @@ class TradingReconciliationService:
             after_time = datetime.now(timezone.utc) - timedelta(hours=lookback_hours)
             after_str = after_time.isoformat()
             
-            logger.info(f"📥 Fetching FILL activities since {after_str}")
+            logger.info(f"📥 Fetching FILL activities since {after_str}" + (f" for {symbol_filter}" if symbol_filter else ""))
             
-            # Get fill activities from Alpaca using the service method
+            # Get fill activities from Alpaca with pagination to get ALL activities
+            # Don't set a limit - we want all fills in the lookback period
             activities = await self.alpaca_service.get_account_activities(
                 activity_types="FILL",
                 after=after_str,
-                limit=100
+                limit=None  # Fetch all available activities
             )
             
             logger.info(f"📥 Retrieved {len(activities)} fill activities from Alpaca")
@@ -186,12 +197,17 @@ class TradingReconciliationService:
             for activity in activities:
                 # Activities are already dicts from get_account_activities
                 order_id = activity.get("order_id")
+                symbol = activity.get("symbol")
+                
+                # Early filter by symbol if provided (optimization)
+                if symbol_filter and symbol != symbol_filter:
+                    continue
                 
                 if order_id and order_id in fund_orders:
                     fill_data = {
                         "id": activity["id"],
                         "order_id": order_id,
-                        "symbol": activity["symbol"],
+                        "symbol": symbol,
                         "side": activity["side"],
                         "qty": activity["qty"],
                         "price": activity["price"],
@@ -199,7 +215,7 @@ class TradingReconciliationService:
                     }
                     relevant_fills.append(fill_data)
             
-            logger.info(f"📊 Found {len(relevant_fills)} fills for this fund's orders")
+            logger.info(f"📊 Found {len(relevant_fills)} fills for this fund's orders" + (f" (filtered by {symbol_filter})" if symbol_filter else ""))
             
             return relevant_fills
             
@@ -252,8 +268,9 @@ class TradingReconciliationService:
         )
         
         # Get all fills for this symbol from Activities API
-        fills = await self.get_missing_fills(session, fund_id, lookback_hours=24)
-        symbol_fills = [f for f in fills if f["symbol"] == symbol]
+        # Pass symbol_filter to optimize - only process activities for this symbol
+        fills = await self.get_missing_fills(session, fund_id, lookback_hours=24, symbol_filter=symbol)
+        symbol_fills = fills  # Already filtered by symbol
         
         if not symbol_fills:
             logger.warning(f"No fills found for {symbol} in Activities API")
