@@ -27,7 +27,7 @@ from app.strategies.base import (
     PositionContext,
 )
 from app.services.news.news_service import NewsService
-from app.lib.technical_analysis import calculate_macd
+from app.lib.technical_analysis import calculate_macd, is_red_candle, is_green_candle
 
 logger = logging.getLogger(__name__)
 
@@ -414,8 +414,7 @@ class BullFlagStrategy(ExecutionStrategy):
         last_consecutive_red_end_idx = -1
         
         for i, bar in enumerate(flag_bars):
-            o, h, l, c = get_ohlc(bar)
-            if c < o:  # Red candle
+            if is_red_candle(bar):  # Red candle
                 consecutive_red += 1
                 if consecutive_red > max_consecutive_red:
                     max_consecutive_red = consecutive_red
@@ -475,8 +474,7 @@ class BullFlagStrategy(ExecutionStrategy):
         green_candles_since_flag_high = 0
         
         for bar in bars_since_flag_high:
-            o, _, _, c = get_ohlc(bar)
-            if c > o:  # Green candle
+            if is_green_candle(bar):  # Green candle
                 green_candles_since_flag_high += 1
         
         # If more than 1 green candle since CURRENT flag high and we haven't triggered entry, invalidate
@@ -530,7 +528,7 @@ class BullFlagStrategy(ExecutionStrategy):
             o, h, l, c = get_ohlc(latest_bar)
             
             # Green candle = close > open, and close > last red candle's close
-            if c > o and c > entry_price:
+            if is_green_candle(latest_bar) and c > entry_price:
                 green_above_red = True
                 logger.info(
                     f"🚩 [{ticker}] Entry signal: Green candle closed at ${c:.2f} above "

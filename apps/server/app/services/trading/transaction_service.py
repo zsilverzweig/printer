@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.strategies import Transaction, Fund, Order, Trade
 from app.services.core.time_context import get_current_time
 from app.services.trading.position_tracker import get_position_quantity_from_transactions
+from app.services.trading.position_service import update_position_on_transaction
 from app.services.trading.constants import POSITION_EPSILON, FLOAT_COMPARISON_EPSILON
 from app.services.events.event_service import event_service
 
@@ -279,6 +280,23 @@ async def create_transaction(
         )
         
         session.add(transaction)
+        # Flush to ensure transaction has an ID before updating position
+        await session.flush()
+        
+        # Update position incrementally (atomic with transaction)
+        try:
+            await update_position_on_transaction(
+                session=session,
+                transaction=transaction,
+                trade_id=validated_trade_id
+            )
+        except Exception as e:
+            logger.error(
+                f"Error updating position for transaction {transaction.id}: {e}",
+                exc_info=True
+            )
+            # Don't fail transaction creation if position update fails
+            # Position can be recalculated from transactions if needed
         
         # Update fund balance
         await _update_fund_balance(session, fund_id, transaction_type, total_value, symbol)

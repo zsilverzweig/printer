@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.strategies import Trade, Transaction, Order, Fund
 from app.services.strategies.ticker_state_service import get_ticker_state_service
+from app.services.trading.position_service import create_position_for_trade, close_position_for_trade
 from app.types import TickerStateTransitionCode
 
 logger = logging.getLogger(__name__)
@@ -81,6 +82,23 @@ class TradeBuilder:
         
         self.session.add(trade)
         await self.session.flush()
+        
+        # Create/update position linked to this trade
+        # Note: Position may already exist from transaction updates, but we ensure it's linked to the trade
+        try:
+            await create_position_for_trade(
+                session=self.session,
+                fund_id=fund_id,
+                symbol=symbol,
+                trade_id=trade_id,
+                entry_quantity=total_quantity,
+                entry_price=avg_entry_price
+            )
+        except Exception as e:
+            logger.warning(
+                f"Failed to create/update position for trade {trade_id} ({symbol}): {e}. "
+                f"Position may already exist from transaction updates."
+            )
         
         # Transition ticker to 'filled' state
         try:
@@ -154,6 +172,20 @@ class TradeBuilder:
         trade.updated_at = get_current_time()
         
         await self.session.flush()
+        
+        # Close position when trade closes
+        # Position should already be at zero from sell transactions, but verify and clean up
+        try:
+            await close_position_for_trade(
+                session=self.session,
+                fund_id=trade.fund_id,
+                symbol=trade.symbol
+            )
+        except Exception as e:
+            logger.warning(
+                f"Failed to close position for trade {trade_id} ({trade.symbol}): {e}. "
+                f"Position may have already been closed by sell transactions."
+            )
         
         # Transition ticker to 'exited' state
         # Determine exit reason from trade metadata if available

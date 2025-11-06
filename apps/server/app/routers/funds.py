@@ -20,7 +20,7 @@ from app.services.core.time_context import get_current_time
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.strategies import Fund, ScreeningCriteria, Order, Transaction, Transfer, Trade, DefaultRiskSettings, TickerState
+from app.models.strategies import Fund, ScreeningCriteria, Order, Transaction, Transfer, Trade, DefaultRiskSettings, TickerState, Position
 from app.models.events import StrategyEngineEvent, Event
 from app.services.core.database import get_async_session
 from app.services.analytics.trade_builder import TradeBuilder
@@ -32,6 +32,7 @@ from app.services.strategies.engine_registry import (
 )
 from app.services.strategies.strategy_factory import create_strategy_engine
 from app.strategies.registry import get_strategy_metadata
+from app.services.trading.constants import FLOAT_COMPARISON_EPSILON
 
 logger = logging.getLogger(__name__)
 
@@ -1430,81 +1431,51 @@ async def get_fund_positions(fund_id: str) -> dict:
         except Exception as e:
             logger.error(f"Error getting Alpaca positions for fund {fund_id}: {e}", exc_info=True)
         
-        # Get positions from our database (via transactions)
+        # Get positions from our database (from Position table)
         from sqlalchemy import select, and_, func, distinct
+        from app.models.strategies import Position
+        from app.services.trading.position_service import get_all_positions
+        
         async with get_async_session() as session:
-            # Get transactions for this fund
-            stmt = select(
-                Transaction.symbol,
-                Transaction.side,
-                Transaction.quantity
-            ).where(
-                Transaction.fund_id == fund_id
-            ).order_by(Transaction.timestamp.asc())
+            # Query Position table directly (much faster than calculating from transactions)
+            positions = await get_all_positions(session, fund_id)
             
-            result = await session.execute(stmt)
-            transactions = result.all()
-            
-            # Calculate net positions for this fund
-            position_tracker = {}
-            for symbol, side, quantity in transactions:
-                if symbol not in position_tracker:
-                    position_tracker[symbol] = 0
-                
-                if side == "buy":
-                    position_tracker[symbol] += quantity
-                else:  # sell
-                    position_tracker[symbol] -= quantity
-            
-            # Filter to only positive positions
+            # Convert to API format
             db_positions = [
                 {
-                    "symbol": symbol,
-                    "qty": qty,
+                    "symbol": pos.symbol,
+                    "qty": pos.quantity,
+                    "avg_entry_price": pos.avg_entry_price,
+                    "cost_basis": pos.cost_basis,
+                    "trade_id": pos.trade_id,
                     "source": "database"
                 }
-                for symbol, qty in position_tracker.items()
-                if qty > 0.001
+                for pos in positions
             ]
             
             # Get all symbols that have OPEN positions in OTHER funds of the SAME mode
             # (excluding current fund). We only filter positions from funds with the same mode
             # because sim and real trading use different Alpaca accounts.
-            # We need to calculate net positions for each other fund to find open positions
-            other_funds_transactions_stmt = select(
-                Transaction.fund_id,
-                Transaction.symbol,
-                Transaction.side,
-                Transaction.quantity,
+            # Query Position table directly for other funds
+            other_funds_positions_stmt = select(
+                Position.symbol,
                 Fund.mode
             ).join(
-                Fund, Transaction.fund_id == Fund.id
+                Fund, Position.fund_id == Fund.id
             ).where(
                 and_(
-                    Transaction.fund_id != fund_id,
-                    Fund.mode == fund_mode  # Only check funds with same mode
+                    Position.fund_id != fund_id,
+                    Fund.mode == fund_mode,  # Only check funds with same mode
+                    Position.quantity > FLOAT_COMPARISON_EPSILON  # Only non-zero positions
                 )
             )
             
-            other_funds_result = await session.execute(other_funds_transactions_stmt)
-            other_funds_transactions = other_funds_result.all()
+            other_funds_result = await session.execute(other_funds_positions_stmt)
+            other_funds_positions = other_funds_result.all()
             
-            # Calculate net positions for each symbol in other funds of the same mode
-            other_funds_positions = {}
-            for other_fund_id, symbol, side, quantity, other_fund_mode in other_funds_transactions:
-                key = (other_fund_id, symbol)
-                if key not in other_funds_positions:
-                    other_funds_positions[key] = 0
-                
-                if side == "buy":
-                    other_funds_positions[key] += quantity
-                else:  # sell
-                    other_funds_positions[key] -= quantity
-            
-            # Get symbols that have open positions (qty > 0.001) in other funds of the same mode
+            # Get symbols that have open positions in other funds of the same mode
             symbols_in_other_funds = {
-                symbol for (fund_id, symbol), qty in other_funds_positions.items()
-                if qty > 0.001
+                symbol for symbol, mode in other_funds_positions
             }
         
         # Filter out Alpaca positions that are already tracked by other funds

@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from typing import Optional
 import json
 
-from sqlalchemy import String, Float, DateTime, Integer, Text, ForeignKey, JSON
+from sqlalchemy import String, Float, DateTime, Integer, Text, ForeignKey, JSON, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -312,6 +312,49 @@ class Trade(Base):
         nullable=False, 
         default=utcnow_aware,
         onupdate=utcnow_aware
+    )
+
+
+class Position(Base):
+    """
+    Current position for a symbol in a fund.
+    
+    Stores position state incrementally updated with each transaction.
+    Replaces expensive FIFO calculations from transaction history.
+    Linked to Trade that opened the position (nullable for orphaned positions).
+    """
+    __tablename__ = "positions"
+    
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    fund_id: Mapped[str] = mapped_column(String(36), ForeignKey("funds.id", ondelete="CASCADE"), nullable=False, index=True)
+    symbol: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
+    trade_id: Mapped[Optional[str]] = mapped_column(
+        String(36), 
+        ForeignKey("trades.id", ondelete="SET NULL"), 
+        nullable=True,
+        index=True
+    )  # Links to Trade that opened this position (nullable for orphaned positions)
+    
+    # Position metrics (maintained incrementally)
+    quantity: Mapped[float] = mapped_column(Float, nullable=False)  # Current position quantity
+    avg_entry_price: Mapped[float] = mapped_column(Float, nullable=False)  # FIFO average entry price
+    cost_basis: Mapped[float] = mapped_column(Float, nullable=False)  # Total cost basis (quantity * avg_entry_price)
+    
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), 
+        nullable=False, 
+        default=utcnow_aware
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), 
+        nullable=False, 
+        default=utcnow_aware,
+        onupdate=utcnow_aware
+    )
+    
+    # Unique constraint: one position per symbol per fund
+    __table_args__ = (
+        UniqueConstraint('fund_id', 'symbol', name='uq_positions_fund_symbol'),
     )
 
 

@@ -165,6 +165,12 @@ def _auto_register_strategies() -> None:
     except ImportError as e:
         logger.warning(f"Failed to import MACDMomentumStrategy: {e}")
     
+    try:
+        from app.strategies.four_red_candles import FourRedCandlesStrategy
+        register_strategy(FourRedCandlesStrategy)
+    except ImportError as e:
+        logger.warning(f"Failed to import FourRedCandlesStrategy: {e}")
+    
     # Old strategies archived - uncomment when needed
     # try:
     #     from app.strategies.archived.failed_equal_highs_old import FailedEqualHighsBreakoutStrategy
