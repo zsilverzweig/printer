@@ -159,7 +159,23 @@ class OrderExecutor:
                         )
                         return False
                     
-                    # Validation passed - create order in SAME transaction
+                    # Validation passed - create order and trade in SAME transaction
+                    # Create Trade record immediately so transactions can link to it
+                    trade_record = Trade(
+                        id=trade_id,
+                        fund_id=self.fund_id,
+                        symbol=symbol,
+                        entry_order_id=order_id,
+                        entry_time=submitted_at,
+                        entry_price=market_data.price,  # Will be updated with actual fill price
+                        entry_quantity=quantity,  # Will be updated with actual fill quantity
+                        strategy_id=self.fund.strategy_id,
+                        screening_criteria_id=self.fund.screening_criteria_id,
+                        status="pending",  # Will change to "open" when filled
+                        trade_metadata={}
+                    )
+                    session.add(trade_record)
+                    
                     order_record = Order(
                         id=order_id,
                         alpaca_order_id="",
@@ -176,7 +192,7 @@ class OrderExecutor:
                     session.add(order_record)
                     await session.commit()
                 
-                logger.info(f"📝 Order record created with trade_id={trade_id}: {order_id}")
+                logger.debug(f"📝 Order and Trade records created: order_id={order_id[:8]}..., trade_id={trade_id[:8]}...")
                 
                 
                 # Broadcast diagnostic
@@ -213,7 +229,7 @@ class OrderExecutor:
                             time_in_force="day"
                         )
                     alpaca_order_id = alpaca_order["id"]
-                    logger.info(f"✅ Alpaca order placed: {alpaca_order_id}")
+                    logger.debug(f"✅ Alpaca order placed: {alpaca_order_id}")
                     
                 except Exception as alpaca_error:
                     # Alpaca call failed - mark order as failed
@@ -235,7 +251,7 @@ class OrderExecutor:
                         order_record = result.scalar_one()
                         order_record.alpaca_order_id = alpaca_order_id
                         await session.commit()
-                    logger.info(f"✅ Order record updated with Alpaca ID: {alpaca_order_id}")
+                    logger.debug(f"✅ Order record updated with Alpaca ID: {alpaca_order_id}")
                     
                 except Exception as db_error:
                     # DB update failed but Alpaca order exists - CRITICAL
@@ -257,7 +273,7 @@ class OrderExecutor:
                 logger.error(f"❌ Order creation failed for {symbol}: {e}")
                 return False
             
-            logger.info(
+            logger.debug(
                 f"📤 Order submitted to Alpaca: {symbol} buy {quantity} @ ${market_data.price:.2f} "
                 f"(order_id={order_id}, alpaca_id={alpaca_order['id']})"
             )
@@ -400,7 +416,7 @@ class OrderExecutor:
             order_id = str(uuid.uuid4())
             submitted_at = get_current_time()
             
-            logger.info(f"📝 Creating sell order record: {position.symbol} sell {actual_quantity} shares")
+            logger.debug(f"📝 Creating sell order record: {position.symbol} sell {actual_quantity} shares")
             
             try:
                 # Create order in DB
@@ -421,7 +437,7 @@ class OrderExecutor:
                     session.add(order_record)
                     await session.commit()
                 
-                logger.info(f"📝 Sell order record created in DB: {order_id}")
+                logger.debug(f"📝 Sell order record created in DB: {order_id}")
                 
                 # Place sell order via Alpaca
                 try:
@@ -432,7 +448,7 @@ class OrderExecutor:
                         time_in_force="day"
                     )
                     alpaca_order_id = alpaca_order["id"]
-                    logger.info(f"✅ Alpaca sell order placed: {alpaca_order_id}")
+                    logger.debug(f"✅ Alpaca sell order placed: {alpaca_order_id}")
                     
                 except Exception as alpaca_error:
                     # Alpaca call failed - mark order as failed
@@ -454,7 +470,7 @@ class OrderExecutor:
                         order_record = result.scalar_one()
                         order_record.alpaca_order_id = alpaca_order_id
                         await session.commit()
-                    logger.info(f"✅ Sell order record updated with Alpaca ID: {alpaca_order_id}")
+                    logger.debug(f"✅ Sell order record updated with Alpaca ID: {alpaca_order_id}")
                     
                     # Schedule reconciliation
                     reconciliation_service = get_reconciliation_service()
@@ -491,7 +507,7 @@ class OrderExecutor:
             # Calculate P&L
             realized_pnl = position.unrealized_pnl
             
-            logger.info(
+            logger.debug(
                 f"📤 Sell order submitted to Alpaca: {position.symbol} sell {actual_quantity} @ ${market_data.price:.2f} "
                 f"(order_id={order_id}, alpaca_id={alpaca_order['id']}, P&L: ${realized_pnl:.2f})"
             )

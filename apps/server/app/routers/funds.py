@@ -257,6 +257,7 @@ def serialize_order(order: Order) -> dict:
         "filled_qty": order.filled_qty,
         "filled_avg_price": order.filled_avg_price,
         "alpaca_order_id": alpaca_order_id,
+        "trade_id": order.trade_id,
     }
 
 

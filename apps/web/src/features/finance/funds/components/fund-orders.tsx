@@ -73,9 +73,32 @@ export function FundOrders({ fundId }: FundOrdersProps) {
       filled_qty: number | null;
       filled_avg_price: number | null;
       alpaca_order_id: string;
+      trade_id: string | null;
     }>[]
   >(
     () => [
+      {
+        accessorKey: "id",
+        header: "Order ID",
+        cell: ({ row }) => (
+          <div className="font-mono text-xs text-muted-foreground">
+            {row.original.id.slice(0, 8)}...
+          </div>
+        ),
+      },
+      {
+        accessorKey: "trade_id",
+        header: "Trade ID",
+        cell: ({ row }) => (
+          <div className="font-mono text-xs">
+            {row.original.trade_id ? (
+              <span className="text-blue-600">{row.original.trade_id.slice(0, 8)}...</span>
+            ) : (
+              <span className="text-muted-foreground">-</span>
+            )}
+          </div>
+        ),
+      },
       {
         accessorKey: "symbol",
         header: ({ column }) => {

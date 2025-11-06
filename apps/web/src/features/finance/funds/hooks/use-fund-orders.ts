@@ -17,6 +17,7 @@ interface Order {
   filled_qty: number | null;
   filled_avg_price: number | null;
   alpaca_order_id: string;
+  trade_id: string | null;
 }
 
 interface UseFundOrdersReturn {
@@ -75,6 +76,7 @@ export function useFundOrders(fundId: string): UseFundOrdersReturn {
           filled_qty: order.filled_qty,
           filled_avg_price: order.filled_avg_price,
           alpaca_order_id: order.alpaca_order_id,
+          trade_id: order.trade_id || null,
         })
       );
       setOrders(transformedOrders);
@@ -112,6 +114,7 @@ export function useFundOrders(fundId: string): UseFundOrdersReturn {
           filled_avg_price:
             order.filled_avg_price || order.filledAvgPrice || null,
           alpaca_order_id: order.alpaca_order_id || order.alpacaOrderId || "",
+          trade_id: order.trade_id || order.tradeId || null,
         })
       );
       setOrders(transformedOrders);

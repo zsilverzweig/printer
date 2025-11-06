@@ -151,10 +151,17 @@ class TickerStateService:
             await session.commit()
             await session.refresh(state)
             
-            logger.info(
-                f"[TICKER_STATE] Transition: {fund_id}/{ticker} "
-                f"{from_state} -> {to_state} ({transition_code}) - {description}"
-            )
+            # Only log important transitions at INFO level, routine ones at DEBUG
+            if to_state in ["entered", "filled", "exited"]:
+                logger.info(
+                    f"[TICKER_STATE] Transition: {fund_id}/{ticker} "
+                    f"{from_state} -> {to_state} ({transition_code}) - {description}"
+                )
+            else:
+                logger.debug(
+                    f"[TICKER_STATE] Transition: {fund_id}/{ticker} "
+                    f"{from_state} -> {to_state} ({transition_code}) - {description}"
+                )
             
             return state
     
@@ -212,7 +219,7 @@ class TickerStateService:
                     # Don't reset tickers that have progressed beyond "screened" (setup, entered, filled, exited)
                     if state.current_state == "removed":
                         # Transition back to screened if it was removed
-                        logger.info(
+                        logger.debug(
                             f"[TICKER_STATE] Resetting removed ticker to screened: {fund_id}/{ticker_upper}"
                         )
                         transition = {
@@ -270,8 +277,9 @@ class TickerStateService:
             for ts in all_states:
                 state_counts[ts.current_state] = state_counts.get(ts.current_state, 0) + 1
             
+            # Only log summary at DEBUG level to reduce noise
             state_summary = ", ".join([f"{state}: {count}" for state, count in sorted(state_counts.items())])
-            logger.info(
+            logger.debug(
                 f"[TICKER_STATE] Synced screener tickers for fund {fund_id}: "
                 f"{len(current_tickers)} in screener, {len(existing_states)} total states. "
                 f"State distribution: {state_summary}"

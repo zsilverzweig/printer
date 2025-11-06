@@ -110,7 +110,7 @@ class TradeEventHandler:
             
             await session.commit()
             
-            logger.info(
+            logger.debug(
                 f"🆕 Order status updated: {order.symbol} {order.side} "
                 f"{old_status} → pending"
             )
@@ -205,6 +205,18 @@ class TradeEventHandler:
                     logger.warning(f"Failed to parse fill timestamp: {e}")
                     fill_timestamp = None
             
+            # CRITICAL: For buy orders, create Trade record BEFORE creating transaction
+            # This ensures the transaction can be linked to the trade via _validate_trade_id
+            if order.side == "buy" and order.trade_id:
+                trade = await session.get(Trade, order.trade_id)
+                if not trade:
+                    # Trade doesn't exist yet - we'll create it after transaction is created
+                    # But we need to ensure the transaction can still be created
+                    # For now, we'll create a placeholder trade or allow transaction without trade_id
+                    # Actually, let's create the trade structure but we need the transaction first
+                    # So we'll handle this after transaction creation
+                    pass
+            
             # Create transaction for the remaining quantity
             fill_event = {
                 "timestamp": fill_timestamp_str or datetime.now(timezone.utc).isoformat(),
@@ -219,12 +231,13 @@ class TradeEventHandler:
             )
             
             if transaction:
-                logger.info(
+                logger.debug(
                     f"💰 Transaction created: {order.symbol} {order.side} "
                     f"{remaining_qty} @ ${fill_price:.2f}"
                 )
             else:
                 logger.warning(f"⚠️  Transaction creation skipped for order {order.id[:8]}...")
+                return
             
             # Update order record
             order.status = "filled"
@@ -233,16 +246,22 @@ class TradeEventHandler:
             if fill_timestamp:
                 order.filled_at = fill_timestamp
             
+            # Update Trade record if applicable (should already exist, just update it)
+            if order.trade_id and transaction:
+                await self._update_trade_record(session, order, transaction)
+                
+                # Ensure transaction is linked to trade (should already be, but double-check)
+                if transaction.trade_id != order.trade_id:
+                    transaction.trade_id = order.trade_id
+                    logger.debug(f"Linked transaction {transaction.id[:8]}... to trade {order.trade_id[:8]}...")
+            
             await session.commit()
             
+            # Only log important fills at INFO level
             logger.info(
                 f"✅ Order filled: {order.symbol} {order.side} "
                 f"{order.filled_qty} @ ${order.filled_avg_price:.2f}"
             )
-            
-            # Update Trade record if applicable
-            if order.trade_id and transaction:
-                await self._update_trade_record(session, order, transaction)
             
             # Emit event
             await event_service.log_strategy_engine_event(
@@ -342,7 +361,7 @@ class TradeEventHandler:
             )
             
             if transaction:
-                logger.info(
+                logger.debug(
                     f"📊 Partial fill: {order.symbol} {order.side} "
                     f"{fill_qty} @ ${fill_price:.2f}"
                 )
@@ -356,11 +375,16 @@ class TradeEventHandler:
             if fill_timestamp:
                 order.filled_at = fill_timestamp
             
-            await session.commit()
-            
-            # Update Trade record if applicable
+            # Update Trade record if applicable (should already exist, just update it)
             if order.trade_id and transaction:
                 await self._update_trade_record(session, order, transaction)
+                
+                # Ensure transaction is linked to trade (should already be, but double-check)
+                if transaction.trade_id != order.trade_id:
+                    transaction.trade_id = order.trade_id
+                    logger.debug(f"Linked transaction {transaction.id[:8]}... to trade {order.trade_id[:8]}...")
+            
+            await session.commit()
             
             # Emit event
             await event_service.log_strategy_engine_event(
@@ -423,7 +447,7 @@ class TradeEventHandler:
             
             await session.commit()
             
-            logger.info(
+            logger.debug(
                 f"❌ Order {event_type}: {order.symbol} {order.side} "
                 f"{old_status} → {new_status}"
             )
@@ -453,21 +477,24 @@ class TradeEventHandler:
         """
         Update Trade record after transaction creation.
         
-        If Trade doesn't exist, create it. If it exists, update it.
+        Trade should already exist (created when order was placed).
+        Updates it with actual fill data and changes status from "pending" to "open" when filled.
         """
         try:
             if not order.trade_id:
                 return
             
-            # Check if Trade exists
+            # Get existing Trade record (should exist since it's created when order is placed)
             trade = await session.get(Trade, order.trade_id)
             
             if not trade:
-                # Create new Trade record
+                logger.warning(
+                    f"⚠️  Trade {order.trade_id} not found for {order.symbol} {order.side}. "
+                    f"This should not happen - trade should be created when order is placed."
+                )
+                # Fallback: create trade if it doesn't exist (for backward compatibility)
                 trade_builder = TradeBuilder(session)
-                
                 if order.side == "buy":
-                    # Entry transaction
                     await trade_builder.create_trade_from_entry(
                         trade_id=order.trade_id,
                         fund_id=order.fund_id,
@@ -476,28 +503,54 @@ class TradeEventHandler:
                         entry_transactions=[transaction],
                         strategy_id=getattr(order, 'strategy_id', None),
                     )
-                    logger.info(f"🆕 Created Trade record {order.trade_id} for {order.symbol}")
-                # For sells, we can't create trade without entry
-            else:
-                # Update existing Trade record
-                if order.side == "sell" and trade.status == "open":
-                    # Check if position is closed
-                    position_qty = await get_position_quantity_from_transactions(
-                        session, order.fund_id, order.symbol
-                    )
+                    logger.debug(f"🆕 Created Trade record {order.trade_id} for {order.symbol} (fallback)")
+                return
+            
+            # Update existing Trade record
+            if order.side == "buy":
+                # Update entry data with actual fill prices/quantities
+                # Calculate average entry price from all entry transactions
+                from sqlalchemy import select
+                stmt = select(Transaction).where(
+                    Transaction.trade_id == order.trade_id,
+                    Transaction.side == "buy"
+                )
+                result = await session.execute(stmt)
+                entry_transactions = result.scalars().all()
+                
+                if entry_transactions:
+                    total_qty = sum(txn.quantity for txn in entry_transactions)
+                    total_cost = sum(txn.total_value for txn in entry_transactions)
+                    avg_price = total_cost / total_qty if total_qty > 0 else transaction.price
+                    entry_time = min(txn.timestamp for txn in entry_transactions)
                     
-                    if position_qty < 0.001:  # Position closed
-                        # Close the trade
-                        trade_builder = TradeBuilder(session)
-                        await trade_builder.close_trade(
-                            trade_id=order.trade_id,
-                            exit_order_id=order.id,
-                            exit_transactions=[transaction],
-                        )
-                        logger.info(f"🔒 Closed Trade record {order.trade_id} for {order.symbol}")
-                    else:
-                        # Partial close - update trade but keep it open
-                        logger.debug(f"Partial close for Trade {order.trade_id} (position still open)")
+                    trade.entry_price = avg_price
+                    trade.entry_quantity = total_qty
+                    trade.entry_time = entry_time
+                    
+                    # Change status from "pending" to "open" when first filled
+                    if trade.status == "pending":
+                        trade.status = "open"
+                        logger.debug(f"✅ Trade {order.trade_id[:8]}... opened: {order.symbol} {total_qty} @ ${avg_price:.2f}")
+                
+            elif order.side == "sell" and trade.status == "open":
+                # Check if position is closed
+                position_qty = await get_position_quantity_from_transactions(
+                    session, order.fund_id, order.symbol
+                )
+                
+                if position_qty < 0.001:  # Position closed
+                    # Close the trade
+                    trade_builder = TradeBuilder(session)
+                    await trade_builder.close_trade(
+                        trade_id=order.trade_id,
+                        exit_order_id=order.id,
+                        exit_transactions=[transaction],
+                    )
+                    logger.info(f"🔒 Trade closed: {order.symbol} trade_id={order.trade_id[:8]}...")
+                else:
+                    # Partial close - update trade but keep it open
+                    logger.debug(f"Partial close for Trade {order.trade_id} (position still open)")
                         
         except Exception as e:
             logger.error(f"Error updating Trade record: {e}", exc_info=True)
