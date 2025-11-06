@@ -62,6 +62,14 @@ class SchemaResponse(BaseModel):
     tables: List[TableInfo]
 
 
+class QueryStatistics(BaseModel):
+    """Query statistics from pg_stat_statements."""
+    slow_queries: List[Dict[str, Any]]
+    top_queries_by_time: List[Dict[str, Any]]
+    top_queries_by_calls: List[Dict[str, Any]]
+    unused_indexes: List[Dict[str, Any]]
+
+
 class PerformanceMetrics(BaseModel):
     """Performance metrics for database monitoring."""
     connections: Dict[str, Any]
@@ -71,6 +79,7 @@ class PerformanceMetrics(BaseModel):
     index_usage: List[Dict[str, Any]]
     active_queries: List[Dict[str, Any]]
     database_size: Dict[str, Any]
+    query_statistics: QueryStatistics | None = None
 
 
 @router.post("/query", response_model=SQLQueryResponse)
@@ -353,6 +362,122 @@ async def get_performance_metrics() -> PerformanceMetrics:
                 "shared_buffers": db_size_row[3]
             }
             
+            # Query statistics from pg_stat_statements (if available)
+            query_statistics = None
+            try:
+                # Check if pg_stat_statements extension is available
+                check_ext_result = await session.execute(text("""
+                    SELECT EXISTS(
+                        SELECT 1 FROM pg_extension WHERE extname = 'pg_stat_statements'
+                    )
+                """))
+                ext_exists = check_ext_result.scalar()
+                
+                if ext_exists:
+                    # Slow queries (mean execution time > 100ms)
+                    slow_queries_result = await session.execute(text("""
+                        SELECT 
+                            LEFT(query, 200) as query_preview,
+                            calls,
+                            ROUND(total_exec_time::numeric, 2) as total_exec_time_ms,
+                            ROUND(mean_exec_time::numeric, 2) as mean_exec_time_ms,
+                            ROUND(max_exec_time::numeric, 2) as max_exec_time_ms,
+                            ROUND((total_exec_time / NULLIF(sum(total_exec_time) OVER (), 0) * 100)::numeric, 2) as pct_total_time,
+                            ROUND((shared_blks_hit::float / NULLIF(shared_blks_hit + shared_blks_read, 0) * 100)::numeric, 2) as cache_hit_ratio
+                        FROM pg_stat_statements
+                        WHERE mean_exec_time > 100
+                        ORDER BY mean_exec_time DESC
+                        LIMIT 20
+                    """))
+                    slow_queries = []
+                    for row in slow_queries_result:
+                        slow_queries.append({
+                            "query_preview": row[0],
+                            "calls": int(row[1] or 0),
+                            "total_exec_time_ms": float(row[2] or 0),
+                            "mean_exec_time_ms": float(row[3] or 0),
+                            "max_exec_time_ms": float(row[4] or 0),
+                            "pct_total_time": float(row[5] or 0),
+                            "cache_hit_ratio": float(row[6] or 0)
+                        })
+                    
+                    # Top queries by total execution time
+                    top_by_time_result = await session.execute(text("""
+                        SELECT 
+                            LEFT(query, 200) as query_preview,
+                            calls,
+                            ROUND(total_exec_time::numeric, 2) as total_exec_time_ms,
+                            ROUND(mean_exec_time::numeric, 2) as mean_exec_time_ms,
+                            ROUND((total_exec_time / NULLIF(sum(total_exec_time) OVER (), 0) * 100)::numeric, 2) as pct_total_time
+                        FROM pg_stat_statements
+                        ORDER BY total_exec_time DESC
+                        LIMIT 20
+                    """))
+                    top_queries_by_time = []
+                    for row in top_by_time_result:
+                        top_queries_by_time.append({
+                            "query_preview": row[0],
+                            "calls": int(row[1] or 0),
+                            "total_exec_time_ms": float(row[2] or 0),
+                            "mean_exec_time_ms": float(row[3] or 0),
+                            "pct_total_time": float(row[4] or 0)
+                        })
+                    
+                    # Top queries by number of calls
+                    top_by_calls_result = await session.execute(text("""
+                        SELECT 
+                            LEFT(query, 200) as query_preview,
+                            calls,
+                            ROUND(total_exec_time::numeric, 2) as total_exec_time_ms,
+                            ROUND(mean_exec_time::numeric, 2) as mean_exec_time_ms
+                        FROM pg_stat_statements
+                        ORDER BY calls DESC
+                        LIMIT 20
+                    """))
+                    top_queries_by_calls = []
+                    for row in top_by_calls_result:
+                        top_queries_by_calls.append({
+                            "query_preview": row[0],
+                            "calls": int(row[1] or 0),
+                            "total_exec_time_ms": float(row[2] or 0),
+                            "mean_exec_time_ms": float(row[3] or 0)
+                        })
+                    
+                    # Unused indexes (indexes with 0 scans)
+                    unused_indexes_result = await session.execute(text("""
+                        SELECT 
+                            schemaname || '.' || relname as table_name,
+                            indexrelname as index_name,
+                            idx_scan,
+                            pg_size_pretty(pg_relation_size(indexrelid)) as index_size,
+                            pg_relation_size(indexrelid) as size_bytes
+                        FROM pg_stat_user_indexes
+                        WHERE idx_scan = 0
+                        AND schemaname = 'public'
+                        ORDER BY pg_relation_size(indexrelid) DESC
+                        LIMIT 20
+                    """))
+                    unused_indexes = []
+                    for row in unused_indexes_result:
+                        unused_indexes.append({
+                            "table_name": row[0],
+                            "index_name": row[1],
+                            "scans": int(row[2] or 0),
+                            "size": row[3],
+                            "size_bytes": int(row[4] or 0)
+                        })
+                    
+                    query_statistics = QueryStatistics(
+                        slow_queries=slow_queries,
+                        top_queries_by_time=top_queries_by_time,
+                        top_queries_by_calls=top_queries_by_calls,
+                        unused_indexes=unused_indexes
+                    )
+            except Exception as e:
+                # pg_stat_statements might not be enabled or available
+                logger.warning(f"Could not fetch query statistics: {e}")
+                query_statistics = None
+            
             return PerformanceMetrics(
                 connections=connections,
                 cache_stats=cache_stats,
@@ -360,7 +485,8 @@ async def get_performance_metrics() -> PerformanceMetrics:
                 query_performance=query_performance,
                 index_usage=index_usage,
                 active_queries=active_queries,
-                database_size=database_size
+                database_size=database_size,
+                query_statistics=query_statistics
             )
             
     except Exception as e:

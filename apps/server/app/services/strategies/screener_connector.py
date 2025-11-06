@@ -115,7 +115,13 @@ class ScreenerConnector:
                 self.strategy_logger.fund_message(f"📊 {len(tickers)} ticker(s) from screener")
             
             # Sync ticker states with screener results
+            logger.info(
+                f"[SCREENER_SYNC] {self.fund_id}: Syncing {len(tickers)} tickers from screener"
+            )
             await self.ticker_state_service.sync_screener_tickers(self.fund_id, tickers)
+            logger.debug(
+                f"[SCREENER_SYNC] {self.fund_id}: Sync complete for {len(tickers)} tickers"
+            )
             
             return tickers
         
@@ -161,9 +167,16 @@ class ScreenerConnector:
             # For now, we'll transition all passing tickers to 'setup' state
             # Individual strategies can provide more detailed transition codes
             filtered_set = set(filtered_tickers)
+            passed_count = 0
+            failed_count = 0
+            
             for ticker in tickers:
                 if ticker in filtered_set:
                     # Ticker passed setup
+                    passed_count += 1
+                    logger.info(
+                        f"[SETUP_PHASE] {self.fund_id}/{ticker}: PASSED setup → transitioning to 'setup' state"
+                    )
                     await self.ticker_state_service.transition_ticker(
                         fund_id=self.fund_id,
                         ticker=ticker,
@@ -175,6 +188,10 @@ class ScreenerConnector:
                     # Ticker failed setup - transition to removed
                     # Note: Strategies should provide specific failure codes
                     # For now, use generic code
+                    failed_count += 1
+                    logger.debug(
+                        f"[SETUP_PHASE] {self.fund_id}/{ticker}: FAILED setup → transitioning to 'removed' state"
+                    )
                     await self.ticker_state_service.transition_ticker(
                         fund_id=self.fund_id,
                         ticker=ticker,
@@ -182,6 +199,11 @@ class ScreenerConnector:
                         transition_code=TickerStateTransitionCode.SETUP_FAILED_OTHER.value,
                         description="Ticker failed setup phase analysis"
                     )
+            
+            logger.info(
+                f"[SETUP_PHASE] {self.fund_id}: Completed transitions - "
+                f"{passed_count} passed (→ setup), {failed_count} failed (→ removed)"
+            )
             
             return filtered_tickers
         

@@ -144,12 +144,16 @@ class TickerStateService:
             
             state.state_transitions.append(transition)
             
+            # Flag the JSON column as modified so SQLAlchemy detects the change
+            from sqlalchemy.orm.attributes import flag_modified
+            flag_modified(state, "state_transitions")
+            
             await session.commit()
             await session.refresh(state)
             
-            logger.debug(
-                f"Ticker state transition: {fund_id}/{ticker} "
-                f"{from_state} -> {to_state} ({transition_code})"
+            logger.info(
+                f"[TICKER_STATE] Transition: {fund_id}/{ticker} "
+                f"{from_state} -> {to_state} ({transition_code}) - {description}"
             )
             
             return state
@@ -204,8 +208,13 @@ class TickerStateService:
                     session.add(state)
                 else:
                     # Existing ticker - update if needed
-                    if state.current_state != "screened":
+                    # Only transition back to "screened" if the ticker was in "removed" state
+                    # Don't reset tickers that have progressed beyond "screened" (setup, entered, filled, exited)
+                    if state.current_state == "removed":
                         # Transition back to screened if it was removed
+                        logger.info(
+                            f"[TICKER_STATE] Resetting removed ticker to screened: {fund_id}/{ticker_upper}"
+                        )
                         transition = {
                             "from_state": state.current_state,
                             "to_state": "screened",
@@ -216,8 +225,17 @@ class TickerStateService:
                         if not isinstance(state.state_transitions, list):
                             state.state_transitions = []
                         state.state_transitions.append(transition)
+                        from sqlalchemy.orm.attributes import flag_modified
+                        flag_modified(state, "state_transitions")
                         state.current_state = "screened"
+                    elif state.current_state != "screened":
+                        # Log that we're preserving the advanced state
+                        logger.debug(
+                            f"[TICKER_STATE] Preserving state {state.current_state} for {fund_id}/{ticker_upper} "
+                            f"(ticker still in screener but has progressed beyond 'screened')"
+                        )
                     
+                    # Always update last_screened_at and updated_at, even if state didn't change
                     state.last_screened_at = now
                     state.updated_at = now
             
@@ -237,15 +255,26 @@ class TickerStateService:
                         if not isinstance(state.state_transitions, list):
                             state.state_transitions = []
                         state.state_transitions.append(transition)
+                        from sqlalchemy.orm.attributes import flag_modified
+                        flag_modified(state, "state_transitions")
                         state.current_state = "removed"
                         state.updated_at = now
             
             await session.commit()
             
-            logger.debug(
-                f"Synced screener tickers for fund {fund_id}: "
-                f"{len(current_tickers)} in screener, "
-                f"{len(existing_states)} existing states"
+            # Count states after sync
+            stmt = select(TickerState).where(TickerState.fund_id == fund_id)
+            result = await session.execute(stmt)
+            all_states = result.scalars().all()
+            state_counts = {}
+            for ts in all_states:
+                state_counts[ts.current_state] = state_counts.get(ts.current_state, 0) + 1
+            
+            state_summary = ", ".join([f"{state}: {count}" for state, count in sorted(state_counts.items())])
+            logger.info(
+                f"[TICKER_STATE] Synced screener tickers for fund {fund_id}: "
+                f"{len(current_tickers)} in screener, {len(existing_states)} total states. "
+                f"State distribution: {state_summary}"
             )
     
     async def mark_ticker_exited(

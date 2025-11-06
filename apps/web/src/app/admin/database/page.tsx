@@ -52,6 +52,38 @@ interface QueryResult {
   execution_time_ms?: number;
 }
 
+interface QueryStatistics {
+  slow_queries: Array<{
+    query_preview: string;
+    calls: number;
+    total_exec_time_ms: number;
+    mean_exec_time_ms: number;
+    max_exec_time_ms: number;
+    pct_total_time: number;
+    cache_hit_ratio: number;
+  }>;
+  top_queries_by_time: Array<{
+    query_preview: string;
+    calls: number;
+    total_exec_time_ms: number;
+    mean_exec_time_ms: number;
+    pct_total_time: number;
+  }>;
+  top_queries_by_calls: Array<{
+    query_preview: string;
+    calls: number;
+    total_exec_time_ms: number;
+    mean_exec_time_ms: number;
+  }>;
+  unused_indexes: Array<{
+    table_name: string;
+    index_name: string;
+    scans: number;
+    size: string;
+    size_bytes: number;
+  }>;
+}
+
 interface PerformanceMetrics {
   connections: {
     active: number;
@@ -102,6 +134,7 @@ interface PerformanceMetrics {
     max_wal_size: string;
     shared_buffers: string;
   };
+  query_statistics?: QueryStatistics | null;
 }
 
 export default function DatabaseAdminPage() {
@@ -950,6 +983,317 @@ export default function DatabaseAdminPage() {
                             )
                           )}
                         </div>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* Query Statistics */}
+                  {performanceMetrics.query_statistics && (
+                    <>
+                      {/* Slow Queries */}
+                      {performanceMetrics.query_statistics.slow_queries.length >
+                        0 && (
+                        <Card>
+                          <CardHeader>
+                            <CardTitle>Slow Queries</CardTitle>
+                            <CardDescription>
+                              Queries with mean execution time &gt; 100ms
+                            </CardDescription>
+                          </CardHeader>
+                          <CardContent>
+                            <div className="overflow-auto max-h-96 border rounded-md">
+                              <table className="w-full text-sm">
+                                <thead className="bg-muted sticky top-0">
+                                  <tr>
+                                    <th className="px-4 py-2 text-left font-medium">
+                                      Query Preview
+                                    </th>
+                                    <th className="px-4 py-2 text-right font-medium">
+                                      Calls
+                                    </th>
+                                    <th className="px-4 py-2 text-right font-medium">
+                                      Mean (ms)
+                                    </th>
+                                    <th className="px-4 py-2 text-right font-medium">
+                                      Max (ms)
+                                    </th>
+                                    <th className="px-4 py-2 text-right font-medium">
+                                      Total (ms)
+                                    </th>
+                                    <th className="px-4 py-2 text-right font-medium">
+                                      % Time
+                                    </th>
+                                    <th className="px-4 py-2 text-right font-medium">
+                                      Cache Hit %
+                                    </th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {performanceMetrics.query_statistics.slow_queries.map(
+                                    (query, idx) => (
+                                      <tr
+                                        key={idx}
+                                        className="border-t hover:bg-muted/50"
+                                      >
+                                        <td className="px-4 py-2">
+                                          <pre className="font-mono text-xs text-muted-foreground whitespace-pre-wrap break-words">
+                                            {query.query_preview}
+                                          </pre>
+                                        </td>
+                                        <td className="px-4 py-2 text-right">
+                                          {query.calls.toLocaleString()}
+                                        </td>
+                                        <td className="px-4 py-2 text-right">
+                                          <span
+                                            className={
+                                              query.mean_exec_time_ms > 1000
+                                                ? "text-red-500 font-medium"
+                                                : query.mean_exec_time_ms > 500
+                                                ? "text-orange-500"
+                                                : ""
+                                            }
+                                          >
+                                            {query.mean_exec_time_ms.toFixed(2)}
+                                          </span>
+                                        </td>
+                                        <td className="px-4 py-2 text-right">
+                                          {query.max_exec_time_ms.toFixed(2)}
+                                        </td>
+                                        <td className="px-4 py-2 text-right">
+                                          {query.total_exec_time_ms.toLocaleString()}
+                                        </td>
+                                        <td className="px-4 py-2 text-right">
+                                          {query.pct_total_time.toFixed(2)}%
+                                        </td>
+                                        <td className="px-4 py-2 text-right">
+                                          <span
+                                            className={
+                                              query.cache_hit_ratio < 90
+                                                ? "text-orange-500"
+                                                : ""
+                                            }
+                                          >
+                                            {query.cache_hit_ratio.toFixed(1)}%
+                                          </span>
+                                        </td>
+                                      </tr>
+                                    )
+                                  )}
+                                </tbody>
+                              </table>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      )}
+
+                      {/* Top Queries by Time */}
+                      {performanceMetrics.query_statistics.top_queries_by_time
+                        .length > 0 && (
+                        <Card>
+                          <CardHeader>
+                            <CardTitle>Top Queries by Total Time</CardTitle>
+                            <CardDescription>
+                              Queries consuming the most total execution time
+                            </CardDescription>
+                          </CardHeader>
+                          <CardContent>
+                            <div className="overflow-auto max-h-96 border rounded-md">
+                              <table className="w-full text-sm">
+                                <thead className="bg-muted sticky top-0">
+                                  <tr>
+                                    <th className="px-4 py-2 text-left font-medium">
+                                      Query Preview
+                                    </th>
+                                    <th className="px-4 py-2 text-right font-medium">
+                                      Calls
+                                    </th>
+                                    <th className="px-4 py-2 text-right font-medium">
+                                      Mean (ms)
+                                    </th>
+                                    <th className="px-4 py-2 text-right font-medium">
+                                      Total (ms)
+                                    </th>
+                                    <th className="px-4 py-2 text-right font-medium">
+                                      % Time
+                                    </th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {performanceMetrics.query_statistics.top_queries_by_time.map(
+                                    (query, idx) => (
+                                      <tr
+                                        key={idx}
+                                        className="border-t hover:bg-muted/50"
+                                      >
+                                        <td className="px-4 py-2">
+                                          <pre className="font-mono text-xs text-muted-foreground whitespace-pre-wrap break-words">
+                                            {query.query_preview}
+                                          </pre>
+                                        </td>
+                                        <td className="px-4 py-2 text-right">
+                                          {query.calls.toLocaleString()}
+                                        </td>
+                                        <td className="px-4 py-2 text-right">
+                                          {query.mean_exec_time_ms.toFixed(2)}
+                                        </td>
+                                        <td className="px-4 py-2 text-right">
+                                          {query.total_exec_time_ms.toLocaleString()}
+                                        </td>
+                                        <td className="px-4 py-2 text-right">
+                                          {query.pct_total_time.toFixed(2)}%
+                                        </td>
+                                      </tr>
+                                    )
+                                  )}
+                                </tbody>
+                              </table>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      )}
+
+                      {/* Top Queries by Calls */}
+                      {performanceMetrics.query_statistics.top_queries_by_calls
+                        .length > 0 && (
+                        <Card>
+                          <CardHeader>
+                            <CardTitle>Top Queries by Calls</CardTitle>
+                            <CardDescription>
+                              Most frequently executed queries
+                            </CardDescription>
+                          </CardHeader>
+                          <CardContent>
+                            <div className="overflow-auto max-h-96 border rounded-md">
+                              <table className="w-full text-sm">
+                                <thead className="bg-muted sticky top-0">
+                                  <tr>
+                                    <th className="px-4 py-2 text-left font-medium">
+                                      Query Preview
+                                    </th>
+                                    <th className="px-4 py-2 text-right font-medium">
+                                      Calls
+                                    </th>
+                                    <th className="px-4 py-2 text-right font-medium">
+                                      Mean (ms)
+                                    </th>
+                                    <th className="px-4 py-2 text-right font-medium">
+                                      Total (ms)
+                                    </th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {performanceMetrics.query_statistics.top_queries_by_calls.map(
+                                    (query, idx) => (
+                                      <tr
+                                        key={idx}
+                                        className="border-t hover:bg-muted/50"
+                                      >
+                                        <td className="px-4 py-2">
+                                          <pre className="font-mono text-xs text-muted-foreground whitespace-pre-wrap break-words">
+                                            {query.query_preview}
+                                          </pre>
+                                        </td>
+                                        <td className="px-4 py-2 text-right">
+                                          {query.calls.toLocaleString()}
+                                        </td>
+                                        <td className="px-4 py-2 text-right">
+                                          {query.mean_exec_time_ms.toFixed(2)}
+                                        </td>
+                                        <td className="px-4 py-2 text-right">
+                                          {query.total_exec_time_ms.toLocaleString()}
+                                        </td>
+                                      </tr>
+                                    )
+                                  )}
+                                </tbody>
+                              </table>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      )}
+
+                      {/* Unused Indexes */}
+                      {performanceMetrics.query_statistics.unused_indexes
+                        .length > 0 && (
+                        <Card>
+                          <CardHeader>
+                            <CardTitle>Unused Indexes</CardTitle>
+                            <CardDescription>
+                              Indexes that have never been scanned (potential
+                              candidates for removal)
+                            </CardDescription>
+                          </CardHeader>
+                          <CardContent>
+                            <div className="overflow-auto max-h-64 border rounded-md">
+                              <table className="w-full text-sm">
+                                <thead className="bg-muted sticky top-0">
+                                  <tr>
+                                    <th className="px-4 py-2 text-left font-medium">
+                                      Table
+                                    </th>
+                                    <th className="px-4 py-2 text-left font-medium">
+                                      Index
+                                    </th>
+                                    <th className="px-4 py-2 text-right font-medium">
+                                      Scans
+                                    </th>
+                                    <th className="px-4 py-2 text-left font-medium">
+                                      Size
+                                    </th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {performanceMetrics.query_statistics.unused_indexes.map(
+                                    (index, idx) => (
+                                      <tr
+                                        key={idx}
+                                        className="border-t hover:bg-muted/50"
+                                      >
+                                        <td className="px-4 py-2 font-mono text-xs">
+                                          {index.table_name}
+                                        </td>
+                                        <td className="px-4 py-2 font-mono text-xs">
+                                          {index.index_name}
+                                        </td>
+                                        <td className="px-4 py-2 text-right text-red-500">
+                                          {index.scans}
+                                        </td>
+                                        <td className="px-4 py-2">
+                                          {index.size}
+                                        </td>
+                                      </tr>
+                                    )
+                                  )}
+                                </tbody>
+                              </table>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      )}
+                    </>
+                  )}
+
+                  {/* Query Statistics Not Available */}
+                  {performanceMetrics.query_statistics === null && (
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Query Statistics</CardTitle>
+                        <CardDescription>
+                          Query statistics are not available
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <Alert>
+                          <AlertCircle className="h-4 w-4" />
+                          <AlertTitle>
+                            pg_stat_statements Not Enabled
+                          </AlertTitle>
+                          <AlertDescription>
+                            Query statistics require the pg_stat_statements
+                            extension to be enabled. Run migration 040 to enable
+                            it.
+                          </AlertDescription>
+                        </Alert>
                       </CardContent>
                     </Card>
                   )}
