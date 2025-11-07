@@ -271,7 +271,7 @@ export function FundLedger({
         cell: ({ row }) => {
           const handleCopy = () => {
             navigator.clipboard.writeText(row.original.id);
-            toast.success("Transaction ID copied to clipboard");
+            toast.success("Ledger entry ID copied to clipboard");
           };
 
           return (
@@ -296,7 +296,7 @@ export function FundLedger({
         header: "Type",
         cell: ({ row }) => (
           <Badge variant="outline" className="text-xs">
-            {row.original.type === "transfer" ? "Transfer" : "Trade"}
+            {row.original.type === "transfer" ? "Transfer" : "Transaction"}
           </Badge>
         ),
       },
@@ -513,7 +513,7 @@ export function FundLedger({
             <div>
               <CardTitle>Ledger</CardTitle>
               <CardDescription>
-                Complete history of money movements - transfers and trades
+                Complete history of money movements - transfers and transactions
               </CardDescription>
             </div>
             <div className="flex gap-2">
@@ -634,7 +634,7 @@ export function FundLedger({
                 Transfers ({transfers.length})
               </TabsTrigger>
               <TabsTrigger value="transactions">
-                Trades ({transactions.length})
+                Transactions ({transactions.length})
               </TabsTrigger>
             </TabsList>
 
