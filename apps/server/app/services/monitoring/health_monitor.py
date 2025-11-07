@@ -18,8 +18,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.market_data import SymbolDateValidation, MarketData, MarketDataBacktestLookup
 from app.services.core.database import get_async_session
+from app.services.market.metrics_populator import MetricsPopulator
 
 logger = logging.getLogger("app.health_monitor")
+
+PRIMARY_METRIC_COLUMNS = [
+    "ema_12",
+    "ema_26",
+    "macd_line",
+    "macd_signal",
+    "rsi_14",
+]
 
 
 class HealthCheckResult:
@@ -347,11 +356,12 @@ class BacktestDataHealthCheck(BaseHealthCheck):
     def __init__(self):
         super().__init__("backtest_data")
         self._populating: bool = False
-        self._populating_indicators: bool = False
+        self._populating_metrics: bool = False
         self._last_population_task: Optional[asyncio.Task] = None
-        self._last_indicators_task: Optional[asyncio.Task] = None
+        self._last_metrics_task: Optional[asyncio.Task] = None
         self._population_progress: Dict = {}
-        self._indicators_progress: Dict = {}
+        self._metrics_progress: Dict = {}
+        self._metrics_populator = MetricsPopulator()
     
     def _get_previous_trading_days(self, count: int = 7) -> List[date]:
         """Get the last N trading days (excluding weekends, but not holidays)."""
@@ -405,43 +415,56 @@ class BacktestDataHealthCheck(BaseHealthCheck):
         
         return coverage
     
-    async def _check_indicators_coverage_for_dates(self, dates: List[date], session: AsyncSession) -> Dict:
-        """Check technical indicators coverage for a list of dates."""
+    async def _check_metrics_coverage_for_dates(self, dates: List[date], session: AsyncSession) -> Dict:
+        """Check stored metrics coverage for a list of dates."""
         coverage = {}
-        
+
+        metric_condition = " AND ".join(f"{column} IS NOT NULL" for column in PRIMARY_METRIC_COLUMNS)
+
         for target_date in dates:
-            start_dt = datetime.combine(target_date, datetime.min.time()).replace(hour=9, minute=30, tzinfo=timezone.utc)
-            end_dt = datetime.combine(target_date, datetime.min.time()).replace(hour=16, minute=0, tzinfo=timezone.utc)
-            
-            # Check for 1min timescale (primary for backtesting)
-            result = await session.execute(text("""
+            start_dt = datetime.combine(target_date, datetime.min.time()).replace(
+                hour=9, minute=30, tzinfo=timezone.utc
+            )
+            end_dt = datetime.combine(target_date, datetime.min.time()).replace(
+                hour=16, minute=0, tzinfo=timezone.utc
+            )
+
+            stmt = text(
+                f"""
                 SELECT 
                     COUNT(*) as total_rows,
+                    COUNT(*) FILTER (WHERE {metric_condition}) as metric_rows,
                     COUNT(DISTINCT symbol) as symbols,
                     COUNT(DISTINCT time) as minutes
-                FROM technical_indicators
+                FROM market_data
                 WHERE time >= :start_dt
                   AND time <= :end_dt
                   AND timescale = '1min';
-            """), {"start_dt": start_dt, "end_dt": end_dt})
-            
+            """
+            )
+
+            result = await session.execute(stmt, {"start_dt": start_dt, "end_dt": end_dt})
             row = result.first()
             total_rows = row[0]
-            symbols = row[1]
-            minutes = row[2]
-            
-            # We expect substantial data
-            is_complete = total_rows > 10000 and minutes >= 300
-            
+            metric_rows = row[1]
+            symbols = row[2]
+            minutes = row[3]
+
+            # We expect metrics on the majority of bars
+            metric_ratio = (metric_rows / total_rows) if total_rows else 0
+            is_complete = total_rows > 10000 and minutes >= 300 and metric_ratio >= 0.9
+
             coverage[target_date.isoformat()] = {
                 "has_data": total_rows > 0,
                 "is_complete": is_complete,
                 "total_rows": total_rows,
+                "metric_rows": metric_rows,
+                "metric_ratio": metric_ratio,
                 "symbols": symbols,
                 "minutes": minutes,
-                "expected_minutes": 391
+                "expected_minutes": 391,
             }
-        
+
         return coverage
     
     async def _populate_missing_dates(self, dates: List[date]) -> None:
@@ -484,50 +507,89 @@ class BacktestDataHealthCheck(BaseHealthCheck):
         finally:
             self._populating = False
     
-    async def _populate_missing_indicators(self, dates: List[date], timescale: str = '1min') -> None:
-        """Populate technical indicators for missing dates in background."""
-        if self._populating_indicators:
-            self.logger.debug("Indicators population already in progress, skipping")
+    async def _populate_missing_metrics(self, dates: List[date], timescale: str = "1min") -> None:
+        """Populate metrics for missing dates in background."""
+        if self._populating_metrics:
+            self.logger.debug("Metrics population already in progress, skipping")
             return
-        
-        self._populating_indicators = True
+
+        self._populating_metrics = True
         try:
-            from app.services.backtest.technical_indicators_service import populate_indicators_for_date
-            
+            missing_conditions = " OR ".join(f"{column} IS NULL" for column in PRIMARY_METRIC_COLUMNS)
+
             for target_date in dates:
+                key = f"{target_date.isoformat()}_{timescale}"
+                self._metrics_progress[key] = {
+                    "status": "populating",
+                    "started_at": get_current_time().isoformat(),
+                }
+
                 try:
-                    key = f"{target_date.isoformat()}_{timescale}"
-                    self._indicators_progress[key] = {
-                        "status": "populating",
-                        "started_at": get_current_time().isoformat()
-                    }
-                    
-                    self.logger.info(f"📊 Populating technical indicators for {target_date} ({timescale})")
-                    result = await populate_indicators_for_date(target_date, timescale=timescale)
-                    
-                    self._indicators_progress[key] = {
+                    start_dt = datetime.combine(target_date, datetime.min.time()).replace(
+                        hour=9, minute=30, tzinfo=timezone.utc
+                    )
+                    end_dt = datetime.combine(target_date, datetime.min.time()).replace(
+                        hour=16, minute=0, tzinfo=timezone.utc
+                    )
+
+                    stmt = text(
+                        f"""
+                        SELECT symbol, timescale, MIN(time) AS start_time
+                        FROM market_data
+                        WHERE time >= :start_dt
+                          AND time <= :end_dt
+                          AND timescale = :timescale
+                          AND ({missing_conditions})
+                        GROUP BY symbol, timescale
+                    """
+                    )
+
+                    async with get_async_session() as session:
+                        result = await session.execute(
+                            stmt,
+                            {
+                                "start_dt": start_dt,
+                                "end_dt": end_dt,
+                                "timescale": timescale,
+                            },
+                        )
+                        targets = result.fetchall()
+
+                    processed_total = 0
+                    for row in targets:
+                        symbol = row[0]
+                        ts = row[1]
+                        start_time = row[2]
+                        processed_total += await self._metrics_populator.populate_symbol(
+                            symbol=symbol,
+                            timescale=ts,
+                            start_time=start_time,
+                            recompute_existing=False,
+                        )
+
+                    self._metrics_progress[key] = {
                         "status": "completed",
-                        "started_at": self._indicators_progress[key].get("started_at"),
+                        "started_at": self._metrics_progress[key].get("started_at"),
                         "completed_at": get_current_time().isoformat(),
-                        "result": result
+                        "result": {"targets": len(targets), "bars_processed": processed_total},
                     }
-                    
-                    self.logger.info(f"✅ Completed indicators population for {target_date}: {result['total_rows']:,} rows")
-                    
+                    self.logger.info(
+                        f"✅ Metrics populated for {target_date}: {len(targets)} symbol(s), {processed_total} bars"
+                    )
+
                 except Exception as e:
-                    self.logger.error(f"❌ Failed to populate indicators for {target_date}: {e}", exc_info=True)
-                    key = f"{target_date.isoformat()}_{timescale}"
-                    self._indicators_progress[key] = {
+                    self.logger.error(f"❌ Failed to populate metrics for {target_date}: {e}", exc_info=True)
+                    self._metrics_progress[key] = {
                         "status": "failed",
-                        "started_at": self._indicators_progress.get(key, {}).get("started_at"),
-                        "error": str(e)
+                        "started_at": self._metrics_progress.get(key, {}).get("started_at"),
+                        "error": str(e),
                     }
-                    
+
         finally:
-            self._populating_indicators = False
+            self._populating_metrics = False
     
     async def check(self) -> HealthCheckResult:
-        """Check if backtest lookup data and technical indicators exist, populate if missing."""
+        """Check if backtest lookup data and stored metrics exist, populate if missing."""
         try:
             async with get_async_session() as session:
                 # Check last 7 trading days
@@ -536,8 +598,8 @@ class BacktestDataHealthCheck(BaseHealthCheck):
                 # Check backtest lookup coverage
                 lookup_coverage = await self._check_coverage_for_dates(recent_dates, session)
                 
-                # Check technical indicators coverage
-                indicators_coverage = await self._check_indicators_coverage_for_dates(recent_dates, session)
+                # Check stored metrics coverage
+                metrics_coverage = await self._check_metrics_coverage_for_dates(recent_dates, session)
                 
                 # Find dates that need lookup population
                 missing_lookup_dates = []
@@ -546,12 +608,12 @@ class BacktestDataHealthCheck(BaseHealthCheck):
                         target_date = datetime.fromisoformat(date_str).date()
                         missing_lookup_dates.append(target_date)
                 
-                # Find dates that need indicators population
-                missing_indicators_dates = []
-                for date_str, info in indicators_coverage.items():
+                # Find dates that need metrics population
+                missing_metrics_dates = []
+                for date_str, info in metrics_coverage.items():
                     if not info["is_complete"]:
                         target_date = datetime.fromisoformat(date_str).date()
-                        missing_indicators_dates.append(target_date)
+                        missing_metrics_dates.append(target_date)
                 
                 # Trigger population for missing lookup data (non-blocking)
                 if missing_lookup_dates and not self._populating:
@@ -560,34 +622,34 @@ class BacktestDataHealthCheck(BaseHealthCheck):
                         self._populate_missing_dates(missing_lookup_dates)
                     )
                 
-                # Trigger population for missing indicators (non-blocking)
-                if missing_indicators_dates and not self._populating_indicators:
-                    self.logger.info(f"🔧 Found {len(missing_indicators_dates)} dates needing indicators population: {[d.isoformat() for d in missing_indicators_dates]}")
-                    self._last_indicators_task = asyncio.create_task(
-                        self._populate_missing_indicators(missing_indicators_dates, timescale='1min')
+                # Trigger population for missing metrics (non-blocking)
+                if missing_metrics_dates and not self._populating_metrics:
+                    self.logger.info(f"🔧 Found {len(missing_metrics_dates)} dates needing metrics population: {[d.isoformat() for d in missing_metrics_dates]}")
+                    self._last_metrics_task = asyncio.create_task(
+                        self._populate_missing_metrics(missing_metrics_dates, timescale="1min")
                     )
                 
                 # Check yesterday specifically for health status
                 yesterday = recent_dates[0] if recent_dates else None
                 yesterday_lookup = lookup_coverage.get(yesterday.isoformat() if yesterday else "", {})
-                yesterday_indicators = indicators_coverage.get(yesterday.isoformat() if yesterday else "", {})
+                yesterday_metrics = metrics_coverage.get(yesterday.isoformat() if yesterday else "", {})
                 
-                # Overall health: both lookup and indicators should be complete for yesterday
+                # Overall health: both lookup and metrics should be complete for yesterday
                 lookup_healthy = yesterday_lookup.get("is_complete", False) if yesterday else False
-                indicators_healthy = yesterday_indicators.get("is_complete", False) if yesterday else False
-                is_healthy = lookup_healthy and indicators_healthy
+                metrics_healthy = yesterday_metrics.get("is_complete", False) if yesterday else False
+                is_healthy = lookup_healthy and metrics_healthy
                 
                 # Prepare message
                 if is_healthy:
                     lookup_complete = sum(1 for info in lookup_coverage.values() if info.get("is_complete", False))
-                    indicators_complete = sum(1 for info in indicators_coverage.values() if info.get("is_complete", False))
-                    message = f"Backtest data healthy: {lookup_complete}/{len(recent_dates)} lookup days, {indicators_complete}/{len(recent_dates)} indicators days complete"
+                    metrics_complete = sum(1 for info in metrics_coverage.values() if info.get("is_complete", False))
+                    message = f"Backtest data healthy: {lookup_complete}/{len(recent_dates)} lookup days, {metrics_complete}/{len(recent_dates)} metrics days complete"
                 else:
                     issues = []
                     if missing_lookup_dates:
                         issues.append(f"{len(missing_lookup_dates)} lookup date(s)")
-                    if missing_indicators_dates:
-                        issues.append(f"{len(missing_indicators_dates)} indicators date(s)")
+                    if missing_metrics_dates:
+                        issues.append(f"{len(missing_metrics_dates)} metrics date(s)")
                     if issues:
                         message = f"Populating: {', '.join(issues)}"
                     else:
@@ -599,13 +661,13 @@ class BacktestDataHealthCheck(BaseHealthCheck):
                     message=message,
                     details={
                         "lookup_coverage": lookup_coverage,
-                        "indicators_coverage": indicators_coverage,
+                        "metrics_coverage": metrics_coverage,
                         "missing_lookup_dates": [d.isoformat() for d in missing_lookup_dates],
-                        "missing_indicators_dates": [d.isoformat() for d in missing_indicators_dates],
+                        "missing_metrics_dates": [d.isoformat() for d in missing_metrics_dates],
                         "populating_lookup": self._populating,
-                        "populating_indicators": self._populating_indicators,
+                        "populating_metrics": self._populating_metrics,
                         "lookup_progress": self._population_progress,
-                        "indicators_progress": self._indicators_progress,
+                        "metrics_progress": self._metrics_progress,
                         "recent_dates_checked": [d.isoformat() for d in recent_dates]
                     }
                 )

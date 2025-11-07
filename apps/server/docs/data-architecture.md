@@ -227,68 +227,52 @@ TODO: can the app handle 10k bars a second? How long after the second does this 
 - If validated, uses DB data exclusively (no API calls)
 - Respects `get_current_time()` from time context
 
-### 3.2 Technical Indicators
+### 3.2 Inline Technical Metrics
 
-**Location**: `apps/server/app/services/backtest/technical_indicators_service.py`
+**Location**: `apps/server/app/services/market/metrics_calculator.py`
 
-**Table**: `technical_indicators`
+**Table**: `market_data`
 
-**Purpose**: Pre-computed technical indicators for intraday timescales
+**Purpose**: Store per-bar technical metrics directly alongside OHLCV data so they are available for every service (strategies, screener, backtests) without recomputation.
 
-**Indicators Calculated**:
+**Metrics Stored** (for timescales ≥ 5min):
 
-- EMA (Exponential Moving Average) - multiple periods
-- VWAP (Volume-Weighted Average Price)
-- MACD (Moving Average Convergence Divergence)
-- RSI (Relative Strength Index)
-- ATR (Average True Range)
-- Bollinger Bands
-
-**Flow**:
-
-1. Script `populate_technical_indicators.py` runs for specific dates
-2. Queries `market_data` for bars at specified timescale
-3. Calculates indicators using functions from `app.lib.technical_analysis`
-4. Inserts into `technical_indicators` table with:
-   - `symbol`, `time`, `timescale` (primary keys)
-   - Indicator values (EMA, VWAP, MACD, RSI, ATR, BB)
-
-**Usage**:
-
-- Strategies query `technical_indicators` for fast indicator access
-- Avoids recalculating indicators on every query
-- Supports backtesting (pre-computed for historical dates)
-
-### 3.3 Screener Metrics
-
-**Location**: `apps/server/app/services/screener/screener_metrics_storage.py`
-
-**Table**: `screener_metrics`
-
-**Purpose**: Pre-calculated metrics for stock screening
-
-**Metrics Stored**:
-
-- Relative Volume: `rv14`, `rv30`, `rv60` (14/30/60-day averages)
-- Price Levels: `high_90d`, `low_90d` (90-day high/low)
-- Moving Averages: `sma_20`, `sma_50`, `sma_200`
-- Technical Indicators: `rsi_14`, `macd_line`, `macd_signal`, `macd_histogram`
-- Bollinger Bands: `bb_upper`, `bb_middle`, `bb_lower`
-- ATR: `atr_14`
-- Volume: `volume_ma_20`, `volume_trend`
+- EMAs: `ema_12`, `ema_26`, `ema_50`, `ema_200`
+- SMAs: `sma_20`, `sma_50`, `sma_200`
+- MACD: `macd_line`, `macd_signal`, `macd_histogram`
+- Momentum: `rsi_14`
+- Volatility: `atr_14`, `bb_upper`, `bb_middle`, `bb_lower`
+- Volume: `vwap`, `rv14`, `rv30`, `rv60`, `volume_ma_20`
 
 **Flow**:
 
-1. `screener_metrics_job.py` runs daily (or on-demand)
-2. For each symbol, queries historical bars from `market_data`
-3. Calculates metrics using `screener_indicators.py` functions
-4. Bulk upserts into `screener_metrics` table (one row per symbol/date)
+1. Real-time ingestion calculates metrics for new 5min+ bars using `MetricsCalculator` when data arrives (1min bars keep metric columns NULL).
+2. Historical loaders call the same calculator before inserting batches to TimescaleDB.
+3. `MetricsPopulator` backfills missing metrics for historical gaps, processing bars in order to maintain indicator state.
+4. The background completion service (`metrics_completion_service.py`) continuously scans 5min+ series for NULL metrics and triggers the populator.
 
 **Usage**:
 
-- Screener service queries `screener_metrics` for fast screening
-- Avoids recalculating metrics on every screener run
-- Supports historical screening (for backtesting)
+- `MarketDataService` returns metrics with every 5min-or-higher bar query (strategies/backtests fall back to on-the-fly calculations for 1min).
+- Screener queries pull metrics directly from `market_data` (daily timescale) via unified fetcher.
+- Frontend receives metrics as part of API payloads (charts read `ema_12`, `macd_line`, etc.).
+
+### 3.3 Screener Data Metrics
+
+**Location**: `apps/server/app/services/screener`
+
+**Purpose**: Use the inline `market_data` metrics to power screening logic with no separate storage layer.
+
+**Flow**:
+
+1. `fetch_screener_data_unified.py` queries `market_data` for daily bars and metrics, deriving additional context (e.g., 90-day highs/lows) via window functions.
+2. Live mode computes intraday relative volume from the latest 5-minute bars while reusing stored historical averages.
+3. Results are delivered to the screener and strategy engines without touching legacy tables.
+
+**Usage**:
+
+- Screener filtering and historical runs rely solely on the metrics embedded in `market_data`.
+- No auxiliary tables or jobs are required—metrics completion keeps gaps filled asynchronously.
 
 ### 3.4 Backtest Lookup Table
 

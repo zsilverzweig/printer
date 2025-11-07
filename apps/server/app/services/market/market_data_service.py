@@ -10,16 +10,37 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from decimal import Decimal
-
 from sqlalchemy import select, text, and_, bindparam, String
 from sqlalchemy.dialects.postgresql import insert, ARRAY as postgresql_ARRAY
 
 from app.services.core.database import get_async_session
 from app.models.market_data import MarketData
 from app.services.core.time_context import get_current_time, get_backtest_context
+from app.services.market.metrics_calculator import METRIC_FIELDS
 
 
 logger = logging.getLogger(__name__)
+
+
+def _safe_float(value: Any, default: Optional[float] = None) -> Optional[float]:
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_int(value: Any, default: Optional[int] = None) -> Optional[int]:
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+_METRIC_COLUMNS_SQL = ",\n                        ".join(METRIC_FIELDS)
 
 
 class MarketDataService:
@@ -550,7 +571,7 @@ class MarketDataService:
         async with get_async_session() as session:
             # Use raw SQL for better control and performance
             result = await session.execute(
-                text("""
+                text(f"""
                     SELECT 
                         time,
                         symbol,
@@ -560,7 +581,8 @@ class MarketDataService:
                         close,
                         volume,
                         vwap,
-                        trade_count
+                        trade_count,
+                        {_METRIC_COLUMNS_SQL}
                     FROM market_data
                     WHERE symbol = ANY(:symbols)
                       AND timescale = :timescale
@@ -579,20 +601,24 @@ class MarketDataService:
             # Group bars by symbol
             bars_by_symbol = {}
             for row in result:
-                symbol = row[1]
-                if symbol not in bars_by_symbol:
-                    bars_by_symbol[symbol] = []
-                
-                bars_by_symbol[symbol].append({
-                    "timestamp": row[0],
-                    "open": float(row[2]) if row[2] else 0.0,
-                    "high": float(row[3]) if row[3] else 0.0,
-                    "low": float(row[4]) if row[4] else 0.0,
-                    "close": float(row[5]) if row[5] else 0.0,
-                    "volume": int(row[6]) if row[6] else 0,
-                    "vwap": float(row[7]) if row[7] else None,
-                    "trade_count": int(row[8]) if row[8] else None,
-                })
+                mapping = row._mapping
+                symbol = mapping["symbol"]
+                bar_data: Dict[str, Any] = {
+                    "timestamp": mapping["time"],
+                    "open": _safe_float(mapping["open"], 0.0),
+                    "high": _safe_float(mapping["high"], 0.0),
+                    "low": _safe_float(mapping["low"], 0.0),
+                    "close": _safe_float(mapping["close"], 0.0),
+                    "volume": _safe_int(mapping["volume"], 0),
+                    "vwap": _safe_float(mapping["vwap"]),
+                    "trade_count": _safe_int(mapping["trade_count"]),
+                }
+
+                for field in METRIC_FIELDS:
+                    value = mapping[field] if field in mapping else None
+                    bar_data[field] = _safe_float(value)
+
+                bars_by_symbol.setdefault(symbol, []).append(bar_data)
             
             return bars_by_symbol
     
@@ -962,16 +988,21 @@ class MarketDataService:
     
     def _bar_to_dict(self, bar: MarketData) -> Dict[str, Any]:
         """Convert SQLAlchemy MarketData model to dict."""
-        return {
+        bar_dict: Dict[str, Any] = {
             "timestamp": bar.time,
-            "open": float(bar.open),
-            "high": float(bar.high),
-            "low": float(bar.low),
-            "close": float(bar.close),
-            "volume": int(bar.volume),
-            "vwap": float(bar.vwap) if bar.vwap else None,
-            "trade_count": int(bar.trade_count) if bar.trade_count else None,
+            "open": _safe_float(bar.open, 0.0),
+            "high": _safe_float(bar.high, 0.0),
+            "low": _safe_float(bar.low, 0.0),
+            "close": _safe_float(bar.close, 0.0),
+            "volume": _safe_int(bar.volume, 0),
+            "vwap": _safe_float(bar.vwap),
+            "trade_count": _safe_int(bar.trade_count),
         }
+
+        for field in METRIC_FIELDS:
+            bar_dict[field] = _safe_float(getattr(bar, field, None))
+
+        return bar_dict
     
     async def get_technical_indicators(
         self,
@@ -1006,101 +1037,93 @@ class MarketDataService:
             start_time = end_time - timedelta(minutes=lookback_minutes)
         
         try:
-            async with get_async_session() as session:
-                # Try to fetch from pre-computed table
-                result = await session.execute(text("""
-                    SELECT 
-                        time,
-                        ema_12,
-                        ema_26,
-                        vwap,
-                        macd_line,
-                        macd_signal,
-                        macd_histogram,
-                        rsi_14,
-                        atr_14
-                    FROM technical_indicators
-                    WHERE symbol = :symbol
-                      AND timescale = :timescale
-                      AND time >= :start_time
-                      AND time <= :end_time
-                    ORDER BY time ASC;
-                """), {
-                    "symbol": symbol,
-                    "timescale": timescale,
-                    "start_time": start_time,
-                    "end_time": end_time
-                })
-                
-                rows = result.fetchall()
-                
-                if rows and len(rows) > 0:
-                    # Return pre-computed indicators
-                    indicators = []
-                    for row in rows:
-                        indicators.append({
-                            "time": row[0],
-                            "ema_12": float(row[1]) if row[1] is not None else None,
-                            "ema_26": float(row[2]) if row[2] is not None else None,
-                            "vwap": float(row[3]) if row[3] is not None else None,
-                            "macd_line": float(row[4]) if row[4] is not None else None,
-                            "macd_signal": float(row[5]) if row[5] is not None else None,
-                            "macd_histogram": float(row[6]) if row[6] is not None else None,
-                            "rsi_14": float(row[7]) if row[7] is not None else None,
-                            "atr_14": float(row[8]) if row[8] is not None else None,
-                        })
-                    
-                    logger.debug(f"Retrieved {len(indicators)} pre-computed indicators for {symbol}")
-                    return indicators
-                
-                # Fallback to on-the-fly calculation
-                logger.debug(f"No pre-computed indicators found for {symbol}, calculating on-the-fly")
-                bars = await self.get_bars(symbol, timeframe=timescale, start_time=start_time, end_time=end_time)
-                
-                if not bars:
-                    return []
-                
-                # Calculate indicators
-                from app.lib.technical_analysis import (
-                    calculate_ema,
-                    calculate_vwap,
-                    calculate_macd,
-                    calculate_rsi,
-                    average_true_range
-                )
-                
-                ema_12_values = calculate_ema(bars, period=12, price_key="close")
-                ema_26_values = calculate_ema(bars, period=26, price_key="close")
-                vwap_values = calculate_vwap(bars, reset_daily=True)
-                macd_results = calculate_macd(bars, fast_period=12, slow_period=26, signal_period=9)
-                rsi_values = calculate_rsi(bars, period=14, price_key="close")
-                
-                # Calculate ATR
-                atr_values = []
-                for i in range(len(bars)):
-                    if i >= 14:
-                        atr = average_true_range(bars[:i+1], period=14)
-                        atr_values.append(atr)
-                    else:
-                        atr_values.append(None)
-                
-                # Combine into indicator dicts
+            bars_by_symbol = await self._query_database(
+                symbols=[symbol],
+                timeframe=timescale,
+                start_time=start_time,
+                end_time=end_time
+            )
+
+            bars = bars_by_symbol.get(symbol, [])
+            if not bars:
+                return []
+
+            indicator_keys = [
+                "ema_12",
+                "ema_26",
+                "macd_line",
+                "macd_signal",
+                "macd_histogram",
+                "rsi_14",
+                "atr_14",
+            ]
+
+            has_precomputed = any(
+                any(bar.get(key) is not None for key in indicator_keys)
+                for bar in bars
+            )
+
+            if has_precomputed:
                 indicators = []
-                for i, bar in enumerate(bars):
+                for bar in bars:
                     indicators.append({
                         "time": bar["timestamp"],
-                        "ema_12": ema_12_values[i] if i < len(ema_12_values) else None,
-                        "ema_26": ema_26_values[i] if i < len(ema_26_values) else None,
-                        "vwap": vwap_values[i] if i < len(vwap_values) else None,
-                        "macd_line": macd_results["macd"][i] if i < len(macd_results["macd"]) else None,
-                        "macd_signal": macd_results["signal"][i] if i < len(macd_results["signal"]) else None,
-                        "macd_histogram": macd_results["histogram"][i] if i < len(macd_results["histogram"]) else None,
-                        "rsi_14": rsi_values[i] if i < len(rsi_values) else None,
-                        "atr_14": atr_values[i] if i < len(atr_values) else None,
+                        "ema_12": bar.get("ema_12"),
+                        "ema_26": bar.get("ema_26"),
+                        "vwap": bar.get("vwap"),
+                        "macd_line": bar.get("macd_line"),
+                        "macd_signal": bar.get("macd_signal"),
+                        "macd_histogram": bar.get("macd_histogram"),
+                        "rsi_14": bar.get("rsi_14"),
+                        "atr_14": bar.get("atr_14"),
                     })
-                
+
                 return indicators
-                
+
+            logger.debug(f"No stored indicators found for {symbol}, calculating on-the-fly")
+            bars_raw = await self.get_bars(symbol, timeframe=timescale, start_time=start_time, end_time=end_time)
+
+            if not bars_raw:
+                return []
+
+            from app.lib.technical_analysis import (
+                calculate_ema,
+                calculate_vwap,
+                calculate_macd,
+                calculate_rsi,
+                average_true_range
+            )
+
+            ema_12_values = calculate_ema(bars_raw, period=12, price_key="close")
+            ema_26_values = calculate_ema(bars_raw, period=26, price_key="close")
+            vwap_values = calculate_vwap(bars_raw, reset_daily=True)
+            macd_results = calculate_macd(bars_raw, fast_period=12, slow_period=26, signal_period=9)
+            rsi_values = calculate_rsi(bars_raw, period=14, price_key="close")
+
+            atr_values = []
+            for i in range(len(bars_raw)):
+                if i >= 14:
+                    atr = average_true_range(bars_raw[:i + 1], period=14)
+                    atr_values.append(atr)
+                else:
+                    atr_values.append(None)
+
+            indicators = []
+            for i, bar in enumerate(bars_raw):
+                indicators.append({
+                    "time": bar["timestamp"],
+                    "ema_12": ema_12_values[i] if i < len(ema_12_values) else None,
+                    "ema_26": ema_26_values[i] if i < len(ema_26_values) else None,
+                    "vwap": vwap_values[i] if i < len(vwap_values) else None,
+                    "macd_line": macd_results["macd"][i] if i < len(macd_results["macd"]) else None,
+                    "macd_signal": macd_results["signal"][i] if i < len(macd_results["signal"]) else None,
+                    "macd_histogram": macd_results["histogram"][i] if i < len(macd_results["histogram"]) else None,
+                    "rsi_14": rsi_values[i] if i < len(rsi_values) else None,
+                    "atr_14": atr_values[i] if i < len(atr_values) else None,
+                })
+
+            return indicators
+
         except Exception as e:
             logger.error(f"Error getting technical indicators for {symbol}: {e}", exc_info=True)
             return []

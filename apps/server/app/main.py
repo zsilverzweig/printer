@@ -12,7 +12,7 @@ load_dotenv("env.local")
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from app.services.core.startup_orchestrator import startup_application, get_orchestrator
-from app.routers import market, news, trading, events, admin, screener, strategies, funds, screening_criteria, db_admin, screener_metrics, analytics, backtests
+from app.routers import market, news, trading, events, admin, screener, strategies, funds, screening_criteria, db_admin, analytics, backtests
 from app.routers.realtime import router as realtime_router
 from app.routers import ticker_states
 import logging
@@ -132,113 +132,24 @@ async def health() -> JSONResponse:
             "uptime_seconds": time.time() - orchestrator.start_time if orchestrator.start_time else None
         }
     
-    # Get backtest lookup status
-    try:
-        # Check the last 7 trading days
-        today = datetime.now(timezone.utc).date()
-        recent_dates = []
-        current = today - timedelta(days=1)
-        
-        # Get last 7 trading days
-        while len(recent_dates) < 7 and current >= today - timedelta(days=30):
-            if current.weekday() < 5:  # 0-4 = Monday-Friday
-                recent_dates.append(current)
-            current -= timedelta(days=1)
-        
-        # Check coverage using backtest lookup service
-        from app.services.backtest.backtest_lookup_service import check_lookup_coverage
-        from app.services.backtest.technical_indicators_service import check_indicators_coverage
-        
-        lookup_coverage = {}
-        indicators_coverage = {}
-        missing_lookup_dates = []
-        missing_indicators_dates = []
-        
-        for target_date in recent_dates:
-            # Check backtest lookup coverage
-            try:
-                lookup_info = await check_lookup_coverage(target_date)
-                lookup_coverage[target_date.isoformat()] = lookup_info
-                
-                if not lookup_info.get("has_data") or lookup_info.get("minutes", 0) < 300:
-                    missing_lookup_dates.append(target_date.isoformat())
-            except Exception as e:
-                logger.error(f"Error checking lookup coverage for {target_date}: {e}")
-                lookup_coverage[target_date.isoformat()] = {
-                    "has_data": False,
-                    "error": str(e)
+    # Aggregate health check results
+    health_monitor = get_health_monitor()
+    if health_monitor:
+        try:
+            results = await health_monitor.run_all_checks()
+            health_data["health_checks"] = [
+                {
+                    "name": result.check_name,
+                    "status": "ok" if result.is_healthy else "error",
+                    "message": result.message,
+                    "details": result.details,
+                    "timestamp": result.timestamp.isoformat(),
                 }
-                missing_lookup_dates.append(target_date.isoformat())
-            
-            # Check technical indicators coverage (1min timescale)
-            try:
-                indicators_info = await check_indicators_coverage(target_date, timescale='1min')
-                indicators_coverage[target_date.isoformat()] = indicators_info
-                
-                if not indicators_info.get("has_data") or indicators_info.get("minutes", 0) < 300:
-                    missing_indicators_dates.append(target_date.isoformat())
-            except Exception as e:
-                logger.error(f"Error checking indicators coverage for {target_date}: {e}")
-                indicators_coverage[target_date.isoformat()] = {
-                    "has_data": False,
-                    "error": str(e)
-                }
-                missing_indicators_dates.append(target_date.isoformat())
-        
-        # Check if yesterday is complete for both
-        yesterday = recent_dates[0] if recent_dates else None
-        yesterday_lookup = lookup_coverage.get(yesterday.isoformat() if yesterday else "", {})
-        yesterday_indicators = indicators_coverage.get(yesterday.isoformat() if yesterday else "", {})
-        lookup_healthy = yesterday_lookup.get("has_data", False) and yesterday_lookup.get("minutes", 0) >= 300
-        indicators_healthy = yesterday_indicators.get("has_data", False) and yesterday_indicators.get("minutes", 0) >= 300
-        
-        # Get population progress from health monitor if available
-        health_monitor = get_health_monitor()
-        lookup_progress = {}
-        indicators_progress = {}
-        is_populating_lookup = False
-        is_populating_indicators = False
-        
-        if health_monitor:
-            backtest_check = health_monitor.get_check("backtest_data")
-            if backtest_check:
-                lookup_progress = getattr(backtest_check, '_population_progress', {})
-                indicators_progress = getattr(backtest_check, '_indicators_progress', {})
-                is_populating_lookup = getattr(backtest_check, '_populating', False)
-                is_populating_indicators = getattr(backtest_check, '_populating_indicators', False)
-        
-        health_data["backtest_lookup"] = {
-            "healthy": lookup_healthy,
-            "message": f"{len(recent_dates) - len(missing_lookup_dates)}/{len(recent_dates)} recent days have complete lookup data" if recent_dates else "No recent dates checked",
-            "coverage": lookup_coverage,
-            "missing_dates": missing_lookup_dates,
-            "populating": is_populating_lookup,
-            "population_progress": lookup_progress,
-            "last_checked": datetime.now(timezone.utc).isoformat()
-        }
-        
-        health_data["technical_indicators"] = {
-            "healthy": indicators_healthy,
-            "message": f"{len(recent_dates) - len(missing_indicators_dates)}/{len(recent_dates)} recent days have complete indicators data" if recent_dates else "No recent dates checked",
-            "coverage": indicators_coverage,
-            "missing_dates": missing_indicators_dates,
-            "populating": is_populating_indicators,
-            "population_progress": indicators_progress,
-            "last_checked": datetime.now(timezone.utc).isoformat()
-        }
-        
-    except Exception as e:
-        logger.error(f"Error getting backtest data status: {e}", exc_info=True)
-        health_data["backtest_lookup"] = {
-            "healthy": False,
-            "message": f"Error checking lookup status: {str(e)}",
-            "error": str(e)
-        }
-        health_data["technical_indicators"] = {
-            "healthy": False,
-            "message": f"Error checking indicators status: {str(e)}",
-            "error": str(e)
-        }
+                for result in results
+            ]
+        except Exception as e:
+            logger.error(f"Error running health checks: {e}", exc_info=True)
+            health_data["health_checks_error"] = str(e)
     
     return JSONResponse(health_data)
 
@@ -252,7 +163,6 @@ app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
 app.include_router(db_admin.router, prefix="/api/db-admin", tags=["db-admin"])
 app.include_router(screener.router, prefix="/api/screener", tags=["screener"])
 app.include_router(screening_criteria.router, prefix="/api", tags=["screening-criteria"])
-app.include_router(screener_metrics.router)  # Screener metrics management
 app.include_router(strategies.router)
 app.include_router(funds.router, prefix="/api", tags=["funds"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"])  # Trade analytics and performance

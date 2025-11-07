@@ -208,50 +208,86 @@ async def fetch_screener_data_unified(
                 price_time = (get_current_time() - start_time).total_seconds()
                 logger.debug(f"[UNIFIED] Got {len(price_data)} symbols with live trades ({price_time:.2f}s)")
             
-            # STEP 3: Fetch pre-calculated metrics
+            # STEP 3: Fetch pre-calculated metrics from market_data
             start_time = get_current_time()
             symbols_list = list(daily_data.keys())
-            
-            result = await session.execute(
-                text("""
-                    SELECT 
+
+            window_start = day_end - timedelta(days=120)
+
+            metrics_stmt = text("""
+                WITH daily_metrics AS (
+                    SELECT
                         symbol,
-                        rv14, rv30, rv60,
-                        high_90d, low_90d,
-                        sma_20, sma_50, sma_200,
+                        time::date AS date,
+                        rv14,
+                        rv30,
+                        rv60,
+                        sma_20,
+                        sma_50,
+                        sma_200,
                         rsi_14,
-                        macd_line, macd_signal, macd_histogram,
-                        bb_upper, bb_middle, bb_lower, atr_14,
-                        volume_ma_20, volume_trend
-                    FROM screener_metrics
-                    WHERE date = :prev_trading_day
+                        macd_line,
+                        macd_signal,
+                        macd_histogram,
+                        bb_upper,
+                        bb_middle,
+                        bb_lower,
+                        atr_14,
+                        volume_ma_20,
+                        MAX(high) OVER (
+                            PARTITION BY symbol
+                            ORDER BY time
+                            RANGE BETWEEN INTERVAL '90 day' PRECEDING AND CURRENT ROW
+                        ) AS high_90d,
+                        MIN(low) OVER (
+                            PARTITION BY symbol
+                            ORDER BY time
+                            RANGE BETWEEN INTERVAL '90 day' PRECEDING AND CURRENT ROW
+                        ) AS low_90d
+                    FROM market_data
+                    WHERE timescale = '1day'
                       AND symbol = ANY(:symbols)
-                """),
-                {"prev_trading_day": prev_trading_day, "symbols": symbols_list}
+                      AND time >= :window_start
+                      AND time < :day_end
+                )
+                SELECT *
+                FROM daily_metrics
+                WHERE date = :prev_trading_day
+            """)
+
+            result = await session.execute(
+                metrics_stmt,
+                {
+                    "symbols": symbols_list,
+                    "window_start": window_start,
+                    "day_end": day_end,
+                    "prev_trading_day": prev_trading_day,
+                },
             )
-            
+
             # Build metrics map
             metrics_map = {}
             for row in result:
-                metrics_map[row[0]] = {
-                    "rv14": float(row[1]) if row[1] else 0.0,
-                    "rv30": float(row[2]) if row[2] else 0.0,
-                    "rv60": float(row[3]) if row[3] else 0.0,
-                    "high_90d": float(row[4]) if row[4] else None,
-                    "low_90d": float(row[5]) if row[5] else None,
-                    "sma_20": float(row[6]) if row[6] else None,
-                    "sma_50": float(row[7]) if row[7] else None,
-                    "sma_200": float(row[8]) if row[8] else None,
-                    "rsi_14": float(row[9]) if row[9] else None,
-                    "macd_line": float(row[10]) if row[10] else None,
-                    "macd_signal": float(row[11]) if row[11] else None,
-                    "macd_histogram": float(row[12]) if row[12] else None,
-                    "bb_upper": float(row[13]) if row[13] else None,
-                    "bb_middle": float(row[14]) if row[14] else None,
-                    "bb_lower": float(row[15]) if row[15] else None,
-                    "atr_14": float(row[16]) if row[16] else None,
-                    "volume_ma_20": float(row[17]) if row[17] else None,
-                    "volume_trend": row[18]
+                mapping = row._mapping
+                symbol = mapping["symbol"]
+                metrics_map[symbol] = {
+                    "rv14": float(mapping["rv14"]) if mapping["rv14"] else 0.0,
+                    "rv30": float(mapping["rv30"]) if mapping["rv30"] else 0.0,
+                    "rv60": float(mapping["rv60"]) if mapping["rv60"] else 0.0,
+                    "high_90d": float(mapping["high_90d"]) if mapping["high_90d"] else None,
+                    "low_90d": float(mapping["low_90d"]) if mapping["low_90d"] else None,
+                    "sma_20": float(mapping["sma_20"]) if mapping["sma_20"] else None,
+                    "sma_50": float(mapping["sma_50"]) if mapping["sma_50"] else None,
+                    "sma_200": float(mapping["sma_200"]) if mapping["sma_200"] else None,
+                    "rsi_14": float(mapping["rsi_14"]) if mapping["rsi_14"] else None,
+                    "macd_line": float(mapping["macd_line"]) if mapping["macd_line"] else None,
+                    "macd_signal": float(mapping["macd_signal"]) if mapping["macd_signal"] else None,
+                    "macd_histogram": float(mapping["macd_histogram"]) if mapping["macd_histogram"] else None,
+                    "bb_upper": float(mapping["bb_upper"]) if mapping["bb_upper"] else None,
+                    "bb_middle": float(mapping["bb_middle"]) if mapping["bb_middle"] else None,
+                    "bb_lower": float(mapping["bb_lower"]) if mapping["bb_lower"] else None,
+                    "atr_14": float(mapping["atr_14"]) if mapping["atr_14"] else None,
+                    "volume_ma_20": float(mapping["volume_ma_20"]) if mapping["volume_ma_20"] else None,
                 }
             
             metrics_time = (get_current_time() - start_time).total_seconds()
@@ -260,7 +296,7 @@ async def fetch_screener_data_unified(
             if len(metrics_map) == 0 and mode == "historical":
                 logger.error(
                     f"[UNIFIED] ❌ No metrics found for {prev_trading_day} (historical mode). "
-                    f"Metrics must be calculated for this date before backtesting. "
+                    f"Ensure market_data metrics are populated for this date before backtesting. "
                     f"RV filter requires metrics to function."
                 )
             

@@ -128,15 +128,6 @@ Store all metrics directly on each bar in the `market_data` table, making metric
     - Low priority (doesn't block other operations)
     - Can be paused/resumed via health monitor
 
-### Phase 7: Backfill Historical Data
-
-14. **Create backfill script** (`apps/server/scripts/backfill_market_data_metrics.py`)
-    - Calculate metrics for all existing bars in `market_data`
-    - Process chronologically per symbol/timescale
-    - Support resumable processing (checkpoint progress)
-    - Update bars in batches for performance
-    - Can run alongside background completion service (idempotent)
-
 ### Phase 8: Backtesting Adjustments
 
 15. **Update backtest coordinator** (`apps/server/app/services/backtest/backtest_coordinator.py`)

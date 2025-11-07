@@ -13,6 +13,9 @@ from typing import Dict, Set
 from fastapi import WebSocket
 
 import asyncpg
+from sqlalchemy import text
+
+from app.services.core.database import get_async_engine
 
 
 logger = logging.getLogger(__name__)
@@ -26,6 +29,7 @@ class DatabaseListenerService:
     
     def __init__(self):
         self.connection: asyncpg.Connection | None = None
+        self._engine_conn = None
         self.subscribers: Dict[str, Set[WebSocket]] = {}  # fund_id -> set of websockets
         self.running = False
         self._listen_task: asyncio.Task | None = None
@@ -49,8 +53,11 @@ class DatabaseListenerService:
             database_url = database_url.replace("postgresql+asyncpg://", "postgresql://")
         
         try:
-            # Create asyncpg connection for LISTEN/NOTIFY
-            self.connection = await asyncpg.connect(database_url)
+            engine = get_async_engine()
+            self._engine_conn = await engine.connect()
+            await self._engine_conn.execution_options(isolation_level="AUTOCOMMIT")
+            raw_connection = await self._engine_conn.get_raw_connection()
+            self.connection = raw_connection.driver_connection
             logger.info("✅ Connected to PostgreSQL for LISTEN/NOTIFY")
             
             # Add listeners for each notification channel
@@ -88,8 +95,14 @@ class DatabaseListenerService:
         
         # Close connection
         if self.connection:
-            await self.connection.close()
+            try:
+                await self.connection.close()
+            except Exception:
+                pass
             self.connection = None
+        if self._engine_conn:
+            await self._engine_conn.close()
+            self._engine_conn = None
         
         # Clear subscribers
         self.subscribers.clear()
@@ -104,8 +117,8 @@ class DatabaseListenerService:
                 await asyncio.sleep(30)
                 
                 # Send a simple query to keep connection alive
-                if self.connection:
-                    await self.connection.fetchval("SELECT 1")
+                if self._engine_conn:
+                    await self._engine_conn.execute(text("SELECT 1"))
                     
             except asyncio.CancelledError:
                 break

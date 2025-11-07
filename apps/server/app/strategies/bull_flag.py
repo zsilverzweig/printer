@@ -27,7 +27,7 @@ from app.strategies.base import (
     PositionContext,
 )
 from app.services.news.news_service import NewsService
-from app.lib.technical_analysis import calculate_macd, is_red_candle, is_green_candle
+from app.lib.technical_analysis import is_red_candle, is_green_candle
 
 logger = logging.getLogger(__name__)
 
@@ -494,18 +494,15 @@ class BullFlagStrategy(ExecutionStrategy):
             )
         
         # Calculate MACD to check if it's positive
-        closes = [get_ohlc(bar)[3] for bar in bars]  # Extract closes
-        macd_data = calculate_macd(bars, fast_period=12, slow_period=26, signal_period=9)
-        macd_line = macd_data.get("macd", [])
-        
-        if not macd_line or len(macd_line) == 0:
-            logger.debug(f"🚩 [{ticker}] Entry analysis: MACD not available")
-            return None
-        
-        # Get the most recent MACD value
-        current_macd = macd_line[-1]
+        current_macd = None
+        if bars:
+            current_macd = bars[-1].get("macd_line")
+
+        if current_macd is None and market_data.indicators:
+            current_macd = market_data.indicators.get("macd_line")
+
         if current_macd is None:
-            logger.debug(f"🚩 [{ticker}] Entry analysis: Current MACD is None")
+            logger.debug(f"🚩 [{ticker}] Entry analysis: MACD not available")
             return None
         
         # MACD must be positive

@@ -54,7 +54,9 @@ export function FundTrades({ fundId }: FundTradesProps) {
   const [trades, setTrades] = useState<TradeRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [sorting, setSorting] = useState<SortingState>([]);
+  const [sorting, setSorting] = useState<SortingState>([
+    { id: "entry_time", desc: true },
+  ]);
 
   const loadTrades = async () => {
     try {
@@ -63,7 +65,6 @@ export function FundTrades({ fundId }: FundTradesProps) {
 
       const result = await analyticsService.getTrades({
         fund_id: fundId,
-        status: "closed",
         limit: 500,
       });
 
@@ -106,6 +107,33 @@ export function FundTrades({ fundId }: FundTradesProps) {
     return `${(seconds / 86400).toFixed(1)}d`;
   };
 
+  const statusSummary = trades.reduce<Record<string, number>>((acc, trade) => {
+    acc[trade.status] = (acc[trade.status] ?? 0) + 1;
+    return acc;
+  }, {});
+
+  const statusSummaryText =
+    trades.length > 0
+      ? Object.entries(statusSummary)
+          .map(([status, count]) => `${count} ${status}`)
+          .join(" • ")
+      : null;
+
+  const getStatusBadgeClass = (status: string) => {
+    switch (status) {
+      case "closed":
+        return "bg-emerald-100 text-emerald-700 border-emerald-200";
+      case "open":
+        return "bg-blue-100 text-blue-700 border-blue-200";
+      case "pending":
+        return "bg-amber-100 text-amber-700 border-amber-200";
+      case "partial":
+        return "bg-purple-100 text-purple-700 border-purple-200";
+      default:
+        return "bg-muted text-muted-foreground border-transparent";
+    }
+  };
+
   const columns = useMemo<ColumnDef<TradeRecord>[]>(
     () => [
       {
@@ -132,6 +160,20 @@ export function FundTrades({ fundId }: FundTradesProps) {
         },
         cell: ({ row }) => (
           <div className="font-medium">{row.original.symbol}</div>
+        ),
+      },
+      {
+        accessorKey: "status",
+        header: "Status",
+        cell: ({ row }) => (
+          <Badge
+            variant="outline"
+            className={`text-xs capitalize ${getStatusBadgeClass(
+              row.original.status
+            )}`}
+          >
+            {row.original.status}
+          </Badge>
         ),
       },
       {
@@ -472,7 +514,9 @@ export function FundTrades({ fundId }: FundTradesProps) {
             <div>
               <CardTitle>Trades</CardTitle>
               <CardDescription>
-                {trades.length} closed trade{trades.length !== 1 ? "s" : ""}
+                Showing {trades.length} trade
+                {trades.length !== 1 ? "s" : ""}
+                {statusSummaryText ? ` • ${statusSummaryText}` : ""}
               </CardDescription>
             </div>
             <Button variant="outline" size="sm" onClick={loadTrades}>

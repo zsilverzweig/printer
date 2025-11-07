@@ -18,8 +18,6 @@ from app.strategies.base import (
     MarketDataSnapshot,
     PositionContext,
 )
-from app.lib.technical_analysis import calculate_macd, average_true_range
-
 logger = logging.getLogger(__name__)
 
 
@@ -74,33 +72,18 @@ class MACDMomentumStrategy(ExecutionStrategy):
         if not market_data.bars or len(market_data.bars) < self.slow_period + self.signal_period:
             return None
         
-        # Calculate MACD
-        macd_data = calculate_macd(
-            market_data.bars,
-            fast_period=self.fast_period,
-            slow_period=self.slow_period,
-            signal_period=self.signal_period
-        )
+        current_bar = market_data.bars[-1]
+        prev_bar = market_data.bars[-2]
         
-        macd_line = macd_data.get("macd", [])
-        signal_line = macd_data.get("signal", [])
-        histogram = macd_data.get("histogram", [])
+        current_macd = current_bar.get("macd_line")
+        current_signal = current_bar.get("macd_signal")
+        current_histogram = current_bar.get("macd_histogram")
+        prev_macd = prev_bar.get("macd_line")
+        prev_signal = prev_bar.get("macd_signal")
         
-        if len(macd_line) < 2 or len(signal_line) < 2 or len(histogram) < 1:
-            return None
-        
-        # Get current and previous values
-        current_macd = macd_line[-1]
-        current_signal = signal_line[-1]
-        prev_macd = macd_line[-2]
-        prev_signal = signal_line[-2]
-        current_histogram = histogram[-1]
-        
-        if current_macd is None or current_signal is None:
+        if current_macd is None or current_signal is None or current_histogram is None:
             return None
         if prev_macd is None or prev_signal is None:
-            return None
-        if current_histogram is None:
             return None
         
         # Check for bullish crossover (MACD crosses above signal)
@@ -115,7 +98,7 @@ class MACDMomentumStrategy(ExecutionStrategy):
                 return None
             
             # Calculate ATR for stop loss
-            atr = average_true_range(market_data.bars, period=self.atr_period)
+            atr = current_bar.get("atr_14")
             if atr is None or atr <= 0:
                 stop_loss = market_data.price * 0.97  # Fallback to 3% stop
             else:
@@ -153,35 +136,19 @@ class MACDMomentumStrategy(ExecutionStrategy):
             current_stop = position.strategy_state.get("stop_loss", position.entry_price * 0.97)
             return StopUpdate(current_stop=current_stop)
         
-        # Calculate MACD
-        macd_data = calculate_macd(
-            market_data.bars,
-            fast_period=self.fast_period,
-            slow_period=self.slow_period,
-            signal_period=self.signal_period
-        )
+        current_bar = market_data.bars[-1]
+        prev_bar = market_data.bars[-2]
         
-        macd_line = macd_data.get("macd", [])
-        signal_line = macd_data.get("signal", [])
-        histogram = macd_data.get("histogram", [])
+        current_macd = current_bar.get("macd_line")
+        current_signal = current_bar.get("macd_signal")
+        current_histogram = current_bar.get("macd_histogram")
+        prev_macd = prev_bar.get("macd_line")
+        prev_signal = prev_bar.get("macd_signal")
         
-        if len(macd_line) < 2 or len(signal_line) < 2 or len(histogram) < 1:
-            current_stop = position.strategy_state.get("stop_loss", position.entry_price * 0.97)
-            return StopUpdate(current_stop=current_stop)
-        
-        current_macd = macd_line[-1]
-        current_signal = signal_line[-1]
-        prev_macd = macd_line[-2]
-        prev_signal = signal_line[-2]
-        current_histogram = histogram[-1]
-        
-        if current_macd is None or current_signal is None:
+        if current_macd is None or current_signal is None or current_histogram is None:
             current_stop = position.strategy_state.get("stop_loss", position.entry_price * 0.97)
             return StopUpdate(current_stop=current_stop)
         if prev_macd is None or prev_signal is None:
-            current_stop = position.strategy_state.get("stop_loss", position.entry_price * 0.97)
-            return StopUpdate(current_stop=current_stop)
-        if current_histogram is None:
             current_stop = position.strategy_state.get("stop_loss", position.entry_price * 0.97)
             return StopUpdate(current_stop=current_stop)
         
@@ -210,7 +177,7 @@ class MACDMomentumStrategy(ExecutionStrategy):
             )
         
         # Update trailing stop based on ATR
-        atr = average_true_range(market_data.bars, period=self.atr_period)
+        atr = current_bar.get("atr_14")
         if atr is None or atr <= 0:
             current_stop = position.strategy_state.get("stop_loss", position.entry_price * 0.97)
         else:

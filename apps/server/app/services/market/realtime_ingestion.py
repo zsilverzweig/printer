@@ -8,9 +8,7 @@ and batch inserts into TimescaleDB with automatic validation tracking.
 import asyncio
 import logging
 from datetime import datetime, date, timezone, timedelta
-
-from app.services.core.time_context import get_current_time
-from typing import Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set
 from collections import defaultdict
 
 from polygon import WebSocketClient
@@ -19,8 +17,55 @@ from sqlalchemy.dialects.postgresql import insert
 
 from app.models.market_data import MarketData, SymbolDateValidation
 from app.services.core.database import get_async_session
+from app.services.core.time_context import get_current_time
+from app.services.market.metrics_calculator import METRIC_FIELDS, MetricsCalculator, is_metrics_timescale
 
 logger = logging.getLogger("app.realtime_ingestion")
+
+
+def _as_numeric(value: Optional[float]) -> Optional[float]:
+    if value is None:
+        return None
+    return float(value)
+
+
+def _build_insert_payload(bar: MarketData) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {
+        "time": bar.time,
+        "symbol": bar.symbol,
+        "timescale": bar.timescale,
+        "open": bar.open,
+        "high": bar.high,
+        "low": bar.low,
+        "close": bar.close,
+        "volume": bar.volume,
+        "vwap": bar.vwap,
+        "trade_count": bar.trade_count,
+        "session_type": bar.session_type,
+    }
+
+    for field in METRIC_FIELDS:
+        payload[field] = _as_numeric(getattr(bar, field, None))
+
+    return payload
+
+
+def _build_conflict_update(stmt) -> Dict[str, Any]:
+    update_values: Dict[str, Any] = {
+        "open": stmt.excluded.open,
+        "high": stmt.excluded.high,
+        "low": stmt.excluded.low,
+        "close": stmt.excluded.close,
+        "volume": stmt.excluded.volume,
+        "vwap": stmt.excluded.vwap,
+        "trade_count": stmt.excluded.trade_count,
+        "session_type": stmt.excluded.session_type,
+    }
+
+    for field in METRIC_FIELDS:
+        update_values[field] = getattr(stmt.excluded, field)
+
+    return update_values
 
 
 class IngestionMetrics:
@@ -104,6 +149,7 @@ class RealtimeIngestionService:
         
         # Metrics
         self.metrics = IngestionMetrics()
+        self.metrics_calculator = MetricsCalculator()
         
         # State
         self.is_running = False
@@ -448,10 +494,17 @@ class RealtimeIngestionService:
         # CRITICAL: Sort bars by (time, symbol, timescale) to ensure consistent lock acquisition order
         # This prevents deadlocks when multiple processes insert overlapping data
         bars = sorted(bars, key=lambda b: (b.time, b.symbol, b.timescale))
+
+        # Calculate technical metrics for each bar before insertion
+        for bar in bars:
+            if is_metrics_timescale(bar.timescale):
+                metrics = self.metrics_calculator.calculate(bar.symbol, bar.timescale, bar)
+                for field, value in metrics.items():
+                    setattr(bar, field, _as_numeric(value))
         
         # Chunk size to avoid PostgreSQL's 32,767 parameter limit
-        # With 11 fields per record: 2000 * 11 = 22,000 parameters (safe margin)
-        CHUNK_SIZE = 2000
+        # With ~30 fields per record (including metrics) we cap at 1000 rows (~30k params)
+        CHUNK_SIZE = 1000
         
         # Process bars in chunks
         for chunk_start in range(0, len(bars), CHUNK_SIZE):
@@ -475,19 +528,7 @@ class RealtimeIngestionService:
                 try:
                     # Convert to dicts for bulk insert
                     values = [
-                        {
-                            "time": bar.time,
-                            "symbol": bar.symbol,
-                            "timescale": bar.timescale,
-                            "open": bar.open,
-                            "high": bar.high,
-                            "low": bar.low,
-                            "close": bar.close,
-                            "volume": bar.volume,
-                            "vwap": bar.vwap,
-                            "trade_count": bar.trade_count,
-                            "session_type": bar.session_type
-                        }
+                        _build_insert_payload(bar)
                         for bar in bars
                     ]
                     
@@ -496,16 +537,7 @@ class RealtimeIngestionService:
                     stmt = insert(MarketData).values(values)
                     stmt = stmt.on_conflict_do_update(
                         index_elements=["time", "symbol", "timescale"],
-                        set_={
-                            "open": stmt.excluded.open,
-                            "high": stmt.excluded.high,
-                            "low": stmt.excluded.low,
-                            "close": stmt.excluded.close,
-                            "volume": stmt.excluded.volume,
-                            "vwap": stmt.excluded.vwap,
-                            "trade_count": stmt.excluded.trade_count,
-                            "session_type": stmt.excluded.session_type
-                        }
+                        set_=_build_conflict_update(stmt)
                     )
                     
                     await session.execute(stmt)

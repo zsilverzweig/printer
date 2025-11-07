@@ -147,8 +147,8 @@ class ScreenerDataLoader:
         - volume: Today's accumulated volume
         - exchange: Exchange code
         - day: Yesterday's OHLC data
-        - rv14, rv30, rv60: Pre-calculated relative volumes
-        - Other technical indicators from screener_metrics
+        - rv14, rv30, rv60: Relative volume metrics sourced from `market_data`
+        - Other technical indicators supplied directly from the inline metrics (EMA, MACD, RSI, etc.)
         """
         try:
             # Use unified fetcher (same pattern as historical screener)

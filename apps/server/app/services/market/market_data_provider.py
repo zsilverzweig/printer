@@ -9,6 +9,7 @@ historical market data, indicators, news, and float information.
 from datetime import datetime, timedelta
 
 from app.services.core.time_context import get_current_time
+from app.services.market.metrics_calculator import METRIC_FIELDS
 from typing import Any, Callable, Dict, List, Optional
 import logging
 import asyncio
@@ -185,77 +186,31 @@ class MarketDataProvider:
         result = {}
         
         try:
-            # Get bars for indicator calculation (via MarketDataService -> database first)
-            bars = await self.get_historical_bars(symbol, lookback_minutes=120)
-            
-            if not bars or len(bars) < 26:  # Need at least 26 bars for MACD
-                logger.warning(f"Insufficient bars for indicators: {symbol}")
+            from app.services.market.market_data_service import get_market_data_service
+
+            service = get_market_data_service()
+            indicator_series = await service.get_technical_indicators(
+                symbol=symbol,
+                timescale="1Min",
+                lookback_minutes=120,
+            )
+
+            if not indicator_series:
+                logger.warning(f"Indicators unavailable for {symbol}")
                 return result
-            
-            closes = [bar["close"] for bar in bars]
-            
+
+            latest = indicator_series[-1]
+
             for indicator in indicators:
                 if indicator == "MACD":
-                    result["MACD"] = self._calculate_macd(closes)
+                    result["MACD"] = latest.get("macd_line")
                 elif indicator == "RSI":
-                    result["RSI"] = self._calculate_rsi(closes)
-                # Add more indicators as needed
+                    result["RSI"] = latest.get("rsi_14")
         
         except Exception as e:
             logger.error(f"Error calculating indicators for {symbol}: {e}")
         
         return result
-    
-    def _calculate_macd(self, closes: List[float]) -> float:
-        """Calculate MACD indicator (simplified)."""
-        if len(closes) < 26:
-            return 0.0
-        
-        # Simple EMA calculation
-        def ema(data: List[float], period: int) -> float:
-            if len(data) < period:
-                return sum(data) / len(data)
-            multiplier = 2 / (period + 1)
-            ema_val = sum(data[:period]) / period
-            for price in data[period:]:
-                ema_val = (price - ema_val) * multiplier + ema_val
-            return ema_val
-        
-        ema_12 = ema(closes, 12)
-        ema_26 = ema(closes, 26)
-        
-        return ema_12 - ema_26
-    
-    def _calculate_rsi(self, closes: List[float], period: int = 14) -> float:
-        """Calculate RSI indicator."""
-        if len(closes) < period + 1:
-            return 50.0
-        
-        gains = []
-        losses = []
-        
-        for i in range(1, len(closes)):
-            change = closes[i] - closes[i-1]
-            if change > 0:
-                gains.append(change)
-                losses.append(0)
-            else:
-                gains.append(0)
-                losses.append(abs(change))
-        
-        if len(gains) < period:
-            return 50.0
-        
-        avg_gain = sum(gains[-period:]) / period
-        avg_loss = sum(losses[-period:]) / period
-        
-        if avg_loss == 0:
-            return 100.0
-        
-        rs = avg_gain / avg_loss
-        rsi = 100 - (100 / (1 + rs))
-        
-        return rsi
     
     async def get_current_prices_batch(self, symbols: List[str]) -> Dict[str, float]:
         """
@@ -402,6 +357,50 @@ class MarketDataProvider:
             
             # Get indicators
             indicators = await self.get_indicators(symbol, ["MACD", "RSI"])
+
+            metrics: Dict[str, Any] = {}
+            if bars:
+                latest_bar = bars[-1]
+                for field in METRIC_FIELDS:
+                    value = latest_bar.get(field)
+                    if value is not None:
+                        metrics[field] = value
+                if latest_bar.get("vwap") is not None:
+                    metrics["vwap"] = latest_bar.get("vwap")
+
+            # Pull daily metrics for broader context (change %, daily RV, etc.)
+            try:
+                from app.services.market.market_data_service import get_market_data_service
+
+                market_service = get_market_data_service()
+                daily_bars = await market_service.get_bars(
+                    symbol=symbol,
+                    timeframe="1Day",
+                    lookback_minutes=60 * 24 * 5,
+                )
+
+                if daily_bars:
+                    latest_daily = daily_bars[-1]
+                    for field in METRIC_FIELDS:
+                        value = latest_daily.get(field)
+                        if value is not None:
+                            metrics[field] = value
+
+                    if latest_daily.get("vwap") is not None:
+                        metrics.setdefault("daily_vwap", latest_daily.get("vwap"))
+
+                    prev_daily = daily_bars[-2] if len(daily_bars) >= 2 else None
+                    current_close = latest_daily.get("close")
+                    prev_close = prev_daily.get("close") if prev_daily else None
+                    if current_close is not None and prev_close:
+                        delta = current_close - prev_close
+                        if prev_close != 0:
+                            change_pct = (delta / prev_close) * 100
+                            metrics["change_close_pct"] = change_pct
+                            metrics["change_percent"] = change_pct
+                        metrics["change_close"] = delta
+            except Exception as e:
+                logger.debug(f"Unable to fetch daily metrics for {symbol}: {e}")
             
             # Determine current price with robust fallback logic
             current_price = 0.0
@@ -452,6 +451,7 @@ class MarketDataProvider:
                 ask=quote.get("ask"),
                 bars=bars,
                 indicators=indicators,
+                metrics=metrics or None,
             )
         
         except ValueError as e:

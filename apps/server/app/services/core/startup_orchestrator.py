@@ -35,6 +35,7 @@ class StartupOrchestrator:
         self.screener_service = None
         self.alpaca_websocket = None
         self.reconciliation_service = None
+        self.metrics_completion_service = None
     
     async def startup(self) -> None:
         """
@@ -178,6 +179,33 @@ class StartupOrchestrator:
             self.services["Real-time Ingestion"] = Status.FAIL
             self.logger.log_error("Real-time Ingestion", e)
             self.errors.append(f"Real-time Ingestion: {str(e)}")
+        
+        # Metrics Completion
+        try:
+            completion_enabled = os.getenv("METRICS_COMPLETION_ENABLED", "false").lower() == "true"
+            if completion_enabled:
+                from app.services.market.metrics_completion_service import MetricsCompletionService
+
+                interval = int(os.getenv("METRICS_COMPLETION_INTERVAL", "300"))
+                batch_size = int(os.getenv("METRICS_COMPLETION_BATCH_SIZE", "5"))
+                self.metrics_completion_service = MetricsCompletionService(
+                    interval_seconds=interval,
+                    max_symbols_per_cycle=batch_size,
+                )
+                await self.metrics_completion_service.start()
+                self.services["Metrics Completion"] = Status.OK
+                self.logger.log_service(
+                    "Metrics Completion",
+                    Status.OK,
+                    f"{batch_size} symbols per cycle / {interval}s interval",
+                )
+            else:
+                self.services["Metrics Completion"] = Status.SKIP
+                self.logger.log_service("Metrics Completion", Status.SKIP, "disabled")
+        except Exception as e:
+            self.services["Metrics Completion"] = Status.FAIL
+            self.logger.log_error("Metrics Completion", e)
+            self.warnings.append(f"Metrics completion service: {str(e)}")
         
         # Note about disabled services (not errors, just informational)
         if os.getenv("MARKET_DATA_BACKFILL_ENABLED", "false").lower() != "true":
@@ -364,6 +392,12 @@ class StartupOrchestrator:
     
     async def shutdown(self) -> None:
         """Gracefully shutdown all services."""
+        if self.metrics_completion_service:
+            try:
+                await self.metrics_completion_service.stop()
+            except Exception:
+                pass
+
         if self.alpaca_websocket:
             try:
                 await self.alpaca_websocket.disconnect()

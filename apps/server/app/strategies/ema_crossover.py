@@ -17,9 +17,17 @@ from app.strategies.base import (
     MarketDataSnapshot,
     PositionContext,
 )
-from app.lib.technical_analysis import calculate_ema, average_true_range
-
 logger = logging.getLogger(__name__)
+
+EMA_FIELD_MAP = {
+    12: "ema_12",
+    26: "ema_26",
+    50: "ema_50",
+    200: "ema_200",
+}
+ATR_FIELD_MAP = {
+    14: "atr_14",
+}
 
 
 class EMACrossoverStrategy(ExecutionStrategy):
@@ -71,23 +79,43 @@ class EMACrossoverStrategy(ExecutionStrategy):
         if not market_data.bars or len(market_data.bars) < self.slow_period + 1:
             return None
         
-        # Calculate EMAs
-        fast_emas = calculate_ema(market_data.bars, period=self.fast_period)
-        slow_emas = calculate_ema(market_data.bars, period=self.slow_period)
+        ema_field_fast = EMA_FIELD_MAP.get(self.fast_period)
+        ema_field_slow = EMA_FIELD_MAP.get(self.slow_period)
         
-        if len(fast_emas) < 2 or len(slow_emas) < 2:
-            return None
+        current_fast = prev_fast = current_slow = prev_slow = None
         
-        # Get current and previous EMA values
-        current_fast = fast_emas[-1]
-        current_slow = slow_emas[-1]
-        prev_fast = fast_emas[-2]
-        prev_slow = slow_emas[-2]
+        if ema_field_fast and ema_field_slow:
+            current_fast = market_data.bars[-1].get(ema_field_fast)
+            current_slow = market_data.bars[-1].get(ema_field_slow)
+            prev_fast = market_data.bars[-2].get(ema_field_fast)
+            prev_slow = market_data.bars[-2].get(ema_field_slow)
         
-        if current_fast is None or current_slow is None:
-            return None
-        if prev_fast is None or prev_slow is None:
-            return None
+        if (
+            current_fast is None
+            or current_slow is None
+            or prev_fast is None
+            or prev_slow is None
+        ):
+            from app.lib.technical_analysis import calculate_ema
+
+            fast_emas = calculate_ema(market_data.bars, period=self.fast_period)
+            slow_emas = calculate_ema(market_data.bars, period=self.slow_period)
+
+            if len(fast_emas) < 2 or len(slow_emas) < 2:
+                return None
+
+            current_fast = fast_emas[-1]
+            current_slow = slow_emas[-1]
+            prev_fast = fast_emas[-2]
+            prev_slow = slow_emas[-2]
+
+            if (
+                current_fast is None
+                or current_slow is None
+                or prev_fast is None
+                or prev_slow is None
+            ):
+                return None
         
         # Check for bullish crossover (fast crosses above slow)
         # Previous: fast <= slow, Current: fast > slow
@@ -97,7 +125,13 @@ class EMACrossoverStrategy(ExecutionStrategy):
                 return None
             
             # Calculate ATR for stop loss
-            atr = average_true_range(market_data.bars, period=self.atr_period)
+            atr_field = ATR_FIELD_MAP.get(self.atr_period)
+            atr = market_data.bars[-1].get(atr_field) if atr_field else None
+            if atr is None or atr <= 0:
+                from app.lib.technical_analysis import average_true_range
+
+                atr = average_true_range(market_data.bars, period=self.atr_period)
+
             if atr is None or atr <= 0:
                 stop_loss = market_data.price * 0.97  # Fallback to 3% stop
             else:
@@ -134,25 +168,45 @@ class EMACrossoverStrategy(ExecutionStrategy):
             current_stop = position.strategy_state.get("stop_loss", position.entry_price * 0.97)
             return StopUpdate(current_stop=current_stop)
         
-        # Calculate EMAs
-        fast_emas = calculate_ema(market_data.bars, period=self.fast_period)
-        slow_emas = calculate_ema(market_data.bars, period=self.slow_period)
+        ema_field_fast = EMA_FIELD_MAP.get(self.fast_period)
+        ema_field_slow = EMA_FIELD_MAP.get(self.slow_period)
         
-        if len(fast_emas) < 2 or len(slow_emas) < 2:
-            current_stop = position.strategy_state.get("stop_loss", position.entry_price * 0.97)
-            return StopUpdate(current_stop=current_stop)
+        current_fast = prev_fast = current_slow = prev_slow = None
         
-        current_fast = fast_emas[-1]
-        current_slow = slow_emas[-1]
-        prev_fast = fast_emas[-2]
-        prev_slow = slow_emas[-2]
+        if ema_field_fast and ema_field_slow:
+            current_fast = market_data.bars[-1].get(ema_field_fast)
+            current_slow = market_data.bars[-1].get(ema_field_slow)
+            prev_fast = market_data.bars[-2].get(ema_field_fast)
+            prev_slow = market_data.bars[-2].get(ema_field_slow)
         
-        if current_fast is None or current_slow is None:
-            current_stop = position.strategy_state.get("stop_loss", position.entry_price * 0.97)
-            return StopUpdate(current_stop=current_stop)
-        if prev_fast is None or prev_slow is None:
-            current_stop = position.strategy_state.get("stop_loss", position.entry_price * 0.97)
-            return StopUpdate(current_stop=current_stop)
+        if (
+            current_fast is None
+            or current_slow is None
+            or prev_fast is None
+            or prev_slow is None
+        ):
+            from app.lib.technical_analysis import calculate_ema
+
+            fast_emas = calculate_ema(market_data.bars, period=self.fast_period)
+            slow_emas = calculate_ema(market_data.bars, period=self.slow_period)
+
+            if len(fast_emas) < 2 or len(slow_emas) < 2:
+                current_stop = position.strategy_state.get("stop_loss", position.entry_price * 0.97)
+                return StopUpdate(current_stop=current_stop)
+
+            current_fast = fast_emas[-1]
+            current_slow = slow_emas[-1]
+            prev_fast = fast_emas[-2]
+            prev_slow = slow_emas[-2]
+
+            if (
+                current_fast is None
+                or current_slow is None
+                or prev_fast is None
+                or prev_slow is None
+            ):
+                current_stop = position.strategy_state.get("stop_loss", position.entry_price * 0.97)
+                return StopUpdate(current_stop=current_stop)
         
         # Exit on bearish crossover (fast crosses below slow)
         if prev_fast >= prev_slow and current_fast < current_slow:
@@ -167,7 +221,13 @@ class EMACrossoverStrategy(ExecutionStrategy):
             )
         
         # Update trailing stop based on ATR
-        atr = average_true_range(market_data.bars, period=self.atr_period)
+        atr_field = ATR_FIELD_MAP.get(self.atr_period)
+        atr = market_data.bars[-1].get(atr_field) if atr_field else None
+        if atr is None or atr <= 0:
+            from app.lib.technical_analysis import average_true_range
+
+            atr = average_true_range(market_data.bars, period=self.atr_period)
+
         if atr is None or atr <= 0:
             current_stop = position.strategy_state.get("stop_loss", position.entry_price * 0.97)
         else:

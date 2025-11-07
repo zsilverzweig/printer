@@ -84,6 +84,82 @@ class MarketData(Base):
         Numeric(12, 4),
         nullable=True
     )
+    ema_12: Mapped[float | None] = mapped_column(
+        Numeric(12, 4),
+        nullable=True
+    )
+    ema_26: Mapped[float | None] = mapped_column(
+        Numeric(12, 4),
+        nullable=True
+    )
+    ema_50: Mapped[float | None] = mapped_column(
+        Numeric(12, 4),
+        nullable=True
+    )
+    ema_200: Mapped[float | None] = mapped_column(
+        Numeric(12, 4),
+        nullable=True
+    )
+    sma_20: Mapped[float | None] = mapped_column(
+        Numeric(12, 4),
+        nullable=True
+    )
+    sma_50: Mapped[float | None] = mapped_column(
+        Numeric(12, 4),
+        nullable=True
+    )
+    sma_200: Mapped[float | None] = mapped_column(
+        Numeric(12, 4),
+        nullable=True
+    )
+    macd_line: Mapped[float | None] = mapped_column(
+        Numeric(12, 4),
+        nullable=True
+    )
+    macd_signal: Mapped[float | None] = mapped_column(
+        Numeric(12, 4),
+        nullable=True
+    )
+    macd_histogram: Mapped[float | None] = mapped_column(
+        Numeric(12, 4),
+        nullable=True
+    )
+    rsi_14: Mapped[float | None] = mapped_column(
+        Numeric(12, 4),
+        nullable=True
+    )
+    atr_14: Mapped[float | None] = mapped_column(
+        Numeric(12, 4),
+        nullable=True
+    )
+    bb_upper: Mapped[float | None] = mapped_column(
+        Numeric(12, 4),
+        nullable=True
+    )
+    bb_middle: Mapped[float | None] = mapped_column(
+        Numeric(12, 4),
+        nullable=True
+    )
+    bb_lower: Mapped[float | None] = mapped_column(
+        Numeric(12, 4),
+        nullable=True
+    )
+    rv14: Mapped[float | None] = mapped_column(
+        Numeric(12, 4),
+        nullable=True
+    )
+    rv30: Mapped[float | None] = mapped_column(
+        Numeric(12, 4),
+        nullable=True
+    )
+    rv60: Mapped[float | None] = mapped_column(
+        Numeric(12, 4),
+        nullable=True
+    )
+    volume_ma_20: Mapped[float | None] = mapped_column(
+        Numeric(16, 4),
+        nullable=True
+    )
     trade_count: Mapped[int | None] = mapped_column(
         Integer,
         nullable=True

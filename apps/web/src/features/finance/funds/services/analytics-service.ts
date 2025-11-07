@@ -20,7 +20,7 @@ export interface TradeRecord {
   realized_pnl: number | null;
   realized_pnl_percent: number | null;
   hold_duration_seconds: number | null;
-  status: "open" | "closed" | "partial";
+  status: "open" | "closed" | "partial" | "pending";
   strategy_id: string | null;
   screening_criteria_id: string | null;
   ai_confidence: number | null;

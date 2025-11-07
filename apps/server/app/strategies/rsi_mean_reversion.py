@@ -17,9 +17,14 @@ from app.strategies.base import (
     MarketDataSnapshot,
     PositionContext,
 )
-from app.lib.technical_analysis import calculate_rsi, average_true_range
-
 logger = logging.getLogger(__name__)
+
+RSI_FIELD_MAP = {
+    14: "rsi_14",
+}
+ATR_FIELD_MAP = {
+    14: "atr_14",
+}
 
 
 class RSIMeanReversionStrategy(ExecutionStrategy):
@@ -72,21 +77,31 @@ class RSIMeanReversionStrategy(ExecutionStrategy):
         if not market_data.bars or len(market_data.bars) < self.rsi_period + 1:
             return None
         
-        # Calculate RSI
-        rsi_values = calculate_rsi(market_data.bars, period=self.rsi_period)
-        if not rsi_values:
-            return None
+        rsi_field = RSI_FIELD_MAP.get(self.rsi_period)
+        current_rsi = market_data.bars[-1].get(rsi_field) if rsi_field else None
         
-        current_rsi = rsi_values[-1]
         if current_rsi is None:
-            return None
+            from app.lib.technical_analysis import calculate_rsi
+
+            rsi_values = calculate_rsi(market_data.bars, period=self.rsi_period)
+            if not rsi_values:
+                return None
+            current_rsi = rsi_values[-1]
+            if current_rsi is None:
+                return None
         
         # Check if oversold
         if current_rsi >= self.oversold_level:
             return None  # Not oversold yet
         
         # Calculate ATR for stop loss
-        atr = average_true_range(market_data.bars, period=self.atr_period)
+        atr_field = ATR_FIELD_MAP.get(self.atr_period)
+        atr = market_data.bars[-1].get(atr_field) if atr_field else None
+        if atr is None or atr <= 0:
+            from app.lib.technical_analysis import average_true_range
+
+            atr = average_true_range(market_data.bars, period=self.atr_period)
+
         if atr is None or atr <= 0:
             # Fallback to 2% stop if ATR unavailable
             stop_loss = market_data.price * 0.98
@@ -121,16 +136,20 @@ class RSIMeanReversionStrategy(ExecutionStrategy):
             current_stop = position.strategy_state.get("stop_loss", position.entry_price * 0.98)
             return StopUpdate(current_stop=current_stop)
         
-        # Calculate RSI
-        rsi_values = calculate_rsi(market_data.bars, period=self.rsi_period)
-        if not rsi_values:
-            current_stop = position.strategy_state.get("stop_loss", position.entry_price * 0.98)
-            return StopUpdate(current_stop=current_stop)
+        rsi_field = RSI_FIELD_MAP.get(self.rsi_period)
+        current_rsi = market_data.bars[-1].get(rsi_field) if rsi_field else None
         
-        current_rsi = rsi_values[-1]
         if current_rsi is None:
-            current_stop = position.strategy_state.get("stop_loss", position.entry_price * 0.98)
-            return StopUpdate(current_stop=current_stop)
+            from app.lib.technical_analysis import calculate_rsi
+
+            rsi_values = calculate_rsi(market_data.bars, period=self.rsi_period)
+            if not rsi_values:
+                current_stop = position.strategy_state.get("stop_loss", position.entry_price * 0.98)
+                return StopUpdate(current_stop=current_stop)
+            current_rsi = rsi_values[-1]
+            if current_rsi is None:
+                current_stop = position.strategy_state.get("stop_loss", position.entry_price * 0.98)
+                return StopUpdate(current_stop=current_stop)
         
         # Exit if RSI recovered above exit level
         if current_rsi > self.exit_level:
