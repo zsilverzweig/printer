@@ -86,47 +86,79 @@ class MetricsCompletionService:
     async def _process_cycle(self) -> None:
         if not self._running:
             return
+        if self._lock.locked():
+            return
+        async with self._lock:
+            targets = await self._find_targets()
+            if not targets:
+                logger.debug("No metrics gaps detected this cycle")
+                return
+            await self._process_targets(targets)
 
-        if not self._lock.locked():
+    async def populate_startup(self, max_cycles: int = 3) -> int:
+        """Run a limited number of completion cycles during startup."""
+        if max_cycles <= 0:
+            logger.info("Startup metrics completion skipped (cycles=0)")
+            return 0
+        total_processed = 0
+        cycles = 0
+        while max_cycles is None or cycles < max_cycles:
             async with self._lock:
                 targets = await self._find_targets()
                 if not targets:
-                    logger.debug("No metrics gaps detected this cycle")
-                    return
+                    break
+                total_processed += await self._process_targets(targets)
+            cycles += 1
+        if total_processed:
+            logger.info(
+                "Startup metrics completion processed %s bars across %s cycle(s)",
+                total_processed,
+                cycles,
+            )
+        else:
+            logger.info("Startup metrics completion found no gaps to fill")
+        return total_processed
 
-                logger.info("Metrics completion processing %s target(s)", len(targets))
-
-                for symbol, timescale, start_time in targets:
-                    try:
-                        processed = await self._populator.populate_symbol(
-                            symbol=symbol,
-                            timescale=timescale,
-                            start_time=start_time,
-                            recompute_existing=False,
-                        )
-                        logger.info(
-                            "Metrics completion processed %s bars for %s/%s starting %s",
-                            processed,
-                            symbol,
-                            timescale,
-                            start_time.isoformat() if start_time else "beginning",
-                        )
-                    except Exception as exc:
-                        logger.warning(
-                            "Metrics completion failed for %s/%s: %s",
-                            symbol,
-                            timescale,
-                            exc,
-                        )
+    async def _process_targets(
+        self, targets: List[Tuple[str, str, Optional[datetime]]]
+    ) -> int:
+        logger.info("Metrics completion processing %s target(s)", len(targets))
+        processed_total = 0
+        for symbol, timescale, start_time in targets:
+            if not is_metrics_timescale(timescale):
+                continue
+            try:
+                processed = await self._populator.populate_symbol(
+                    symbol=symbol,
+                    timescale=timescale,
+                    start_time=start_time,
+                    recompute_existing=False,
+                )
+                processed_total += processed
+                logger.info(
+                    "Metrics completion processed %s bars for %s/%s starting %s",
+                    processed,
+                    symbol,
+                    timescale,
+                    start_time.isoformat() if start_time else "beginning",
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Metrics completion failed for %s/%s: %s",
+                    symbol,
+                    timescale,
+                    exc,
+                )
+        return processed_total
 
     async def _find_targets(self) -> List[Tuple[str, str, Optional[datetime]]]:
-        missing_conditions = " OR ".join(f"{column} IS NULL" for column in PRIMARY_METRIC_COLUMNS)
+        metric_columns = " OR ".join(f"{column} IS NULL" for column in PRIMARY_METRIC_COLUMNS)
 
         stmt = text(
             f"""
             SELECT symbol, timescale, MIN(time) AS start_time
             FROM market_data
-            WHERE ({missing_conditions})
+            WHERE ({metric_columns})
               AND timescale = ANY(:timescales)
             GROUP BY symbol, timescale
             ORDER BY start_time ASC

@@ -188,17 +188,26 @@ class StartupOrchestrator:
 
                 interval = int(os.getenv("METRICS_COMPLETION_INTERVAL", "300"))
                 batch_size = int(os.getenv("METRICS_COMPLETION_BATCH_SIZE", "5"))
+                startup_cycles = int(os.getenv("METRICS_COMPLETION_STARTUP_CYCLES", "0"))
+
                 self.metrics_completion_service = MetricsCompletionService(
                     interval_seconds=interval,
                     max_symbols_per_cycle=batch_size,
                 )
+
+                startup_processed = 0
+                if startup_cycles > 0:
+                    startup_processed = await self.metrics_completion_service.populate_startup(startup_cycles)
+
                 await self.metrics_completion_service.start()
+
+                message = f"{batch_size} symbols per cycle / {interval}s interval"
+                if startup_cycles > 0:
+                    message += f"; startup cycles={startup_cycles}"
+                    if startup_processed:
+                        message += f", bars_processed={startup_processed}"
                 self.services["Metrics Completion"] = Status.OK
-                self.logger.log_service(
-                    "Metrics Completion",
-                    Status.OK,
-                    f"{batch_size} symbols per cycle / {interval}s interval",
-                )
+                self.logger.log_service("Metrics Completion", Status.OK, message)
             else:
                 self.services["Metrics Completion"] = Status.SKIP
                 self.logger.log_service("Metrics Completion", Status.SKIP, "disabled")

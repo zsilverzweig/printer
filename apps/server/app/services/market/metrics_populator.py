@@ -78,6 +78,11 @@ class MetricsPopulator:
 
         async with get_async_session() if owns_session else _identity_async_context(session) as db_session:
             try:
+                # Metrics completion can touch large compressed chunks; lift the per-transaction
+                # decompression guard for this session so TimescaleDB doesn't abort the updates.
+                await db_session.execute(
+                    text("SET LOCAL timescaledb.max_tuples_decompressed_per_dml_transaction = 0")
+                )
                 stmt = self._build_query(symbol, timescale, start_time, end_time)
                 result = await db_session.stream(stmt)
 
