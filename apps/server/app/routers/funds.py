@@ -8,6 +8,7 @@ Provides endpoints for creating, managing, and controlling trading funds:
 - Query status and positions
 """
 
+import asyncio
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -33,6 +34,9 @@ from app.services.strategies.engine_registry import (
 from app.services.strategies.strategy_factory import create_strategy_engine
 from app.strategies.registry import get_strategy_metadata
 from app.services.trading.constants import FLOAT_COMPARISON_EPSILON
+from app.services.trading.alpaca_service import AlpacaService
+from app.services.trading.order_lifecycle import OrderLifecycleManager
+from app.services.trading.reconciliation_service import get_reconciliation_service
 
 logger = logging.getLogger(__name__)
 
@@ -197,6 +201,14 @@ class TransactionResponse(BaseModel):
     
     class Config:
         from_attributes = True
+
+
+class ManualOrderRequest(BaseModel):
+    symbol: str
+    side: str
+    quantity: float
+    time_in_force: str = "day"
+    estimated_price: Optional[float] = None
 
 
 # Helper functions to serialize models to dicts
@@ -1191,6 +1203,188 @@ async def get_fund_orders(fund_id: str, limit: int = 100) -> List[dict]:
     except Exception as e:
         logger.error(f"Error getting orders for fund {fund_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/funds/{fund_id}/manual-orders")
+async def place_manual_order(fund_id: str, request: ManualOrderRequest) -> dict:
+    """Place a manual market order for a fund."""
+    symbol = request.symbol.strip().upper()
+    if not symbol:
+        raise HTTPException(status_code=400, detail="Symbol is required")
+    side = request.side.lower()
+    if side not in {"buy", "sell"}:
+        raise HTTPException(status_code=400, detail="Side must be 'buy' or 'sell'")
+    try:
+        quantity = float(request.quantity)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Quantity must be a number")
+    if quantity <= 0:
+        raise HTTPException(status_code=400, detail="Quantity must be positive")
+
+    time_in_force = request.time_in_force.lower()
+    if time_in_force not in {"day", "gtc", "ioc", "fok"}:
+        raise HTTPException(status_code=400, detail="Invalid time_in_force value")
+
+    order_data: Optional[dict] = None
+
+    try:
+        async with get_async_session() as session:
+            fund = await session.get(Fund, fund_id)
+            if not fund:
+                raise HTTPException(status_code=404, detail="Fund not found")
+
+            # Determine Alpaca service (reuse running engine if available)
+            engine = get_engine(fund_id)
+            if engine and engine.alpaca_service:
+                alpaca_service = engine.alpaca_service
+            else:
+                alpaca_service = AlpacaService(paper_trading=(fund.mode == "sim"))
+
+            if not alpaca_service or not alpaca_service.is_available():
+                raise HTTPException(
+                    status_code=503,
+                    detail="Alpaca trading service not configured. Please set ALPACA_API_KEY and ALPACA_SECRET_KEY.",
+                )
+
+            estimated_price = request.estimated_price
+            if estimated_price is not None:
+                try:
+                    estimated_price = float(estimated_price)
+                except (TypeError, ValueError):
+                    estimated_price = None
+
+            if estimated_price is None:
+                try:
+                    quote = await alpaca_service.get_quote(symbol)
+                    bid_price = quote.get("bid_price") or quote.get("bid")
+                    ask_price = quote.get("ask_price") or quote.get("ask")
+                    if bid_price and ask_price:
+                        estimated_price = (float(bid_price) + float(ask_price)) / 2
+                except Exception as quote_error:
+                    logger.warning(f"Failed to fetch quote for {symbol}: {quote_error}")
+
+            if side == "buy" and (estimated_price is None or estimated_price <= 0):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Unable to determine estimated price for buy order. Enter a price or retry later.",
+                )
+
+            lifecycle = OrderLifecycleManager()
+
+            if side == "buy":
+                is_valid, validation_error = await lifecycle.validate_buy_order(
+                    session=session,
+                    fund=fund,
+                    symbol=symbol,
+                    quantity=quantity,
+                    estimated_price=estimated_price or 0.0,
+                )
+            else:
+                is_valid, validation_error = await lifecycle.validate_sell_order(
+                    session=session,
+                    fund_id=fund_id,
+                    symbol=symbol,
+                    quantity=quantity,
+                )
+
+            if not is_valid:
+                raise HTTPException(status_code=400, detail=validation_error or "Order validation failed")
+
+            submitted_at = get_current_time()
+            order_id = str(uuid.uuid4())
+
+            order = Order(
+                id=order_id,
+                alpaca_order_id="",
+                fund_id=fund_id,
+                symbol=symbol,
+                side=side,
+                quantity=quantity,
+                order_type="manual_market",
+                estimated_price=estimated_price if estimated_price and estimated_price > 0 else None,
+                status="pending",
+                submitted_at=submitted_at,
+            )
+            session.add(order)
+
+            if side == "buy":
+                trade_id = str(uuid.uuid4())
+                order.trade_id = trade_id
+                trade = Trade(
+                    id=trade_id,
+                    fund_id=fund_id,
+                    symbol=symbol,
+                    entry_order_id=order_id,
+                    entry_time=submitted_at,
+                    entry_price=estimated_price or 0.0,
+                    entry_quantity=quantity,
+                    strategy_id=fund.strategy_id,
+                    screening_criteria_id=fund.screening_criteria_id,
+                    status="pending",
+                    trade_metadata={},
+                )
+                session.add(trade)
+            else:
+                stmt = (
+                    select(Trade)
+                    .where(
+                        Trade.fund_id == fund_id,
+                        Trade.symbol == symbol,
+                        Trade.status == "open",
+                    )
+                    .order_by(Trade.entry_time.asc())
+                )
+                result = await session.execute(stmt)
+                open_trade = result.scalars().first()
+                if open_trade:
+                    order.trade_id = open_trade.id
+                    open_trade.exit_order_id = order_id
+                    open_trade.exit_time = submitted_at
+
+            await session.flush()
+
+            try:
+                alpaca_order = await alpaca_service.place_market_order(
+                    symbol=symbol,
+                    qty=quantity,
+                    side=side,
+                    time_in_force=time_in_force,
+                )
+            except Exception as alpaca_error:
+                logger.error(
+                    f"Failed to place manual order via Alpaca for fund {fund_id}: {alpaca_error}",
+                    exc_info=True,
+                )
+                order.status = "failed"
+                order.error_message = f"Alpaca API error: {alpaca_error}"
+                await session.commit()
+                raise HTTPException(status_code=500, detail=f"Failed to place order: {alpaca_error}") from alpaca_error
+
+            order.alpaca_order_id = alpaca_order.get("id", "")
+            if alpaca_order.get("status"):
+                order.status = alpaca_order["status"]
+
+            await session.commit()
+            order_data = serialize_order(order)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error placing manual order for fund {fund_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+    # Schedule reconciliation to ensure ledger syncs after fills
+    reconciliation_service = get_reconciliation_service()
+    if reconciliation_service and order_data:
+        asyncio.create_task(
+            reconciliation_service.schedule_order_reconciliation(
+                order_id=order_data["id"],
+                fund_id=fund_id,
+                symbol=symbol,
+            )
+        )
+
+    return {"order": order_data}
 
 
 @router.get("/funds/{fund_id}/transactions", response_model=List[TransactionResponse])

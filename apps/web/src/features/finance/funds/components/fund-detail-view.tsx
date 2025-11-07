@@ -32,6 +32,7 @@ import { FundOrders } from "./fund-orders";
 import { FundOverview } from "./fund-overview";
 import { FundPositions } from "./fund-positions";
 import { FundTrades } from "./fund-trades";
+import { FundManualTrading } from "./fund-manual-trading";
 import { SetupEditor } from "./setup-editor";
 import { TickerLifecycleView } from "./ticker-lifecycle-view";
 
@@ -174,12 +175,13 @@ export function FundDetailView({ fundId }: FundDetailViewProps) {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-2 md:grid-cols-8 gap-1">
+        <TabsList className="grid w-full grid-cols-2 md:grid-cols-9 gap-1">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="configuration">Configuration</TabsTrigger>
           <TabsTrigger value="activity">Activity</TabsTrigger>
           <TabsTrigger value="positions">Positions</TabsTrigger>
           <TabsTrigger value="orders">Orders</TabsTrigger>
+          <TabsTrigger value="trading">Trading</TabsTrigger>
           <TabsTrigger value="trades">Trades</TabsTrigger>
           <TabsTrigger value="ticker-lifecycle">Lifecycle</TabsTrigger>
           <TabsTrigger value="ledger">Ledger</TabsTrigger>
@@ -216,6 +218,15 @@ export function FundDetailView({ fundId }: FundDetailViewProps) {
 
         <TabsContent value="orders" className="space-y-6">
           <FundOrders fundId={fundId} />
+        </TabsContent>
+
+        <TabsContent value="trading" className="space-y-6">
+          <FundManualTrading
+            fundId={fundId}
+            fund={fund}
+            positions={positions}
+            onOrderPlaced={refreshAll}
+          />
         </TabsContent>
 
         <TabsContent value="trades" className="space-y-6">

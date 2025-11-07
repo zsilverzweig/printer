@@ -7,6 +7,7 @@
 import type {
   CreateFundInput,
   Fund,
+  FundOrder,
   FundTrade,
   FundTradingStatus,
   FundTransaction,
@@ -52,6 +53,14 @@ function parseFundDates(data: any): Fund {
     createdAt: new Date(data.created_at || data.createdAt),
     updatedAt: new Date(data.updated_at || data.updatedAt),
   };
+}
+
+export interface ManualOrderInput {
+  symbol: string;
+  side: "buy" | "sell";
+  quantity: number;
+  timeInForce?: "day" | "gtc" | "ioc" | "fok";
+  estimatedPrice?: number | null;
 }
 
 export const fundService = {
@@ -306,6 +315,55 @@ export const fundService = {
       const error = await response.json();
       throw new Error(error.detail || "Failed to stop trading");
     }
+  },
+
+  async placeManualOrder(
+    fundId: string,
+    input: ManualOrderInput
+  ): Promise<FundOrder> {
+    const payload = {
+      symbol: input.symbol,
+      side: input.side,
+      quantity: input.quantity,
+      time_in_force: input.timeInForce ?? "day",
+      estimated_price:
+        typeof input.estimatedPrice === "number"
+          ? input.estimatedPrice
+          : undefined,
+    };
+
+    const response = await fetch(
+      `${API_BASE}/api/funds/${fundId}/manual-orders`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => null);
+      throw new Error(error?.detail || "Failed to place manual order");
+    }
+
+    const data = await response.json();
+    const order = data.order;
+
+    return {
+      id: order.id,
+      symbol: order.symbol,
+      side: order.side,
+      quantity: order.quantity,
+      status: order.status,
+      orderType: order.order_type,
+      submittedAt: order.submitted_at,
+      filledAt: order.filled_at,
+      filledQty: order.filled_qty,
+      filledAvgPrice: order.filled_avg_price,
+      alpacaOrderId: order.alpaca_order_id,
+    };
   },
 
   /**

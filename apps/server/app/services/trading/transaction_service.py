@@ -13,6 +13,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.strategies import Transaction, Fund, Order, Trade
@@ -70,19 +71,18 @@ async def _ensure_synthetic_order(
         symbol: Stock symbol
         side: "buy" or "sell"
         quantity: Number of shares
-        timestamp: Transaction timestamp (timezone-naive, will be converted)
+        timestamp: Transaction timestamp (will be normalized to timezone-aware UTC)
     """
     # Check if order already exists
     existing_order = await session.get(Order, order_id)
     if existing_order:
         return  # Order already exists
     
-    # Convert timestamp to timezone-aware for Order model (which uses DateTime(timezone=True))
-    # Order model expects timezone-aware datetime, but we receive timezone-naive from _normalize_timestamp
+    # Normalize timestamp to timezone-aware UTC for Order model (DateTime(timezone=True))
     if timestamp.tzinfo is None:
         order_timestamp = timestamp.replace(tzinfo=timezone.utc)
     else:
-        order_timestamp = timestamp
+        order_timestamp = timestamp.astimezone(timezone.utc)
     
     # Create synthetic order for reconciliation
     synthetic_order = Order(
@@ -111,7 +111,7 @@ async def _ensure_synthetic_order(
 
 async def _normalize_timestamp(timestamp: Optional[datetime] = None) -> datetime:
     """
-    Normalize a timestamp to timezone-naive UTC for database storage.
+    Normalize a timestamp to timezone-aware UTC for database storage.
     
     Uses get_current_time() if no timestamp provided (for backtesting support).
     """
@@ -121,11 +121,9 @@ async def _normalize_timestamp(timestamp: Optional[datetime] = None) -> datetime
     # Ensure timezone-aware
     if timestamp.tzinfo is None:
         timestamp = timestamp.replace(tzinfo=timezone.utc)
-    
-    # Convert to timezone-naive UTC for database
-    if timestamp.tzinfo:
-        timestamp = timestamp.replace(tzinfo=None)
-    
+    else:
+        timestamp = timestamp.astimezone(timezone.utc)
+
     return timestamp
 
 
@@ -461,7 +459,87 @@ async def create_transaction_from_activity(
                 timestamp = transaction_time
         else:
             logger.warning(f"No transaction_time for fill {fill_id}, using current time")
-        
+
+        # Normalize timestamp for consistent comparisons/updates
+        normalized_timestamp = await _normalize_timestamp(timestamp)
+
+        # Look for provisional transactions (created from WebSocket events) to upgrade
+        provisional_stmt = select(Transaction).where(
+            Transaction.order_id == order.id,
+            Transaction.alpaca_fill_id.is_(None),
+            Transaction.side == fill_data["side"],
+        ).order_by(Transaction.timestamp.asc())
+
+        provisional_result = await session.execute(provisional_stmt)
+        provisional_transactions = provisional_result.scalars().all()
+
+        fill_qty = float(fill_data["qty"])
+        fill_price = float(fill_data["price"])
+
+        best_match = None
+        smallest_time_delta = None
+
+        for provisional in provisional_transactions:
+            if abs(provisional.quantity - fill_qty) <= FLOAT_COMPARISON_EPSILON:
+                best_match = provisional
+                break
+
+            # Fallback: match by timestamp proximity if quantities differ
+            time_delta = abs(
+                (provisional.timestamp - normalized_timestamp).total_seconds()
+            ) if provisional.timestamp and normalized_timestamp else None
+
+            if (
+                time_delta is not None
+                and time_delta <= 1.0  # within 1 second tolerance
+                and (smallest_time_delta is None or time_delta < smallest_time_delta)
+            ):
+                best_match = provisional
+                smallest_time_delta = time_delta
+
+        if best_match:
+            previous_quantity = float(best_match.quantity)
+            previous_price = float(best_match.price)
+
+            best_match.alpaca_fill_id = fill_id
+            best_match.alpaca_order_id = order.alpaca_order_id
+            best_match.price = fill_price
+            best_match.quantity = fill_qty
+            best_match.total_value = fill_price * fill_qty
+            best_match.timestamp = normalized_timestamp
+
+            logger.info(
+                f"🔄 Upgraded provisional transaction {best_match.id[:8]}... "
+                f"for {fill_data['symbol']} with Alpaca fill {fill_id}"
+            )
+
+            if abs(previous_quantity - fill_qty) > FLOAT_COMPARISON_EPSILON:
+                logger.debug(
+                    f"Adjusted provisional transaction quantity from {previous_quantity} "
+                    f"to {fill_qty} for fill {fill_id}"
+                )
+
+            await event_service.log_strategy_engine_event(
+                fund_id=fund_id,
+                event_category="fill_tracking",
+                symbol=fill_data["symbol"],
+                severity="info",
+                message=f"Upgraded provisional transaction for {fill_data['symbol']} with Alpaca fill",
+                event_data={
+                    "order_id": order.id,
+                    "alpaca_order_id": order.alpaca_order_id,
+                    "fill_id": fill_id,
+                    "qty": fill_qty,
+                    "old_qty": previous_quantity,
+                    "old_price": previous_price,
+                    "new_price": fill_price,
+                    "timestamp_delta_seconds": smallest_time_delta,
+                }
+            )
+
+            await session.flush()
+            return best_match
+
         return await create_transaction(
             session=session,
             fund_id=fund_id,
@@ -470,7 +548,7 @@ async def create_transaction_from_activity(
             quantity=fill_data["qty"],
             price=fill_data["price"],
             order_id=order.id,
-            timestamp=timestamp,
+            timestamp=normalized_timestamp,
             alpaca_order_id=order.alpaca_order_id,
             alpaca_fill_id=fill_id,  # REQUIRED: Must have fill_id for all transactions
             trade_id=order.trade_id,

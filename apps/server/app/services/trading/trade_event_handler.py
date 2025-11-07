@@ -21,6 +21,15 @@ from app.services.analytics.trade_builder import TradeBuilder
 logger = logging.getLogger(__name__)
 
 
+def _ensure_utc_aware(timestamp: Optional[datetime]) -> Optional[datetime]:
+    """Ensure timestamp is timezone-aware UTC."""
+    if timestamp is None:
+        return None
+    if timestamp.tzinfo is None:
+        return timestamp.replace(tzinfo=timezone.utc)
+    return timestamp.astimezone(timezone.utc)
+
+
 class TradeEventHandler:
     """
     Single handler for all Alpaca trade_updates WebSocket events.
@@ -522,11 +531,17 @@ class TradeEventHandler:
                     total_qty = sum(txn.quantity for txn in entry_transactions)
                     total_cost = sum(txn.total_value for txn in entry_transactions)
                     avg_price = total_cost / total_qty if total_qty > 0 else transaction.price
-                    entry_time = min(txn.timestamp for txn in entry_transactions)
+                    entry_times = [
+                        _ensure_utc_aware(txn.timestamp)
+                        for txn in entry_transactions
+                        if txn.timestamp is not None
+                    ]
+                    entry_time = min(entry_times) if entry_times else None
                     
                     trade.entry_price = avg_price
                     trade.entry_quantity = total_qty
-                    trade.entry_time = entry_time
+                    if entry_time:
+                        trade.entry_time = entry_time
                     
                     # Change status from "pending" to "open" when first filled
                     if trade.status == "pending":
