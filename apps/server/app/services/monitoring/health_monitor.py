@@ -18,7 +18,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.market_data import SymbolDateValidation, MarketData, MarketDataBacktestLookup
 from app.services.core.database import get_async_session
-from app.services.market.metrics_populator import MetricsPopulator
 
 logger = logging.getLogger("app.health_monitor")
 
@@ -361,7 +360,6 @@ class BacktestDataHealthCheck(BaseHealthCheck):
         self._last_metrics_task: Optional[asyncio.Task] = None
         self._population_progress: Dict = {}
         self._metrics_progress: Dict = {}
-        self._metrics_populator = MetricsPopulator()
     
     def _get_previous_trading_days(self, count: int = 7) -> List[date]:
         """Get the last N trading days (excluding weekends, but not holidays)."""

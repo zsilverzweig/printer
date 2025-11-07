@@ -1,8 +1,21 @@
 from __future__ import annotations
 
 """
-Historical metrics backfill service.
+DEPRECATED: Historical metrics backfill service.
 
+⚠️  DEPRECATED - DO NOT USE ⚠️
+
+This service has been superseded by BackgroundMetricsLoader, which is now the
+mothership for all metrics processing. BackgroundMetricsLoader provides:
+
+- Unified processing of all historical daily data
+- Better performance and reliability
+- Simplified architecture
+- Health monitor integration for automatic triggering
+
+This service will be removed in a future version. Migrate to BackgroundMetricsLoader.
+
+OLD DESCRIPTION:
 Processes market_data bars in chronological order, calculates metrics via
 MetricsCalculator, and persists them back to the database in batches.
 """
@@ -33,8 +46,12 @@ def _to_decimal(value: Optional[float]) -> Optional[Decimal]:
 @dataclass
 class MetricsPopulator:
     """
-    Backfills technical metrics directly into the market_data table.
+    ⚠️ DEPRECATED: Backfills technical metrics directly into the market_data table.
 
+    This class is deprecated. Use BackgroundMetricsLoader instead.
+    The mothership BackgroundMetricsLoader will kill all the old metric loaders.
+
+    OLD DESCRIPTION:
     Intended for use by maintenance scripts or background jobs that need to
     compute metrics for historical bars. The populator processes data per
     symbol/timescale combination in chronological order to maintain indicator

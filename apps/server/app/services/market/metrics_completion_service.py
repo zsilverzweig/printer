@@ -1,8 +1,21 @@
 from __future__ import annotations
 
 """
-Background service that incrementally fills missing technical metrics.
+DEPRECATED: Background service that incrementally fills missing technical metrics.
 
+⚠️  DEPRECATED - DO NOT USE ⚠️
+
+This service has been superseded by BackgroundMetricsLoader, which is now the
+mothership for all metrics processing. BackgroundMetricsLoader provides:
+
+- Unified processing of all historical daily data
+- Better performance and reliability
+- Simplified architecture without continuous background loops
+- Health monitor integration for automatic triggering
+
+This service will be removed in a future version. Migrate to BackgroundMetricsLoader.
+
+OLD DESCRIPTION:
 Periodically scans the market_data table for symbol/timescale combinations with
 missing key metrics (EMA, MACD, RSI), then uses MetricsPopulator to recompute
 metrics from the earliest missing timestamp onward.
@@ -36,7 +49,10 @@ PRIMARY_METRIC_COLUMNS: List[str] = [
 @dataclass
 class MetricsCompletionService:
     """
-    Periodic background worker that completes missing metrics.
+    ⚠️ DEPRECATED: Periodic background worker that completes missing metrics.
+
+    This class is deprecated. Use BackgroundMetricsLoader instead.
+    The mothership BackgroundMetricsLoader will kill all the old metric loaders.
     """
 
     interval_seconds: int = 300
