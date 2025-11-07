@@ -8,6 +8,8 @@ from pydantic import BaseModel
 from app.lib.dependencies import PolygonClient, PolygonClientNoPagination
 from app.services.market import market as market_service
 from app.services.ai import analytics as analytics_service
+from app.services.core.startup_orchestrator import get_orchestrator
+from app.services.market.background_metrics_loader import ProcessingStats
 
 router = APIRouter()
 
@@ -487,3 +489,55 @@ async def get_historical_bars(
             "count": len(bars),
             "bars": bars
         }
+
+
+# Background Metrics Loader API
+class BackgroundLoaderStatus(BaseModel):
+    """Status response for background metrics loader."""
+    available: bool
+    batch_size: int
+
+
+@router.get("/background-metrics-loader/status", response_model=BackgroundLoaderStatus)
+async def get_background_loader_status():
+    """Get the current status of the background metrics loader."""
+    orchestrator = get_orchestrator()
+    if not orchestrator or not orchestrator.background_metrics_loader:
+        raise HTTPException(status_code=503, detail="Background metrics loader not available")
+
+    loader = orchestrator.background_metrics_loader
+
+    return BackgroundLoaderStatus(
+        available=True,
+        batch_size=loader.batch_size
+    )
+
+
+@router.post("/background-metrics-loader/trigger")
+async def trigger_background_loader_cycle():
+    """Manually trigger one cycle of the background metrics loader."""
+    orchestrator = get_orchestrator()
+    if not orchestrator or not orchestrator.background_metrics_loader:
+        raise HTTPException(status_code=503, detail="Background metrics loader not available")
+
+    loader = orchestrator.background_metrics_loader
+
+    try:
+        stats = await loader._process_cycle()
+        # Store stats for status endpoint
+        loader._last_cycle_stats = stats
+
+        return {
+            "success": True,
+            "stats": {
+                "symbols_scanned": stats.symbols_scanned,
+                "bars_processed": stats.bars_processed,
+                "metrics_calculated": stats.metrics_calculated,
+                "database_updates": stats.database_updates,
+                "errors": stats.errors,
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to trigger cycle: {str(e)}")
+
+

@@ -35,7 +35,7 @@ class StartupOrchestrator:
         self.screener_service = None
         self.alpaca_websocket = None
         self.reconciliation_service = None
-        self.metrics_completion_service = None
+        self.background_metrics_loader = None
     
     async def startup(self) -> None:
         """
@@ -180,41 +180,18 @@ class StartupOrchestrator:
             self.logger.log_error("Real-time Ingestion", e)
             self.errors.append(f"Real-time Ingestion: {str(e)}")
         
-        # Metrics Completion
+        # Background Metrics Loader (available for health monitor)
         try:
-            completion_enabled = os.getenv("METRICS_COMPLETION_ENABLED", "false").lower() == "true"
-            if completion_enabled:
-                from app.services.market.metrics_completion_service import MetricsCompletionService
+            from app.services.market.background_metrics_loader import BackgroundMetricsLoader
 
-                interval = int(os.getenv("METRICS_COMPLETION_INTERVAL", "300"))
-                batch_size = int(os.getenv("METRICS_COMPLETION_BATCH_SIZE", "5"))
-                startup_cycles = int(os.getenv("METRICS_COMPLETION_STARTUP_CYCLES", "0"))
+            self.background_metrics_loader = BackgroundMetricsLoader()
 
-                self.metrics_completion_service = MetricsCompletionService(
-                    interval_seconds=interval,
-                    max_symbols_per_cycle=batch_size,
-                )
-
-                startup_processed = 0
-                if startup_cycles > 0:
-                    startup_processed = await self.metrics_completion_service.populate_startup(startup_cycles)
-
-                await self.metrics_completion_service.start()
-
-                message = f"{batch_size} symbols per cycle / {interval}s interval"
-                if startup_cycles > 0:
-                    message += f"; startup cycles={startup_cycles}"
-                    if startup_processed:
-                        message += f", bars_processed={startup_processed}"
-                self.services["Metrics Completion"] = Status.OK
-                self.logger.log_service("Metrics Completion", Status.OK, message)
-            else:
-                self.services["Metrics Completion"] = Status.SKIP
-                self.logger.log_service("Metrics Completion", Status.SKIP, "disabled")
+            self.services["Background Metrics Loader"] = Status.OK
+            self.logger.log_service("Background Metrics Loader", Status.OK, "available for daily metrics processing")
         except Exception as e:
-            self.services["Metrics Completion"] = Status.FAIL
-            self.logger.log_error("Metrics Completion", e)
-            self.warnings.append(f"Metrics completion service: {str(e)}")
+            self.services["Background Metrics Loader"] = Status.FAIL
+            self.logger.log_error("Background Metrics Loader", e)
+            self.warnings.append(f"Background metrics loader: {str(e)}")
         
         # Note about disabled services (not errors, just informational)
         if os.getenv("MARKET_DATA_BACKFILL_ENABLED", "false").lower() != "true":
@@ -401,12 +378,6 @@ class StartupOrchestrator:
     
     async def shutdown(self) -> None:
         """Gracefully shutdown all services."""
-        if self.metrics_completion_service:
-            try:
-                await self.metrics_completion_service.stop()
-            except Exception:
-                pass
-
         if self.alpaca_websocket:
             try:
                 await self.alpaca_websocket.disconnect()

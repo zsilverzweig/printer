@@ -507,78 +507,49 @@ class BacktestDataHealthCheck(BaseHealthCheck):
         finally:
             self._populating = False
     
-    async def _populate_missing_metrics(self, dates: List[date], timescale: str = "1min") -> None:
-        """Populate metrics for missing dates in background."""
+    async def _populate_missing_metrics_via_loader(self, dates: List[date]) -> None:
+        """Populate metrics for missing dates using BackgroundMetricsLoader."""
         if self._populating_metrics:
             self.logger.debug("Metrics population already in progress, skipping")
             return
 
         self._populating_metrics = True
         try:
-            missing_conditions = " OR ".join(f"{column} IS NULL" for column in PRIMARY_METRIC_COLUMNS)
+            # Import BackgroundMetricsLoader here to avoid circular imports
+            from app.services.market.background_metrics_loader import BackgroundMetricsLoader
+
+            # Create loader instance
+            loader = BackgroundMetricsLoader()
 
             for target_date in dates:
-                key = f"{target_date.isoformat()}_{timescale}"
+                key = f"{target_date.isoformat()}_daily"
                 self._metrics_progress[key] = {
                     "status": "populating",
                     "started_at": get_current_time().isoformat(),
                 }
 
                 try:
-                    start_dt = datetime.combine(target_date, datetime.min.time()).replace(
-                        hour=9, minute=30, tzinfo=timezone.utc
-                    )
-                    end_dt = datetime.combine(target_date, datetime.min.time()).replace(
-                        hour=16, minute=0, tzinfo=timezone.utc
-                    )
-
-                    stmt = text(
-                        f"""
-                        SELECT symbol, timescale, MIN(time) AS start_time
-                        FROM market_data
-                        WHERE time >= :start_dt
-                          AND time <= :end_dt
-                          AND timescale = :timescale
-                          AND ({missing_conditions})
-                        GROUP BY symbol, timescale
-                    """
-                    )
-
-                    async with get_async_session() as session:
-                        result = await session.execute(
-                            stmt,
-                            {
-                                "start_dt": start_dt,
-                                "end_dt": end_dt,
-                                "timescale": timescale,
-                            },
-                        )
-                        targets = result.fetchall()
-
-                    processed_total = 0
-                    for row in targets:
-                        symbol = row[0]
-                        ts = row[1]
-                        start_time = row[2]
-                        processed_total += await self._metrics_populator.populate_symbol(
-                            symbol=symbol,
-                            timescale=ts,
-                            start_time=start_time,
-                            recompute_existing=False,
-                        )
+                    # Process all missing daily metrics for this date
+                    stats = await loader.process_daily_data()
 
                     self._metrics_progress[key] = {
                         "status": "completed",
                         "started_at": self._metrics_progress[key].get("started_at"),
                         "completed_at": get_current_time().isoformat(),
-                        "result": {"targets": len(targets), "bars_processed": processed_total},
+                        "result": {
+                            "symbols_scanned": stats.symbols_scanned,
+                            "bars_processed": stats.bars_processed,
+                            "metrics_calculated": stats.metrics_calculated,
+                            "database_updates": stats.database_updates,
+                            "errors": stats.errors,
+                        },
                     }
                     self.logger.info(
-                        f"✅ Metrics populated for {target_date}: {len(targets)} symbol(s), {processed_total} bars"
+                        f"✅ Daily metrics populated for {target_date}: {stats.symbols_scanned} symbols, {stats.bars_processed} bars"
                     )
 
                 except Exception as e:
-                    self.logger.error(f"❌ Failed to populate metrics for {target_date}: {e}", exc_info=True)
+                    self.logger.error(f"❌ Failed to populate daily metrics for {target_date}: {e}", exc_info=True)
                     self._metrics_progress[key] = {
                         "status": "failed",
                         "started_at": self._metrics_progress.get(key, {}).get("started_at"),
@@ -622,11 +593,11 @@ class BacktestDataHealthCheck(BaseHealthCheck):
                         self._populate_missing_dates(missing_lookup_dates)
                     )
                 
-                # Trigger population for missing metrics (non-blocking)
+                # Trigger population for missing metrics using BackgroundMetricsLoader (non-blocking)
                 if missing_metrics_dates and not self._populating_metrics:
                     self.logger.info(f"🔧 Found {len(missing_metrics_dates)} dates needing metrics population: {[d.isoformat() for d in missing_metrics_dates]}")
                     self._last_metrics_task = asyncio.create_task(
-                        self._populate_missing_metrics(missing_metrics_dates, timescale="1min")
+                        self._populate_missing_metrics_via_loader(missing_metrics_dates)
                     )
                 
                 # Check yesterday specifically for health status
