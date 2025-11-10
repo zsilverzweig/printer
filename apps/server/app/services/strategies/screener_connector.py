@@ -97,15 +97,11 @@ class ScreenerConnector:
                         f"[FUND {self.fund_id}] 📊 Screened: '{screener_name}' → {len(screener_results)} stocks"
                     )
             else:
-                # No specific criteria - use base screener cached payload (default filters)
-                if not screener.cached_payload:
-                    self.strategy_logger.fund_message("Screener not ready, no candidates", "debug")
-                    return []
-                
-                screener_results = screener.cached_payload
+                # No specific criteria - run the default screener on-demand
+                screener_results = await screener.compute_live()
                 self.strategy_logger.fund_message(
-                    f"Screener has {len(screener_results)} total candidates (default filters)",
-                    "debug"
+                    f"Screener returned {len(screener_results)} candidate(s) with default filters",
+                    "debug",
                 )
             
             # Extract tickers

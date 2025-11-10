@@ -273,19 +273,14 @@ class StartupOrchestrator:
             self.logger.log_error("Backtest Cleanup", e)
             self.warnings.append(f"Backtest cleanup failed: {str(e)}")
         
-        # Screener Service (on-demand only, no automatic loop)
+        # Screener Service (on-demand queries only)
         try:
             from app.services.screener.screener import ScreenerService, set_screener_service
-            import app.core as core
-            
-            # Initialize screener service but don't start the automatic loop
-            # The screener will still be available on-demand for active funds and API calls
-            self.screener_service = ScreenerService(core.get_client(), interval_s=20)
-            # Initialize data loader but skip starting the automatic _loop()
-            await self.screener_service.data_loader.load_from_timescale()
+
+            self.screener_service = ScreenerService()
             set_screener_service(self.screener_service)
             self.services["Screener Service"] = Status.OK
-            self.logger.log_service("Screener Service", Status.OK, "on-demand only (no auto-loop)")
+            self.logger.log_service("Screener Service", Status.OK, "on-demand queries")
         except Exception as e:
             self.services["Screener Service"] = Status.FAIL
             self.logger.log_error("Screener Service", e)

@@ -1,141 +1,68 @@
-"""Main screener service coordinating market data filtering and streaming."""
+"""On-demand screener service that queries TimescaleDB when requested."""
 from __future__ import annotations
 
-import asyncio
 import logging
-from typing import Any, Dict, List, Optional, Set
 from datetime import datetime
+from typing import Any, Dict, List, Optional
 
-from polygon import RESTClient
-
-from app import core
-from app.services.screener.screener_broadcast import ScreenerBroadcaster
 from app.services.screener.screener_compute import ScreenerCompute
 from app.services.screener.screener_data import ScreenerDataLoader
 from app.services.screener.screener_historical import ScreenerHistorical
 from app.types import ScreenerCriteria
 
-
-# Global screener service instance for strategy engines to access
-_global_screener_service: Optional['ScreenerService'] = None
+_global_screener_service: Optional["ScreenerService"] = None
 
 
-def get_screener_service() -> Optional['ScreenerService']:
+def get_screener_service() -> Optional["ScreenerService"]:
     """Get the global screener service instance."""
     return _global_screener_service
 
 
-def set_screener_service(service: 'ScreenerService') -> None:
+def set_screener_service(service: "ScreenerService") -> None:
     """Set the global screener service instance."""
     global _global_screener_service
     _global_screener_service = service
 
 
 class ScreenerService:
-    """Orchestrates screener functionality: fetching snapshots, filtering, and streaming results."""
+    """Simple screener facade that calculates results directly from TimescaleDB."""
 
-    def __init__(self, client: RESTClient, interval_s: int = 5):
-        """Initialize the screener service.
-        
+    def __init__(self, client: Any | None = None, interval_s: int = 5) -> None:
+        """
+        Initialize the screener service.
+
         Args:
-            client: Polygon REST client
-            interval_s: Seconds between market snapshot updates
+            client: Legacy compatibility parameter (ignored).
+            interval_s: Legacy compatibility parameter (ignored).
         """
         self.logger = logging.getLogger("app.screener")
-        self.client = client
-        self.interval_s = interval_s
-        
-        # Initialize component services
         self.data_loader = ScreenerDataLoader()
         self.compute = ScreenerCompute(self.data_loader)
         self.historical = ScreenerHistorical(self.compute)
-        self.broadcaster = ScreenerBroadcaster()
-        
-        # Background task
-        self.task: asyncio.Task | None = None
 
-    async def start(self) -> None:
-        """Start the screener service and begin periodic updates without blocking."""
-        # Initialize with TimescaleDB data
-        await self.data_loader.load_from_timescale()
-        # Start periodic loop
-        self.task = asyncio.create_task(self._loop())
-
-    async def stop(self) -> None:
-        """Stop the screener service."""
-        if self.task:
-            self.task.cancel()
-            try:
-                await self.task
-            except asyncio.CancelledError:
-                pass
-        self.logger.info("ScreenerService stopped")
-
-    async def _loop(self) -> None:
-        """Main loop that periodically fetches and broadcasts market data."""
-        while True:
-            await self._tick()
-            await asyncio.sleep(self.interval_s)
-
-    async def _tick(self) -> None:
-        """Fetch current market data from database, compute filtered results, and broadcast to subscribers."""
-        try:
-            # Fetch latest market data from TimescaleDB using unified fetcher
-            # This queries both market_data (minute bars) and market_latest_trades (real-time prices)
-            self.logger.debug("[REALTIME SCREENER] Fetching latest market data from TimescaleDB…")
-            snaps = await self.data_loader.fetch_latest_from_timescale()
-            self.logger.debug("[REALTIME SCREENER] Market data fetched: %s symbols", len(snaps))
-            
-            if not snaps:
-                self.logger.warning("[SCREENER] No market data available from database")
-                payload = []
-            else:
-                # Use permissive defaults (no filters except ETF filter and exchange filter)
-                payload = await self.compute.compute(
-                    snaps,
-                    min_price=None,
-                    max_price=None,
-                    min_volume=None,
-                    min_change_percent=None,
-                    max_change_percent=None,
-                    order_by="rv14",
-                    limit=200,
-                    exclude_etfs=True,  # Default to excluding ETFs
-                    asset_types=None
-                )
-        except Exception as e:
-            self.logger.error("Failed to fetch/process market data from database: %s", e, exc_info=True)
-            payload = []
-        
-        # Broadcast results
-        await self.broadcaster.broadcast(payload)
-
-    # Public API methods that delegate to component services
-    
-    async def _compute(
+    async def _compute_with_snapshots(
         self,
-        snaps: List[Any],
-        min_price: Optional[float] = None,
-        max_price: Optional[float] = None,
-        min_volume: Optional[float] = None,
-        min_change_percent: Optional[float] = None,
-        max_change_percent: Optional[float] = None,
-        min_relative_volume: Optional[float] = None,
-        order_by: str = "rv14",
-        limit: int = 200,
-        technical_filters: Optional[Dict[str, Any]] = None,
-        exclude_etfs: bool = True,
-        asset_types: Optional[List[str]] = None,
-        market_cap_min: Optional[int] = None,
-        market_cap_max: Optional[int] = None,
+        snapshots: List[Any],
+        *,
+        min_price: Optional[float],
+        max_price: Optional[float],
+        min_volume: Optional[float],
+        min_change_percent: Optional[float],
+        max_change_percent: Optional[float],
+        min_relative_volume: Optional[float],
+        order_by: str,
+        limit: int,
+        technical_filters: Optional[Dict[str, Any]],
+        exclude_etfs: bool,
+        asset_types: Optional[List[str]],
+        market_cap_min: Optional[int],
+        market_cap_max: Optional[int],
     ) -> List[dict]:
-        """Compute filtered and sorted screener results from market snapshots.
-        
-        This is a convenience method that delegates to ScreenerCompute.
-        Kept for backward compatibility.
-        """
+        if not snapshots:
+            return []
+
         return await self.compute.compute(
-            snaps,
+            snapshots,
             min_price=min_price,
             max_price=max_price,
             min_volume=min_volume,
@@ -150,7 +77,58 @@ class ScreenerService:
             market_cap_min=market_cap_min,
             market_cap_max=market_cap_max,
         )
-    
+
+    async def compute_live(
+        self,
+        min_price: Optional[float] = None,
+        max_price: Optional[float] = None,
+        min_volume: Optional[float] = None,
+        min_change_percent: Optional[float] = None,
+        max_change_percent: Optional[float] = None,
+        min_relative_volume: Optional[float] = None,
+        order_by: str = "rv14",
+        limit: int = 200,
+        technical_filters: Optional[Dict[str, Any]] = None,
+        exclude_etfs: bool = True,
+        asset_types: Optional[List[str]] = None,
+        market_cap_min: Optional[int] = None,
+        market_cap_max: Optional[int] = None,
+        float_min: Optional[int] = None,
+        float_max: Optional[int] = None,
+    ) -> List[dict]:
+        """Run the screener against current TimescaleDB data."""
+        from app.services.screener.screener_data_unified import fetch_screener_data_unified
+
+        snapshots = await fetch_screener_data_unified(
+            market_cap_min=market_cap_min,
+            market_cap_max=market_cap_max,
+            float_min=float_min,
+            float_max=float_max,
+            asset_types=asset_types,
+            min_relative_volume=min_relative_volume,
+        )
+
+        if not snapshots:
+            self.logger.info("[SCREENER] No candidates returned from unified fetcher")
+            return []
+
+        return await self._compute_with_snapshots(
+            snapshots,
+            min_price=min_price,
+            max_price=max_price,
+            min_volume=min_volume,
+            min_change_percent=min_change_percent,
+            max_change_percent=max_change_percent,
+            min_relative_volume=min_relative_volume,
+            order_by=order_by,
+            limit=limit,
+            technical_filters=technical_filters,
+            exclude_etfs=exclude_etfs,
+            asset_types=asset_types,
+            market_cap_min=market_cap_min,
+            market_cap_max=market_cap_max,
+        )
+
     async def compute_historical(
         self,
         timestamp: datetime,
@@ -170,70 +148,9 @@ class ScreenerService:
         float_min: Optional[int] = None,
         float_max: Optional[int] = None,
     ) -> List[dict]:
-        """Compute screener results at a specific historical timestamp.
-        
-        This delegates to ScreenerHistorical.
-        """
+        """Run the screener at a historical timestamp."""
         return await self.historical.compute_historical(
             timestamp=timestamp,
-            min_price=min_price,
-            max_price=max_price,
-            min_volume=min_volume,
-            min_change_percent=min_change_percent,
-            max_change_percent=max_change_percent,
-            min_relative_volume=min_relative_volume,
-            order_by=order_by,
-            limit=limit,
-            technical_filters=technical_filters,
-            exclude_etfs=exclude_etfs,
-            asset_types=asset_types,
-            market_cap_min=market_cap_min,
-            market_cap_max=market_cap_max,
-            float_min=float_min,
-            float_max=float_max,
-        )
-    
-    async def compute_live(
-        self,
-        min_price: Optional[float] = None,
-        max_price: Optional[float] = None,
-        min_volume: Optional[float] = None,
-        min_change_percent: Optional[float] = None,
-        max_change_percent: Optional[float] = None,
-        min_relative_volume: Optional[float] = None,
-        order_by: str = "rv14",
-        limit: int = 200,
-        technical_filters: Optional[Dict[str, Any]] = None,
-        exclude_etfs: bool = True,
-        asset_types: Optional[List[str]] = None,
-        market_cap_min: Optional[int] = None,
-        market_cap_max: Optional[int] = None,
-        float_min: Optional[int] = None,
-        float_max: Optional[int] = None,
-    ) -> List[dict]:
-        """Compute screener results from the latest live data.
-        
-        Uses Polygon snapshot API as the source of truth for "present" data,
-        since it's the freshest available. TimescaleDB is always slightly behind.
-        
-        This centralized method ensures both UI and strategy engine see identical results.
-        """
-        from app.services.screener.screener_snapshot import fetch_snapshot_all
-        
-        if not core.API_KEY:
-            self.logger.warning("Polygon API key not configured, cannot fetch live snapshots")
-            return []
-        
-        try:
-            # Fetch current snapshots from Polygon (freshest data available)
-            snaps = fetch_snapshot_all(core.API_KEY)
-        except Exception as e:
-            self.logger.error(f"Failed to fetch live snapshots: {e}", exc_info=True)
-            # Fall back to empty if fetch fails
-            snaps = []
-        
-        return await self.compute.compute(
-            snaps,
             min_price=min_price,
             max_price=max_price,
             min_volume=min_volume,
@@ -274,7 +191,7 @@ class ScreenerService:
     async def compute_historical_with_criteria(
         self,
         timestamp: datetime,
-        params: Dict[str, Any]
+        params: Dict[str, Any],
     ) -> List[dict]:
         """Compute historical results using a criteria dict (same shape as ScreeningCriteria.criteria)."""
         return await self.compute_historical(
@@ -297,7 +214,7 @@ class ScreenerService:
         )
 
     async def compute_live_from_criteria(self, criteria: ScreenerCriteria) -> List[dict]:
-        """Typed variant: Compute live results from ScreenerCriteria model."""
+        """Typed variant: Compute live results from a ScreenerCriteria model."""
         return await self.compute_live(
             min_price=criteria.min_price,
             max_price=criteria.max_price,
@@ -319,9 +236,9 @@ class ScreenerService:
     async def compute_historical_from_criteria(
         self,
         timestamp: datetime,
-        criteria: ScreenerCriteria
+        criteria: ScreenerCriteria,
     ) -> List[dict]:
-        """Typed variant: Compute historical results from ScreenerCriteria model."""
+        """Typed variant: Compute historical results from a ScreenerCriteria model."""
         return await self.compute_historical(
             timestamp=timestamp,
             min_price=criteria.min_price,
@@ -340,43 +257,19 @@ class ScreenerService:
             float_min=criteria.float_min,
             float_max=criteria.float_max,
         )
-    
-    # WebSocket subscriber management
-    
+
     def get_last_live_filter_breakdown(self) -> List[Dict[str, Any]]:
-        """Expose the most recent filter breakdown from live screener runs."""
+        """Expose the most recent filter breakdown from live computations."""
         return self.compute.get_last_filter_breakdown()
 
     def get_last_live_debug_stats(self) -> Dict[str, Any]:
-        """Expose the most recent debug stats from live screener runs."""
+        """Expose the most recent debug stats from live computations."""
         return self.compute.get_last_debug_stats()
 
     def get_last_historical_filter_breakdown(self) -> List[Dict[str, Any]]:
-        """Expose the most recent filter breakdown from historical screener runs."""
+        """Expose the most recent filter breakdown from historical computations."""
         return self.historical.get_last_filter_breakdown()
 
     def get_last_historical_debug_stats(self) -> Dict[str, Any]:
-        """Expose the most recent debug stats from historical screener runs."""
+        """Expose the most recent debug stats from historical computations."""
         return self.historical.get_last_debug_stats()
-    
-    @property
-    def subscribers(self) -> Set[Any]:
-        """Get the set of WebSocket subscribers (for backward compatibility)."""
-        return self.broadcaster.subscribers
-    
-    @property
-    def cached_payload(self) -> List[dict]:
-        """Get the most recently cached payload (for backward compatibility)."""
-        return self.broadcaster.cached_payload
-    
-    def add_subscriber(self, websocket: Any) -> None:
-        """Add a WebSocket subscriber for real-time screener updates."""
-        self.broadcaster.add_subscriber(websocket)
-    
-    def remove_subscriber(self, websocket: Any) -> None:
-        """Remove a WebSocket subscriber."""
-        self.broadcaster.remove_subscriber(websocket)
-    
-    def get_cached_payload(self) -> List[dict]:
-        """Get the most recently computed screener results."""
-        return self.broadcaster.get_cached_payload()

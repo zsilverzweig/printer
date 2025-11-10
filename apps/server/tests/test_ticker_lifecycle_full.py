@@ -351,8 +351,9 @@ async def test_state_transitions_are_not_lost_on_screener_sync(
     # Get current screener results
     from app.services.screener.screener import get_screener_service
     screener = get_screener_service()
-    if screener and screener.cached_payload:
-        screener_tickers = [c.get("ticker") for c in screener.cached_payload if c.get("ticker")]
+    if screener:
+        screener_results = await screener.compute_live()
+        screener_tickers = [c.get("ticker") for c in screener_results if c.get("ticker")]
         
         # Sync (this should preserve advanced states)
         await ticker_state_service.sync_screener_tickers(fund_id, screener_tickers)

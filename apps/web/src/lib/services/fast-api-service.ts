@@ -146,20 +146,37 @@ export class FastApiService {
         const r = raw as Record<string, unknown>;
         const toNum = (v: unknown, fallback = 0): number =>
           typeof v === "number" ? v : Number(v ?? fallback) || fallback;
+        const toNullableNum = (v: unknown): number | null => {
+          if (v === undefined || v === null) {
+            return null;
+          }
+          const parsed = typeof v === "number" ? v : Number(v);
+          return Number.isFinite(parsed) ? parsed : null;
+        };
         const toStr = (v: unknown, fallback = ""): string =>
           typeof v === "string" ? v : String(v ?? fallback);
 
         return {
-          ticker: toStr(r["T"] ?? r["ticker"] ?? ""),
-          open: toNum(r["o"] ?? r["open"]),
-          high: toNum(r["h"] ?? r["high"] ?? r["c"]),
-          low: toNum(r["l"] ?? r["low"] ?? r["c"]),
-          close: toNum(r["c"] ?? r["close"]),
-          price: toNum(r["price"] ?? r["c"] ?? r["close"]),
-          volume: toNum(r["v"] ?? r["volume"]),
-          transactions: toNum(r["n"] ?? r["transactions"]),
-          window_start: toNum(r["t"] ?? r["window_start"]),
-          rv: toNum(r["rv"]),
+          ticker: toStr(r["ticker"] ?? r["T"] ?? ""),
+          price: toNum(r["price"] ?? r["close"] ?? r["c"]),
+          prev_open: toNum(r["prev_open"] ?? r["open"] ?? r["o"]),
+          prev_high: toNum(r["prev_high"] ?? r["high"] ?? r["h"] ?? r["c"]),
+          prev_low: toNum(r["prev_low"] ?? r["low"] ?? r["l"] ?? r["c"]),
+          prev_close: toNum(r["prev_close"] ?? r["close"] ?? r["c"]),
+          prev_volume: toNum(r["prev_volume"] ?? r["volume"] ?? r["v"]),
+          rv14: toNullableNum(r["rv14"] ?? r["rv"]),
+          rv30: toNullableNum(r["rv30"]),
+          volume_ma_20: toNullableNum(r["volume_ma_20"]),
+          rsi_14: toNullableNum(r["rsi_14"]),
+          sma_50: toNullableNum(r["sma_50"]),
+          sma_200: toNullableNum(r["sma_200"]),
+          change_close: toNullableNum(r["change_close"]),
+          change_close_pct: toNullableNum(
+            r["change_close_pct"] ?? r["change_close"]
+          ),
+          change_1m: toNullableNum(r["change_1m"]),
+          change_5m: toNullableNum(r["change_5m"]),
+          change_1h: toNullableNum(r["change_1h"]),
         };
       });
     }
@@ -177,7 +194,7 @@ export class FastApiService {
     fromTime: string,
     toTime: string,
     timeframe: "1m" | "5m" | "15m" | "1h" | "1d" = "1m",
-    limit: number = 10000
+    limit = 10000
   ): Promise<AggregateBar[]> {
     const query = new URLSearchParams({
       from_time: fromTime,

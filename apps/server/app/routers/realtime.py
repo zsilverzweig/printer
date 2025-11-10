@@ -196,13 +196,10 @@ async def unified_realtime(websocket: WebSocket):
                 break
     
     try:
-        # Get the global screener service (started in main.py)
+        # Screener service is optional now – just report availability to the client
         screener_service = get_screener_service()
-        if screener_service is None:
-            logger.error("Global screener service not available")
-            await websocket.close()
-            return
-        
+        screener_available = screener_service is not None
+
         # Get database listener service for fund updates
         db_listener = get_db_listener_service()
         if not db_listener.running:
@@ -212,27 +209,16 @@ async def unified_realtime(websocket: WebSocket):
                 logger.error("Failed to start DatabaseListenerService: %s", e)
                 # Continue anyway - fund updates just won't work
         
-        # Subscribe to Screener broadcasts
-        screener_service.subscribers.add(websocket)
-        
         # Send initial connection status
         try:
             await websocket.send_json({
                 "type": "connection_status",
                 "data": {
-                    "screener": True,
+                    "screener": screener_available,
                     "market": True
                 },
                 "timestamp": int(time.time() * 1000)
             })
-            
-            # Send cached data if available
-            if screener_service.cached_payload:
-                await websocket.send_json({
-                    "type": "screener_update",
-                    "data": screener_service.cached_payload,
-                    "timestamp": int(time.time() * 1000)
-                })
         except Exception as e:
             logger.error("Failed to send initial data to client: %s", e)
             await websocket.close()
@@ -390,9 +376,7 @@ async def unified_realtime(websocket: WebSocket):
         logger.info("Unified realtime WebSocket connection closed: %s", e)
     finally:
         # Cleanup
-        screener_service = get_screener_service()
-        if screener_service:
-            screener_service.subscribers.discard(websocket)
+        # Nothing to clean up for screener service anymore – it operates on-demand
         
         # Clean up fund subscriptions
         for fund_id in client_fund_subscriptions:

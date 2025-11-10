@@ -49,19 +49,21 @@ export interface NewsArticle {
 // Screener item returned by FastAPI (Polygon aggregate-like fields)
 export interface ScreenedStockPreview {
   ticker: string;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
   price: number; // current/latest price
-  volume: number;
-  transactions: number;
-  window_start: number; // unix milliseconds since epoch
-  rv?: number; // legacy relative volume (provided by backend)
-  rv30?: number; // relative volume over 30-minute window
-  rv60?: number; // relative volume over 60-minute window
-  change_1m?: number | null; // % change over last 1 minute
-  change_5m?: number | null; // % change over last 5 minutes
-  change_1h?: number | null; // % change over last 1 hour
-  change_close?: number; // % change since yesterday's close
+  prev_open: number;
+  prev_high: number;
+  prev_low: number;
+  prev_close: number;
+  prev_volume: number;
+  rv14?: number | null;
+  rv30?: number | null;
+  volume_ma_20?: number | null;
+  rsi_14?: number | null;
+  sma_50?: number | null;
+  sma_200?: number | null;
+  change_close?: number | null;
+  change_close_pct?: number | null;
+  change_1m?: number | null;
+  change_5m?: number | null;
+  change_1h?: number | null;
 }
