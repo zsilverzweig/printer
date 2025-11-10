@@ -34,22 +34,22 @@ class ScreenerResult(TypedDict, total=False):
     """Screener output combining prior-day market_data with current price."""
     ticker: str
     price: float
+    last_trade_price: float
     prev_open: float
     prev_high: float
     prev_low: float
     prev_close: float
     prev_volume: float
+    today_vol: Optional[float]
     rv14: Optional[float]
-    rv30: Optional[float]
-    volume_ma_20: Optional[float]
-    rsi_14: Optional[float]
-    sma_50: Optional[float]
-    sma_200: Optional[float]
+    rv_lw: Optional[float]
     change_close: Optional[float]
     change_close_pct: Optional[float]
-    change_1m: Optional[float]
-    change_5m: Optional[float]
-    change_1h: Optional[float]
+    type: Optional[str]
+    primary_exchange: Optional[str]
+    sic_description: Optional[str]
+    market_cap: Optional[int]
+    public_float: Optional[int]
 
 
 class ScreenerCriteria(BaseModel):

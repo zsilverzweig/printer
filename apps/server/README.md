@@ -27,7 +27,7 @@ Reference: [polygon-io/client-python](https://github.com/polygon-io/client-pytho
 
 ### Real-time Screener WS
 
-Connect and receive the top 200 (objects with `ticker`, `price`, `today_vol`, `rv14`, `rv30`, `rv60`).
+Connect and receive the top 200 (objects with `ticker`, `price`, `today_vol`, `rv14`, `rv_lw`).
 
 ```bash
 websocat 'ws://127.0.0.1:8000/screener/ws'

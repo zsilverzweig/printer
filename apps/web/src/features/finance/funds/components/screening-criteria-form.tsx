@@ -58,8 +58,8 @@ const MARKET_CAP_PRESETS = [
 
 const ORDER_BY_OPTIONS = [
   { value: "rv14", label: "Relative Volume (14d)" },
-  { value: "rv30", label: "Relative Volume (30d)" },
-  { value: "rv60", label: "Relative Volume (60d)" },
+  { value: "rv_lw", label: "Relative Volume vs Last Week" },
+  { value: "today_vol", label: "Today Volume" },
   { value: "avg_volume", label: "Average Volume" },
 ];
 

@@ -38,7 +38,7 @@ export function createScreenerColumns(): ColumnDef<StockData>[] {
       ),
     },
     {
-      accessorKey: "price",
+      accessorKey: "last_trade_price",
       header: ({ column }) => (
         <Button
           variant="ghost"
@@ -46,13 +46,14 @@ export function createScreenerColumns(): ColumnDef<StockData>[] {
           className="h-8 px-2"
           onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
         >
-          Current Price
+          Last Trade
           <ArrowUpDown className="ml-1 h-3 w-3" />
         </Button>
       ),
-      cell: ({ row }) => (
-        <div className="text-right">${formatNumber(row.original.price)}</div>
-      ),
+      cell: ({ row }) => {
+        const lastTrade = row.original.last_trade_price ?? row.original.price;
+        return <div className="text-right">${formatNumber(lastTrade)}</div>;
+      },
     },
     {
       accessorKey: "prev_close",
@@ -62,28 +63,7 @@ export function createScreenerColumns(): ColumnDef<StockData>[] {
       ),
     },
     {
-      accessorKey: "prev_high",
-      header: "Prev High",
-      cell: ({ row }) => (
-        <div className="text-right">${formatNumber(row.original.prev_high)}</div>
-      ),
-    },
-    {
-      accessorKey: "prev_low",
-      header: "Prev Low",
-      cell: ({ row }) => (
-        <div className="text-right">${formatNumber(row.original.prev_low)}</div>
-      ),
-    },
-    {
-      accessorKey: "prev_open",
-      header: "Prev Open",
-      cell: ({ row }) => (
-        <div className="text-right">${formatNumber(row.original.prev_open)}</div>
-      ),
-    },
-    {
-      accessorKey: "prev_volume",
+      accessorKey: "change_close_pct",
       header: ({ column }) => (
         <Button
           variant="ghost"
@@ -91,14 +71,36 @@ export function createScreenerColumns(): ColumnDef<StockData>[] {
           className="h-8 px-2"
           onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
         >
-          Prev Volume
+          Change %
+          <ArrowUpDown className="ml-1 h-3 w-3" />
+        </Button>
+      ),
+      cell: ({ row }) => {
+        const change =
+          row.original.change_close_pct ?? row.original.change_close ?? 0;
+        const changeClass = change > 0 ? "text-green-600" : "text-red-600";
+        return (
+          <div className={`text-right ${change === 0 ? "" : changeClass}`}>
+            {formatPercent(change)}
+          </div>
+        );
+      },
+    },
+    {
+      accessorKey: "today_vol",
+      header: ({ column }) => (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 px-2"
+          onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+        >
+          Today Vol
           <ArrowUpDown className="ml-1 h-3 w-3" />
         </Button>
       ),
       cell: ({ row }) => (
-        <div className="text-right">
-          {formatNumber(row.original.prev_volume)}
-        </div>
+        <div className="text-right">{formatNumber(row.original.today_vol)}</div>
       ),
     },
     {
@@ -115,13 +117,11 @@ export function createScreenerColumns(): ColumnDef<StockData>[] {
         </Button>
       ),
       cell: ({ row }) => (
-        <div className="text-right">
-          {formatMultiple(row.original.rv14)}
-        </div>
+        <div className="text-right">{formatMultiple(row.original.rv14)}</div>
       ),
     },
     {
-      accessorKey: "rv30",
+      accessorKey: "rv_lw",
       header: ({ column }) => (
         <Button
           variant="ghost"
@@ -129,54 +129,16 @@ export function createScreenerColumns(): ColumnDef<StockData>[] {
           className="h-8 px-2"
           onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
         >
-          RV30
+          RV Last Week
           <ArrowUpDown className="ml-1 h-3 w-3" />
         </Button>
       ),
       cell: ({ row }) => (
-        <div className="text-right">
-          {formatMultiple(row.original.rv30)}
-        </div>
+        <div className="text-right">{formatMultiple(row.original.rv_lw)}</div>
       ),
     },
     {
-      accessorKey: "volume_ma_20",
-      header: "Vol MA 20",
-      cell: ({ row }) => (
-        <div className="text-right">
-          {formatNumber(row.original.volume_ma_20)}
-        </div>
-      ),
-    },
-    {
-      accessorKey: "rsi_14",
-      header: "RSI 14",
-      cell: ({ row }) => (
-        <div className="text-right">
-          {formatNumber(row.original.rsi_14)}
-        </div>
-      ),
-    },
-    {
-      accessorKey: "sma_50",
-      header: "SMA 50",
-      cell: ({ row }) => (
-        <div className="text-right">
-          {formatNumber(row.original.sma_50)}
-        </div>
-      ),
-    },
-    {
-      accessorKey: "sma_200",
-      header: "SMA 200",
-      cell: ({ row }) => (
-        <div className="text-right">
-          {formatNumber(row.original.sma_200)}
-        </div>
-      ),
-    },
-    {
-      accessorKey: "change_close_pct",
+      accessorKey: "market_cap",
       header: ({ column }) => (
         <Button
           variant="ghost"
@@ -184,23 +146,53 @@ export function createScreenerColumns(): ColumnDef<StockData>[] {
           className="h-8 px-2"
           onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
         >
-          Change (Close)
+          Market Cap
           <ArrowUpDown className="ml-1 h-3 w-3" />
         </Button>
       ),
-      cell: ({ row }) => {
-        const change =
-          row.original.change_close_pct || row.original.change_close;
-        return (
-          <div
-            className={`text-right ${
-              change && change > 0 ? "text-green-600" : "text-red-600"
-            }`}
-          >
-            {formatPercent(change)}
-          </div>
-        );
-      },
+      cell: ({ row }) => (
+        <div className="text-right">{formatNumber(row.original.market_cap)}</div>
+      ),
+    },
+    {
+      accessorKey: "public_float",
+      header: ({ column }) => (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 px-2"
+          onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+        >
+          Public Float
+          <ArrowUpDown className="ml-1 h-3 w-3" />
+        </Button>
+      ),
+      cell: ({ row }) => (
+        <div className="text-right">{formatNumber(row.original.public_float)}</div>
+      ),
+    },
+    {
+      accessorKey: "type",
+      header: "Type",
+      cell: ({ row }) => <div className="text-center">{row.original.type ?? "-"}</div>,
+    },
+    {
+      accessorKey: "primary_exchange",
+      header: "Primary Exchange",
+      cell: ({ row }) => (
+        <div className="text-center">
+          {row.original.primary_exchange ?? "-"}
+        </div>
+      ),
+    },
+    {
+      accessorKey: "sic_description",
+      header: "Industry",
+      cell: ({ row }) => (
+        <div className="max-w-[200px] truncate" title={row.original.sic_description ?? ""}>
+          {row.original.sic_description ?? "-"}
+        </div>
+      ),
     },
   ];
 }

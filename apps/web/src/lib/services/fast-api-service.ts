@@ -156,27 +156,33 @@ export class FastApiService {
         const toStr = (v: unknown, fallback = ""): string =>
           typeof v === "string" ? v : String(v ?? fallback);
 
+        const toNullableStr = (v: unknown): string | null =>
+          typeof v === "string" && v.trim().length > 0 ? v : null;
+
         return {
           ticker: toStr(r["ticker"] ?? r["T"] ?? ""),
           price: toNum(r["price"] ?? r["close"] ?? r["c"]),
+          last_trade_price: toNullableNum(r["last_trade_price"]) ??
+            toNum(r["price"] ?? r["close"] ?? r["c"]),
           prev_open: toNum(r["prev_open"] ?? r["open"] ?? r["o"]),
           prev_high: toNum(r["prev_high"] ?? r["high"] ?? r["h"] ?? r["c"]),
           prev_low: toNum(r["prev_low"] ?? r["low"] ?? r["l"] ?? r["c"]),
           prev_close: toNum(r["prev_close"] ?? r["close"] ?? r["c"]),
           prev_volume: toNum(r["prev_volume"] ?? r["volume"] ?? r["v"]),
+          today_vol: toNullableNum(r["today_vol"] ?? r["today_volume"] ?? r["volume_today"]),
           rv14: toNullableNum(r["rv14"] ?? r["rv"]),
-          rv30: toNullableNum(r["rv30"]),
-          volume_ma_20: toNullableNum(r["volume_ma_20"]),
-          rsi_14: toNullableNum(r["rsi_14"]),
-          sma_50: toNullableNum(r["sma_50"]),
-          sma_200: toNullableNum(r["sma_200"]),
+          rv_lw: toNullableNum(r["rv_lw"]),
           change_close: toNullableNum(r["change_close"]),
           change_close_pct: toNullableNum(
             r["change_close_pct"] ?? r["change_close"]
           ),
-          change_1m: toNullableNum(r["change_1m"]),
-          change_5m: toNullableNum(r["change_5m"]),
-          change_1h: toNullableNum(r["change_1h"]),
+          type: toNullableStr(r["type"]),
+          primary_exchange: toNullableStr(
+            r["primary_exchange"] ?? r["exchange"]
+          ),
+          sic_description: toNullableStr(r["sic_description"]),
+          market_cap: toNullableNum(r["market_cap"]),
+          public_float: toNullableNum(r["public_float"]),
         };
       });
     }
