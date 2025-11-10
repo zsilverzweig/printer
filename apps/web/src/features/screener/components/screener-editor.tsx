@@ -15,19 +15,18 @@ import { Input } from "../../../lib/components/ui/input";
 import { Label } from "../../../lib/components/ui/label";
 import { Textarea } from "../../../lib/components/ui/textarea";
 import type { ScreeningCriteria } from "../hooks/use-screeners";
+
 import { ScreenerControls } from "./screener-controls";
 
 interface ScreenerEditorProps {
   screener: ScreeningCriteria | null;
   open: boolean;
   onClose: () => void;
-  onSave: (
-    screener: {
-      name: string;
-      description?: string;
-      criteria: ScreeningCriteria["criteria"];
-    }
-  ) => void;
+  onSave: (screener: {
+    name: string;
+    description?: string;
+    criteria: ScreeningCriteria["criteria"];
+  }) => void;
   loading?: boolean;
 }
 

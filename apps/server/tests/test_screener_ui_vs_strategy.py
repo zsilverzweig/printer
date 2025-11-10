@@ -96,7 +96,6 @@ async def test_ui_vs_strategy_screener_consistency(async_session):
         max_price=50.0,
         min_volume=500000,
         min_relative_volume=1.2,
-        exclude_etfs=True,
         limit=20,
     )
     

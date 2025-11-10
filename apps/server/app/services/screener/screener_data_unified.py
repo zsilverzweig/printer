@@ -63,6 +63,8 @@ async def fetch_screener_data_unified(
     """
     
     # Determine mode and dates (silent unless debug)
+    MIN_SYMBOLS_FOR_DAILY = 1000
+
     if target_timestamp:
         # Historical mode
         mode = "historical"
@@ -94,12 +96,76 @@ async def fetch_screener_data_unified(
     
     try:
         async with get_async_session() as session:
+            async def select_recent_trading_day(candidate_day: date) -> tuple[date, int]:
+                """
+                Find the most recent trading day at or before candidate_day that has
+                sufficient coverage in market_data for 1day bars.
+                """
+                checked = 0
+                day = candidate_day
+                last_count = 0
+                while checked < 10:  # don't look back more than 2 weeks
+                    day_start = datetime.combine(day, datetime.min.time(), tzinfo=timezone.utc)
+                    day_end = day_start + timedelta(days=1)
+                    coverage_result = await session.execute(
+                        text("""
+                            SELECT COUNT(DISTINCT symbol)
+                            FROM market_data
+                            WHERE time >= :day_start
+                              AND time < :day_end
+                              AND timescale = '1day'
+                        """),
+                        {"day_start": day_start, "day_end": day_end},
+                    )
+                    coverage = coverage_result.scalar() or 0
+                    last_count = coverage
+                    if coverage >= MIN_SYMBOLS_FOR_DAILY:
+                        if day != candidate_day:
+                            logger.warning(
+                                "[UNIFIED] Falling back to %s due to low coverage (%s symbols) on %s",
+                                day,
+                                coverage,
+                                candidate_day,
+                            )
+                        return day, coverage
+                    logger.warning(
+                        "[UNIFIED] Insufficient daily coverage for %s (%s symbols), looking back...",
+                        day,
+                        coverage,
+                    )
+                    checked += 1
+                    day -= timedelta(days=1)
+                    while day.weekday() >= 5:  # skip weekends
+                        day -= timedelta(days=1)
+                logger.error(
+                    "[UNIFIED] Could not find recent trading day with sufficient coverage after checking %s days; using %s (%s symbols).",
+                    checked,
+                    candidate_day,
+                    last_count,
+                )
+                return candidate_day, last_count
+
             # STEP 1: Get ALL daily OHLCV in ONE query (10K+ symbols in < 1 second)
             start_time = get_current_time()
             # OPTIMIZED: Use time range instead of date cast for efficient index usage
+            if mode == "live":
+                selected_day, coverage = await select_recent_trading_day(prev_trading_day)
+                if selected_day != prev_trading_day:
+                    prev_trading_day = selected_day
+                logger.info(
+                    "[UNIFIED] Using trading day %s for daily data (%s symbols available)",
+                    prev_trading_day,
+                    coverage,
+                )
             day_start = datetime.combine(prev_trading_day, datetime.min.time(), tzinfo=timezone.utc)
             day_end = day_start + timedelta(days=1)
             
+            logger.info(
+                "[UNIFIED] Starting daily fetch: mode=%s, prev_trading_day=%s, target_timestamp=%s",
+                mode,
+                prev_trading_day,
+                target_timestamp.isoformat() if target_timestamp else None,
+            )
             result = await session.execute(
                 text("""
                     SELECT 
@@ -129,7 +195,7 @@ async def fetch_screener_data_unified(
                 }
             
             daily_time = (get_current_time() - start_time).total_seconds()
-            logger.debug(f"[UNIFIED] Daily: {len(daily_data)} symbols ({daily_time:.2f}s)")
+            logger.info("[UNIFIED] Daily step: %s symbols fetched in %0.2fs", len(daily_data), daily_time)
             
             if not daily_data:
                 logger.warning(f"[UNIFIED] No daily data for {prev_trading_day}")
@@ -163,7 +229,9 @@ async def fetch_screener_data_unified(
                 }
                 
                 logger.info(
-                    f"[UNIFIED] Database filters reduced symbols from {original_count} to {len(daily_data)}"
+                    "[UNIFIED] Database filters reduced symbols from %s to %s",
+                    original_count,
+                    len(daily_data),
                 )
                 
                 if not daily_data:
@@ -206,15 +274,27 @@ async def fetch_screener_data_unified(
                 )
                 
                 price_data = {}
-                for row in result:
+                price_data_rows = result.fetchall()
+                for row in price_data_rows:
                     price_data[row[0]] = float(row[1]) if row[1] else None
                     if row[2] is not None:
                         today_volume_map[row[0]] = float(row[2])
                 
                 price_time = (get_current_time() - start_time).total_seconds()
-                logger.debug(f"[UNIFIED] Got {len(price_data)} symbols with live trades ({price_time:.2f}s)")
+                logger.debug(
+                    "[UNIFIED] Got %s symbols with live trades (%0.2fs); %s symbols include day_volume",
+                    len(price_data_rows),
+                    price_time,
+                    sum(1 for row in price_data_rows if row[2] is not None),
+                )
+                logger.info(
+                    "[UNIFIED] After price step: %s symbols, %s with day_volume",
+                    len(price_data),
+                    len(today_volume_map),
+                )
             
             symbols_list = list(daily_data.keys())
+            logger.info("[UNIFIED] Symbols after daily/price merge: %s", len(symbols_list))
 
             # Determine reference time for intraday calculations
             reference_time = target_timestamp if target_timestamp else get_current_time()
@@ -239,30 +319,11 @@ async def fetch_screener_data_unified(
             ticker_details_map: Dict[str, Dict[str, Any]] = {}
 
             if symbols_list:
-                # Fill missing today volume values using hourly bars
-                missing_today_symbols = [symbol for symbol in symbols_list if symbol not in today_volume_map]
-                if missing_today_symbols:
-                    today_stmt = text("""
-                        SELECT symbol, COALESCE(SUM(volume), 0) AS volume
-                        FROM market_data
-                        WHERE timescale = '1hour'
-                          AND symbol = ANY(:symbols)
-                          AND time >= :start_time
-                          AND time < :end_time
-                        GROUP BY symbol
-                    """)
-
-                    today_result = await session.execute(
-                        today_stmt,
-                        {
-                            "symbols": missing_today_symbols,
-                            "start_time": today_start,
-                            "end_time": reference_time,
-                        },
-                    )
-                    for row in today_result:
-                        today_volume_map[row[0]] = float(row[1]) if row[1] else 0.0
-
+                logger.debug(
+                    "[UNIFIED] Building volume stats for %s symbols; %s already have day_volume",
+                    len(symbols_list),
+                    len(today_volume_map),
+                )
                 # Query trailing 14 calendar days of volume (excluding today)
                 trailing_stmt = text("""
                     SELECT symbol, COALESCE(SUM(volume), 0) AS volume

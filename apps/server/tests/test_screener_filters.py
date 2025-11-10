@@ -739,7 +739,6 @@ class TestHistoricalFilters:
                 timestamp=timestamp,
                 min_price=100.0,
                 limit=100,
-                exclude_etfs=False  # Don't exclude ETFs for this test
             )
             
             tickers = [r["ticker"] for r in results]

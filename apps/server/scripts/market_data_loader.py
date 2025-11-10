@@ -68,6 +68,12 @@ async def load_date_range_data(
         current += timedelta(days=1)
     
     if not dates:
+        logger.info(
+            "✅ No trading days between %s and %s (all weekends) for timescales %s; skipping.",
+            start_date,
+            end_date,
+            timescales,
+        )
         return
     
     # Process each timescale
@@ -106,8 +112,21 @@ async def load_date_range_data(
                     symbols_needing_data.append((symbol, missing_dates))
         
         total_symbol_dates = sum(len(dates) for _, dates in symbols_needing_data)
+        logger.info(
+            "🔍 Date-range precheck: timescale=%s, symbols=%s, symbol-date slots needing data=%s",
+            timescale,
+            len(symbols_needing_data),
+            total_symbol_dates,
+        )
         
         if not symbols_needing_data:
+            logger.info(
+                "✅ All %s symbols already validated for %s between %s and %s; skipping.",
+                len(symbols),
+                timescale,
+                start_date,
+                end_date,
+            )
             continue
         
         # Process with limited concurrency
@@ -167,6 +186,7 @@ async def load_yesterday_data(init_db_flag: bool = True, api_key: Optional[str] 
     # Get all symbols
     snapshot_data = fetch_snapshot_all(api_key)
     symbols = [ticker["ticker"] for ticker in snapshot_data if "ticker" in ticker]
+    logger.info("🔄 MarketDataLoader: retrieved %s symbols from Polygon snapshot.", len(symbols))
     
     # Process each timescale in reverse granularity order (largest to smallest)
     # This loads daily data first (fastest, most coverage), then works down to minute data
@@ -205,9 +225,17 @@ async def load_yesterday_data(init_db_flag: bool = True, api_key: Optional[str] 
             existing_symbols = {row[0] for row in result}
             symbols_needing_data = [s for s in symbols if s.upper() not in existing_symbols]
             skipped = len(symbols) - len(symbols_needing_data)
+            logger.info(
+                "🔍 Yesterday precheck: timescale=%s, total_symbols=%s, already_validated=%s, still_pending=%s",
+                timescale,
+                len(symbols),
+                skipped,
+                len(symbols_needing_data),
+            )
         
         if not symbols_needing_data:
             timescales_skipped.append(timescale)
+            logger.info("✅ Yesterday load skipped for %s (all symbols already validated).", timescale)
             continue
         
         timescales_processed.append(timescale)
