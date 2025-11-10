@@ -323,8 +323,8 @@ class TestScreenerFilters:
             assert "BIGMOVE" not in tickers, "Big move (10%) should be filtered out"
     
     @pytest.mark.asyncio
-    async def test_etf_filter(self):
-        """Test ETF filter - now optional via exclude_etfs parameter."""
+    async def test_asset_type_filter(self):
+        """Test filtering by asset types."""
         mock_client = Mock()
         screener = ScreenerService(client=mock_client)
         
@@ -335,6 +335,7 @@ class TestScreenerFilters:
                 "volume": 1000000,
                 "day": {"o": 100.0, "h": 105.0, "l": 95.0, "c": 100.0, "v": 5000000},
                 "exchange": "XNAS",
+                "type": "ETF",
             },
             {
                 "ticker": "AAPL",  # Regular stock
@@ -342,6 +343,7 @@ class TestScreenerFilters:
                 "volume": 1000000,
                 "day": {"o": 100.0, "h": 105.0, "l": 95.0, "c": 100.0, "v": 5000000},
                 "exchange": "XNAS",
+                "type": "CS",
             },
         ]
         
@@ -355,27 +357,27 @@ class TestScreenerFilters:
                 }
             mock_extract.side_effect = extract_fn
             
-            # Test with exclude_etfs=True (default)
+            # Filter for common stock only
             results = await screener._compute(
                 snaps=mock_snaps,
                 limit=100,
-                exclude_etfs=True
+                asset_types=["CS"]
             )
             
             tickers = [r["ticker"] for r in results]
-            assert "SPY" not in tickers, "ETF should be filtered out when exclude_etfs=True"
-            assert "AAPL" in tickers, "Regular stock should pass"
+            assert "SPY" not in tickers, "ETF should be filtered out when asset_types excludes it"
+            assert "AAPL" in tickers, "Common stock should pass when asset_types includes it"
             
-            # Test with exclude_etfs=False
+            # Allow both common stock and ETFs
             results = await screener._compute(
                 snaps=mock_snaps,
                 limit=100,
-                exclude_etfs=False
+                asset_types=["CS", "ETF"]
             )
             
             tickers = [r["ticker"] for r in results]
-            assert "SPY" in tickers, "ETF should pass when exclude_etfs=False"
-            assert "AAPL" in tickers, "Regular stock should pass"
+            assert "SPY" in tickers, "ETF should pass when asset_types includes it"
+            assert "AAPL" in tickers, "Common stock should pass when asset_types includes it"
     
     @pytest.mark.asyncio
     async def test_penny_stock_filter(self):
@@ -413,7 +415,6 @@ class TestScreenerFilters:
             results = await screener._compute(
                 snaps=mock_snaps,
                 limit=100,
-                exclude_etfs=False  # Don't exclude ETFs for this test
             )
             
             tickers = [r["ticker"] for r in results]

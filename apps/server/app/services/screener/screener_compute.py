@@ -44,7 +44,6 @@ class ScreenerCompute:
         order_by: str = "rv14",
         limit: int = 200,
         technical_filters: Optional[Dict[str, Any]] = None,
-        exclude_etfs: bool = True,
         asset_types: Optional[List[str]] = None,
         market_cap_min: Optional[int] = None,
         market_cap_max: Optional[int] = None,
@@ -64,7 +63,6 @@ class ScreenerCompute:
             order_by: Field to sort by (rv14 or avg_volume)
             limit: Maximum number of results to return
             technical_filters: Optional dict of technical analysis filters
-            exclude_etfs: Whether to exclude ETFs (default: True)
             asset_types: Optional list of asset types to include (e.g., ["CS", "ETF"])
             market_cap_min: Minimum market cap filter (in dollars)
             market_cap_max: Maximum market cap filter (in dollars)
@@ -290,17 +288,9 @@ class ScreenerCompute:
             else:
                 normalized_type = "ETF" if is_likely_etf(ticker) else "CS"
 
-            if asset_types_upper:
-                if normalized_type not in asset_types_upper:
-                    asset_type_filtered_count += 1
-                    continue
-            elif exclude_etfs:
-                if normalized_type in ETF_TYPE_CODES:
-                    asset_type_filtered_count += 1
-                    continue
-                if not snapshot_type and normalized_type == "ETF":
-                    asset_type_filtered_count += 1
-                    continue
+            if asset_types_upper and normalized_type not in asset_types_upper:
+                asset_type_filtered_count += 1
+                continue
             next_entries.append(entry)
         working_entries = next_entries
         add_step("After asset type / ETF filter", len(working_entries))

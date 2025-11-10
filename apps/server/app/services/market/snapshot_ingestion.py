@@ -321,6 +321,19 @@ class SnapshotIngestionService:
             exchange_code = last_trade.get("x")
             exchange_value = str(exchange_code) if exchange_code is not None else None
             
+            day_data = snapshot.get("day") or {}
+            day_volume_raw = None
+            if isinstance(day_data, dict):
+                day_volume_raw = day_data.get("volume")
+                if day_volume_raw is None:
+                    day_volume_raw = day_data.get("v")
+            day_volume = None
+            if day_volume_raw is not None:
+                try:
+                    day_volume = int(day_volume_raw)
+                except (TypeError, ValueError):
+                    day_volume = None
+            
             return {
                 "symbol": ticker,
                 "price": float(price),
@@ -328,6 +341,7 @@ class SnapshotIngestionService:
                 "size": int(last_trade.get("s")) if last_trade.get("s") else None,
                 "exchange": exchange_value,
                 "conditions": conditions_str,
+                "day_volume": day_volume,
                 "updated_at": datetime.now(timezone.utc)
             }
         except Exception as e:
@@ -442,7 +456,7 @@ class SnapshotIngestionService:
         if not trades:
             return
         
-        # Batch size: 2000 rows per upsert (7 columns = 14,000 parameters, well under 32,767 limit)
+        # Batch size: 2000 rows per upsert (8 columns = 16,000 parameters, well under 32,767 limit)
         BATCH_SIZE = 2000
         total_updated = 0
         
@@ -461,6 +475,7 @@ class SnapshotIngestionService:
                             'size': stmt.excluded.size,
                             'exchange': stmt.excluded.exchange,
                             'conditions': stmt.excluded.conditions,
+                            'day_volume': stmt.excluded.day_volume,
                             'updated_at': stmt.excluded.updated_at
                         }
                     )

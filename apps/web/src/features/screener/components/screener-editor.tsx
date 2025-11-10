@@ -1,6 +1,8 @@
 "use client";
 
-import { Button } from "@/lib/components/ui/button";
+import { useEffect, useState } from "react";
+
+import { Button } from "../../../lib/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -8,11 +10,10 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/lib/components/ui/dialog";
-import { Input } from "@/lib/components/ui/input";
-import { Label } from "@/lib/components/ui/label";
-import { Textarea } from "@/lib/components/ui/textarea";
-import { useEffect, useState } from "react";
+} from "../../../lib/components/ui/dialog";
+import { Input } from "../../../lib/components/ui/input";
+import { Label } from "../../../lib/components/ui/label";
+import { Textarea } from "../../../lib/components/ui/textarea";
 import type { ScreeningCriteria } from "../hooks/use-screeners";
 import { ScreenerControls } from "./screener-controls";
 
@@ -21,7 +22,11 @@ interface ScreenerEditorProps {
   open: boolean;
   onClose: () => void;
   onSave: (
-    screener: Omit<ScreeningCriteria, "id" | "created_at" | "updated_at">
+    screener: {
+      name: string;
+      description?: string;
+      criteria: ScreeningCriteria["criteria"];
+    }
   ) => void;
   loading?: boolean;
 }
@@ -36,11 +41,6 @@ export function ScreenerEditor({
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [filters, setFilters] = useState<ScreeningCriteria["criteria"]>({
-    min_price: 2.0,
-    max_price: 20.0,
-    min_volume: 50000.0,
-    min_change_percent: 1.0,
-    order_by: "rv14",
     limit: 200,
   });
 
@@ -48,18 +48,14 @@ export function ScreenerEditor({
     if (screener) {
       setName(screener.name);
       setDescription(screener.description || "");
-      setFilters(screener.criteria);
+      setFilters({
+        ...screener.criteria,
+        limit: screener.criteria.limit ?? 200,
+      });
     } else {
       setName("");
       setDescription("");
-      setFilters({
-        min_price: 2.0,
-        max_price: 20.0,
-        min_volume: 50000.0,
-        min_change_percent: 1.0,
-        order_by: "rv14",
-        limit: 200,
-      });
+      setFilters({ limit: 200 });
     }
   }, [screener, open]);
 
@@ -120,10 +116,10 @@ export function ScreenerEditor({
             screener={screener ? { ...screener, name, description } : null}
             mode="live"
             filters={filters}
-            onModeChange={() => {}} // Not needed in editor
-            onTimestampChange={() => {}} // Not needed in editor
+            onModeChange={() => undefined} // Not needed in editor
+            onTimestampChange={() => undefined} // Not needed in editor
             onFilterChange={(updates) => setFilters({ ...filters, ...updates })}
-            onRun={() => {}} // Not needed in editor
+            onRun={() => undefined} // Not needed in editor
             loading={loading}
           />
         </div>

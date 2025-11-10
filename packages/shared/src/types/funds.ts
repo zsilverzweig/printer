@@ -106,7 +106,6 @@ export interface ScreeningCriteriaParams {
   min_change_percent?: number; // Min % change from yesterday's close
   max_change_percent?: number; // Max % change from yesterday's close
   min_relative_volume?: number; // Minimum RV14 filter
-  exclude_etfs?: boolean; // Whether to exclude ETFs (default true)
   order_by?: string; // Sort field: "rv14" | "rv_lw" | "today_vol" | "avg_volume"
   limit?: number; // Max results to return
 

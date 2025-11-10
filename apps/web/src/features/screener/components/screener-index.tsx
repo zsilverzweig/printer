@@ -107,10 +107,14 @@ export function ScreenerIndex({
       ...(editingScreener ? editingScreener : {}),
       name: editName,
       description: editDescription,
-      criteria: editingScreener?.criteria || {
-        limit: 200,
-        exclude_etfs: true,
-      },
+      criteria: editingScreener?.criteria
+        ? {
+            ...editingScreener.criteria,
+            limit: editingScreener.criteria.limit ?? 200,
+          }
+        : {
+            limit: 200,
+          },
     };
 
     const saved = await saveScreener(screenerData as any);

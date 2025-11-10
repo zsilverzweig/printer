@@ -41,12 +41,10 @@ export default function ScreenerPage() {
   const [isEditMode, setIsEditMode] = React.useState(false);
   const [editedName, setEditedName] = React.useState("");
   const [editedDescription, setEditedDescription] = React.useState("");
-  const [currentFilters, setCurrentFilters] = React.useState<
-    ScreeningCriteria["criteria"]
-  >({
-    limit: 200,
-    exclude_etfs: true,
-  });
+  const [currentFilters, setCurrentFilters] =
+    React.useState<ScreeningCriteria["criteria"]>({
+      limit: 200,
+    });
   const [mode, setMode] = React.useState<"live" | "historical">("live");
   const [historicalTimestamp, setHistoricalTimestamp] = React.useState<
     Date | undefined
@@ -115,7 +113,7 @@ export default function ScreenerPage() {
     if (selectedScreener) {
       const filters = {
         ...selectedScreener.criteria,
-        exclude_etfs: selectedScreener.criteria.exclude_etfs !== false,
+        limit: selectedScreener.criteria.limit ?? 200,
       };
       setCurrentFilters(filters);
       setSavedFilters(filters);
@@ -123,7 +121,7 @@ export default function ScreenerPage() {
       setEditedDescription(selectedScreener.description || "");
       setIsEditMode(false);
     } else if (isNewScreener) {
-      const defaultFilters = { limit: 200, exclude_etfs: true };
+      const defaultFilters = { limit: 200 };
       setCurrentFilters(defaultFilters);
       setSavedFilters(null);
       setEditedName("");
@@ -271,6 +269,11 @@ export default function ScreenerPage() {
   const handleRun = async () => {
     setRunningScreener(true);
     try {
+      const filtersWithLimit = {
+        ...currentFilters,
+        limit: currentFilters.limit ?? 200,
+      };
+
       if (mode === "historical") {
         if (!historicalTimestamp) {
           return;
@@ -278,7 +281,7 @@ export default function ScreenerPage() {
 
         // For historical mode, use inline criteria (no save needed)
         const result = await runScreenerWithCriteria(
-          currentFilters,
+          filtersWithLimit,
           historicalTimestamp
         );
         if (result?.results) {
@@ -288,7 +291,7 @@ export default function ScreenerPage() {
         }
       } else {
         // Live mode: use inline criteria (no save needed)
-        const result = await runScreenerWithCriteria(currentFilters);
+        const result = await runScreenerWithCriteria(filtersWithLimit);
         if (result?.results) {
           setLiveFilteredResults(result.results);
         } else {
@@ -320,13 +323,18 @@ export default function ScreenerPage() {
   const handleSaveFilters = async () => {
     if (!selectedScreener) return;
 
+    const filtersWithLimit = {
+      ...currentFilters,
+      limit: currentFilters.limit ?? 200,
+    };
+
     const screenerData = {
       ...selectedScreener,
-      criteria: currentFilters,
+      criteria: filtersWithLimit,
     };
     const saved = await saveScreener(screenerData as any);
     if (saved) {
-      setSavedFilters(currentFilters);
+      setSavedFilters(filtersWithLimit);
     }
   };
 

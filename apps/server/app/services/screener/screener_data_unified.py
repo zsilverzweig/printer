@@ -172,6 +172,8 @@ async def fetch_screener_data_unified(
             
             # STEP 2: Get current price data (mode-specific, also ONE query)
             start_time = get_current_time()
+            today_volume_map: Dict[str, float] = {}
+
             if mode == "historical":
                 # Historical: Get 5min bars at timestamp via MarketDataService
                 from app.services.market.market_data_service import get_market_data_service
@@ -196,7 +198,8 @@ async def fetch_screener_data_unified(
                     text("""
                         SELECT DISTINCT ON (symbol)
                             symbol,
-                            price as current_price
+                            price as current_price,
+                            day_volume
                         FROM market_latest_trades
                         ORDER BY symbol, timestamp DESC
                     """)
@@ -205,6 +208,8 @@ async def fetch_screener_data_unified(
                 price_data = {}
                 for row in result:
                     price_data[row[0]] = float(row[1]) if row[1] else None
+                    if row[2] is not None:
+                        today_volume_map[row[0]] = float(row[2])
                 
                 price_time = (get_current_time() - start_time).total_seconds()
                 logger.debug(f"[UNIFIED] Got {len(price_data)} symbols with live trades ({price_time:.2f}s)")
@@ -229,33 +234,34 @@ async def fetch_screener_data_unified(
 
             trailing_start = today_start - timedelta(days=14)
 
-            today_volume_map: Dict[str, float] = {}
             trailing_volume_map: Dict[str, float] = {}
             week_ago_volume_map: Dict[str, float] = {}
             ticker_details_map: Dict[str, Dict[str, Any]] = {}
 
             if symbols_list:
-                # Query today's accumulated volume using hourly bars (fallback to 0 if missing)
-                today_stmt = text("""
-                    SELECT symbol, COALESCE(SUM(volume), 0) AS volume
-                    FROM market_data
-                    WHERE timescale = '1hour'
-                      AND symbol = ANY(:symbols)
-                      AND time >= :start_time
-                      AND time < :end_time
-                    GROUP BY symbol
-                """)
+                # Fill missing today volume values using hourly bars
+                missing_today_symbols = [symbol for symbol in symbols_list if symbol not in today_volume_map]
+                if missing_today_symbols:
+                    today_stmt = text("""
+                        SELECT symbol, COALESCE(SUM(volume), 0) AS volume
+                        FROM market_data
+                        WHERE timescale = '1hour'
+                          AND symbol = ANY(:symbols)
+                          AND time >= :start_time
+                          AND time < :end_time
+                        GROUP BY symbol
+                    """)
 
-                today_result = await session.execute(
-                    today_stmt,
-                    {
-                        "symbols": symbols_list,
-                        "start_time": today_start,
-                        "end_time": reference_time,
-                    },
-                )
-                for row in today_result:
-                    today_volume_map[row[0]] = float(row[1]) if row[1] else 0.0
+                    today_result = await session.execute(
+                        today_stmt,
+                        {
+                            "symbols": missing_today_symbols,
+                            "start_time": today_start,
+                            "end_time": reference_time,
+                        },
+                    )
+                    for row in today_result:
+                        today_volume_map[row[0]] = float(row[1]) if row[1] else 0.0
 
                 # Query trailing 14 calendar days of volume (excluding today)
                 trailing_stmt = text("""

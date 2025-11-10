@@ -157,7 +157,6 @@ async def run_screener_with_inline_criteria(
         min_change_percent = criteria.min_change_percent
         max_change_percent = criteria.max_change_percent
         min_relative_volume = criteria.min_relative_volume
-        exclude_etfs = True if criteria.exclude_etfs is None else criteria.exclude_etfs
         asset_types = criteria.asset_types
         market_cap_min = criteria.market_cap_min
         market_cap_max = criteria.market_cap_max
@@ -208,7 +207,6 @@ async def run_screener_with_inline_criteria(
                     order_by=order_by,
                     limit=limit,
                     technical_filters=technical_filters,
-                    exclude_etfs=exclude_etfs,
                     asset_types=asset_types,
                     market_cap_min=market_cap_min,
                     market_cap_max=market_cap_max,
@@ -233,7 +231,6 @@ async def run_screener_with_inline_criteria(
                     order_by=order_by,
                     limit=limit,
                     technical_filters=technical_filters,
-                    exclude_etfs=exclude_etfs,
                     asset_types=asset_types,
                     market_cap_min=market_cap_min,
                     market_cap_max=market_cap_max,
@@ -266,7 +263,6 @@ async def run_screener_with_inline_criteria(
                 order_by=order_by,
                 limit=limit,
                 technical_filters=technical_filters,
-                exclude_etfs=exclude_etfs,
                 asset_types=asset_types,
                 market_cap_min=market_cap_min,
                 market_cap_max=market_cap_max
@@ -346,7 +342,6 @@ async def run_screener_with_criteria(
         min_volume = params.min_volume
         min_change_percent = params.min_change_percent
         max_change_percent = params.max_change_percent
-        exclude_etfs = True if params.exclude_etfs is None else params.exclude_etfs
         asset_types = params.asset_types
         market_cap_min = params.market_cap_min
         market_cap_max = params.market_cap_max
@@ -391,7 +386,6 @@ async def run_screener_with_criteria(
                     order_by=order_by,
                     limit=limit,
                     technical_filters=technical_filters,
-                    exclude_etfs=exclude_etfs,
                     asset_types=asset_types,
                     market_cap_min=market_cap_min,
                     market_cap_max=market_cap_max,
@@ -414,7 +408,6 @@ async def run_screener_with_criteria(
                     order_by=order_by,
                     limit=limit,
                     technical_filters=technical_filters,
-                    exclude_etfs=exclude_etfs,
                     asset_types=asset_types,
                     market_cap_min=market_cap_min,
                     market_cap_max=market_cap_max,
@@ -444,7 +437,6 @@ async def run_screener_with_criteria(
                 order_by=order_by,
                 limit=limit,
                 technical_filters=technical_filters,
-                exclude_etfs=exclude_etfs,
                 asset_types=asset_types,
                 market_cap_min=market_cap_min,
                 market_cap_max=market_cap_max

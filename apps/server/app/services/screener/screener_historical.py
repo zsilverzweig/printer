@@ -44,7 +44,6 @@ class ScreenerHistorical:
         order_by: str = "rv14",
         limit: int = 200,
         technical_filters: Optional[Dict[str, Any]] = None,
-        exclude_etfs: bool = True,
         asset_types: Optional[List[str]] = None,
         market_cap_min: Optional[int] = None,
         market_cap_max: Optional[int] = None,
@@ -64,7 +63,6 @@ class ScreenerHistorical:
             order_by: Field to sort by (rv14, avg_volume, change_close)
             limit: Maximum number of results to return
             technical_filters: Optional dict of technical analysis filters
-            exclude_etfs: Whether to exclude ETFs (default: True)
             asset_types: Optional list of asset types to include
             market_cap_min: Minimum market cap filter (in dollars)
             market_cap_max: Maximum market cap filter (in dollars)
@@ -278,17 +276,22 @@ class ScreenerHistorical:
             add_step("After relative volume filter", len(working_entries))
 
             asset_type_filtered_count = 0
+            asset_types_upper = {t.upper() for t in asset_types} if asset_types else set()
             next_entries = []
             for entry in working_entries:
                 ticker = entry["ticker"]
-                if asset_types and len(asset_types) > 0:
-                    ticker_type = "ETF" if is_likely_etf(ticker) else "CS"
-                    if ticker_type not in asset_types:
-                        asset_type_filtered_count += 1
-                        continue
-                elif exclude_etfs and is_likely_etf(ticker):
+                snapshot = entry["snapshot"]
+                snapshot_type = (snapshot.get("type") or "").upper()
+
+                if snapshot_type:
+                    normalized_type = "ETF" if snapshot_type in ETF_TYPE_CODES else snapshot_type
+                else:
+                    normalized_type = "ETF" if is_likely_etf(ticker) else "CS"
+
+                if asset_types_upper and normalized_type not in asset_types_upper:
                     asset_type_filtered_count += 1
                     continue
+
                 next_entries.append(entry)
             working_entries = next_entries
             add_step("After asset type / ETF filter", len(working_entries))

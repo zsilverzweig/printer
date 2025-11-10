@@ -71,7 +71,6 @@ class ScreenerCriteria(BaseModel):
     min_change_percent: Optional[float] = None
     max_change_percent: Optional[float] = None
     min_relative_volume: Optional[float] = None
-    exclude_etfs: Optional[bool] = True
     order_by: Optional[str] = None
     limit: Optional[int] = None
 

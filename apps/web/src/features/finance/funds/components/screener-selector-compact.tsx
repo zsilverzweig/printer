@@ -305,12 +305,6 @@ export function ScreenerSelectorCompact({
                 {selectedCriteria.criteria.limit}
               </div>
             )}
-            {selectedCriteria.criteria.exclude_etfs !== undefined && (
-              <div>
-                <span className="font-medium">Exclude ETFs:</span>{" "}
-                {selectedCriteria.criteria.exclude_etfs ? "Yes" : "No"}
-              </div>
-            )}
           </div>
         </div>
       )}
