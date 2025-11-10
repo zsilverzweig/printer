@@ -56,8 +56,8 @@ Store all metrics directly on each bar in the `market_data` table, making metric
    - Handles timeframe-dependent calculations (RV14 for 1min vs 5min bars)
    - Maintains indicator state (EMA, MACD require previous values)
 
-4. **Create metric population service** (`apps/server/app/services/market/metrics_populator.py`)
-   - Populates metrics for historical bars (backfill)
+4. **Implement background metrics loader** (`apps/server/app/services/market/background_metrics_loader.py`)
+   - Backfills metrics for historical bars (focus on daily data completeness)
    - Processes bars in chronological order to maintain indicator state
    - Supports batch processing for performance
    - Handles missing data gracefully (NULL for insufficient history)
@@ -109,24 +109,20 @@ Store all metrics directly on each bar in the `market_data` table, making metric
     - `rsi_mean_reversion.py`: Use RSI from `market_data`
     - Other strategies: Remove metric calculations, use database values
 
-### Phase 6: Background Metric Completion System
+### Phase 6: Background Metrics Loader Integration
 
-12. **Create background metric completion service** (`apps/server/app/services/market/metrics_completion_service.py`)
+12. **Leverage BackgroundMetricsLoader** (`apps/server/app/services/market/background_metrics_loader.py`)
 
-    - Periodic background task that finds bars with missing metrics
+    - Central background task that finds bars with missing metrics
     - Processes bars in chronological order per symbol/timescale
     - Uses incremental calculation (only calculates missing metrics, not entire history)
-    - Configurable batch size and processing interval
-    - Handles concurrent processing safely (locks per symbol/timescale)
-    - Integrates with health monitor for status tracking
-    - Processes oldest missing metrics first (FIFO queue)
+    - Batch size configurable via `BACKGROUND_METRICS_LOADER_BATCH_SIZE`
+    - Integrates with health monitor for status tracking and triggering
 
-13. **Integrate completion service into startup orchestrator** (`apps/server/app/services/core/startup_orchestrator.py`)
-    - Start background metric completion task on application startup
-    - Configurable via environment variable (METRICS_COMPLETION_ENABLED, METRICS_COMPLETION_INTERVAL)
-    - Runs continuously, processing missing metrics in background
-    - Low priority (doesn't block other operations)
-    - Can be paused/resumed via health monitor
+13. **Integrate loader into startup orchestrator** (`apps/server/app/services/core/startup_orchestrator.py`)
+    - Initialize BackgroundMetricsLoader on application startup when enabled
+    - Trigger loader cycles via health monitor without long-lived loops
+    - Surface status in monitoring endpoints for operational awareness
 
 ### Phase 8: Backtesting Adjustments
 
