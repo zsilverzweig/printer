@@ -30,31 +30,26 @@ class PolygonAggBar(TypedDict, total=False):
     n: int
 
 
-class ScreenerResult(TypedDict):
-    """Screener output combining yesterday's OHLC with current price and volume metrics.
-    
-    Fields:
-        ticker: Stock ticker symbol
-        open: Yesterday's open price
-        high: Yesterday's high price
-        low: Yesterday's low price
-        close: Yesterday's close price
-        price: Current price from today's snapshot
-        today_vol: Current volume from today's snapshot
-        rv14: Relative volume vs 14-day average
-        rv30: Relative volume vs 30-day average
-        rv60: Relative volume vs 60-day average
-    """
+class ScreenerResult(TypedDict, total=False):
+    """Screener output combining prior-day market_data with current price."""
     ticker: str
-    open: float
-    high: float
-    low: float
-    close: float
     price: float
-    today_vol: float
-    rv14: float
-    rv30: float
-    rv60: float
+    prev_open: float
+    prev_high: float
+    prev_low: float
+    prev_close: float
+    prev_volume: float
+    rv14: Optional[float]
+    rv30: Optional[float]
+    volume_ma_20: Optional[float]
+    rsi_14: Optional[float]
+    sma_50: Optional[float]
+    sma_200: Optional[float]
+    change_close: Optional[float]
+    change_close_pct: Optional[float]
+    change_1m: Optional[float]
+    change_5m: Optional[float]
+    change_1h: Optional[float]
 
 
 class ScreenerCriteria(BaseModel):

@@ -46,7 +46,7 @@ export function createScreenerColumns(): ColumnDef<StockData>[] {
           className="h-8 px-2"
           onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
         >
-          Price
+          Current Price
           <ArrowUpDown className="ml-1 h-3 w-3" />
         </Button>
       ),
@@ -55,35 +55,35 @@ export function createScreenerColumns(): ColumnDef<StockData>[] {
       ),
     },
     {
-      accessorKey: "open",
-      header: "Open",
+      accessorKey: "prev_close",
+      header: "Prev Close",
       cell: ({ row }) => (
-        <div className="text-right">${formatNumber(row.original.open)}</div>
+        <div className="text-right">${formatNumber(row.original.prev_close)}</div>
       ),
     },
     {
-      accessorKey: "high",
-      header: "High",
+      accessorKey: "prev_high",
+      header: "Prev High",
       cell: ({ row }) => (
-        <div className="text-right">${formatNumber(row.original.high)}</div>
+        <div className="text-right">${formatNumber(row.original.prev_high)}</div>
       ),
     },
     {
-      accessorKey: "low",
-      header: "Low",
+      accessorKey: "prev_low",
+      header: "Prev Low",
       cell: ({ row }) => (
-        <div className="text-right">${formatNumber(row.original.low)}</div>
+        <div className="text-right">${formatNumber(row.original.prev_low)}</div>
       ),
     },
     {
-      accessorKey: "close",
-      header: "Close",
+      accessorKey: "prev_open",
+      header: "Prev Open",
       cell: ({ row }) => (
-        <div className="text-right">${formatNumber(row.original.close)}</div>
+        <div className="text-right">${formatNumber(row.original.prev_open)}</div>
       ),
     },
     {
-      accessorKey: "volume",
+      accessorKey: "prev_volume",
       header: ({ column }) => (
         <Button
           variant="ghost"
@@ -91,13 +91,13 @@ export function createScreenerColumns(): ColumnDef<StockData>[] {
           className="h-8 px-2"
           onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
         >
-          Volume
+          Prev Volume
           <ArrowUpDown className="ml-1 h-3 w-3" />
         </Button>
       ),
       cell: ({ row }) => (
         <div className="text-right">
-          {formatNumber(row.original.today_vol || row.original.volume)}
+          {formatNumber(row.original.prev_volume)}
         </div>
       ),
     },
@@ -116,7 +116,62 @@ export function createScreenerColumns(): ColumnDef<StockData>[] {
       ),
       cell: ({ row }) => (
         <div className="text-right">
-          {formatMultiple(row.original.rv14 || row.original.rv)}
+          {formatMultiple(row.original.rv14)}
+        </div>
+      ),
+    },
+    {
+      accessorKey: "rv30",
+      header: ({ column }) => (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 px-2"
+          onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+        >
+          RV30
+          <ArrowUpDown className="ml-1 h-3 w-3" />
+        </Button>
+      ),
+      cell: ({ row }) => (
+        <div className="text-right">
+          {formatMultiple(row.original.rv30)}
+        </div>
+      ),
+    },
+    {
+      accessorKey: "volume_ma_20",
+      header: "Vol MA 20",
+      cell: ({ row }) => (
+        <div className="text-right">
+          {formatNumber(row.original.volume_ma_20)}
+        </div>
+      ),
+    },
+    {
+      accessorKey: "rsi_14",
+      header: "RSI 14",
+      cell: ({ row }) => (
+        <div className="text-right">
+          {formatNumber(row.original.rsi_14)}
+        </div>
+      ),
+    },
+    {
+      accessorKey: "sma_50",
+      header: "SMA 50",
+      cell: ({ row }) => (
+        <div className="text-right">
+          {formatNumber(row.original.sma_50)}
+        </div>
+      ),
+    },
+    {
+      accessorKey: "sma_200",
+      header: "SMA 200",
+      cell: ({ row }) => (
+        <div className="text-right">
+          {formatNumber(row.original.sma_200)}
         </div>
       ),
     },
@@ -146,33 +201,6 @@ export function createScreenerColumns(): ColumnDef<StockData>[] {
           </div>
         );
       },
-    },
-    {
-      accessorKey: "change_1m",
-      header: "Change (1m)",
-      cell: ({ row }) => (
-        <div className="text-right">
-          {formatPercent(row.original.change_1m)}
-        </div>
-      ),
-    },
-    {
-      accessorKey: "change_5m",
-      header: "Change (5m)",
-      cell: ({ row }) => (
-        <div className="text-right">
-          {formatPercent(row.original.change_5m)}
-        </div>
-      ),
-    },
-    {
-      accessorKey: "change_1h",
-      header: "Change (1h)",
-      cell: ({ row }) => (
-        <div className="text-right">
-          {formatPercent(row.original.change_1h)}
-        </div>
-      ),
     },
   ];
 }

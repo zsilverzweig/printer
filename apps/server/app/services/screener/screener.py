@@ -343,6 +343,22 @@ class ScreenerService:
     
     # WebSocket subscriber management
     
+    def get_last_live_filter_breakdown(self) -> List[Dict[str, Any]]:
+        """Expose the most recent filter breakdown from live screener runs."""
+        return self.compute.get_last_filter_breakdown()
+
+    def get_last_live_debug_stats(self) -> Dict[str, Any]:
+        """Expose the most recent debug stats from live screener runs."""
+        return self.compute.get_last_debug_stats()
+
+    def get_last_historical_filter_breakdown(self) -> List[Dict[str, Any]]:
+        """Expose the most recent filter breakdown from historical screener runs."""
+        return self.historical.get_last_filter_breakdown()
+
+    def get_last_historical_debug_stats(self) -> Dict[str, Any]:
+        """Expose the most recent debug stats from historical screener runs."""
+        return self.historical.get_last_debug_stats()
+    
     @property
     def subscribers(self) -> Set[Any]:
         """Get the set of WebSocket subscribers (for backward compatibility)."""

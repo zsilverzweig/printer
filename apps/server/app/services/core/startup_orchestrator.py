@@ -180,18 +180,23 @@ class StartupOrchestrator:
             self.logger.log_error("Real-time Ingestion", e)
             self.errors.append(f"Real-time Ingestion: {str(e)}")
         
-        # Background Metrics Loader (available for health monitor)
-        try:
-            from app.services.market.background_metrics_loader import BackgroundMetricsLoader
+        # Background Metrics Loader (optional - can be enabled for health monitor)
+        background_metrics_enabled = os.getenv("BACKGROUND_METRICS_LOADER_ENABLED", "false").lower() == "true"
+        if background_metrics_enabled:
+            try:
+                from app.services.market.background_metrics_loader import BackgroundMetricsLoader
 
-            self.background_metrics_loader = BackgroundMetricsLoader()
+                self.background_metrics_loader = BackgroundMetricsLoader()
 
-            self.services["Background Metrics Loader"] = Status.OK
-            self.logger.log_service("Background Metrics Loader", Status.OK, "available for daily metrics processing")
-        except Exception as e:
-            self.services["Background Metrics Loader"] = Status.FAIL
-            self.logger.log_error("Background Metrics Loader", e)
-            self.warnings.append(f"Background metrics loader: {str(e)}")
+                self.services["Background Metrics Loader"] = Status.OK
+                self.logger.log_service("Background Metrics Loader", Status.OK, "available for daily metrics processing")
+            except Exception as e:
+                self.services["Background Metrics Loader"] = Status.FAIL
+                self.logger.log_error("Background Metrics Loader", e)
+                self.warnings.append(f"Background metrics loader: {str(e)}")
+        else:
+            self.services["Background Metrics Loader"] = Status.SKIP
+            self.logger.log_service("Background Metrics Loader", Status.SKIP, "disabled via BACKGROUND_METRICS_LOADER_ENABLED")
         
         # Note about disabled services (not errors, just informational)
         if os.getenv("MARKET_DATA_BACKFILL_ENABLED", "false").lower() != "true":

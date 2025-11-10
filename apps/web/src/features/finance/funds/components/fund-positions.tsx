@@ -69,6 +69,25 @@ const numberFormatter = new Intl.NumberFormat(undefined, {
   maximumFractionDigits: 2,
 });
 
+const dateTimeFormatter = new Intl.DateTimeFormat(undefined, {
+  month: "short",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+});
+
+const formatDateTime = (value: string | null) => {
+  if (!value) {
+    return null;
+  }
+  try {
+    return dateTimeFormatter.format(new Date(value));
+  } catch {
+    return value;
+  }
+};
+
 export function FundPositions({ fundId }: FundPositionsProps) {
   const { positions, syncIssues, loading, error, refresh } =
     useFundPositions(fundId);
@@ -83,6 +102,91 @@ export function FundPositions({ fundId }: FundPositionsProps) {
     !!syncIssues &&
     (syncIssues.in_alpaca_not_db.length > 0 ||
       syncIssues.in_db_not_alpaca.length > 0);
+
+  const handleCopyPositions = useCallback(async () => {
+    if (!positions.length) {
+      toast.info("No positions to copy");
+      return;
+    }
+
+    const formatCurrencyValue = (value: number | null) =>
+      value !== null ? currencyFormatter.format(value) : "—";
+
+    const formatNumberValue = (value: number | null) =>
+      value !== null ? numberFormatter.format(value) : "—";
+
+    const header = [
+      "Symbol",
+      "Source",
+      "Quantity",
+      "Avg Entry",
+      "Current Price",
+      "Market Value",
+      "Unrealized P/L",
+      "Unrealized P/L %",
+      "Trade ID",
+      "Trade Status",
+      "Orders",
+    ].join("\t");
+
+    const rows = positions.map((position) => {
+      const ordersSummary =
+        position.orders.length > 0
+          ? position.orders
+              .map((order) => {
+                const parts = [
+                  `id=${order.id}`,
+                  `side=${order.side.toUpperCase()}`,
+                  `status=${order.status}`,
+                  `qty=${numberFormatter.format(order.quantity)}`,
+                ];
+
+                if (order.filledQty !== null) {
+                  parts.push(
+                    `filled=${numberFormatter.format(order.filledQty)}`
+                  );
+                }
+                if (order.submittedAt) {
+                  parts.push(`submitted=${order.submittedAt}`);
+                }
+                if (order.filledAt) {
+                  parts.push(`filled_at=${order.filledAt}`);
+                }
+
+                return parts.join(" ");
+              })
+              .join(" | ")
+          : "No orders";
+
+      return [
+        position.symbol,
+        position.source,
+        formatNumberValue(position.quantity),
+        formatCurrencyValue(position.avgEntryPrice),
+        formatCurrencyValue(position.currentPrice),
+        formatCurrencyValue(position.marketValue),
+        formatCurrencyValue(position.unrealizedPl),
+        position.unrealizedPlPercent !== null
+          ? `${numberFormatter.format(position.unrealizedPlPercent)}%`
+          : "—",
+        position.tradeId ?? "—",
+        position.trade?.status ?? "—",
+        ordersSummary,
+      ].join("\t");
+    });
+
+    const payload = [header, ...rows].join("\n");
+
+    try {
+      await navigator.clipboard.writeText(payload);
+      toast.success("Positions copied to clipboard");
+    } catch (errorToReport) {
+      toast.error("Failed to copy positions", {
+        description:
+          errorToReport instanceof Error ? errorToReport.message : undefined,
+      });
+    }
+  }, [positions]);
 
   const handleLiquidate = useCallback(
     async (position: FundPositionDetail) => {
@@ -165,9 +269,7 @@ export function FundPositions({ fundId }: FundPositionsProps) {
               {position.tradeId ? (
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
                   Trade{" "}
-                  <span className="font-mono">
-                    {position.tradeId.slice(0, 8)}...
-                  </span>
+                  <span className="font-mono break-all">{position.tradeId}</span>
                   <Button
                     size="icon"
                     variant="ghost"
@@ -317,36 +419,53 @@ export function FundPositions({ fundId }: FundPositionsProps) {
         accessorKey: "orders",
         header: () => <div>Recent Orders</div>,
         cell: ({ row }) => {
-          const orders = row.original.orders.slice(0, 3);
+          const orders = row.original.orders;
           if (orders.length === 0) {
             return <div className="text-xs text-muted-foreground">None</div>;
           }
           return (
-            <div className="flex flex-wrap gap-2">
-              {orders.map((order) => (
-                <Badge
-                  key={order.id}
-                  variant="outline"
-                  className="flex items-center gap-1 text-xs"
-                >
-                  <span className="font-mono">
-                    {order.id.slice(0, 6)}…
-                  </span>
-                  <span>{order.side.toUpperCase()}</span>
-                  <span
-                    className={cn(
-                      "rounded px-1",
-                      order.status === "filled"
-                        ? "bg-emerald-100 text-emerald-700"
-                        : order.status === "failed"
-                        ? "bg-red-100 text-red-700"
-                        : "bg-slate-100 text-slate-600"
-                    )}
+            <div className="flex flex-col gap-2">
+              {orders.map((order) => {
+                const submittedAt = formatDateTime(order.submittedAt);
+                const filledAt = formatDateTime(order.filledAt);
+                return (
+                  <div
+                    key={order.id}
+                    className="rounded border border-border bg-muted/30 px-2 py-1 text-xs"
                   >
-                    {order.status}
-                  </span>
-                </Badge>
-              ))}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-mono break-all text-[11px]">
+                        {order.id}
+                      </span>
+                      <span
+                        className={cn(
+                          "font-semibold uppercase",
+                          order.side.toLowerCase() === "buy"
+                            ? "text-emerald-600"
+                            : "text-red-600"
+                        )}
+                      >
+                        {order.side}
+                      </span>
+                      <Badge variant="outline" className="text-[10px]">
+                        {order.status.replace(/_/g, " ")}
+                      </Badge>
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                      <span>
+                        Qty {numberFormatter.format(order.quantity)}
+                      </span>
+                      {order.filledQty !== null && (
+                        <span>
+                          Filled {numberFormatter.format(order.filledQty)}
+                        </span>
+                      )}
+                      {submittedAt && <span>Submitted {submittedAt}</span>}
+                      {filledAt && <span>Filled {filledAt}</span>}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           );
         },
@@ -420,8 +539,8 @@ export function FundPositions({ fundId }: FundPositionsProps) {
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center justify-between">
-          <div>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-2">
             <CardTitle>Positions</CardTitle>
             <CardDescription>
               Complete view of tracked and Alpaca positions. Liquidate to send a
@@ -441,10 +560,21 @@ export function FundPositions({ fundId }: FundPositionsProps) {
               </div>
             )}
           </div>
-          <Button onClick={refresh} variant="outline" size="sm">
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Refresh
-          </Button>
+          <div className="flex items-center gap-2 self-end sm:self-auto">
+            <Button
+              onClick={handleCopyPositions}
+              variant="outline"
+              size="sm"
+              disabled={!positions.length}
+            >
+              <Copy className="mr-2 h-4 w-4" />
+              Copy table
+            </Button>
+            <Button onClick={refresh} variant="outline" size="sm">
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Refresh
+            </Button>
+          </div>
         </div>
       </CardHeader>
       <CardContent>

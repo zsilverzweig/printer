@@ -7,6 +7,7 @@ critical system components.
 
 import asyncio
 import logging
+import os
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta, timezone, date
 
@@ -511,6 +512,10 @@ class BacktestDataHealthCheck(BaseHealthCheck):
             self.logger.debug("Metrics population already in progress, skipping")
             return
 
+        if os.getenv("BACKGROUND_METRICS_LOADER_ENABLED", "false").lower() != "true":
+            self.logger.info("Background metrics loader disabled via BACKGROUND_METRICS_LOADER_ENABLED; skipping metrics population task")
+            return
+
         self._populating_metrics = True
         try:
             # Import BackgroundMetricsLoader here to avoid circular imports
@@ -591,11 +596,18 @@ class BacktestDataHealthCheck(BaseHealthCheck):
                         self._populate_missing_dates(missing_lookup_dates)
                     )
                 
+                background_metrics_enabled = os.getenv("BACKGROUND_METRICS_LOADER_ENABLED", "false").lower() == "true"
+
                 # Trigger population for missing metrics using BackgroundMetricsLoader (non-blocking)
-                if missing_metrics_dates and not self._populating_metrics:
+                if missing_metrics_dates and background_metrics_enabled and not self._populating_metrics:
                     self.logger.info(f"🔧 Found {len(missing_metrics_dates)} dates needing metrics population: {[d.isoformat() for d in missing_metrics_dates]}")
                     self._last_metrics_task = asyncio.create_task(
                         self._populate_missing_metrics_via_loader(missing_metrics_dates)
+                    )
+                elif missing_metrics_dates and not background_metrics_enabled:
+                    self.logger.info(
+                        "Background metrics loader disabled via BACKGROUND_METRICS_LOADER_ENABLED; "
+                        f"skipping auto-population for dates: {[d.isoformat() for d in missing_metrics_dates]}"
                     )
                 
                 # Check yesterday specifically for health status

@@ -2,15 +2,17 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from app.services.screener.screener_compute import ScreenerCompute
 from app.services.screener.screener_filters import (
+    is_allowed_exchange,
     is_likely_etf,
     passes_price_filter,
     passes_volume_filter,
 )
+from app.services.screener.screener_snapshot import extract_snapshot_data
 
 
 class ScreenerHistorical:
@@ -19,6 +21,16 @@ class ScreenerHistorical:
     def __init__(self, compute: ScreenerCompute):
         self.logger = logging.getLogger("app.screener.historical")
         self.compute = compute
+        self.last_filter_breakdown: List[Dict[str, Any]] = []
+        self.last_debug_stats: Dict[str, Any] = {}
+
+    def get_last_filter_breakdown(self) -> List[Dict[str, Any]]:
+        """Return the most recent filter breakdown for historical computations."""
+        return [dict(step) for step in self.last_filter_breakdown]
+
+    def get_last_debug_stats(self) -> Dict[str, Any]:
+        """Return the most recent debug stats for historical screener runs."""
+        return dict(self.last_debug_stats)
     
     async def compute_historical(
         self,
@@ -65,11 +77,17 @@ class ScreenerHistorical:
         self.logger.info(f"[HISTORICAL SCREENER] Starting compute_historical at {timestamp}")
         
         try:
-            # Use unified data fetcher (same pattern as live screener)
-            step_start = time.time()
-            self.logger.info(f"[HISTORICAL SCREENER] Fetching data using unified fetcher...")
-            
             from app.services.screener.screener_data_unified import fetch_screener_data_unified
+            def _to_float(value: Any) -> Optional[float]:
+                try:
+                    if value is None:
+                        return None
+                    return float(value)
+                except (TypeError, ValueError):
+                    return None
+
+            step_start = time.time()
+            self.logger.info("[HISTORICAL SCREENER] Fetching data using unified fetcher…")
             snapshots = await fetch_screener_data_unified(
                 target_timestamp=timestamp,
                 market_cap_min=market_cap_min,
@@ -77,173 +95,344 @@ class ScreenerHistorical:
                 float_min=float_min,
                 float_max=float_max,
                 asset_types=asset_types,
-                min_relative_volume=min_relative_volume
+                min_relative_volume=min_relative_volume,
             )
-            
             step_time = time.time() - step_start
-            self.logger.info(f"[HISTORICAL SCREENER] ✓ Got {len(snapshots)} snapshots ({step_time:.2f}s)")
-            
-            if not snapshots:
-                self.logger.warning("[HISTORICAL SCREENER] No snapshots returned from unified fetcher")
-                return []
-            
-            # Fetch accumulated intraday volume for all symbols
-            step_start = time.time()
-            symbols_list = [s["ticker"] for s in snapshots]
-            intraday_volume = await self._get_accumulated_intraday_volume(symbols_list, timestamp)
-            step_time = time.time() - step_start
-            self.logger.info(f"[HISTORICAL SCREENER] ✓ Got intraday volume for {len(intraday_volume)} symbols ({step_time:.2f}s)")
-            
-            rows: List[dict] = []
-            processed_count = 0
-            filtered_count = 0
-            
-            # NOTE: Market cap filtering is now handled in the unified data fetcher for efficiency
-            
-            # Process all symbols (now using unified snapshot format - same as live screener!)
-            step_start = time.time()
-            self.logger.info(f"[HISTORICAL SCREENER] Processing {len(snapshots)} symbols with filters...")
-            
-            # Process each snapshot
-            for snapshot in snapshots:
-                symbol = snapshot["ticker"]
-                current_price = snapshot["price"]
-                day = snapshot["day"]
-                
-                # Skip if no daily close
-                if not day.get("c"):
-                    continue
-                
-                processed_count += 1
-                
-                yesterday_close = day["c"]
-                # Use accumulated intraday volume (from market open to timestamp)
-                # This is the actual volume "as of" the timestamp, not the full day's volume
-                current_volume = intraday_volume.get(symbol, day["v"])  # Fallback to daily if not available
-                
-                # Apply optional basic filters
-                if min_price is not None or max_price is not None:
-                    filter_min = min_price if min_price is not None else 0.0
-                    filter_max = max_price if max_price is not None else float('inf')
-                    if not passes_price_filter(current_price, yesterday_close, filter_min, filter_max):
-                        filtered_count += 1
-                        continue
-                
-                if min_volume is not None:
-                    # Volume filter uses current accumulated volume, not yesterday's full daily volume
-                    if not passes_volume_filter(current_volume, min_volume):
-                        filtered_count += 1
-                        continue
-                
-                # Apply asset type filtering if specified
-                if asset_types and len(asset_types) > 0:
-                    # For now, use ETF detection as fallback if asset type not available
-                    # TODO: Query TickerDetails for actual asset type when available
-                    ticker_type = None
-                    if is_likely_etf(symbol):
-                        ticker_type = "ETF"
-                    else:
-                        ticker_type = "CS"
-                    
-                    if ticker_type not in asset_types:
-                        filtered_count += 1
-                        continue
-                elif exclude_etfs:
-                    # Fallback to ETF exclusion if no asset_types specified
-                    if is_likely_etf(symbol):
-                        filtered_count += 1
-                        continue
-                
-                # Calculate change percent
-                change_close_pct = (
-                    ((current_price - yesterday_close) / yesterday_close) * 100
-                    if yesterday_close > 0
-                    else 0.0
+            self.logger.info(
+                "[HISTORICAL SCREENER] ✓ Got %s snapshots (%.2fs)",
+                len(snapshots),
+                step_time,
+            )
+
+            total_snapshots = len(snapshots)
+            filter_breakdown: List[Dict[str, Any]] = []
+            debug_counts: Dict[str, Any] = {"total_snapshots": total_snapshots}
+            previous_count: Optional[int] = None
+
+            def add_step(label: str, count: int) -> None:
+                nonlocal previous_count
+                count = max(int(count or 0), 0)
+                removed = None
+                if previous_count is not None:
+                    removed = max(previous_count - count, 0)
+                filter_breakdown.append(
+                    {
+                        "label": label,
+                        "count": count,
+                        "removed": removed if removed is not None else 0,
+                    }
                 )
-                
-                # Use signed value, not absolute - allows filtering positive/negative separately
-                if min_change_percent is not None and change_close_pct < min_change_percent:
-                    filtered_count += 1
-                    continue
-                
-                # Use signed value, not absolute - allows filtering positive/negative separately
-                if max_change_percent is not None and change_close_pct > max_change_percent:
-                    filtered_count += 1
-                    continue
+                previous_count = count
 
-                # NOTE: RV14 filtering now handled in unified data fetcher for efficiency
-                # Snapshots already filtered by min_relative_volume if specified
+            add_step("Total symbols fetched", total_snapshots)
 
-                # Get RV14 from snapshot (already calculated by unified fetcher)
-                rv14 = snapshot.get("rv14", 0.0)
-
-                # Build result row (matches live screener format)
-                row = {
-                    "ticker": symbol,
-                    "open": day["o"],
-                    "high": day["h"],
-                    "low": day["l"],
-                    "close": yesterday_close,
-                    "price": current_price,
-                    "today_vol": current_volume,  # Accumulated intraday volume up to timestamp
-                    "rv": rv14,
-                    "rv14": rv14,
-                    "change_close": change_close_pct,
-                    # TODO: Add 90-day high/low if needed for technical filters
-                    "ninety_day_high": None,
-                    "ninety_day_low": None,
+            if not snapshots:
+                self.logger.warning("[HISTORICAL SCREENER] No snapshots returned")
+                self.last_filter_breakdown = filter_breakdown
+                self.last_debug_stats = {
+                    **debug_counts,
+                    "filter_breakdown": filter_breakdown,
                 }
-                
-                rows.append(row)
-            
-            step_time = time.time() - step_start
-            self.logger.info(f"[HISTORICAL SCREENER] ✓ Processed all symbols: {processed_count} passed basic filters, {filtered_count} filtered out ({step_time:.2f}s)")
-            
-            # Apply technical filters if provided
+                return []
+
+            filtered_by_exchange = 0
+            exchange_eligible: List[Dict[str, Any]] = []
+            for snapshot in snapshots:
+                data = extract_snapshot_data(snapshot)
+                ticker = data["ticker"]
+                exchange = data["exchange"]
+                current_price = _to_float(data["price"])
+                if not ticker or current_price is None:
+                    continue
+                if not is_allowed_exchange(exchange):
+                    filtered_by_exchange += 1
+                    continue
+                day_data = snapshot.get("day", {}) or {}
+                exchange_eligible.append(
+                    {
+                        "ticker": ticker,
+                        "current_price": current_price,
+                        "snapshot": snapshot,
+                        "day": day_data,
+                    }
+                )
+
+            debug_counts["filtered_by_exchange"] = filtered_by_exchange
+            add_step("After exchange eligibility", len(exchange_eligible))
+
+            missing_prior_day = 0
+            prior_day_ready: List[Dict[str, Any]] = []
+            for entry in exchange_eligible:
+                day = entry["day"]
+                prior_open = _to_float(day.get("o"))
+                prior_high = _to_float(day.get("h"))
+                prior_low = _to_float(day.get("l"))
+                prior_close = _to_float(day.get("c"))
+                prior_volume = _to_float(day.get("v"))
+                if (
+                    prior_open is None
+                    or prior_high is None
+                    or prior_low is None
+                    or prior_close is None
+                    or prior_volume is None
+                ):
+                    missing_prior_day += 1
+                    continue
+                entry.update(
+                    {
+                        "prior_open": prior_open,
+                        "prior_high": prior_high,
+                        "prior_low": prior_low,
+                        "prior_close": prior_close,
+                        "prior_volume": prior_volume,
+                    }
+                )
+                prior_day_ready.append(entry)
+
+            debug_counts["missing_prior_day"] = missing_prior_day
+            add_step("After prior-day data", len(prior_day_ready))
+
+            if (
+                market_cap_min is not None
+                or market_cap_max is not None
+                or float_min is not None
+                or float_max is not None
+            ):
+                from app.services.screener.ticker_filter import (
+                    FilterCriteria,
+                    get_filtered_tickers,
+                )
+
+                self.logger.info(
+                    "[HISTORICAL SCREENER] Applying database filters: market_cap=(%s, %s), float=(%s, %s)",
+                    market_cap_min,
+                    market_cap_max,
+                    float_min,
+                    float_max,
+                )
+
+                criteria = FilterCriteria(
+                    asset_types=asset_types if asset_types else None,
+                    market_cap_min=market_cap_min,
+                    market_cap_max=market_cap_max,
+                    float_min=float_min,
+                    float_max=float_max,
+                )
+
+                allowed_tickers = await get_filtered_tickers(criteria)
+                allowed_ticker_set = set(allowed_tickers)
+                filtered_prior_day_ready = [
+                    entry
+                    for entry in prior_day_ready
+                    if entry["ticker"] in allowed_ticker_set
+                ]
+                debug_counts["database_filtered_removed"] = (
+                    len(prior_day_ready) - len(filtered_prior_day_ready)
+                )
+                prior_day_ready = filtered_prior_day_ready
+            else:
+                debug_counts["database_filtered_removed"] = 0
+
+            add_step("After fundamentals (market cap / float)", len(prior_day_ready))
+
+            working_entries = prior_day_ready
+            price_filtered_count = 0
+            if min_price is not None or max_price is not None:
+                filter_min = min_price if min_price is not None else 0.0
+                filter_max = max_price if max_price is not None else float("inf")
+                next_entries = []
+                for entry in working_entries:
+                    if passes_price_filter(
+                        entry["current_price"],
+                        entry["prior_close"],
+                        filter_min,
+                        filter_max,
+                    ):
+                        next_entries.append(entry)
+                    else:
+                        price_filtered_count += 1
+                working_entries = next_entries
+            add_step("After price range filter", len(working_entries))
+
+            volume_filtered_count = 0
+            if min_volume is not None:
+                next_entries = []
+                for entry in working_entries:
+                    if passes_volume_filter(entry["prior_volume"], min_volume):
+                        next_entries.append(entry)
+                    else:
+                        volume_filtered_count += 1
+                working_entries = next_entries
+            add_step("After volume filter", len(working_entries))
+
+            rv_filtered_count = 0
+            if min_relative_volume is not None:
+                next_entries = []
+                for entry in working_entries:
+                    rv_value = _to_float(entry["snapshot"].get("rv14")) or 0.0
+                    if rv_value >= min_relative_volume:
+                        next_entries.append(entry)
+                    else:
+                        rv_filtered_count += 1
+                working_entries = next_entries
+            add_step("After relative volume filter", len(working_entries))
+
+            asset_type_filtered_count = 0
+            next_entries = []
+            for entry in working_entries:
+                ticker = entry["ticker"]
+                if asset_types and len(asset_types) > 0:
+                    ticker_type = "ETF" if is_likely_etf(ticker) else "CS"
+                    if ticker_type not in asset_types:
+                        asset_type_filtered_count += 1
+                        continue
+                elif exclude_etfs and is_likely_etf(ticker):
+                    asset_type_filtered_count += 1
+                    continue
+                next_entries.append(entry)
+            working_entries = next_entries
+            add_step("After asset type / ETF filter", len(working_entries))
+
+            change_min_filtered_count = 0
+            change_max_filtered_count = 0
+            if min_change_percent is not None or max_change_percent is not None:
+                next_entries = []
+                for entry in working_entries:
+                    current_price = entry["current_price"]
+                    prior_close = entry["prior_close"]
+                    change_close_pct = (
+                        ((current_price - prior_close) / prior_close) * 100
+                        if prior_close > 0
+                        else 0.0
+                    )
+                    entry["change_close_pct"] = change_close_pct
+                    entry["change_close"] = change_close_pct
+                    if min_change_percent is not None and change_close_pct < min_change_percent:
+                        change_min_filtered_count += 1
+                        continue
+                    if max_change_percent is not None and change_close_pct > max_change_percent:
+                        change_max_filtered_count += 1
+                        continue
+                    next_entries.append(entry)
+                working_entries = next_entries
+            else:
+                for entry in working_entries:
+                    prior_close = entry["prior_close"]
+                    current_price = entry["current_price"]
+                    entry["change_close_pct"] = (
+                        ((current_price - prior_close) / prior_close) * 100
+                        if prior_close > 0
+                        else 0.0
+                    )
+                    entry["change_close"] = entry["change_close_pct"]
+            add_step("After change% filters", len(working_entries))
+
+            rows: List[dict] = []
+            for entry in working_entries:
+                snapshot = entry["snapshot"]
+                rows.append(
+                    {
+                        "ticker": entry["ticker"],
+                        "price": entry["current_price"],
+                        "prev_open": entry["prior_open"],
+                        "prev_high": entry["prior_high"],
+                        "prev_low": entry["prior_low"],
+                        "prev_close": entry["prior_close"],
+                        "prev_volume": entry["prior_volume"],
+                        "rv14": _to_float(snapshot.get("rv14")),
+                        "rv30": _to_float(snapshot.get("rv30")),
+                        "volume_ma_20": _to_float(snapshot.get("volume_ma_20")),
+                        "rsi_14": _to_float(snapshot.get("rsi_14")),
+                        "sma_50": _to_float(snapshot.get("sma_50")),
+                        "sma_200": _to_float(snapshot.get("sma_200")),
+                        "change_close": entry["change_close"],
+                        "change_close_pct": entry["change_close_pct"],
+                        "change_1m": None,
+                        "change_5m": None,
+                        "change_1h": None,
+                    }
+                )
+
+            processed_count = len(rows)
+            filtered_count = (
+                price_filtered_count
+                + volume_filtered_count
+                + rv_filtered_count
+                + asset_type_filtered_count
+                + change_min_filtered_count
+                + change_max_filtered_count
+            )
+
+            rows_before_technical = len(rows)
+            technical_filtered_count = 0
             if technical_filters:
-                step_start = time.time()
-                self.logger.info(f"[HISTORICAL SCREENER] Step 5/5: Applying technical filters to {len(rows)} symbols...")
-                # Fetch historical bars ONLY for symbols that passed basic filters
-                # This avoids N+1 queries for symbols we'll filter out anyway
-                bars_start = time.time()
-                self.logger.info(f"[HISTORICAL SCREENER] Fetching historical bars for {len(rows)} symbols...")
+                self.logger.info(
+                    "[HISTORICAL SCREENER] Applying technical filters to %s symbols…",
+                    len(rows),
+                )
                 for row in rows:
                     symbol = row["ticker"]
                     historical_bars = await self._get_bars_for_technical_analysis(symbol, timestamp)
                     row["_historical_bars"] = historical_bars
-                
-                bars_time = time.time() - bars_start
-                self.logger.info(f"[HISTORICAL SCREENER] ✓ Got historical bars ({bars_time:.2f}s), applying filters...")
-                filter_start = time.time()
-                rows = await self.compute._apply_technical_filters(rows, technical_filters, is_historical=True)
-                filter_time = time.time() - filter_start
-                step_time = time.time() - step_start
-                self.logger.info(f"[HISTORICAL SCREENER] ✓ {len(rows)} symbols passed technical filters (filter: {filter_time:.2f}s, total: {step_time:.2f}s)")
-                
-                # Remove internal _historical_bars field after filtering
+                rows = await self.compute._apply_technical_filters(
+                    rows, technical_filters, is_historical=True
+                )
+                technical_filtered_count = max(rows_before_technical - len(rows), 0)
                 for row in rows:
                     row.pop("_historical_bars", None)
-            
-            # Sort results
-            self.logger.info(f"[HISTORICAL SCREENER] Sorting by {order_by}...")
+            add_step("After technical filters", len(rows))
+
             sort_key = {
-                "rv14": lambda x: x["rv14"],
-                "avg_volume": lambda x: x["today_vol"],
-                "change_close": lambda x: x.get("change_close", 0),
-            }.get(order_by, lambda x: x["rv14"])
+                "rv14": lambda x: x.get("rv14") or 0.0,
+                "avg_volume": lambda x: x.get("prev_volume") or 0.0,
+                "change_close": lambda x: x.get("change_close", 0.0),
+            }.get(order_by, lambda x: x.get("rv14") or 0.0)
             rows.sort(key=sort_key, reverse=True)
-            
-            final_count = min(len(rows), limit)
+
+            limited_rows = rows[:limit] if limit is not None else rows
+            limit_removed = max(len(rows) - len(limited_rows), 0)
+            add_step("Final results (limit applied)", len(limited_rows))
+
+            debug_counts.update(
+                {
+                    "processed_count": processed_count,
+                    "price_filtered": price_filtered_count,
+                    "volume_filtered": volume_filtered_count,
+                    "rv_filtered": rv_filtered_count,
+                    "asset_type_filtered": asset_type_filtered_count,
+                    "change_min_filtered": change_min_filtered_count,
+                    "change_max_filtered": change_max_filtered_count,
+                    "technical_filtered": technical_filtered_count,
+                    "limit_removed": limit_removed,
+                }
+            )
+
+            final_count = len(limited_rows)
             total_time = time.time() - start_time
             self.logger.info(
-                f"[HISTORICAL SCREENER] ✓ Complete! Returning {final_count} results in {total_time:.2f}s "
-                f"(processed={processed_count}, filtered={filtered_count})"
+                "[HISTORICAL SCREENER] ✓ Complete! Returning %s results in %.2fs "
+                "(processed=%s, filtered=%s, limit_removed=%s)",
+                final_count,
+                total_time,
+                processed_count,
+                filtered_count + technical_filtered_count,
+                limit_removed,
             )
-            
-            return rows[:limit]
-            
+
+            self.last_filter_breakdown = filter_breakdown
+            self.last_debug_stats = {
+                **debug_counts,
+                "filter_breakdown": filter_breakdown,
+            }
+
+            return limited_rows
+
         except Exception as e:
-            self.logger.error(f"[HISTORICAL SCREENER] Error computing historical screener: {e}", exc_info=True)
+            self.logger.error(
+                "[HISTORICAL SCREENER] Error computing historical screener: %s",
+                e,
+                exc_info=True,
+            )
             return []
     
     async def _get_bars_for_technical_analysis(
@@ -256,64 +445,3 @@ class ScreenerHistorical:
         from app.lib.market_queries import get_historical_bars
         return await get_historical_bars(symbol, "5m", timestamp, lookback_bars)
     
-    async def _get_accumulated_intraday_volume(
-        self,
-        symbols: List[str],
-        timestamp: datetime
-    ) -> Dict[str, int]:
-        """
-        Get accumulated intraday volume from 5min bars.
-        
-        Sums volume from market open (9:30 AM ET) to the target timestamp.
-        This gives accurate volume as if we were screening at that exact moment.
-        
-        Args:
-            symbols: List of symbols to fetch volume for
-            timestamp: Target datetime
-            
-        Returns:
-            Dict mapping symbol to accumulated volume
-        """
-        from sqlalchemy import text
-        from app.services.core.database import get_async_session
-        
-        # Get market open time for the timestamp date (9:30 AM ET = 13:30 UTC)
-        timestamp_date = timestamp.date()
-        market_open = datetime.combine(timestamp_date, datetime.min.time(), tzinfo=timestamp.tzinfo or timezone.utc).replace(hour=13, minute=30)
-        
-        self.logger.info(f"[HISTORICAL VOLUME] Fetching accumulated volume for {len(symbols)} symbols from {market_open} to {timestamp}")
-        
-        try:
-            async with get_async_session() as session:
-                # Query in batches for performance
-                batch_size = 2000
-                volume_data = {}
-                
-                for i in range(0, len(symbols), batch_size):
-                    batch = symbols[i:i + batch_size]
-                    
-                    result = await session.execute(
-                        text("""
-                            SELECT 
-                                symbol,
-                                SUM(volume) as accumulated_volume
-                            FROM market_data
-                            WHERE symbol = ANY(:symbols)
-                              AND timescale = '5min'
-                              AND time >= :market_open
-                              AND time <= :timestamp
-                            GROUP BY symbol
-                        """),
-                        {"symbols": batch, "market_open": market_open, "timestamp": timestamp}
-                    )
-                    
-                    for row in result:
-                        volume_data[row[0]] = int(row[1]) if row[1] else 0
-                
-                self.logger.info(f"[HISTORICAL VOLUME] Got accumulated volume for {len(volume_data)} symbols")
-                return volume_data
-                
-        except Exception as e:
-            self.logger.error(f"[HISTORICAL VOLUME] Error fetching accumulated volume: {e}", exc_info=True)
-            return {}
-

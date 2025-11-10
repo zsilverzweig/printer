@@ -2,14 +2,9 @@ import { log } from "@/lib/utils/logger";
 import type {
   ScreeningCriteria,
   ScreeningCriteriaParams,
+  ScreenerRunResult,
 } from "@printer/shared";
 import { useCallback, useEffect, useState } from "react";
-
-export interface ScreenerRunResult {
-  ticker_count: number;
-  tickers: string[];
-  results?: any[]; // Full screener result data
-}
 
 const API_BASE =
   process.env.NEXT_PUBLIC_WS_URL?.replace("ws://", "http://").replace(
@@ -289,3 +284,9 @@ export function useScreeners() {
     deleteScreener,
   };
 }
+
+export type {
+  ScreeningCriteria,
+  ScreenerResultRow,
+  ScreenerRunResult,
+} from "@printer/shared";

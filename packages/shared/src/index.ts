@@ -63,6 +63,9 @@ export type {
   RunningFundSummary,
   ScreeningCriteria,
   ScreeningCriteriaParams,
+  ScreenerFilterBreakdownStep,
+  ScreenerResultRow,
+  ScreenerRunResult,
   Setup, // Backward compatibility
   Strategy,
   StrategyType,

@@ -140,6 +140,40 @@ export interface ScreeningCriteria {
 // Backward compatibility alias
 export type Setup = ScreeningCriteria;
 
+export interface ScreenerFilterBreakdownStep {
+  label: string;
+  count: number;
+  removed?: number;
+}
+
+export interface ScreenerResultRow {
+  ticker: string;
+  price: number;
+  prev_open: number;
+  prev_high: number;
+  prev_low: number;
+  prev_close: number;
+  prev_volume: number;
+  rv14?: number | null;
+  rv30?: number | null;
+  volume_ma_20?: number | null;
+  rsi_14?: number | null;
+  sma_50?: number | null;
+  sma_200?: number | null;
+  change_close?: number | null;
+  change_close_pct?: number | null;
+  change_1m?: number | null;
+  change_5m?: number | null;
+  change_1h?: number | null;
+}
+
+export interface ScreenerRunResult {
+  ticker_count: number;
+  tickers: string[];
+  results?: ScreenerResultRow[];
+  filter_breakdown?: ScreenerFilterBreakdownStep[];
+}
+
 /**
  * @deprecated Strategy configuration has been moved to the Fund model.
  * Use Fund interface instead. This is kept for backward compatibility only.

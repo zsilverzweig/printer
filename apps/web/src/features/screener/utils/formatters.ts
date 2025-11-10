@@ -1,9 +1,9 @@
-export function formatNumber(n: number | undefined): string {
+export function formatNumber(n: number | null | undefined): string {
   if (typeof n !== "number") return "-";
   return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
-export function formatMultiple(n: number | undefined): string {
+export function formatMultiple(n: number | null | undefined): string {
   if (typeof n !== "number" || !isFinite(n)) return "-";
   return `${n.toFixed(2)}x`;
 }

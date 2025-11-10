@@ -11,7 +11,7 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, status, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.services.core.time_context import get_current_time
 from sqlalchemy import select, func
@@ -106,11 +106,19 @@ async def check_historical_data(
 from app.types import ScreenerCriteria  # Use shared criteria model
 
 
+class ScreenerFilterStep(BaseModel):
+    """Intermediate count after each filter stage."""
+    label: str
+    count: int
+    removed: Optional[int] = None
+
+
 class ScreenerRunResult(BaseModel):
     """Result of running the screener."""
     ticker_count: int
     tickers: List[str]
     results: Optional[List[Dict[str, Any]]] = None  # Full screener result data
+    filter_breakdown: List[ScreenerFilterStep] = Field(default_factory=list)
 
 
 # ============================================================================
@@ -159,6 +167,7 @@ async def run_screener_with_inline_criteria(
         limit = criteria.limit or 200
         
         logger.info(f"[ENDPOINT] Extracted params: min_rv={min_relative_volume}, timestamp={timestamp}")
+        filter_breakdown_data: List[Dict[str, Any]] = []
         
         # Determine if historical or live mode
         if timestamp is not None:
@@ -206,6 +215,7 @@ async def run_screener_with_inline_criteria(
                     float_min=float_min,
                     float_max=float_max
                 )
+                filter_breakdown_data = screener_service.get_last_live_filter_breakdown()
             else:
                 # Historical mode: query TimescaleDB
                 hist_start = time.time()
@@ -232,6 +242,7 @@ async def run_screener_with_inline_criteria(
                 )
                 
                 logger.info(f"[ENDPOINT] compute_historical returned {len(results)} results")
+                filter_breakdown_data = screener_service.get_last_historical_filter_breakdown()
         else:
             # Live mode: use same code path as strategy engine
             from app.services.screener.screener import get_screener_service
@@ -260,6 +271,7 @@ async def run_screener_with_inline_criteria(
                 market_cap_min=market_cap_min,
                 market_cap_max=market_cap_max
             )
+            filter_breakdown_data = screener_service.get_last_live_filter_breakdown()
         
         # Extract ticker symbols
         tickers = [r["ticker"] for r in results]
@@ -274,10 +286,16 @@ async def run_screener_with_inline_criteria(
                 "This may indicate no data in TimescaleDB. Check /api/screening-criteria/diagnostics/historical-data"
             )
         
+        breakdown_models = [
+            ScreenerFilterStep(**step)
+            for step in (filter_breakdown_data or [])
+        ]
+        
         return ScreenerRunResult(
             ticker_count=len(tickers),
             tickers=tickers,
-            results=results  # Include full result data
+            results=results,  # Include full result data
+            filter_breakdown=breakdown_models,
         )
         
     except HTTPException:
@@ -337,6 +355,7 @@ async def run_screener_with_criteria(
         order_by = params.order_by or "rv14"
         limit = params.limit or 200
         min_relative_volume = params.min_relative_volume
+        filter_breakdown_data: List[Dict[str, Any]] = []
 
         # Determine if historical or live mode
         if timestamp is not None:
@@ -379,6 +398,7 @@ async def run_screener_with_criteria(
                     float_min=float_min,
                     float_max=float_max
                 )
+                filter_breakdown_data = screener_service.get_last_live_filter_breakdown()
             else:
                 # Historical mode: query TimescaleDB
                 logger.info(f"Running historical screener for criteria {criteria_id} at {timestamp}")
@@ -401,6 +421,7 @@ async def run_screener_with_criteria(
                     float_min=float_min,
                     float_max=float_max
                 )
+                filter_breakdown_data = screener_service.get_last_historical_filter_breakdown()
         else:
             # Live mode: use same code path as strategy engine
             from app.services.screener.screener import get_screener_service
@@ -428,6 +449,7 @@ async def run_screener_with_criteria(
                 market_cap_min=market_cap_min,
                 market_cap_max=market_cap_max
             )
+            filter_breakdown_data = screener_service.get_last_live_filter_breakdown()
         
         # Extract ticker symbols
         tickers = [r["ticker"] for r in results]
@@ -437,7 +459,11 @@ async def run_screener_with_criteria(
         return ScreenerRunResult(
             ticker_count=len(tickers),
             tickers=tickers,
-            results=results  # Include full result data
+            results=results,  # Include full result data
+            filter_breakdown=[
+                ScreenerFilterStep(**step)
+                for step in (filter_breakdown_data or [])
+            ],
         )
         
     except HTTPException:

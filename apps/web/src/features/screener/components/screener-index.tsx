@@ -23,8 +23,8 @@ import {
   TableRow,
 } from "@/lib/components/ui/table";
 
-import type { ScreeningCriteria } from "../hooks/use-screeners";
 import { useScreeners } from "../hooks/use-screeners";
+import type { ScreeningCriteria, ScreenerRunResult } from "../hooks/use-screeners";
 import { ScreenerEditDialog } from "./screener-edit-dialog";
 
 interface ScreenerIndexProps {
@@ -43,8 +43,8 @@ export function ScreenerIndex({
   const [runningScreenerIds, setRunningScreenerIds] = React.useState<
     Set<string>
   >(new Set());
-  const [screenerCounts, setScreenerCounts] = React.useState<
-    Record<string, number | null>
+  const [screenerRunResults, setScreenerRunResults] = React.useState<
+    Record<string, ScreenerRunResult | null>
   >({});
   const [editDialogOpen, setEditDialogOpen] = React.useState(false);
   const [editingScreener, setEditingScreener] =
@@ -59,13 +59,13 @@ export function ScreenerIndex({
     setRunningScreenerIds((prev) => new Set(prev).add(screener.id));
     try {
       const result = await runScreenerWithCriteria(screener.criteria);
-      setScreenerCounts((prev) => ({
+      setScreenerRunResults((prev) => ({
         ...prev,
-        [screener.id]: result?.ticker_count ?? null,
+        [screener.id]: result,
       }));
     } catch (error) {
       console.error("Error running screener:", error);
-      setScreenerCounts((prev) => ({
+      setScreenerRunResults((prev) => ({
         ...prev,
         [screener.id]: null,
       }));
@@ -138,6 +138,11 @@ export function ScreenerIndex({
         onScreenerSelect("");
       }
       // State is already updated by deleteScreener, no need to reload
+      setScreenerRunResults((prev) => {
+        const next = { ...prev };
+        delete next[deletingScreener.id];
+        return next;
+      });
     }
   };
 
@@ -198,7 +203,9 @@ export function ScreenerIndex({
               <TableBody>
                 {screeners.map((screener) => {
                   const isRunning = runningScreenerIds.has(screener.id);
-                  const count = screenerCounts[screener.id];
+                  const runResult = screenerRunResults[screener.id];
+                  const count = runResult?.ticker_count;
+                  const breakdown = runResult?.filter_breakdown;
                   return (
                     <TableRow key={screener.id}>
                       <TableCell className="font-medium">
@@ -214,7 +221,39 @@ export function ScreenerIndex({
                       </TableCell>
                       <TableCell>
                         {count !== undefined ? (
-                          <span className="font-semibold">{count}</span>
+                          <div>
+                            <span className="font-semibold">
+                              {count.toLocaleString()}
+                            </span>
+                            {breakdown && breakdown.length > 0 ? (
+                              <div className="mt-3 max-h-48 overflow-y-auto rounded-md border border-border/60 bg-muted/30 p-3 text-xs space-y-2">
+                                {breakdown.map((step) => {
+                                  const removedDisplay =
+                                    step.removed && step.removed > 0
+                                      ? `(-${step.removed.toLocaleString()})`
+                                      : null;
+                                  return (
+                                    <div
+                                      key={step.label}
+                                      className="flex items-start justify-between gap-4"
+                                    >
+                                      <span className="text-muted-foreground">
+                                        {step.label}
+                                      </span>
+                                      <span className="whitespace-nowrap text-right font-medium text-foreground">
+                                        {step.count.toLocaleString()}
+                                        {removedDisplay ? (
+                                          <span className="ml-2 text-muted-foreground">
+                                            {removedDisplay}
+                                          </span>
+                                        ) : null}
+                                      </span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            ) : null}
+                          </div>
                         ) : (
                           <span className="text-muted-foreground">—</span>
                         )}
