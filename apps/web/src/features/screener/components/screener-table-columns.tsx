@@ -4,14 +4,14 @@ import { type ColumnDef } from "@tanstack/react-table";
 import { ArrowUpDown } from "lucide-react";
 import Link from "next/link";
 
-import { Button } from "@/lib/components/ui/button";
-
 import type { StockData } from "../types";
 import {
   formatMultiple,
   formatNumber,
   formatPercent,
 } from "../utils/formatters";
+
+import { Button } from "@/lib/components/ui/button";
 
 export function createScreenerColumns(): ColumnDef<StockData>[] {
   return [
@@ -30,7 +30,7 @@ export function createScreenerColumns(): ColumnDef<StockData>[] {
       ),
       cell: ({ row }) => (
         <Link
-          href={`/?ticker=${row.original.ticker}`}
+          href={`/ticker?ticker=${row.original.ticker}`}
           className="text-blue-600 hover:underline font-medium"
         >
           {row.original.ticker}
@@ -59,7 +59,9 @@ export function createScreenerColumns(): ColumnDef<StockData>[] {
       accessorKey: "prev_close",
       header: "Prev Close",
       cell: ({ row }) => (
-        <div className="text-right">${formatNumber(row.original.prev_close)}</div>
+        <div className="text-right">
+          ${formatNumber(row.original.prev_close)}
+        </div>
       ),
     },
     {
@@ -151,7 +153,9 @@ export function createScreenerColumns(): ColumnDef<StockData>[] {
         </Button>
       ),
       cell: ({ row }) => (
-        <div className="text-right">{formatNumber(row.original.market_cap)}</div>
+        <div className="text-right">
+          {formatNumber(row.original.market_cap)}
+        </div>
       ),
     },
     {
@@ -168,13 +172,17 @@ export function createScreenerColumns(): ColumnDef<StockData>[] {
         </Button>
       ),
       cell: ({ row }) => (
-        <div className="text-right">{formatNumber(row.original.public_float)}</div>
+        <div className="text-right">
+          {formatNumber(row.original.public_float)}
+        </div>
       ),
     },
     {
       accessorKey: "type",
       header: "Type",
-      cell: ({ row }) => <div className="text-center">{row.original.type ?? "-"}</div>,
+      cell: ({ row }) => (
+        <div className="text-center">{row.original.type ?? "-"}</div>
+      ),
     },
     {
       accessorKey: "primary_exchange",
@@ -189,7 +197,10 @@ export function createScreenerColumns(): ColumnDef<StockData>[] {
       accessorKey: "sic_description",
       header: "Industry",
       cell: ({ row }) => (
-        <div className="max-w-[200px] truncate" title={row.original.sic_description ?? ""}>
+        <div
+          className="max-w-[200px] truncate"
+          title={row.original.sic_description ?? ""}
+        >
           {row.original.sic_description ?? "-"}
         </div>
       ),

@@ -86,7 +86,7 @@ export function MainAppSidebar() {
       items: [
         {
           id: "ticker",
-          title: "Ticker Research",
+          title: "Chart",
           href: "/ticker",
           icon: <BarChart3 className="h-4 w-4" />,
         },
