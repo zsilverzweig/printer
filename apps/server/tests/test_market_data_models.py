@@ -37,7 +37,6 @@ def test_symbol_date_validation_creation():
         date=date(2025, 11, 1),
         is_complete=True,
         bar_count=390,
-        expected_bars=390,
         first_bar_time=datetime(2025, 11, 1, 9, 30, tzinfo=timezone.utc),
         last_bar_time=datetime(2025, 11, 1, 16, 0, tzinfo=timezone.utc),
         validated_at=datetime.now(timezone.utc),
@@ -47,7 +46,6 @@ def test_symbol_date_validation_creation():
     assert validation.symbol == "TSLA"
     assert validation.is_complete is True
     assert validation.bar_count == 390
-    assert validation.expected_bars == 390
 
 
 def test_symbol_date_validation_incomplete():
@@ -57,14 +55,13 @@ def test_symbol_date_validation_incomplete():
         date=date(2025, 11, 1),
         is_complete=False,
         bar_count=200,
-        expected_bars=390,
         first_bar_time=datetime(2025, 11, 1, 9, 30, tzinfo=timezone.utc),
         last_bar_time=datetime(2025, 11, 1, 13, 0, tzinfo=timezone.utc),
         validated_at=datetime.now(timezone.utc),
         notes="Data collection interrupted"
     )
-    
+
     assert validation.is_complete is False
-    assert validation.bar_count < validation.expected_bars
+    assert validation.bar_count == 200
     assert validation.notes == "Data collection interrupted"
 

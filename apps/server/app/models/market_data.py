@@ -176,17 +176,19 @@ class MarketData(Base):
 
 class SymbolDateValidation(Base):
     """
-    Tracks data completeness for each symbol on each trading date at each timescale.
-    
-    This table answers: "For symbol X on date Y at timescale Z, do we have complete bar data?"
-    
+    Tracks which symbol/date/timescale combinations have been attempted during loading.
+
+    Rather than relying on heuristics about how many bars "should" exist, a validation
+    record now indicates that we've run a collection job for that slice. `is_complete`
+    represents whether any bars were persisted for that run (at least one bar stored),
+    while `bar_count` captures the exact number of rows written.
+
     Attributes:
         symbol: Ticker symbol
         date: Trading date being validated
         timescale: Granularity ('1min', '5min', '15min', '1hour', '1day')
-        is_complete: True if we have all expected bars for this date
+        is_complete: True if the load stored one or more bars
         bar_count: Actual number of bars stored
-        expected_bars: Expected bar count (varies by timescale)
         first_bar_time: Timestamp of first bar for this symbol/date/timescale
         last_bar_time: Timestamp of last bar for this symbol/date/timescale
         validated_at: When this record was last validated
@@ -219,10 +221,6 @@ class SymbolDateValidation(Base):
         Integer,
         nullable=False,
         default=0
-    )
-    expected_bars: Mapped[int | None] = mapped_column(
-        Integer,
-        nullable=True
     )
     first_bar_time: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),

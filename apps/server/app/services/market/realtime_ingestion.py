@@ -625,12 +625,9 @@ class RealtimeIngestionService:
                     first_bar = row[3]
                     last_bar = row[4]
                     
-                    # Determine if complete (simplified logic)
-                    # Regular hours: ~390 bars (6.5 hours * 60 minutes)
-                    # Extended hours: ~810 bars (13.5 hours * 60 minutes)
-                    # For now, mark complete if we have at least 350 bars
-                    expected_bars = 390  # Regular hours
-                    is_complete = bar_count >= 350
+                    # Validation records now indicate that we've attempted collection.
+                    # Mark the day complete if we stored any bars at all.
+                    is_complete = bar_count > 0
                     
                     # Upsert validation record
                     stmt = insert(SymbolDateValidation).values(
@@ -638,7 +635,6 @@ class RealtimeIngestionService:
                         date=bar_date,
                         is_complete=is_complete,
                         bar_count=bar_count,
-                        expected_bars=expected_bars,
                         first_bar_time=first_bar,
                         last_bar_time=last_bar,
                         validated_at=get_current_time()

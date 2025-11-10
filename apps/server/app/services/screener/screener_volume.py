@@ -223,16 +223,16 @@ class TimescaleVolumeCalculator:
                 yesterday = date.today() - timedelta(days=1)
                 validation_result = await session.execute(
                     text("""
-                        SELECT is_complete
+                        SELECT 1
                         FROM symbol_date_validation
                         WHERE symbol = :symbol
                           AND date = :date
+                        LIMIT 1
                     """),
                     {"symbol": symbol.upper(), "date": yesterday}
                 )
-                validation_row = validation_result.fetchone()
-                
-                if not validation_row or not validation_row[0]:
+
+                if not validation_result.fetchone():
                     # Data incomplete - just return 0, don't raise (used for sorting only)
                     return 0.0
                 
@@ -311,7 +311,6 @@ class TimescaleVolumeCalculator:
                             SELECT symbol
                             FROM symbol_date_validation
                             WHERE date = :yesterday
-                              AND is_complete = true
                               AND symbol = ANY(:symbols)
                         )
                         SELECT 
@@ -372,16 +371,16 @@ class TimescaleVolumeCalculator:
                 # Check validation first
                 validation_result = await session.execute(
                     text("""
-                        SELECT is_complete
+                        SELECT 1
                         FROM symbol_date_validation
                         WHERE symbol = :symbol
                           AND date = :date
+                        LIMIT 1
                     """),
                     {"symbol": symbol.upper(), "date": yesterday}
                 )
-                validation_row = validation_result.fetchone()
-                
-                if not validation_row or not validation_row[0]:
+
+                if not validation_result.fetchone():
                     # Data incomplete - just return 0, don't raise (used for sorting only)
                     return 0.0
                 
@@ -442,9 +441,8 @@ class TimescaleVolumeCalculator:
                         SELECT symbol
                         FROM symbol_date_validation
                         WHERE date >= :cutoff_date
-                          AND is_complete = TRUE
                         GROUP BY symbol
-                        HAVING COUNT(*) >= :min_days
+                        HAVING SUM(CASE WHEN bar_count > 0 THEN 1 ELSE 0 END) >= :min_days
                         ORDER BY symbol
                     """),
                     {"cutoff_date": cutoff_date, "min_days": min_days}
