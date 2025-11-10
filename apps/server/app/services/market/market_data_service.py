@@ -49,7 +49,7 @@ class MarketDataService:
     
     Features:
     - Database-first queries (TimescaleDB hypertable)
-    - Intelligent API fallback (Alpaca -> Polygon)
+    - Intelligent API fallback (Alpaca -> Polygon) when validation is missing
     - Automatic caching of API results
     - Batch query support for multiple symbols
     - Data quality validation
@@ -58,7 +58,6 @@ class MarketDataService:
     
     def __init__(self):
         """Initialize the service."""
-        self.completeness_threshold = 0.8  # 80% of expected bars is acceptable
         self.staleness_minutes = 5  # Max age for "fresh" data
         
         # Performance tracking
@@ -108,84 +107,40 @@ class MarketDataService:
         if start_time is None:
             start_time = end_time - timedelta(minutes=lookback_minutes)
         
+        result: Dict[str, List[Dict[str, Any]]] = {}
+
         try:
-            # Check validation table FIRST (before querying) to avoid unnecessary API calls
-            # If validated, we have all available data (even if sparse) and should not refetch
-            ctx = get_backtest_context()
-            if ctx:
-                # Only check validation in backtest mode (for performance)
-                is_validated = await self._check_validation(symbol, timeframe, start_time, end_time)
-                
-                if is_validated:
-                    # Data has been validated - query DB and use whatever we have
-                    result = await self._query_database(
-                        symbols=[symbol],
-                        timeframe=timeframe,
-                        start_time=start_time,
-                        end_time=end_time
-                    )
-                    bars = result.get(symbol, [])
-                    
-                    self._db_hits += 1
-                    logger.info(
-                        f"✓ VALIDATED: {symbol} {timeframe} - using DB ({len(bars)} bars), skipping API"
-                    )
-                    return bars
-            
-            # Try database first (for non-validated or live mode)
+            # Check validation table first. If we have validation coverage for the requested
+            # window, we trust whatever is already in the database and skip external calls.
+            is_validated = await self._check_validation(symbol, timeframe, start_time, end_time)
+
             result = await self._query_database(
                 symbols=[symbol],
                 timeframe=timeframe,
                 start_time=start_time,
                 end_time=end_time
             )
-            
+
             bars = result.get(symbol, [])
-            
-            # Calculate expected bar count
-            expected_count = self._calculate_expected_bar_count(timeframe, lookback_minutes)
-            
-            # Check if we have sufficient data
-            # Consider it sufficient if:
-            # 1. We have bars AND
-            # 2. EITHER we have >= threshold of expected bars
-            #    OR the latest bar is very recent (< 10 min old) suggesting we have all available data
-            if bars:
-                has_enough_bars = len(bars) >= expected_count * self.completeness_threshold
-                
-                # Check if data is recent (indicates we have all available data)
-                latest_bar_time = bars[-1]["timestamp"] if bars else None
-                is_recent = False
-                age_minutes = None
-                if latest_bar_time:
-                    age_minutes = (datetime.now(timezone.utc) - latest_bar_time).total_seconds() / 60
-                    is_recent = age_minutes < 10
-                
-                if has_enough_bars or is_recent:
-                    self._db_hits += 1
-                    logger.debug(
-                        f"DB HIT: {symbol} {timeframe} ({len(bars)}/{expected_count} bars, "
-                        f"latest: {latest_bar_time.strftime('%H:%M') if latest_bar_time else 'N/A'}, "
-                        f"age: {age_minutes:.1f}min)"
-                    )
-                    return bars
-                else:
-                    # Log why we're missing cache
-                    logger.debug(
-                        f"Cache insufficient: {symbol} {timeframe} - "
-                        f"has {len(bars)}/{expected_count} bars "
-                        f"({len(bars) / expected_count * 100:.1f}% vs {self.completeness_threshold * 100:.0f}% threshold), "
-                        f"latest bar age: {age_minutes:.1f}min (needs <10min)"
-                    )
-            
-            # Insufficient data - fall back to API
+
+            if is_validated:
+                self._db_hits += 1
+                logger.debug(
+                    "VALIDATION HIT: %s %s (%d bars) - using cached data",
+                    symbol,
+                    timeframe,
+                    len(bars),
+                )
+                return bars
+
             db_bars_count = len(bars)
-            
+
         except Exception as e:
             logger.warning(f"Database query failed for {symbol}: {e}")
-            db_bars_count = 0
-        
-        # Fetch from API and cache
+            bars = result.get(symbol, []) if result else []
+            db_bars_count = len(bars)
+
+        # No validation coverage - fetch from API and cache what we receive.
         try:
             fetch_result = await self._fetch_from_api_and_cache(
                 symbol=symbol,
@@ -198,21 +153,25 @@ class MarketDataService:
             api_source = fetch_result["source"]
             fetched_count = fetch_result["fetched_count"]
             cached_count = fetch_result["cached_count"]
-            
-            # Consolidated log message
+
             logger.info(
-                f"DB MISS: {symbol} {timeframe} ({db_bars_count}/{expected_count} bars) → "
-                f"Fetched {fetched_count} bars from {api_source} → "
-                f"Cached {cached_count} bars"
+                "DB MISS: %s %s (no validation record, %d cached bars) → "
+                "Fetched %d bars from %s → Cached %d bars",
+                symbol,
+                timeframe,
+                db_bars_count,
+                fetched_count,
+                api_source,
+                cached_count,
             )
-            
+
             self._api_calls += 1
             return bars
-            
+
         except Exception as e:
             logger.error(f"API fetch failed for {symbol} {timeframe}: {e}")
-            # Return whatever we got from DB, even if incomplete
-            return result.get(symbol, []) if 'result' in locals() else []
+            # Return whatever we got from DB, even if unvalidated
+            return result.get(symbol, []) if result else []
     
     async def get_bars_batch(
         self,
@@ -867,72 +826,6 @@ class MarketDataService:
         
         return tf
     
-    def _calculate_expected_bar_count(
-        self,
-        timeframe: str,
-        lookback_minutes: int
-    ) -> int:
-        """
-        Calculate expected number of bars for data quality check.
-        
-        Accounts for:
-        - Market hours (9:30-16:00 ET = 390 trading minutes per day)
-        - Timeframe granularity
-        - Only counting bars during actual trading time
-        
-        Args:
-            timeframe: Normalized timeframe string
-            lookback_minutes: Lookback period in minutes
-        
-        Returns:
-            Expected number of bars during trading hours
-        """
-        # Minutes per bar
-        minutes_per_bar = {
-            "1min": 1,
-            "5min": 5,
-            "15min": 15,
-            "1hour": 60,
-            "1day": 390,  # Full trading day
-        }
-        
-        bar_minutes = minutes_per_bar.get(timeframe, 1)
-        
-        if timeframe == "1day":
-            # For daily bars, convert minutes to trading days (~22 per month)
-            # Assume ~6.5 hours/day = 390 minutes
-            days = lookback_minutes / 390
-            # Approximate: 5 trading days per 7 calendar days
-            trading_days = days * (5 / 7)
-            return int(trading_days)
-        else:
-            # For intraday bars, account for market hours
-            # Market is open 9:30-16:00 ET = 390 minutes per day
-            TRADING_MINUTES_PER_DAY = 390
-            
-            # Calculate number of potential trading days in lookback period
-            days_in_lookback = lookback_minutes / (24 * 60)
-            
-            # Approximate trading days (5 out of 7 days)
-            trading_days = days_in_lookback * (5 / 7)
-            
-            # Total trading minutes in the period
-            trading_minutes = min(
-                lookback_minutes,  # Can't exceed actual lookback
-                trading_days * TRADING_MINUTES_PER_DAY
-            )
-            
-            # Calculate expected bars
-            expected_bars = max(1, int(trading_minutes / bar_minutes))
-            
-            # Add buffer for current partial day if lookback is small
-            # (e.g., if requesting last hour and market just opened)
-            if lookback_minutes <= TRADING_MINUTES_PER_DAY:
-                # For intraday queries, be more lenient
-                expected_bars = max(1, int(lookback_minutes / bar_minutes * 0.6))
-            
-            return expected_bars
-    
     async def _check_validation(
         self,
         symbol: str,
@@ -963,24 +856,34 @@ class MarketDataService:
                 start_date = start_time.date()
                 end_date = end_time.date()
                 
-                # Simple check: if we have a validation record for the date, trust it
-                # Only trust records marked as complete (same logic as loader)
                 stmt = select(SymbolDateValidation).where(
                     SymbolDateValidation.symbol == symbol,
                     SymbolDateValidation.timescale == timeframe,
                     SymbolDateValidation.date >= start_date,
-                    SymbolDateValidation.date <= end_date,
-                    SymbolDateValidation.is_complete == True
+                    SymbolDateValidation.date <= end_date
                 )
                 result = await session.execute(stmt)
                 validations = result.scalars().all()
-                
-                # If we have validation records covering the date range, consider it validated
-                if validations:
-                    logger.debug(f"Validation exists for {symbol} on {start_date} - using DB data as-is")
-                    return True
-                
-                return False
+
+                if not validations:
+                    return False
+
+                validated_dates = {validation.date for validation in validations}
+
+                current_date = start_date
+                while current_date <= end_date:
+                    if current_date not in validated_dates:
+                        return False
+                    current_date += timedelta(days=1)
+
+                logger.debug(
+                    "Validation coverage confirmed for %s %s from %s to %s",
+                    symbol,
+                    timeframe,
+                    start_date,
+                    end_date,
+                )
+                return True
         
         except Exception as e:
             logger.debug(f"Error checking validation for {symbol}: {e}")

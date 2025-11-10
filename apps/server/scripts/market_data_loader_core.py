@@ -72,15 +72,6 @@ TIMESCALE_CONFIG = {
     '1day': {'multiplier': 1, 'timespan': 'day'}
 }
 
-EXPECTED_BARS = {
-    '1min': 390,
-    '5min': 78,
-    '15min': 26,
-    '1hour': 7,
-    '1day': 1
-}
-
-
 def create_polygon_client(api_key: str) -> RESTClient:
     """
     Create Polygon RESTClient.
@@ -99,7 +90,6 @@ async def needs_data(symbol: str, date: datetime.date, timescale: str) -> bool:
                 WHERE symbol = :symbol
                   AND date = :date
                   AND timescale = :timescale
-                  AND is_complete = true
             """),
             {
                 "symbol": symbol.upper(),
@@ -291,8 +281,7 @@ async def insert_bars(bars: List[MarketData]) -> None:
 async def create_validation(symbol: str, date: datetime.date, timescale: str, bars: List[MarketData]) -> None:
     """Create validation record for symbol/date/timescale."""
     bar_count = len([b for b in bars if b.time.date() == date])
-    expected = EXPECTED_BARS.get(timescale, 390)
-    is_complete = bar_count >= expected * 0.9
+    is_complete = bar_count > 0
     
     date_bars = [b for b in bars if b.time.date() == date]
     first_bar = min(b.time for b in date_bars) if date_bars else None
@@ -305,7 +294,6 @@ async def create_validation(symbol: str, date: datetime.date, timescale: str, ba
             "timescale": timescale,
             "is_complete": is_complete,
             "bar_count": bar_count,
-            "expected_bars": expected,
             "first_bar_time": first_bar,
             "last_bar_time": last_bar,
             "validated_at": datetime.now(timezone.utc)

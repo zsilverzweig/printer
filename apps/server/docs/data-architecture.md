@@ -139,7 +139,7 @@ TODO: can the app handle 10k bars a second? How long after the second does this 
 - `1hour`: `multiplier=1, timespan='hour'`
 - `1day`: `multiplier=1, timespan='day'`
 
-**Expected Bar Counts** (per trading day):
+**Typical Bar Counts** (per trading day):
 
 - `1min`: 390 bars (9:30 AM - 4:00 PM)
 - `5min`: 78 bars
@@ -184,18 +184,17 @@ TODO: can the app handle 10k bars a second? How long after the second does this 
 - `symbol` (string, primary key)
 - `date` (date, primary key)
 - `timescale` (string, primary key)
-- `is_complete` (boolean): True if all expected bars present
+- `is_complete` (boolean): True if the load stored one or more bars
 - `bar_count` (integer): Actual number of bars stored
-- `expected_bars` (integer, nullable): Expected bar count
 - `first_bar_time`, `last_bar_time` (datetime, nullable)
 - `validated_at` (datetime): When validation was last updated
 - `notes` (text, nullable): Any issues or notes
 
 **Purpose**:
 
-- Tracks data completeness per symbol/date/timescale
+- Tracks which symbol/date/timescale combinations have been attempted
 - Prevents unnecessary API calls (if validated, use DB data)
-- Enables data quality monitoring
+- Enables data quality monitoring via recorded bar counts
 - Used by backtest system to verify data readiness
 
 ## 3. Data Processing
@@ -209,7 +208,7 @@ TODO: can the app handle 10k bars a second? How long after the second does this 
 **Features**:
 
 - Database-first queries (TimescaleDB)
-- Intelligent API fallback (only if data insufficient)
+- Intelligent API fallback (only if validation is missing)
 - Automatic caching of API results
 - Batch query support for multiple symbols
 - Backtest-aware (respects time context)
@@ -415,7 +414,7 @@ market_data (TimescaleDB hypertable)
 
 symbol_date_validation
 ├── Primary Key: (symbol, date, timescale)
-└── Tracks: completeness, bar counts, validation status
+└── Tracks: validation attempts, bar counts, validation status
 
 technical_indicators
 ├── Primary Key: (symbol, time, timescale)
@@ -445,13 +444,13 @@ market_latest_trades
 
 The system supports multiple timescales for different use cases:
 
-| Timescale | Use Case                             | Expected Bars/Day | Storage       |
-| --------- | ------------------------------------ | ----------------- | ------------- |
-| `1min`    | Real-time trading, detailed analysis | 390               | `market_data` |
-| `5min`    | Screener, backtesting                | 78                | `market_data` |
-| `15min`   | Medium-term analysis                 | 26                | `market_data` |
-| `1hour`   | Long-term analysis                   | 7                 | `market_data` |
-| `1day`    | Daily charts, long-term trends       | 1                 | `market_data` |
+| Timescale | Use Case                             | Typical Bars/Day | Storage       |
+| --------- | ------------------------------------ | ---------------- | ------------- |
+| `1min`    | Real-time trading, detailed analysis | 390              | `market_data` |
+| `5min`    | Screener, backtesting                | 78               | `market_data` |
+| `15min`   | Medium-term analysis                 | 26               | `market_data` |
+| `1hour`   | Long-term analysis                   | 7                | `market_data` |
+| `1day`    | Daily charts, long-term trends       | 1                | `market_data` |
 
 All timescales are stored in the same `market_data` table, distinguished by the `timescale` column.
 
@@ -476,9 +475,9 @@ This allows filtering and analysis by trading session.
 
 2. **Validation Checks**:
 
-   - Bar count vs expected bars
+   - Presence of validation records for requested date ranges
    - Time range coverage (first_bar_time to last_bar_time)
-   - Completeness flag (`is_complete`)
+   - `is_complete` flag indicates whether any bars were stored
 
 3. **Usage**:
    - `MarketDataService` checks validation before API fallback

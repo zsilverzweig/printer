@@ -16,7 +16,6 @@ def test_data_gap_creation():
         date=date(2025, 11, 1),
         gap_type="incomplete_day",
         bar_count=200,
-        expected_bars=390,
         priority=1
     )
     
@@ -112,11 +111,11 @@ def test_gap_detector_get_summary_with_gaps():
 
 def test_gap_priority_levels():
     """Test that gaps are created with correct priorities."""
-    high_priority = DataGap("AAPL", date(2025, 11, 1), "incomplete_day", bar_count=100, expected_bars=390, priority=1)
+    high_priority = DataGap("AAPL", date(2025, 11, 1), "incomplete_day", bar_count=100, priority=1)
     medium_priority = DataGap("TSLA", date(2025, 11, 1), "missing_date", priority=2)
-    low_priority = DataGap("NVDA", date(2025, 11, 1), "incomplete_day", bar_count=350, expected_bars=390, priority=3)
+    low_priority = DataGap("NVDA", date(2025, 11, 1), "incomplete_day", bar_count=350, priority=3)
     
-    assert high_priority.priority == 1  # <50% complete
-    assert medium_priority.priority == 2  # Missing date
-    assert low_priority.priority == 3  # >80% complete
+    assert high_priority.priority == 1
+    assert medium_priority.priority == 2
+    assert low_priority.priority == 3
 

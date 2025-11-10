@@ -49,14 +49,12 @@ class DataGap:
         date: date,
         gap_type: str,  # 'missing_date', 'incomplete_day', 'no_validation'
         bar_count: int = 0,
-        expected_bars: int = 390,
         priority: int = 1  # 1=high, 2=medium, 3=low
     ):
         self.symbol = symbol
         self.date = date
         self.gap_type = gap_type
         self.bar_count = bar_count
-        self.expected_bars = expected_bars
         self.priority = priority
         self.detected_at = datetime.now(timezone.utc)
     
@@ -67,7 +65,6 @@ class DataGap:
             "date": self.date.isoformat(),
             "gap_type": self.gap_type,
             "bar_count": self.bar_count,
-            "expected_bars": self.expected_bars,
             "priority": self.priority,
             "detected_at": self.detected_at.isoformat()
         }
@@ -158,7 +155,7 @@ class GapDetectorService:
         try:
             result = await session.execute(
                 text("""
-                    SELECT sdv.symbol, sdv.date, sdv.bar_count, sdv.expected_bars
+                    SELECT sdv.symbol, sdv.date, sdv.bar_count
                     FROM symbol_date_validation sdv
                     INNER JOIN ticker_details td ON sdv.symbol = td.symbol
                     WHERE sdv.date >= :cutoff_date
@@ -175,24 +172,13 @@ class GapDetectorService:
                 symbol = row[0]
                 gap_date = row[1]
                 bar_count = row[2] or 0
-                expected_bars = row[3] or 390
-                
-                # Priority based on how far we are from complete
-                completion_pct = (bar_count / expected_bars) * 100 if expected_bars > 0 else 0
-                if completion_pct < 50:
-                    priority = 1  # High - less than 50% complete
-                elif completion_pct < 80:
-                    priority = 2  # Medium
-                else:
-                    priority = 3  # Low - almost complete
-                
+
                 gaps.append(DataGap(
                     symbol=symbol,
                     date=gap_date,
                     gap_type='incomplete_day',
                     bar_count=bar_count,
-                    expected_bars=expected_bars,
-                    priority=priority
+                    priority=1  # Treat any incomplete load as high priority
                 ))
             
             self.logger.debug(f"Found {len(gaps)} incomplete validations")
