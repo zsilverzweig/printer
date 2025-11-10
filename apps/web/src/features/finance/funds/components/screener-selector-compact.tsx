@@ -269,6 +269,13 @@ export function ScreenerSelectorCompact({
                 {selectedCriteria.criteria.min_relative_volume}x
               </div>
             )}
+            {selectedCriteria.criteria.min_relative_volume_last_week !==
+              undefined && (
+              <div>
+                <span className="font-medium">Min RV LW:</span>{" "}
+                {selectedCriteria.criteria.min_relative_volume_last_week}x
+              </div>
+            )}
             {selectedCriteria.criteria.min_change_percent !== undefined && (
               <div>
                 <span className="font-medium">Min Change:</span>{" "}

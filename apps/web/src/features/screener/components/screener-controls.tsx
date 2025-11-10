@@ -289,19 +289,47 @@ export function ScreenerControls({
             max="5"
             step="0.1"
             placeholder="1.5"
-            value={filters.min_relative_volume || ""}
-            onChange={(e) =>
+            value={filters.min_relative_volume ?? ""}
+            onChange={(e) => {
+              const next = parseFloat(e.target.value);
               handleFilterUpdate(
                 "min_relative_volume",
-                parseFloat(e.target.value) || undefined
-              )
-            }
+                Number.isNaN(next) ? undefined : next
+              );
+            }}
             onBlur={() => {
               if (mode === "live" && !loading) onRun();
             }}
             className="w-20 h-7 text-xs"
             disabled={loading}
             title="Minimum relative volume (RV14) - e.g., 1.5 means 1.5x average volume"
+          />
+          <span className="text-muted-foreground">x</span>
+        </div>
+
+        {/* Min Relative Volume Last Week */}
+        <div className="flex items-center gap-1 bg-muted/30 px-2 py-1 rounded">
+          <Label className="text-xs font-medium">Min RV LW:</Label>
+          <Input
+            type="number"
+            min="1"
+            max="5"
+            step="0.1"
+            placeholder="1.2"
+            value={filters.min_relative_volume_last_week ?? ""}
+            onChange={(e) => {
+              const next = parseFloat(e.target.value);
+              handleFilterUpdate(
+                "min_relative_volume_last_week",
+                Number.isNaN(next) ? undefined : next
+              );
+            }}
+            onBlur={() => {
+              if (mode === "live" && !loading) onRun();
+            }}
+            className="w-20 h-7 text-xs"
+            disabled={loading}
+            title="Minimum relative volume compared to the same time last week"
           />
           <span className="text-muted-foreground">x</span>
         </div>
@@ -365,6 +393,7 @@ export function ScreenerControls({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="rv14">RV14</SelectItem>
+              <SelectItem value="rv_lw">RV vs Last Week</SelectItem>
               <SelectItem value="avg_volume">Volume</SelectItem>
               <SelectItem value="change_close">Change %</SelectItem>
             </SelectContent>

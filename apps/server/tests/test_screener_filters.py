@@ -684,6 +684,55 @@ class TestScreenerFilters:
             assert "LOWVOL" not in tickers, "LOWVOL should be filtered out by RV filter (1.2 < 2.0)"
             assert "HIGHVOL" in tickers, "HIGHVOL should pass RV filter (2.5 >= 2.0)"
 
+    @pytest.mark.asyncio
+    async def test_relative_volume_last_week_filter(self):
+        """Test relative volume last week filtering."""
+        mock_client = Mock()
+        screener = ScreenerService(client=mock_client)
+
+        mock_snaps = [
+            {
+                "ticker": "LOWRVLW",
+                "price": 100.0,
+                "volume": 1000000,
+                "day": {"o": 100.0, "h": 105.0, "l": 95.0, "c": 100.0, "v": 5000000},
+                "exchange": "XNAS",
+                "rv14": 3.0,
+                "rv_lw": 1.1,  # Below threshold
+            },
+            {
+                "ticker": "HIGHRVLW",
+                "price": 200.0,
+                "volume": 1000000,
+                "day": {"o": 200.0, "h": 205.0, "l": 195.0, "c": 200.0, "v": 5000000},
+                "exchange": "XNAS",
+                "rv14": 3.0,
+                "rv_lw": 2.5,  # Above threshold
+            },
+        ]
+
+        with patch('app.services.screener.screener_snapshot.extract_snapshot_data') as mock_extract:
+            def extract_fn(snap):
+                return {
+                    "ticker": snap["ticker"],
+                    "price": snap["price"],
+                    "volume": snap["volume"],
+                    "exchange": snap["exchange"],
+                    "rv_lw": snap.get("rv_lw", 0.0),
+                }
+
+            mock_extract.side_effect = extract_fn
+
+            results = await screener._compute(
+                snaps=mock_snaps,
+                min_relative_volume_last_week=2.0,
+                limit=100,
+            )
+
+            tickers = [r["ticker"] for r in results]
+            assert "LOWRVLW" not in tickers, "LOWRVLW should be filtered out by RV last week filter (1.1 < 2.0)"
+            assert "HIGHRVLW" in tickers, "HIGHRVLW should pass RV last week filter (2.5 >= 2.0)"
+
 
 class TestHistoricalFilters:
     """Test filters in historical mode."""

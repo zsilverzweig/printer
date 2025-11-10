@@ -71,6 +71,7 @@ class ScreenerCriteria(BaseModel):
     min_change_percent: Optional[float] = None
     max_change_percent: Optional[float] = None
     min_relative_volume: Optional[float] = None
+    min_relative_volume_last_week: Optional[float] = None
     order_by: Optional[str] = None
     limit: Optional[int] = None
 

@@ -101,6 +101,15 @@ export function ScreeningCriteriaForm({
   const [minChangePercent, setMinChangePercent] = useState<number>(
     criteria?.criteria.min_change_percent || 5.0
   );
+  const [minRelativeVolume, setMinRelativeVolume] = useState<number | null>(
+    criteria?.criteria.min_relative_volume ?? null
+  );
+  const [
+    minRelativeVolumeLastWeek,
+    setMinRelativeVolumeLastWeek,
+  ] = useState<number | null>(
+    criteria?.criteria.min_relative_volume_last_week ?? null
+  );
   const [orderBy, setOrderBy] = useState<string>(
     criteria?.criteria.order_by || "rv14"
   );
@@ -179,6 +188,13 @@ export function ScreeningCriteriaForm({
       criteriaParams.max_price = maxPrice;
       criteriaParams.min_volume = minVolume;
       criteriaParams.min_change_percent = minChangePercent;
+      if (minRelativeVolume !== null) {
+        criteriaParams.min_relative_volume = minRelativeVolume;
+      }
+      if (minRelativeVolumeLastWeek !== null) {
+        criteriaParams.min_relative_volume_last_week =
+          minRelativeVolumeLastWeek;
+      }
       criteriaParams.order_by = orderBy;
       criteriaParams.limit = limit;
 
@@ -407,6 +423,50 @@ export function ScreeningCriteriaForm({
             />
             <p className="text-xs text-muted-foreground">
               Minimum % change from yesterday&apos;s close
+            </p>
+          </div>
+
+          {/* Min Relative Volume */}
+          <div className="space-y-2">
+            <Label htmlFor="minRelativeVolume">Min Relative Volume (RV14)</Label>
+            <Input
+              id="minRelativeVolume"
+              type="number"
+              step="0.1"
+              min={0}
+              value={minRelativeVolume ?? ""}
+              onChange={(e) =>
+                setMinRelativeVolume(
+                  e.target.value === "" ? null : Number(e.target.value)
+                )
+              }
+              disabled={isSaving}
+            />
+            <p className="text-xs text-muted-foreground">
+              Leave blank to disable RV14 filtering
+            </p>
+          </div>
+
+          {/* Min Relative Volume Last Week */}
+          <div className="space-y-2">
+            <Label htmlFor="minRelativeVolumeLW">
+              Min Relative Volume vs Last Week
+            </Label>
+            <Input
+              id="minRelativeVolumeLW"
+              type="number"
+              step="0.1"
+              min={0}
+              value={minRelativeVolumeLastWeek ?? ""}
+              onChange={(e) =>
+                setMinRelativeVolumeLastWeek(
+                  e.target.value === "" ? null : Number(e.target.value)
+                )
+              }
+              disabled={isSaving}
+            />
+            <p className="text-xs text-muted-foreground">
+              Leave blank to disable RV last week filtering
             </p>
           </div>
 

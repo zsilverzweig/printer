@@ -41,6 +41,7 @@ class ScreenerHistorical:
         min_change_percent: Optional[float] = None,
         max_change_percent: Optional[float] = None,
         min_relative_volume: Optional[float] = None,
+        min_relative_volume_last_week: Optional[float] = None,
         order_by: str = "rv14",
         limit: int = 200,
         technical_filters: Optional[Dict[str, Any]] = None,
@@ -60,6 +61,7 @@ class ScreenerHistorical:
             min_change_percent: Minimum % change from yesterday's close
             max_change_percent: Maximum % change from yesterday's close
             min_relative_volume: Minimum relative volume (RV14) filter
+            min_relative_volume_last_week: Minimum relative volume vs last week filter
             order_by: Field to sort by (rv14, avg_volume, change_close)
             limit: Maximum number of results to return
             technical_filters: Optional dict of technical analysis filters
@@ -94,6 +96,7 @@ class ScreenerHistorical:
                 float_max=float_max,
                 asset_types=asset_types,
                 min_relative_volume=min_relative_volume,
+                min_relative_volume_last_week=min_relative_volume_last_week,
             )
             step_time = time.time() - step_start
             self.logger.info(
@@ -264,6 +267,7 @@ class ScreenerHistorical:
             add_step("After volume filter", len(working_entries))
 
             rv_filtered_count = 0
+            rv_lw_filtered_count = 0
             if min_relative_volume is not None:
                 next_entries = []
                 for entry in working_entries:
@@ -274,6 +278,17 @@ class ScreenerHistorical:
                         rv_filtered_count += 1
                 working_entries = next_entries
             add_step("After relative volume filter", len(working_entries))
+
+            if min_relative_volume_last_week is not None:
+                next_entries = []
+                for entry in working_entries:
+                    rv_lw_value = _to_float(entry["snapshot"].get("rv_lw")) or 0.0
+                    if rv_lw_value >= min_relative_volume_last_week:
+                        next_entries.append(entry)
+                    else:
+                        rv_lw_filtered_count += 1
+                working_entries = next_entries
+            add_step("After RV last week filter", len(working_entries))
 
             asset_type_filtered_count = 0
             asset_types_upper = {t.upper() for t in asset_types} if asset_types else set()
@@ -361,6 +376,7 @@ class ScreenerHistorical:
                 price_filtered_count
                 + volume_filtered_count
                 + rv_filtered_count
+                + rv_lw_filtered_count
                 + asset_type_filtered_count
                 + change_min_filtered_count
                 + change_max_filtered_count
@@ -404,6 +420,7 @@ class ScreenerHistorical:
                     "price_filtered": price_filtered_count,
                     "volume_filtered": volume_filtered_count,
                     "rv_filtered": rv_filtered_count,
+                    "rv_lw_filtered": rv_lw_filtered_count,
                     "asset_type_filtered": asset_type_filtered_count,
                     "change_min_filtered": change_min_filtered_count,
                     "change_max_filtered": change_max_filtered_count,
