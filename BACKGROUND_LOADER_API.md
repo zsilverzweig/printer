@@ -1,20 +1,15 @@
 # Background Metrics Loader API
 
-## ⚠️ Deprecation Notice
+## Metrics Processing Overview
 
-The following metrics-related services have been **DEPRECATED** and will be removed in a future version:
-
-- `MetricsCompletionService` - Old background metrics completion service
-- `MetricsPopulator` - Old historical metrics backfill service
-
-**BackgroundMetricsLoader is now the mothership for all metrics processing.** It provides:
+**BackgroundMetricsLoader is the single entry point for metrics processing.** It provides:
 
 - Unified processing of all historical daily data
 - Better performance and reliability
 - Simplified architecture without continuous background loops
 - Health monitor integration for automatic triggering
 
-All new development should use BackgroundMetricsLoader. Existing code using the deprecated services should migrate.
+All new development should use BackgroundMetricsLoader.
 
 The Background Metrics Loader service now has API endpoints for monitoring and control.
 

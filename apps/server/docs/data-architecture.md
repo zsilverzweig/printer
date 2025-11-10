@@ -248,8 +248,7 @@ TODO: can the app handle 10k bars a second? How long after the second does this 
 
 1. Real-time ingestion calculates metrics for new 5min+ bars using `MetricsCalculator` when data arrives (1min bars keep metric columns NULL).
 2. Historical loaders call the same calculator before inserting batches to TimescaleDB.
-3. `MetricsPopulator` backfills missing metrics for historical gaps, processing bars in order to maintain indicator state.
-4. The background completion service (`metrics_completion_service.py`) continuously scans 5min+ series for NULL metrics and triggers the populator.
+3. `BackgroundMetricsLoader` periodically scans for gaps in daily metrics and backfills them with `MetricsCalculator`, ensuring indicator state is consistent without requiring additional services.
 
 **Usage**:
 
