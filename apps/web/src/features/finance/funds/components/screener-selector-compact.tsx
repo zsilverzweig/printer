@@ -269,6 +269,12 @@ export function ScreenerSelectorCompact({
                 {selectedCriteria.criteria.min_relative_volume}x
               </div>
             )}
+            {selectedCriteria.criteria.max_relative_volume !== undefined && (
+              <div>
+                <span className="font-medium">Max RV:</span>{" "}
+                {selectedCriteria.criteria.max_relative_volume}x
+              </div>
+            )}
             {selectedCriteria.criteria.min_relative_volume_last_week !==
               undefined && (
               <div>

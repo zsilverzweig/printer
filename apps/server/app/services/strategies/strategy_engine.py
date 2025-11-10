@@ -396,7 +396,7 @@ class StrategyEngine:
                 await self.level_monitor.check_entry_triggers(self.order_executor)
                 
                 # Phase 4: Update position management
-                await self.level_monitor.update_position_management(active_positions)
+                await self.level_monitor.update_position_management(active_positions, self.order_executor)
                 
                 # Phase 5: Check stop triggers
                 await self.level_monitor.check_stop_triggers(active_positions, self.order_executor)

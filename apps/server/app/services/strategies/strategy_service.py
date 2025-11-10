@@ -7,7 +7,7 @@ All monitoring state survives restarts.
 
 import uuid
 import logging
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Any
 from datetime import datetime
 
 from app.services.core.time_context import get_current_time
@@ -19,6 +19,38 @@ from app.services.core.database import get_async_session
 from app.strategies.base import EntryLevel, StopUpdate
 
 logger = logging.getLogger(__name__)
+
+
+def _merge_metadata(
+    existing: Optional[Dict[str, Any]],
+    new: Optional[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    """
+    Merge strategy metadata dictionaries with shallow-nested support.
+    
+    Args:
+        existing: Existing metadata stored in DB
+        new: Incoming metadata from strategy update
+        
+    Returns:
+        Merged metadata dictionary (or None if both inputs are None)
+    """
+    if not existing and not new:
+        return None
+    
+    merged: Dict[str, Any] = dict(existing or {})
+    
+    if new:
+        for key, value in new.items():
+            if (
+                isinstance(value, dict)
+                and isinstance(merged.get(key), dict)
+            ):
+                merged[key] = {**merged[key], **value}
+            else:
+                merged[key] = value
+    
+    return merged
 
 
 class StrategyService:
@@ -110,6 +142,10 @@ class StrategyService:
                 # Update existing
                 state.current_stop_loss = stop_update.current_stop
                 state.updated_at = get_current_time()
+                state.strategy_metadata = _merge_metadata(
+                    state.strategy_metadata,
+                    stop_update.metadata
+                )
                 state_id = state.id
                 logger.debug(f"Updated management state: {symbol} stop=${stop_update.current_stop:.2f}")
             else:
@@ -126,6 +162,7 @@ class StrategyService:
                     position_entry_price=position_entry_price,
                     position_entry_time=position_entry_time,
                     current_stop_loss=stop_update.current_stop,
+                    strategy_metadata=_merge_metadata({}, stop_update.metadata),
                 )
                 session.add(state)
                 logger.debug(f"Created management state: {symbol} stop=${stop_update.current_stop:.2f}")

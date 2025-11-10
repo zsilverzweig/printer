@@ -280,9 +280,9 @@ export function ScreenerControls({
           />
         </div>
 
-        {/* Min Relative Volume */}
+        {/* Relative Volume Range */}
         <div className="flex items-center gap-1 bg-muted/30 px-2 py-1 rounded">
-          <Label className="text-xs font-medium">Min RV:</Label>
+          <Label className="text-xs font-medium">RV Range:</Label>
           <Input
             type="number"
             min="1"
@@ -303,6 +303,28 @@ export function ScreenerControls({
             className="w-20 h-7 text-xs"
             disabled={loading}
             title="Minimum relative volume (RV14) - e.g., 1.5 means 1.5x average volume"
+          />
+          <span className="text-muted-foreground text-xs">to</span>
+          <Input
+            type="number"
+            min="1"
+            max="10"
+            step="0.1"
+            placeholder="Max"
+            value={filters.max_relative_volume ?? ""}
+            onChange={(e) => {
+              const next = parseFloat(e.target.value);
+              handleFilterUpdate(
+                "max_relative_volume",
+                Number.isNaN(next) ? undefined : next
+              );
+            }}
+            onBlur={() => {
+              if (mode === "live" && !loading) onRun();
+            }}
+            className="w-20 h-7 text-xs"
+            disabled={loading}
+            title="Maximum relative volume (RV14) - e.g., 4.0 caps results at 4x average volume"
           />
           <span className="text-muted-foreground">x</span>
         </div>

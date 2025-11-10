@@ -123,6 +123,12 @@ def _auto_register_strategies() -> None:
         logger.warning(f"Failed to import GPTFiveGuyStrategy: {e}")
     
     try:
+        from app.strategies.buy_the_screen import BuyTheScreenStrategy
+        register_strategy(BuyTheScreenStrategy)
+    except ImportError as e:
+        logger.warning(f"Failed to import BuyTheScreenStrategy: {e}")
+    
+    try:
         from app.strategies.bull_flag import BullFlagStrategy
         register_strategy(BullFlagStrategy)
     except ImportError as e:

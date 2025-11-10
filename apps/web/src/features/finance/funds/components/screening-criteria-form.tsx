@@ -104,6 +104,9 @@ export function ScreeningCriteriaForm({
   const [minRelativeVolume, setMinRelativeVolume] = useState<number | null>(
     criteria?.criteria.min_relative_volume ?? null
   );
+  const [maxRelativeVolume, setMaxRelativeVolume] = useState<number | null>(
+    criteria?.criteria.max_relative_volume ?? null
+  );
   const [
     minRelativeVolumeLastWeek,
     setMinRelativeVolumeLastWeek,
@@ -194,6 +197,9 @@ export function ScreeningCriteriaForm({
       if (minRelativeVolumeLastWeek !== null) {
         criteriaParams.min_relative_volume_last_week =
           minRelativeVolumeLastWeek;
+      }
+      if (maxRelativeVolume !== null) {
+        criteriaParams.max_relative_volume = maxRelativeVolume;
       }
       criteriaParams.order_by = orderBy;
       criteriaParams.limit = limit;
@@ -426,24 +432,45 @@ export function ScreeningCriteriaForm({
             </p>
           </div>
 
-          {/* Min Relative Volume */}
+          {/* Relative Volume Range */}
           <div className="space-y-2">
-            <Label htmlFor="minRelativeVolume">Min Relative Volume (RV14)</Label>
-            <Input
-              id="minRelativeVolume"
-              type="number"
-              step="0.1"
-              min={0}
-              value={minRelativeVolume ?? ""}
-              onChange={(e) =>
-                setMinRelativeVolume(
-                  e.target.value === "" ? null : Number(e.target.value)
-                )
-              }
-              disabled={isSaving}
-            />
+            <Label htmlFor="minRelativeVolume">Relative Volume (RV14)</Label>
+            <div className="flex items-center gap-2">
+              <Input
+                id="minRelativeVolume"
+                type="number"
+                step="0.1"
+                min={0}
+                value={minRelativeVolume ?? ""}
+                onChange={(e) =>
+                  setMinRelativeVolume(
+                    e.target.value === "" ? null : Number(e.target.value)
+                  )
+                }
+                disabled={isSaving}
+                className="w-28"
+                placeholder="Min"
+              />
+              <span className="text-muted-foreground text-xs">to</span>
+              <Input
+                id="maxRelativeVolume"
+                type="number"
+                step="0.1"
+                min={0}
+                value={maxRelativeVolume ?? ""}
+                onChange={(e) =>
+                  setMaxRelativeVolume(
+                    e.target.value === "" ? null : Number(e.target.value)
+                  )
+                }
+                disabled={isSaving}
+                className="w-28"
+                placeholder="Max"
+              />
+              <span className="text-muted-foreground text-xs">x</span>
+            </div>
             <p className="text-xs text-muted-foreground">
-              Leave blank to disable RV14 filtering
+              Leave blank to disable RV14 lower or upper bounds
             </p>
           </div>
 

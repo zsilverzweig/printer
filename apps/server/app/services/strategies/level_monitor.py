@@ -6,7 +6,7 @@ Handles position management updates from strategies.
 """
 
 import logging
-from typing import Dict
+from typing import Dict, Any
 
 from app.strategies.base import (
     ExecutionStrategy,
@@ -181,7 +181,7 @@ class LevelMonitor:
         except Exception as e:
             logger.error(f"Error checking stop triggers: {e}", exc_info=True)
     
-    async def update_position_management(self, positions: Dict[str, PositionContext]) -> None:
+    async def update_position_management(self, positions: Dict[str, PositionContext], order_executor) -> None:
         """
         Update position management - call strategy to update stops.
         
@@ -197,8 +197,12 @@ class LevelMonitor:
             
             logger.debug(f"Updating management for {len(positions)} position(s)")
             
+            exit_levels = await self.strategy_service.get_active_exit_levels(self.fund_id)
+            
             for symbol, position in positions.items():
                 try:
+                    exit_state = exit_levels.get(symbol) if exit_levels else None
+                    
                     # Get current market data
                     market_data = await self.market_data_provider.build_market_data(symbol)
                     
@@ -207,14 +211,33 @@ class LevelMonitor:
                     position.unrealized_pnl = (market_data.price - position.entry_price) * position.quantity
                     position.unrealized_pnl_percent = ((market_data.price - position.entry_price) / position.entry_price) * 100
                     
+                    # Merge strategy metadata from monitoring state with position state
+                    merged_strategy_state: Dict[str, Any] = {}
+                    if position.strategy_state:
+                        merged_strategy_state.update(position.strategy_state)
+                    if exit_state and exit_state.strategy_metadata:
+                        merged_strategy_state.update(exit_state.strategy_metadata)
+                    if exit_state and exit_state.current_stop_loss is not None:
+                        merged_strategy_state["current_stop"] = exit_state.current_stop_loss
+                    position.strategy_state = merged_strategy_state
+                    
                     # Call strategy's management
                     stop_update = await self.strategy.manage_position(position, market_data)
                     
                     # Check for force exit (handled separately by caller)
                     if stop_update.force_exit:
                         self.strategy_logger.log(symbol, f"Strategy requests exit: {stop_update.exit_reason}")
-                        # Caller will handle this via force exit flag
+                        await order_executor.execute_sell_order(position, stop_update, market_data)
                         continue
+                    
+                    # Handle scale outs (partial exits)
+                    if stop_update.scale_out_percent and stop_update.scale_out_percent > 0:
+                        self.strategy_logger.log(
+                            symbol,
+                            f"Strategy requests scale out: {stop_update.scale_out_percent:.2f}% "
+                            f"(reason: {stop_update.exit_reason or 'target_hit'})"
+                        )
+                        await order_executor.execute_sell_order(position, stop_update, market_data)
                     
                     strategy_stop = stop_update.current_stop
                     
@@ -242,7 +265,10 @@ class LevelMonitor:
                         symbol,
                         position.entry_price,
                         position.entry_time,
-                        StopUpdate(current_stop=final_stop)
+                        StopUpdate(
+                            current_stop=final_stop,
+                            metadata={**stop_update.metadata, "current_stop": final_stop}
+                        )
                     )
                 
                 except Exception as e:

@@ -41,6 +41,8 @@ class StopUpdate:
     current_stop: float
     force_exit: bool = False
     exit_reason: Optional[str] = None
+    scale_out_percent: Optional[float] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

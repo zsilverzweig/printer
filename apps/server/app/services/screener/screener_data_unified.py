@@ -26,6 +26,7 @@ async def fetch_screener_data_unified(
     float_max: Optional[int] = None,
     asset_types: Optional[List[str]] = None,
     min_relative_volume: Optional[float] = None,
+    max_relative_volume: Optional[float] = None,
     min_relative_volume_last_week: Optional[float] = None,
 ) -> List[Dict[str, Any]]:
     """
@@ -64,13 +65,14 @@ async def fetch_screener_data_unified(
     """
     
     logger.info(
-        "[UNIFIED] fetch_screener_data_unified called with market_cap=(%s, %s), float=(%s, %s), asset_types=%s, min_rv=%s, min_rv_lw=%s, target_timestamp=%s",
+        "[UNIFIED] fetch_screener_data_unified called with market_cap=(%s, %s), float=(%s, %s), asset_types=%s, min_rv=%s, max_rv=%s, min_rv_lw=%s, target_timestamp=%s",
         market_cap_min,
         market_cap_max,
         float_min,
         float_max,
         asset_types,
         min_relative_volume,
+        max_relative_volume,
         min_relative_volume_last_week,
         target_timestamp.isoformat() if target_timestamp else None,
     )
@@ -423,10 +425,11 @@ async def fetch_screener_data_unified(
 
             logger.info(
                 f"[UNIFIED] Combining {len(daily_data)} symbols with volume statistics, "
-                f"applying RV filter={min_relative_volume}, RV_LW filter={min_relative_volume_last_week}"
+                f"applying RV filters min={min_relative_volume}, max={max_relative_volume}, RV_LW filter={min_relative_volume_last_week}"
             )
             snapshots = []
             filtered_by_rv = 0
+            filtered_by_rv_max = 0
             filtered_by_rv_lw = 0
             filtered_by_no_close = 0
 
@@ -446,6 +449,9 @@ async def fetch_screener_data_unified(
 
                 if min_relative_volume is not None and rv14_value < min_relative_volume:
                     filtered_by_rv += 1
+                    continue
+                if max_relative_volume is not None and rv14_value > max_relative_volume:
+                    filtered_by_rv_max += 1
                     continue
                 if (
                     min_relative_volume_last_week is not None
@@ -485,6 +491,11 @@ async def fetch_screener_data_unified(
                 logger.warning(
                     f"[UNIFIED] RV filter removed {filtered_by_rv} symbols "
                     f"(min_relative_volume={min_relative_volume})"
+                )
+            if filtered_by_rv_max > 0:
+                logger.warning(
+                    f"[UNIFIED] Max RV filter removed {filtered_by_rv_max} symbols "
+                    f"(max_relative_volume={max_relative_volume})"
                 )
             if filtered_by_rv_lw > 0:
                 logger.warning(

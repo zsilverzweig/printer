@@ -26,6 +26,7 @@ from app.services.trading.constants import POSITION_EPSILON
 from app.services.events.event_broadcasting import (
     broadcast_error,
     broadcast_diagnostic,
+    broadcast_scale_out,
 )
 from app.services.strategies.position_sizer import PositionSizer
 from app.services.strategies.strategy_service import StrategyService
@@ -296,7 +297,13 @@ class OrderExecutor:
                 symbol,
                 signal.entry_price,
                 get_current_time(),
-                StopUpdate(current_stop=signal.stop_loss)
+                StopUpdate(
+                    current_stop=signal.stop_loss,
+                    metadata={
+                        **(signal.metadata.get("initial_management_state", {}) if signal.metadata else {}),
+                        "current_stop": signal.stop_loss,
+                    }
+                )
             )
             self.strategy_logger.log(symbol, f"Initial stop set: ${signal.stop_loss:.2f}")
             
@@ -335,6 +342,9 @@ class OrderExecutor:
             
             # Verify position exists in ledger (prevent over-selling)
             # Calculate actual quantity to sell (use minimum of ledger and Alpaca to prevent over-selling)
+            available_quantity = position.quantity
+            sell_quantity = position.quantity
+            
             async with get_async_session() as session:
                 db_position_qty = await get_position_quantity_from_transactions(
                     session, self.fund_id, position.symbol
@@ -347,16 +357,13 @@ class OrderExecutor:
                     )
                     return False
                 
-                # If there's a discrepancy, use the MINIMUM of ledger and Alpaca quantity
-                # We can't sell more than Alpaca has available, so Alpaca quantity is the upper limit
+                # Determine available quantity based on ledger and Alpaca data
+                available_quantity = min(db_position_qty, position.quantity)
                 if abs(db_position_qty - position.quantity) > POSITION_EPSILON:
-                    # Use minimum to prevent over-selling
-                    actual_quantity = min(db_position_qty, position.quantity)
-                    
                     logger.warning(
                         f"⚠️ Position quantity mismatch for {position.symbol}: "
                         f"Alpaca reports {position.quantity:.6f}, ledger shows {db_position_qty:.2f}. "
-                        f"Using minimum quantity {actual_quantity:.2f} to prevent over-selling."
+                        f"Using minimum quantity {available_quantity:.2f} to prevent over-selling."
                     )
                     
                     # Log discrepancy
@@ -372,19 +379,39 @@ class OrderExecutor:
                             "ledger_quantity": float(db_position_qty),
                             "discrepancy": float(position.quantity - db_position_qty),
                             "action": "using_minimum_quantity",
-                            "sell_quantity": float(actual_quantity),
+                            "available_quantity": float(available_quantity),
+                            "scale_out_percent": float(signal.scale_out_percent or 0.0),
                             "exit_reason": signal.exit_reason or "stop_hit",
                             "current_price": float(market_data.price),
                         }
                     )
-                else:
-                    actual_quantity = position.quantity
+                actual_quantity = available_quantity
+                
+                # Apply scale-out percent if requested
+                if signal.scale_out_percent and signal.scale_out_percent > 0:
+                    fraction = max(0.0, min(signal.scale_out_percent, 100.0)) / 100.0
+                    scaled_quantity = available_quantity * fraction
+                    actual_quantity = min(available_quantity, scaled_quantity)
+                
+                # Guard against rounding down to zero
+                if actual_quantity < POSITION_EPSILON:
+                    logger.warning(
+                        f"⚠️ Calculated sell quantity too small for {position.symbol}: {actual_quantity:.4f}. "
+                        f"Skipping sell order."
+                    )
+                    return False
+                
+                # Round to 4 decimal places for fractional shares support
+                actual_quantity = round(actual_quantity, 4)
+                
+                # Persist calculated quantity for later checks
+                sell_quantity = actual_quantity
             
             # Final validation: ensure we have a valid quantity to sell
-            if actual_quantity < POSITION_EPSILON:
+            if sell_quantity < POSITION_EPSILON:
                 logger.warning(
                     f"⚠️ Insufficient quantity to sell for {position.symbol}: "
-                    f"calculated quantity {actual_quantity:.2f} is too small. "
+                    f"calculated quantity {sell_quantity:.2f} is too small. "
                     f"Skipping sell order."
                 )
                 return False
@@ -428,7 +455,7 @@ class OrderExecutor:
                         trade_id=trade_id,  # Link to existing trade
                         symbol=position.symbol,
                         side="sell",
-                        quantity=actual_quantity,
+                        quantity=sell_quantity,
                         order_type="market",
                         estimated_price=market_data.price,
                         status="pending",
@@ -443,7 +470,7 @@ class OrderExecutor:
                 try:
                     alpaca_order = await self.alpaca_service.place_market_order(
                         symbol=position.symbol,
-                        qty=actual_quantity,
+                        qty=sell_quantity,
                         side="sell",
                         time_in_force="day"
                     )
@@ -508,16 +535,30 @@ class OrderExecutor:
             realized_pnl = position.unrealized_pnl
             
             logger.debug(
-                f"📤 Sell order submitted to Alpaca: {position.symbol} sell {actual_quantity} @ ${market_data.price:.2f} "
+                f"📤 Sell order submitted to Alpaca: {position.symbol} sell {sell_quantity} @ ${market_data.price:.2f} "
                 f"(order_id={order_id}, alpaca_id={alpaca_order['id']}, P&L: ${realized_pnl:.2f})"
             )
             
-            # Clean up monitoring state
-            await self.strategy_service.deactivate_symbol_levels(
-                self.fund_id,
-                position.symbol,
-                "position_closed"
-            )
+            sold_entire_position = abs(sell_quantity - available_quantity) < POSITION_EPSILON
+            
+            if signal.scale_out_percent and signal.scale_out_percent > 0 and not sold_entire_position:
+                await broadcast_scale_out(
+                    fund_id=str(self.fund_id),
+                    fund_name=self.fund.name,
+                    symbol=position.symbol,
+                    quantity=sell_quantity,
+                    price=market_data.price,
+                    percent=signal.scale_out_percent,
+                    reason=signal.exit_reason,
+                )
+            
+            if sold_entire_position:
+                # Clean up monitoring state only when fully exiting
+                await self.strategy_service.deactivate_symbol_levels(
+                    self.fund_id,
+                    position.symbol,
+                    "position_closed"
+                )
             
             return True
         

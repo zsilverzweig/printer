@@ -41,6 +41,7 @@ class ScreenerCompute:
         min_change_percent: Optional[float] = None,
         max_change_percent: Optional[float] = None,
         min_relative_volume: Optional[float] = None,
+        max_relative_volume: Optional[float] = None,
         min_relative_volume_last_week: Optional[float] = None,
         order_by: str = "rv14",
         limit: int = 200,
@@ -61,6 +62,7 @@ class ScreenerCompute:
             min_change_percent: Minimum % change from yesterday's close
             max_change_percent: Maximum % change from yesterday's close
             min_relative_volume: Minimum relative volume (RV14) filter
+            max_relative_volume: Maximum relative volume (RV14) filter
             min_relative_volume_last_week: Minimum relative volume vs last week filter
             order_by: Field to sort by (rv14 or avg_volume)
             limit: Maximum number of results to return
@@ -183,6 +185,7 @@ class ScreenerCompute:
         price_filtered_count = 0
         volume_filtered_count = 0
         rv_filtered_count = 0
+        rv_max_filtered_count = 0
         rv_lw_filtered_count = 0
         asset_type_filtered_count = 0
         change_min_filtered_count = 0
@@ -264,14 +267,17 @@ class ScreenerCompute:
         add_step("After volume filter", len(working_entries))
 
         # Relative volume filter
-        if min_relative_volume is not None:
+        if min_relative_volume is not None or max_relative_volume is not None:
             next_entries = []
             for entry in working_entries:
                 rv_value = _to_float(entry["snapshot"].get("rv14")) or 0.0
-                if rv_value >= min_relative_volume:
-                    next_entries.append(entry)
-                else:
+                if min_relative_volume is not None and rv_value < min_relative_volume:
                     rv_filtered_count += 1
+                    continue
+                if max_relative_volume is not None and rv_value > max_relative_volume:
+                    rv_max_filtered_count += 1
+                    continue
+                next_entries.append(entry)
             working_entries = next_entries
         add_step("After relative volume filter", len(working_entries))
 
@@ -383,6 +389,7 @@ class ScreenerCompute:
             price_filtered_count
             + volume_filtered_count
             + rv_filtered_count
+            + rv_max_filtered_count
             + rv_lw_filtered_count
             + asset_type_filtered_count
             + change_min_filtered_count
@@ -405,6 +412,7 @@ class ScreenerCompute:
                 "price_filtered": price_filtered_count,
                 "volume_filtered": volume_filtered_count,
                 "rv_filtered": rv_filtered_count,
+                "rv_max_filtered": rv_max_filtered_count,
                 "rv_lw_filtered": rv_lw_filtered_count,
                 "asset_type_filtered": asset_type_filtered_count,
                 "change_min_filtered": change_min_filtered_count,

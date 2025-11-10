@@ -157,6 +157,7 @@ async def run_screener_with_inline_criteria(
         min_change_percent = criteria.min_change_percent
         max_change_percent = criteria.max_change_percent
         min_relative_volume = criteria.min_relative_volume
+        max_relative_volume = criteria.max_relative_volume
         min_relative_volume_last_week = criteria.min_relative_volume_last_week
         asset_types = criteria.asset_types
         market_cap_min = criteria.market_cap_min
@@ -167,8 +168,9 @@ async def run_screener_with_inline_criteria(
         limit = criteria.limit or 200
         
         logger.info(
-            "[ENDPOINT] Extracted params: min_rv=%s, min_rv_lw=%s, timestamp=%s",
+            "[ENDPOINT] Extracted params: min_rv=%s, max_rv=%s, min_rv_lw=%s, timestamp=%s",
             min_relative_volume,
+            max_relative_volume,
             min_relative_volume_last_week,
             timestamp,
         )
@@ -210,6 +212,7 @@ async def run_screener_with_inline_criteria(
                     min_change_percent=min_change_percent,
                     max_change_percent=max_change_percent,
                     min_relative_volume=min_relative_volume,
+                    max_relative_volume=max_relative_volume,
                     min_relative_volume_last_week=min_relative_volume_last_week,
                     order_by=order_by,
                     limit=limit,
@@ -226,8 +229,9 @@ async def run_screener_with_inline_criteria(
                 hist_start = time.time()
                 logger.info(f"[ENDPOINT] Using HISTORICAL mode at {timestamp}")
                 logger.info(
-                    "[ENDPOINT] Calling compute_historical with min_rv=%s, min_rv_lw=%s...",
+                    "[ENDPOINT] Calling compute_historical with min_rv=%s, max_rv=%s, min_rv_lw=%s...",
                     min_relative_volume,
+                    max_relative_volume,
                     min_relative_volume_last_week,
                 )
                 
@@ -239,6 +243,7 @@ async def run_screener_with_inline_criteria(
                     min_change_percent=min_change_percent,
                     max_change_percent=max_change_percent,
                     min_relative_volume=min_relative_volume,
+                    max_relative_volume=max_relative_volume,
                     min_relative_volume_last_week=min_relative_volume_last_week,
                     order_by=order_by,
                     limit=limit,
@@ -272,6 +277,7 @@ async def run_screener_with_inline_criteria(
                 min_change_percent=min_change_percent,
                 max_change_percent=max_change_percent,
                 min_relative_volume=min_relative_volume,
+                max_relative_volume=max_relative_volume,
                 min_relative_volume_last_week=min_relative_volume_last_week,
                 order_by=order_by,
                 limit=limit,
