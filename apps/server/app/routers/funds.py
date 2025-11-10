@@ -9,12 +9,13 @@ Provides endpoints for creating, managing, and controlling trading funds:
 """
 
 import asyncio
+from collections import defaultdict
 import logging
 import uuid
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Body
 from pydantic import BaseModel
 
 from app.services.core.time_context import get_current_time
@@ -209,6 +210,13 @@ class ManualOrderRequest(BaseModel):
     quantity: float
     time_in_force: str = "day"
     estimated_price: Optional[float] = None
+
+
+class LiquidatePositionRequest(BaseModel):
+    """Request payload for position liquidation."""
+
+    quantity: Optional[float] = None
+    time_in_force: str = "day"
 
 
 # Helper functions to serialize models to dicts
@@ -1627,13 +1635,13 @@ async def get_fund_positions(fund_id: str) -> dict:
         
         # Get positions from our database (from Position table)
         from sqlalchemy import select, and_, func, distinct
-        from app.models.strategies import Position
+        from app.models.strategies import Position, Transaction
         from app.services.trading.position_service import get_all_positions
-        
+
         async with get_async_session() as session:
             # Query Position table directly (much faster than calculating from transactions)
             positions = await get_all_positions(session, fund_id)
-            
+
             # Convert to API format
             db_positions = [
                 {
@@ -1646,6 +1654,55 @@ async def get_fund_positions(fund_id: str) -> dict:
                 }
                 for pos in positions
             ]
+
+            # If no positions in Position table, calculate from transactions (fallback for legacy data)
+            if not db_positions:
+                logger.info(f"No positions found in Position table for fund {fund_id}, calculating from transactions")
+                # Calculate positions from transaction history (same logic as positions summary)
+                stmt = select(
+                    Transaction.symbol,
+                    Transaction.side,
+                    Transaction.quantity,
+                    Transaction.price,
+                    Transaction.total_value
+                ).where(
+                    Transaction.fund_id == fund_id
+                ).order_by(Transaction.timestamp.asc())
+
+                result = await session.execute(stmt)
+                transactions = result.all()
+
+                # Calculate net positions with cost basis
+                position_tracker = {}
+                for symbol, side, quantity, price, total_value in transactions:
+                    if symbol not in position_tracker:
+                        position_tracker[symbol] = {
+                            "quantity": 0.0,
+                            "total_cost": 0.0,
+                        }
+
+                    if side == "buy":
+                        position_tracker[symbol]["quantity"] += quantity
+                        position_tracker[symbol]["total_cost"] += total_value
+                    else:  # sell
+                        # FIFO: reduce quantity and proportional cost
+                        if position_tracker[symbol]["quantity"] > 0:
+                            avg_cost_per_share = position_tracker[symbol]["total_cost"] / position_tracker[symbol]["quantity"]
+                            position_tracker[symbol]["quantity"] -= quantity
+                            position_tracker[symbol]["total_cost"] -= (quantity * avg_cost_per_share)
+
+                # Filter to only positive positions
+                for symbol, data in position_tracker.items():
+                    if data["quantity"] > 0.001:
+                        avg_entry_price = data["total_cost"] / data["quantity"] if data["quantity"] > 0 else 0
+                        db_positions.append({
+                            "symbol": symbol,
+                            "qty": data["quantity"],
+                            "avg_entry_price": avg_entry_price,
+                            "cost_basis": data["total_cost"],
+                            "trade_id": None,  # No trade linkage for calculated positions
+                            "source": "database"
+                        })
             
             # Get all symbols that have OPEN positions in OTHER funds of the SAME mode
             # (excluding current fund). We only filter positions from funds with the same mode
@@ -1672,17 +1729,129 @@ async def get_fund_positions(fund_id: str) -> dict:
                 symbol for symbol, mode in other_funds_positions
             }
         
-        # Filter out Alpaca positions that are already tracked by other funds
-        # These positions belong to other funds, so we shouldn't show them here
+        # Filter out Alpaca positions that are already tracked by other funds.
         filtered_alpaca_positions = [
-            pos for pos in alpaca_positions
-            if pos["symbol"] not in symbols_in_other_funds
+            pos for pos in alpaca_positions if pos["symbol"] not in symbols_in_other_funds
         ]
         
-        # Compare and detect sync issues (only for positions not in other funds)
-        alpaca_symbols = {p["symbol"] for p in filtered_alpaca_positions}
-        db_symbols = {p["symbol"] for p in db_positions}
+        # Build lookup tables for quick enrichment.
+        alpaca_lookup = {
+            pos["symbol"]: {
+                "symbol": pos["symbol"],
+                "qty": float(pos["qty"]) if pos.get("qty") is not None else None,
+                "avg_entry_price": float(pos["avg_entry_price"]) if pos.get("avg_entry_price") is not None else None,
+                "current_price": float(pos["current_price"]) if pos.get("current_price") is not None else None,
+                "market_value": float(pos["market_value"]) if pos.get("market_value") is not None else None,
+                "unrealized_pl": float(pos["unrealized_pl"]) if pos.get("unrealized_pl") is not None else None,
+                "unrealized_plpc": float(pos["unrealized_plpc"]) if pos.get("unrealized_plpc") is not None else None,
+            }
+            for pos in filtered_alpaca_positions
+        }
         
+        db_symbols = {p["symbol"] for p in db_positions}
+        alpaca_symbols = set(alpaca_lookup.keys())
+        
+        # Load related trades and orders for the database-backed positions.
+        trade_map: dict[str, dict] = {}
+        orders_by_symbol: dict[str, list[dict]] = defaultdict(list)
+
+        trade_ids = [pos["trade_id"] for pos in db_positions if pos.get("trade_id")]
+        if trade_ids or db_symbols:
+            async with get_async_session() as session:
+                if trade_ids:
+                    trade_stmt = select(Trade).where(Trade.id.in_(trade_ids))
+                    trade_result = await session.execute(trade_stmt)
+                    trade_map = {
+                        trade.id: serialize_trade(trade)
+                        for trade in trade_result.scalars().all()
+                    }
+
+                if db_symbols:
+                    orders_stmt = (
+                        select(Order)
+                        .where(
+                            Order.fund_id == fund_id,
+                            Order.symbol.in_(db_symbols),
+                        )
+                        .order_by(Order.submitted_at.desc())
+                    )
+                    orders_result = await session.execute(orders_stmt)
+                    for order in orders_result.scalars().all():
+                        orders_by_symbol[order.symbol].append(serialize_order(order))
+
+                # For calculated positions (no trade_id), try to find related trades
+                if not trade_ids and db_symbols:
+                    # Find open trades for symbols that have calculated positions
+                    open_trade_stmt = select(Trade).where(
+                        Trade.fund_id == fund_id,
+                        Trade.symbol.in_(db_symbols),
+                        Trade.status == "open"
+                    )
+                    open_trade_result = await session.execute(open_trade_stmt)
+                    for trade in open_trade_result.scalars().all():
+                        trade_map[trade.id] = serialize_trade(trade)
+                        # Link calculated positions to trades
+                        for pos in db_positions:
+                            if pos["symbol"] == trade.symbol and not pos.get("trade_id"):
+                                pos["trade_id"] = trade.id
+        
+        # Construct unified position details view.
+        position_details = []
+        for db_position in db_positions:
+            symbol = db_position["symbol"]
+            alpaca_snapshot = alpaca_lookup.get(symbol)
+            quantity = float(db_position["qty"])
+            avg_entry_price = float(db_position["avg_entry_price"]) if db_position.get("avg_entry_price") is not None else None
+            cost_basis = float(db_position["cost_basis"]) if db_position.get("cost_basis") is not None else None
+            
+            current_price = alpaca_snapshot["current_price"] if alpaca_snapshot else None
+            market_value = alpaca_snapshot["market_value"] if alpaca_snapshot else (
+                quantity * current_price if current_price is not None else None
+            )
+            unrealized_pl = alpaca_snapshot["unrealized_pl"] if alpaca_snapshot else (
+                (market_value - cost_basis) if (market_value is not None and cost_basis is not None) else None
+            )
+            unrealized_plpc = alpaca_snapshot["unrealized_plpc"] if alpaca_snapshot else (
+                (unrealized_pl / cost_basis * 100) if (unrealized_pl is not None and cost_basis not in (None, 0)) else None
+            )
+            
+            position_details.append({
+                "symbol": symbol,
+                "source": "database",
+                "quantity": quantity,
+                "avg_entry_price": avg_entry_price,
+                "cost_basis": cost_basis,
+                "trade_id": db_position.get("trade_id"),
+                "trade": trade_map.get(db_position.get("trade_id")),
+                "orders": orders_by_symbol.get(symbol, []),
+                "alpaca_snapshot": alpaca_snapshot,
+                "current_price": current_price,
+                "market_value": market_value,
+                "unrealized_pl": unrealized_pl,
+                "unrealized_plpc": unrealized_plpc,
+            })
+        
+        # Include Alpaca-only positions to highlight discrepancies.
+        for symbol in alpaca_symbols - db_symbols:
+            snapshot = alpaca_lookup[symbol]
+            orders = orders_by_symbol.get(symbol, [])
+            position_details.append({
+                "symbol": symbol,
+                "source": "alpaca_only",
+                "quantity": snapshot["qty"],
+                "avg_entry_price": snapshot["avg_entry_price"],
+                "cost_basis": None,
+                "trade_id": None,
+                "trade": None,
+                "orders": orders,
+                "alpaca_snapshot": snapshot,
+                "current_price": snapshot["current_price"],
+                "market_value": snapshot["market_value"],
+                "unrealized_pl": snapshot["unrealized_pl"],
+                "unrealized_plpc": snapshot["unrealized_plpc"],
+            })
+        
+        # Compare and detect sync issues (only for positions not in other funds).
         sync_issues = {
             "in_alpaca_not_db": list(alpaca_symbols - db_symbols),
             "in_db_not_alpaca": list(db_symbols - alpaca_symbols),
@@ -1694,8 +1863,10 @@ async def get_fund_positions(fund_id: str) -> dict:
             "is_running": engine is not None,
             "alpaca_positions": filtered_alpaca_positions,
             "database_positions": db_positions,
+            "position_details": position_details,
             "sync_issues": sync_issues,
             "has_sync_issues": bool(sync_issues["in_alpaca_not_db"] or sync_issues["in_db_not_alpaca"]),
+            "last_updated": get_current_time().isoformat(),
         }
     
     except HTTPException:
@@ -1703,6 +1874,87 @@ async def get_fund_positions(fund_id: str) -> dict:
     except Exception as e:
         logger.error(f"Error getting positions for fund {fund_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/funds/{fund_id}/positions/{symbol}/liquidate")
+async def liquidate_fund_position(
+    fund_id: str,
+    symbol: str,
+    request: Optional[LiquidatePositionRequest] = Body(None),
+) -> dict:
+    """
+    Liquidate (close) an open position for a fund by submitting a market order
+    in the opposite direction via the existing manual order flow.
+    """
+    normalized_symbol = symbol.strip().upper()
+    if not normalized_symbol:
+        raise HTTPException(status_code=400, detail="Symbol is required")
+    
+    payload = request or LiquidatePositionRequest()
+    time_in_force = (payload.time_in_force or "day").lower()
+    if time_in_force not in {"day", "gtc", "ioc", "fok"}:
+        raise HTTPException(status_code=400, detail="Invalid time_in_force value")
+    
+    async with get_async_session() as session:
+        position_stmt = (
+            select(Position)
+            .where(
+                Position.fund_id == fund_id,
+                Position.symbol == normalized_symbol,
+            )
+        )
+        result = await session.execute(position_stmt)
+        position = result.scalar_one_or_none()
+    
+    if not position:
+        raise HTTPException(status_code=404, detail="Position not found")
+    
+    available_quantity = float(position.quantity)
+    if available_quantity == 0:
+        raise HTTPException(status_code=400, detail="Position already closed")
+    
+    # Determine liquidation direction (supporting potential short positions).
+    if available_quantity > 0:
+        side = "sell"
+        max_liquidatable = available_quantity
+    else:
+        side = "buy"
+        max_liquidatable = abs(available_quantity)
+    
+    if payload.quantity is not None:
+        try:
+            quantity_to_close = float(payload.quantity)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="Quantity must be numeric")
+        if quantity_to_close <= 0:
+            raise HTTPException(status_code=400, detail="Quantity must be positive")
+        if quantity_to_close - max_liquidatable > FLOAT_COMPARISON_EPSILON:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Requested quantity exceeds available position ({max_liquidatable:.4f})",
+            )
+    else:
+        quantity_to_close = max_liquidatable
+    
+    order_request = ManualOrderRequest(
+        symbol=normalized_symbol,
+        side=side,
+        quantity=quantity_to_close,
+        time_in_force=time_in_force,
+    )
+    
+    order_response = await place_manual_order(fund_id, order_request)
+    order = order_response.get("order")
+    
+    return {
+        "order": order,
+        "position": {
+            "symbol": normalized_symbol,
+            "quantity_before": available_quantity,
+            "quantity_liquidated": quantity_to_close * (1 if side == "sell" else -1),
+            "quantity_remaining": available_quantity - quantity_to_close if side == "sell" else available_quantity + quantity_to_close,
+        },
+    }
 
 
 async def _recreate_missing_trade(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from typing import Optional
 from datetime import datetime
 from dotenv import load_dotenv
@@ -45,7 +46,6 @@ logger = logging.getLogger("app.main")
 
 def _configure_logging():
     """Configure logging format and remove duplicate handlers."""
-    import sys
     
     # Remove ALL existing handlers to start fresh
     # This prevents uvicorn from adding duplicate handlers
@@ -57,7 +57,7 @@ def _configure_logging():
     formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
     
     # Add a single handler with our format
-    handler = logging.StreamHandler(sys.stderr)
+    handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(formatter)
     logging.root.addHandler(handler)
     logging.root.setLevel(logging.INFO)
@@ -77,7 +77,11 @@ def _configure_logging():
 # Configure logging at module load - but we'll reconfigure in startup to remove duplicates
 # This ensures basic logging works even if startup event doesn't fire
 if not logging.root.handlers:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        stream=sys.stdout,
+    )
 
 
 @app.middleware("http")

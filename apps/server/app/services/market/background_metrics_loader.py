@@ -11,12 +11,13 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
-from sqlalchemy import text, select
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.models.market_data import MarketData
 from app.services.core.database import get_async_session
-from app.services.market.metrics_calculator import METRIC_FIELDS, MetricsCalculator, METRIC_TIMESCALES, is_metrics_timescale
+from app.services.market.metrics_calculator import METRIC_FIELDS, MetricsCalculator
 
 
 logger = logging.getLogger("app.market.background_metrics_loader")
@@ -46,8 +47,10 @@ class BackgroundMetricsLoader:
     def __init__(
         self,
         batch_size: int = 5000,  # Large batches for efficiency
+        min_history_bars: int = 100,  # Skip first N bars where long-window metrics are unavailable
     ):
         self.batch_size = batch_size
+        self._min_history_bars = min_history_bars
         self._calculator = MetricsCalculator()
 
     async def process_daily_data(self) -> ProcessingStats:
@@ -79,18 +82,57 @@ class BackgroundMetricsLoader:
         # Find symbols with missing metrics
         targets = await self._find_targets()
         stats.symbols_scanned = len(targets)
+        total_missing_bars = sum(missing_count for _, _, missing_count in targets)
+
+        if stats.symbols_scanned:
+            logger.info(
+                "BackgroundMetricsLoader _process_cycle found %d symbols with %d missing bars",
+                stats.symbols_scanned,
+                total_missing_bars,
+            )
 
         if not targets:
             logger.info("BackgroundMetricsLoader _process_cycle completed: no targets")
             return stats
 
         # Process each target symbol
-        for symbol, timescale, missing_count in targets:
-            logger.info("BackgroundMetricsLoader _process_cycle processing symbol: %s/%s", symbol, timescale)
+        for index, (symbol, timescale, missing_count) in enumerate(targets, start=1):
+            logger.info(
+                (
+                    "BackgroundMetricsLoader progress: processing %s/%s "
+                    "(%d of %d symbols, %.1f%%), %d missing bars"
+                ),
+                symbol,
+                timescale,
+                index,
+                stats.symbols_scanned,
+                (index / stats.symbols_scanned) * 100.0,
+                missing_count,
+            )
 
             try:
                 processed = await self._process_symbol(symbol, timescale)
                 stats.bars_processed += processed
+                stats.metrics_calculated += processed * len(METRIC_FIELDS)
+                stats.database_updates += processed
+
+                bar_progress = (
+                    (stats.bars_processed / total_missing_bars) * 100.0
+                    if total_missing_bars
+                    else 100.0
+                )
+                logger.info(
+                    (
+                        "BackgroundMetricsLoader progress: completed %s/%s "
+                        "(%d bars this symbol, %d total, %.1f%% of %d target bars)"
+                    ),
+                    symbol,
+                    timescale,
+                    processed,
+                    stats.bars_processed,
+                    bar_progress,
+                    total_missing_bars,
+                )
 
                 if processed > 0:
                     logger.debug(
@@ -119,32 +161,59 @@ class BackgroundMetricsLoader:
         Returns:
             List of (symbol, timescale, missing_count) tuples, ordered by missing_count DESC.
         """
-        # Build condition for any metric field being NULL
-        metric_conditions = " OR ".join(f"{field} IS NULL" for field in METRIC_FIELDS)
+        ordered_bars = (
+            select(
+                MarketData.symbol.label("symbol"),
+                MarketData.timescale.label("timescale"),
+                MarketData.time.label("time"),
+                func.count()
+                .over(
+                    partition_by=(MarketData.symbol, MarketData.timescale),
+                )
+                .label("total_bars"),
+                func.row_number()
+                .over(
+                    partition_by=(MarketData.symbol, MarketData.timescale),
+                    order_by=MarketData.time.asc(),
+                )
+                .label("bar_index"),
+            )
+            .subquery()
+        )
 
-        stmt = text(f"""
-            SELECT
-                symbol,
-                timescale,
-                COUNT(*) as missing_count
-            FROM market_data
-            WHERE ({metric_conditions})
-              AND timescale = '1day'
-            GROUP BY symbol, timescale
-            ORDER BY missing_count DESC
-        """)
+        md_alias = aliased(MarketData)
+        metric_conditions_expr = or_(
+            *[getattr(md_alias, field).is_(None) for field in METRIC_FIELDS]
+        )
+
+        stmt = (
+            select(
+                ordered_bars.c.symbol,
+                ordered_bars.c.timescale,
+                func.count().label("missing_count"),
+            )
+            .select_from(
+                ordered_bars.join(
+                    md_alias,
+                    (md_alias.symbol == ordered_bars.c.symbol)
+                    & (md_alias.timescale == ordered_bars.c.timescale)
+                    & (md_alias.time == ordered_bars.c.time),
+                )
+            )
+            .where(
+                ordered_bars.c.timescale == '1day',
+                ordered_bars.c.bar_index > self._min_history_bars,
+                metric_conditions_expr,
+            )
+            .group_by(ordered_bars.c.symbol, ordered_bars.c.timescale)
+            .order_by(func.count().desc())
+        )
 
         async with get_async_session() as session:
             result = await session.execute(stmt)
-            rows = result.fetchall()
+            rows = result.all()
 
-        targets = []
-        for row in rows:
-            symbol, timescale, missing_count = row
-            if timescale == '1day':
-                targets.append((symbol, timescale, missing_count))
-
-        return targets
+        return [(row.symbol, row.timescale, row.missing_count) for row in rows]
 
     async def _process_symbol(
         self,
@@ -207,20 +276,48 @@ class BackgroundMetricsLoader:
         return processed
 
     async def _find_missing_bars(
-        self,
-        symbol: str,
-        timescale: str
+    self,
+    symbol: str,
+    timescale: str
     ) -> List[MarketData]:
         """Find bars missing metrics for a symbol/timescale (all historical data)."""
-        # Build condition for any metric field being NULL
-        metric_conditions = " OR ".join(f"{field} IS NULL" for field in METRIC_FIELDS)
+        ordered_bars = (
+            select(
+                MarketData.symbol.label("symbol"),
+                MarketData.timescale.label("timescale"),
+                MarketData.time.label("time"),
+                func.count()
+                .over(
+                    partition_by=(MarketData.symbol, MarketData.timescale),
+                )
+                .label("total_bars"),
+                func.row_number()
+                .over(
+                    partition_by=(MarketData.symbol, MarketData.timescale),
+                    order_by=MarketData.time.asc(),
+                )
+                .label("bar_index"),
+            )
+            .subquery()
+        )
+
+        metric_conditions_expr = or_(
+            *[getattr(MarketData, field).is_(None) for field in METRIC_FIELDS]
+        )
 
         stmt = (
             select(MarketData)
+            .join(
+                ordered_bars,
+                (MarketData.symbol == ordered_bars.c.symbol)
+                & (MarketData.timescale == ordered_bars.c.timescale)
+                & (MarketData.time == ordered_bars.c.time),
+            )
             .where(
                 MarketData.symbol == symbol,
-                MarketData.timescale == '1day',
-                text(f"({metric_conditions})")
+                MarketData.timescale == timescale,
+                ordered_bars.c.bar_index > self._min_history_bars,
+                metric_conditions_expr,
             )
             .order_by(MarketData.time.asc())
         )

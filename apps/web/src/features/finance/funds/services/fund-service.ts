@@ -477,6 +477,92 @@ export const fundService = {
     };
   },
 
+  async liquidatePosition(
+    fundId: string,
+    symbol: string,
+    options?: {
+      quantity?: number;
+      timeInForce?: "day" | "gtc" | "ioc" | "fok";
+    }
+  ): Promise<{
+    order: FundOrder | null;
+    position: {
+      symbol: string;
+      quantityBefore: number | null;
+      quantityLiquidated: number | null;
+      quantityRemaining: number | null;
+    };
+  }> {
+    const payload: Record<string, unknown> = {};
+
+    if (typeof options?.quantity === "number") {
+      payload.quantity = options.quantity;
+    }
+    if (options?.timeInForce) {
+      payload.time_in_force = options.timeInForce;
+    }
+
+    const response = await fetch(
+      `${API_BASE}/api/funds/${fundId}/positions/${symbol}/liquidate`,
+      {
+        method: "POST",
+        headers:
+          Object.keys(payload).length > 0
+            ? {
+                "Content-Type": "application/json",
+              }
+            : undefined,
+        body:
+          Object.keys(payload).length > 0
+            ? JSON.stringify(payload)
+            : undefined,
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => null);
+      throw new Error(error?.detail || "Failed to liquidate position");
+    }
+
+    const data = await response.json();
+    const order = data.order;
+
+    const parsedOrder: FundOrder | null = order
+      ? {
+          id: order.id,
+          symbol: order.symbol,
+          side: order.side,
+          quantity: Number(order.quantity ?? 0),
+          status: order.status,
+          orderType: order.order_type,
+          submittedAt: order.submitted_at,
+          filledAt: order.filled_at,
+          filledQty: order.filled_qty,
+          filledAvgPrice: order.filled_avg_price,
+          alpacaOrderId: order.alpaca_order_id,
+        }
+      : null;
+
+    return {
+      order: parsedOrder,
+      position: {
+        symbol: data.position?.symbol ?? symbol,
+        quantityBefore:
+          typeof data.position?.quantity_before === "number"
+            ? data.position.quantity_before
+            : null,
+        quantityLiquidated:
+          typeof data.position?.quantity_liquidated === "number"
+            ? data.position.quantity_liquidated
+            : null,
+        quantityRemaining:
+          typeof data.position?.quantity_remaining === "number"
+            ? data.position.quantity_remaining
+            : null,
+      },
+    };
+  },
+
   /**
    * Unarchive a fund (show in main list)
    */

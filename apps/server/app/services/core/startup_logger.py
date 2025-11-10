@@ -6,7 +6,7 @@ Provides consistent, color-coded logging for the startup process.
 
 import os
 import sys
-from typing import Optional
+from typing import Optional, TextIO
 from enum import Enum
 
 
@@ -39,13 +39,14 @@ class Colors:
 class StartupLogger:
     """Enhanced logger for startup process with color support."""
     
-    def __init__(self, use_colors: bool = True):
+    def __init__(self, use_colors: bool = True, stream: Optional[TextIO] = None):
         """
         Initialize startup logger.
         
         Args:
             use_colors: Whether to use ANSI color codes (default: True)
         """
+        target_stream: TextIO = stream or sys.stdout
         # Check environment variables for color control
         no_color_env = os.getenv("NO_COLOR", "").lower() in ("1", "true", "yes")
         force_color_env = os.getenv("FORCE_COLOR", "").lower() in ("1", "true", "yes")
@@ -56,7 +57,8 @@ class StartupLogger:
         elif no_color_env:
             self.use_colors = False
         else:
-            self.use_colors = use_colors and sys.stderr.isatty()
+            self.use_colors = use_colors and bool(getattr(target_stream, "isatty", lambda: False)())
+        self.stream: TextIO = target_stream
         self.phase: Optional[str] = None
     
     def _colorize(self, text: str, color: str) -> str:
@@ -91,13 +93,13 @@ class StartupLogger:
 ║                                                               ║
 ╚═══════════════════════════════════════════════════════════════╝
         """
-        print(self._colorize(banner.strip(), Colors.CYAN), file=sys.stderr)
-        print("", file=sys.stderr)
+        print(self._colorize(banner.strip(), Colors.CYAN), file=self.stream, flush=True)
+        print("", file=self.stream, flush=True)
     
     def start_phase(self, phase_name: str) -> None:
         """Start a new startup phase."""
         self.phase = phase_name
-        print(self._colorize(f"[STARTUP] Phase: {phase_name}", Colors.BOLD + Colors.CYAN), file=sys.stderr)
+        print(self._colorize(f"[STARTUP] Phase: {phase_name}", Colors.BOLD + Colors.CYAN), file=self.stream, flush=True)
     
     def log_service(self, service_name: str, status: Status, details: Optional[str] = None) -> None:
         """
@@ -115,7 +117,7 @@ class StartupLogger:
         if details:
             message += f" {self._colorize(f'({details})', Colors.DIM)}"
         
-        print(message, file=sys.stderr)
+        print(message, file=self.stream, flush=True)
     
     def log_error(self, service_name: str, error: Exception, details: Optional[str] = None) -> None:
         """
@@ -130,12 +132,12 @@ class StartupLogger:
         if details:
             error_msg += f" {self._colorize(f'({details})', Colors.DIM)}"
         
-        print(error_msg, file=sys.stderr)
-        print(self._colorize(f"[STARTUP]   ERROR: {str(error)}", Colors.RED), file=sys.stderr)
+        print(error_msg, file=self.stream, flush=True)
+        print(self._colorize(f"[STARTUP]   ERROR: {str(error)}", Colors.RED), file=self.stream, flush=True)
         
         # Print traceback if available
         import traceback
-        traceback.print_exc()
+        traceback.print_exc(file=self.stream)
     
     def log_summary(
         self,
@@ -160,13 +162,13 @@ class StartupLogger:
             warnings: Optional list of warning messages
         """
         separator = "=" * 60
-        print(self._colorize(f"[STARTUP] {separator}", Colors.BOLD + Colors.CYAN), file=sys.stderr)
-        print(self._colorize(f"[STARTUP] Startup Complete ({total_time:.2f}s)", Colors.BOLD + Colors.GREEN), file=sys.stderr)
+        print(self._colorize(f"[STARTUP] {separator}", Colors.BOLD + Colors.CYAN), file=self.stream, flush=True)
+        print(self._colorize(f"[STARTUP] Startup Complete ({total_time:.2f}s)", Colors.BOLD + Colors.GREEN), file=self.stream, flush=True)
         
         # Build services status line - only show non-zero counts
         # If all OK (no skips, no failures), just say "All OK"
         if services_fail == 0 and services_skip == 0:
-            print(f"[STARTUP] Services: {self._colorize('All OK', Colors.GREEN)}", file=sys.stderr)
+            print(f"[STARTUP] Services: {self._colorize('All OK', Colors.GREEN)}", file=self.stream, flush=True)
         else:
             # Show only non-zero counts
             service_parts = []
@@ -176,18 +178,18 @@ class StartupLogger:
                 service_parts.append(self._colorize(f"{services_skip} SKIP", Colors.YELLOW))
             if services_fail > 0:
                 service_parts.append(self._colorize(f"{services_fail} FAIL", Colors.RED))
-            print(f"[STARTUP] Services: {', '.join(service_parts)}", file=sys.stderr)
+            print(f"[STARTUP] Services: {', '.join(service_parts)}", file=self.stream, flush=True)
         
-        print(f"[STARTUP] Health: {self._colorize(health_status, Colors.GREEN)}", file=sys.stderr)
-        print(f"[STARTUP] Active Funds: {self._colorize(str(active_funds), Colors.CYAN)}", file=sys.stderr)
+        print(f"[STARTUP] Health: {self._colorize(health_status, Colors.GREEN)}", file=self.stream, flush=True)
+        print(f"[STARTUP] Active Funds: {self._colorize(str(active_funds), Colors.CYAN)}", file=self.stream, flush=True)
         
         if warnings:
-            print(self._colorize(f"[STARTUP] Warnings: {len(warnings)}", Colors.YELLOW), file=sys.stderr)
+            print(self._colorize(f"[STARTUP] Warnings: {len(warnings)}", Colors.YELLOW), file=self.stream, flush=True)
             for warning in warnings:
-                print(f"[STARTUP]   - {warning}", file=sys.stderr)
+                print(f"[STARTUP]   - {warning}", file=self.stream, flush=True)
         
-        print(self._colorize(f"[STARTUP] {separator}", Colors.BOLD + Colors.CYAN), file=sys.stderr)
-        print("", file=sys.stderr)
+        print(self._colorize(f"[STARTUP] {separator}", Colors.BOLD + Colors.CYAN), file=self.stream, flush=True)
+        print("", file=self.stream, flush=True)
 
 
 # Global instance

@@ -27,6 +27,10 @@ import {
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
+import { FundTransaction, FundTransfer } from "../types";
+
+import { StrategyEngineEventsModal } from "./strategy-engine-events-modal";
+
 import { Badge } from "@/lib/components/ui/badge";
 import { Button } from "@/lib/components/ui/button";
 import {
@@ -58,9 +62,6 @@ import {
   TabsTrigger,
 } from "@/lib/components/ui/tabs";
 import { useUrlTabs } from "@/lib/hooks/use-url-tabs";
-
-import { FundTransaction, FundTransfer } from "../types";
-import { StrategyEngineEventsModal } from "./strategy-engine-events-modal";
 
 interface FundLedgerProps {
   fundId: string;
