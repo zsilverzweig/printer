@@ -10,8 +10,9 @@ from datetime import datetime, timezone, timedelta, date
 from typing import List, Dict, Any, Optional
 
 from app.services.core.time_context import get_current_time
-from sqlalchemy import text
+from sqlalchemy import text, select
 from app.services.core.database import get_async_session
+from app.models.assets import TickerDetails
 
 logger = logging.getLogger("app.screener.data.unified")
 
@@ -208,146 +209,169 @@ async def fetch_screener_data_unified(
                 price_time = (get_current_time() - start_time).total_seconds()
                 logger.debug(f"[UNIFIED] Got {len(price_data)} symbols with live trades ({price_time:.2f}s)")
             
-            # STEP 3: Fetch pre-calculated metrics from market_data
-            start_time = get_current_time()
             symbols_list = list(daily_data.keys())
 
-            window_start = day_end - timedelta(days=120)
+            # Determine reference time for intraday calculations
+            reference_time = target_timestamp if target_timestamp else get_current_time()
+            if reference_time.tzinfo is None:
+                reference_time = reference_time.replace(tzinfo=timezone.utc)
 
-            metrics_stmt = text("""
-                WITH daily_metrics AS (
-                    SELECT
-                        symbol,
-                        time::date AS date,
-                        rv14,
-                        rv30,
-                        rv60,
-                        sma_20,
-                        sma_50,
-                        sma_200,
-                        rsi_14,
-                        macd_line,
-                        macd_signal,
-                        macd_histogram,
-                        bb_upper,
-                        bb_middle,
-                        bb_lower,
-                        atr_14,
-                        volume_ma_20,
-                        MAX(high) OVER (
-                            PARTITION BY symbol
-                            ORDER BY time
-                            RANGE BETWEEN INTERVAL '90 day' PRECEDING AND CURRENT ROW
-                        ) AS high_90d,
-                        MIN(low) OVER (
-                            PARTITION BY symbol
-                            ORDER BY time
-                            RANGE BETWEEN INTERVAL '90 day' PRECEDING AND CURRENT ROW
-                        ) AS low_90d
+            today_start = datetime.combine(reference_time.date(), datetime.min.time(), tzinfo=timezone.utc)
+            if reference_time < today_start:
+                reference_time = today_start
+
+            elapsed_today = reference_time - today_start
+            week_ago_date = reference_time.date() - timedelta(days=7)
+            week_ago_start = datetime.combine(week_ago_date, datetime.min.time(), tzinfo=timezone.utc)
+            week_ago_end = week_ago_start + elapsed_today
+            if week_ago_end > week_ago_start + timedelta(days=1):
+                week_ago_end = week_ago_start + timedelta(days=1)
+
+            trailing_start = today_start - timedelta(days=14)
+
+            today_volume_map: Dict[str, float] = {}
+            trailing_volume_map: Dict[str, float] = {}
+            week_ago_volume_map: Dict[str, float] = {}
+            ticker_details_map: Dict[str, Dict[str, Any]] = {}
+
+            if symbols_list:
+                # Query today's accumulated volume using hourly bars (fallback to 0 if missing)
+                today_stmt = text("""
+                    SELECT symbol, COALESCE(SUM(volume), 0) AS volume
+                    FROM market_data
+                    WHERE timescale = '1hour'
+                      AND symbol = ANY(:symbols)
+                      AND time >= :start_time
+                      AND time < :end_time
+                    GROUP BY symbol
+                """)
+
+                today_result = await session.execute(
+                    today_stmt,
+                    {
+                        "symbols": symbols_list,
+                        "start_time": today_start,
+                        "end_time": reference_time,
+                    },
+                )
+                for row in today_result:
+                    today_volume_map[row[0]] = float(row[1]) if row[1] else 0.0
+
+                # Query trailing 14 calendar days of volume (excluding today)
+                trailing_stmt = text("""
+                    SELECT symbol, COALESCE(SUM(volume), 0) AS volume
                     FROM market_data
                     WHERE timescale = '1day'
                       AND symbol = ANY(:symbols)
-                      AND time >= :window_start
-                      AND time < :day_end
-                )
-                SELECT *
-                FROM daily_metrics
-                WHERE date = :prev_trading_day
-            """)
+                      AND time >= :start_time
+                      AND time < :end_time
+                    GROUP BY symbol
+                """)
 
-            result = await session.execute(
-                metrics_stmt,
-                {
-                    "symbols": symbols_list,
-                    "window_start": window_start,
-                    "day_end": day_end,
-                    "prev_trading_day": prev_trading_day,
-                },
+                trailing_result = await session.execute(
+                    trailing_stmt,
+                    {
+                        "symbols": symbols_list,
+                        "start_time": trailing_start,
+                        "end_time": today_start,
+                    },
+                )
+                for row in trailing_result:
+                    trailing_volume_map[row[0]] = float(row[1]) if row[1] else 0.0
+
+                # Query same-day volume from one week ago using hourly bars up to matching time
+                week_stmt = text("""
+                    SELECT symbol, COALESCE(SUM(volume), 0) AS volume
+                    FROM market_data
+                    WHERE timescale = '1hour'
+                      AND symbol = ANY(:symbols)
+                      AND time >= :start_time
+                      AND time < :end_time
+                    GROUP BY symbol
+                """)
+
+                week_result = await session.execute(
+                    week_stmt,
+                    {
+                        "symbols": symbols_list,
+                        "start_time": week_ago_start,
+                        "end_time": week_ago_end,
+                    },
+                )
+                for row in week_result:
+                    week_ago_volume_map[row[0]] = float(row[1]) if row[1] else 0.0
+
+                # Fetch ticker fundamentals from TickerDetails
+                details_result = await session.execute(
+                    select(
+                        TickerDetails.symbol,
+                        TickerDetails.type,
+                        TickerDetails.primary_exchange,
+                        TickerDetails.sic_description,
+                        TickerDetails.market_cap,
+                        TickerDetails.public_float,
+                    ).where(TickerDetails.symbol.in_(symbols_list))
+                )
+
+                for row in details_result:
+                    mapping = row._mapping
+                    ticker_details_map[mapping["symbol"]] = {
+                        "type": mapping["type"],
+                        "primary_exchange": mapping["primary_exchange"],
+                        "sic_description": mapping["sic_description"],
+                        "market_cap": mapping["market_cap"],
+                        "public_float": mapping["public_float"],
+                    }
+
+            logger.info(
+                f"[UNIFIED] Combining {len(daily_data)} symbols with volume statistics, "
+                f"applying RV filter={min_relative_volume}"
             )
-
-            # Build metrics map
-            metrics_map = {}
-            for row in result:
-                mapping = row._mapping
-                symbol = mapping["symbol"]
-                metrics_map[symbol] = {
-                    "rv14": float(mapping["rv14"]) if mapping["rv14"] else 0.0,
-                    "rv30": float(mapping["rv30"]) if mapping["rv30"] else 0.0,
-                    "rv60": float(mapping["rv60"]) if mapping["rv60"] else 0.0,
-                    "high_90d": float(mapping["high_90d"]) if mapping["high_90d"] else None,
-                    "low_90d": float(mapping["low_90d"]) if mapping["low_90d"] else None,
-                    "sma_20": float(mapping["sma_20"]) if mapping["sma_20"] else None,
-                    "sma_50": float(mapping["sma_50"]) if mapping["sma_50"] else None,
-                    "sma_200": float(mapping["sma_200"]) if mapping["sma_200"] else None,
-                    "rsi_14": float(mapping["rsi_14"]) if mapping["rsi_14"] else None,
-                    "macd_line": float(mapping["macd_line"]) if mapping["macd_line"] else None,
-                    "macd_signal": float(mapping["macd_signal"]) if mapping["macd_signal"] else None,
-                    "macd_histogram": float(mapping["macd_histogram"]) if mapping["macd_histogram"] else None,
-                    "bb_upper": float(mapping["bb_upper"]) if mapping["bb_upper"] else None,
-                    "bb_middle": float(mapping["bb_middle"]) if mapping["bb_middle"] else None,
-                    "bb_lower": float(mapping["bb_lower"]) if mapping["bb_lower"] else None,
-                    "atr_14": float(mapping["atr_14"]) if mapping["atr_14"] else None,
-                    "volume_ma_20": float(mapping["volume_ma_20"]) if mapping["volume_ma_20"] else None,
-                }
-            
-            metrics_time = (get_current_time() - start_time).total_seconds()
-            logger.info(f"[UNIFIED] Got metrics for {len(metrics_map)}/{len(symbols_list)} symbols ({metrics_time:.2f}s)")
-            
-            if len(metrics_map) == 0 and mode == "historical":
-                logger.error(
-                    f"[UNIFIED] ❌ No metrics found for {prev_trading_day} (historical mode). "
-                    f"Ensure market_data metrics are populated for this date before backtesting. "
-                    f"RV filter requires metrics to function."
-                )
-            
-            # STEP 4: For LIVE mode, calculate RV14 using TODAY's accumulated volume vs 14-day average
-            # This is critical: we should use TODAY's volume for TODAY's screening, not yesterday's!
-            # Metrics are sourced directly from market_data; no live recalculation needed.
-            
-            # STEP 5: Combine into snapshot format and apply filters (in-memory, very fast)
-            logger.info(f"[UNIFIED] Combining {len(daily_data)} symbols with metrics, applying RV filter={min_relative_volume}")
             snapshots = []
             filtered_by_rv = 0
             filtered_by_no_close = 0
-            symbols_without_metrics = 0
-            
+
             for symbol, daily in daily_data.items():
-                # Skip if no daily close
                 if not daily.get("close"):
                     filtered_by_no_close += 1
                     continue
-                
-                # Get metrics for this symbol
-                metrics = metrics_map.get(symbol, {})
-                if not metrics:
-                    symbols_without_metrics += 1
-                
-                # Apply relative volume filter if specified
-                if min_relative_volume is not None:
-                    rv14 = metrics.get("rv14", 0.0)
-                    if rv14 < min_relative_volume:
-                        filtered_by_rv += 1
-                        continue
-                
-                # Get current price (use 5min/live, or fallback to daily close)
+
+                today_volume = today_volume_map.get(symbol, 0.0)
+                trailing_volume = trailing_volume_map.get(symbol, 0.0)
+                week_ago_volume = week_ago_volume_map.get(symbol, 0.0)
+
+                rv14_value = (today_volume / trailing_volume) if trailing_volume else 0.0
+                rv_last_week = (today_volume / week_ago_volume) if week_ago_volume else 0.0
+
+                if min_relative_volume is not None and rv14_value < min_relative_volume:
+                    filtered_by_rv += 1
+                    continue
+
                 current_price = price_data.get(symbol) or daily["close"]
-                
+                details = ticker_details_map.get(symbol, {})
+
                 snapshot = {
                     "ticker": symbol,
                     "price": current_price,
+                    "last_trade_price": current_price,
                     "volume": daily["volume"],
+                    "today_vol": today_volume,
+                    "rv14": rv14_value,
+                    "rv_lw": rv_last_week,
                     "day": {
                         "o": daily["open"],
                         "h": daily["high"],
                         "l": daily["low"],
                         "c": daily["close"],
                         "v": daily["volume"],
-                    }
+                    },
+                    "type": details.get("type"),
+                    "primary_exchange": details.get("primary_exchange"),
+                    "sic_description": details.get("sic_description"),
+                    "market_cap": details.get("market_cap"),
+                    "public_float": details.get("public_float"),
                 }
-                
-                # Add pre-calculated metrics
-                snapshot.update(metrics)
-                
+
                 snapshots.append(snapshot)
             
             if filtered_by_rv > 0:
@@ -357,12 +381,6 @@ async def fetch_screener_data_unified(
                 )
             if filtered_by_no_close > 0:
                 logger.debug(f"[UNIFIED] Skipped {filtered_by_no_close} symbols without daily close")
-            if symbols_without_metrics > 0 and mode == "historical":
-                logger.warning(
-                    f"[UNIFIED] {symbols_without_metrics} symbols have no metrics "
-                    f"(metrics not calculated for {prev_trading_day})"
-                )
-            
             # Single summary log
             logger.info(f"[UNIFIED] {len(snapshots)} snapshots ready")
             return snapshots

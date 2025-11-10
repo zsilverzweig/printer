@@ -334,22 +334,22 @@ class ScreenerHistorical:
                     {
                         "ticker": entry["ticker"],
                         "price": entry["current_price"],
+                        "last_trade_price": entry["current_price"],
                         "prev_open": entry["prior_open"],
                         "prev_high": entry["prior_high"],
                         "prev_low": entry["prior_low"],
                         "prev_close": entry["prior_close"],
                         "prev_volume": entry["prior_volume"],
-                        "rv14": _to_float(snapshot.get("rv14")),
-                        "rv30": _to_float(snapshot.get("rv30")),
-                        "volume_ma_20": _to_float(snapshot.get("volume_ma_20")),
-                        "rsi_14": _to_float(snapshot.get("rsi_14")),
-                        "sma_50": _to_float(snapshot.get("sma_50")),
-                        "sma_200": _to_float(snapshot.get("sma_200")),
+                        "today_vol": _to_float(snapshot.get("today_vol")) or 0.0,
+                        "rv14": _to_float(snapshot.get("rv14")) or 0.0,
+                        "rv_lw": _to_float(snapshot.get("rv_lw")) or 0.0,
                         "change_close": entry["change_close"],
                         "change_close_pct": entry["change_close_pct"],
-                        "change_1m": None,
-                        "change_5m": None,
-                        "change_1h": None,
+                        "type": snapshot.get("type"),
+                        "primary_exchange": snapshot.get("primary_exchange") or snapshot.get("exchange"),
+                        "sic_description": snapshot.get("sic_description"),
+                        "market_cap": snapshot.get("market_cap"),
+                        "public_float": snapshot.get("public_float"),
                     }
                 )
 
@@ -384,6 +384,8 @@ class ScreenerHistorical:
 
             sort_key = {
                 "rv14": lambda x: x.get("rv14") or 0.0,
+                "rv_lw": lambda x: x.get("rv_lw") or 0.0,
+                "today_vol": lambda x: x.get("today_vol") or 0.0,
                 "avg_volume": lambda x: x.get("prev_volume") or 0.0,
                 "change_close": lambda x: x.get("change_close", 0.0),
             }.get(order_by, lambda x: x.get("rv14") or 0.0)

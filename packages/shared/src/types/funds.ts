@@ -107,7 +107,7 @@ export interface ScreeningCriteriaParams {
   max_change_percent?: number; // Max % change from yesterday's close
   min_relative_volume?: number; // Minimum RV14 filter
   exclude_etfs?: boolean; // Whether to exclude ETFs (default true)
-  order_by?: string; // Sort field: "rv14" | "rv30" | "rv60" | "avg_volume"
+  order_by?: string; // Sort field: "rv14" | "rv_lw" | "today_vol" | "avg_volume"
   limit?: number; // Max results to return
 
   // Technical analysis filters
@@ -149,22 +149,22 @@ export interface ScreenerFilterBreakdownStep {
 export interface ScreenerResultRow {
   ticker: string;
   price: number;
+  last_trade_price?: number | null;
   prev_open: number;
   prev_high: number;
   prev_low: number;
   prev_close: number;
   prev_volume: number;
+  today_vol?: number | null;
   rv14?: number | null;
-  rv30?: number | null;
-  volume_ma_20?: number | null;
-  rsi_14?: number | null;
-  sma_50?: number | null;
-  sma_200?: number | null;
+  rv_lw?: number | null;
   change_close?: number | null;
   change_close_pct?: number | null;
-  change_1m?: number | null;
-  change_5m?: number | null;
-  change_1h?: number | null;
+  type?: string | null;
+  primary_exchange?: string | null;
+  sic_description?: string | null;
+  market_cap?: number | null;
+  public_float?: number | null;
 }
 
 export interface ScreenerRunResult {

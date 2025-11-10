@@ -82,45 +82,55 @@ def extract_snapshot_data(snapshot: Any) -> Dict[str, Any]:
         "ticker": None,
         "price": None,
         "volume": None,
+        "today_vol": None,
         "exchange": None,
+        "primary_exchange": None,
     }
     
     if isinstance(snapshot, dict):
         result["ticker"] = snapshot.get("ticker") or snapshot.get("T")
         
         # Try direct price field first (from TimescaleDB snapshots), then lastTrade
-        result["price"] = snapshot.get("price")
+        price_candidates = [
+            snapshot.get("last_trade_price"),
+            snapshot.get("price"),
+        ]
+        result["price"] = next((p for p in price_candidates if p is not None), None)
         if result["price"] is None:
             last_trade = snapshot.get("lastTrade") or snapshot.get("last_trade") or {}
             result["price"] = (
                 (last_trade.get("price") if isinstance(last_trade, dict) else None) or
                 (last_trade.get("p") if isinstance(last_trade, dict) else None)
             )
-        
+
         day = snapshot.get("day") or {}
         result["volume"] = (
             (day.get("volume") if isinstance(day, dict) else None) or
             (day.get("v") if isinstance(day, dict) else None)
         )
-        
+        result["today_vol"] = snapshot.get("today_vol")
+
         result["exchange"] = (
             snapshot.get("primary_exchange") or
             snapshot.get("exchange") or
             snapshot.get("primaryExchange")
         )
+        result["primary_exchange"] = snapshot.get("primary_exchange") or snapshot.get("primaryExchange")
     else:
         result["ticker"] = getattr(snapshot, "ticker", None) or getattr(snapshot, "T", None)
-        
+
         last_trade = getattr(snapshot, "last_trade", None)
         result["price"] = getattr(last_trade, "price", None) if last_trade else None
-        
+
         day = getattr(snapshot, "day", None)
         result["volume"] = getattr(day, "volume", None) if day else None
-        
+        result["today_vol"] = getattr(snapshot, "today_vol", None)
+
         result["exchange"] = (
             getattr(snapshot, "primary_exchange", None) or
             getattr(snapshot, "exchange", None)
         )
-    
+        result["primary_exchange"] = getattr(snapshot, "primary_exchange", None)
+
     return result
 

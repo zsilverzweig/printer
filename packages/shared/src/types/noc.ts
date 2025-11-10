@@ -55,10 +55,10 @@ export interface ScreenerResult {
   low: number;
   close: number;
   price: number;
+  last_trade_price?: number;
   today_vol: number;
   rv14: number;
-  rv30: number;
-  rv60: number;
+  rv_lw: number;
 }
 
 /**
