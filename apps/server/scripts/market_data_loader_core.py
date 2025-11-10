@@ -108,14 +108,29 @@ async def load_symbol_data(
     config: Dict
 ) -> List[MarketData]:
     """Fetch bars for a symbol/date/timescale from Polygon."""
-    from_date = date.strftime("%Y-%m-%d")
-    to_date = (date + timedelta(days=1)).strftime("%Y-%m-%d")
+    if timescale == '1day':
+        # Fetch a slightly wider window to avoid Polygon returning empty results for single-day queries
+        from_date_dt = date - timedelta(days=4)
+        to_date_dt = date + timedelta(days=1)
+    else:
+        from_date_dt = date
+        to_date_dt = date + timedelta(days=1)
+    
+    from_date = from_date_dt.strftime("%Y-%m-%d")
+    to_date = to_date_dt.strftime("%Y-%m-%d")
     
     try:
         # Run Polygon API call in executor (it's synchronous)
         loop = asyncio.get_event_loop()
         if logger.isEnabledFor(logging.DEBUG):
-            logger.debug("Fetching %s %s from Polygon...", symbol, timescale)
+            logger.debug(
+                "Fetching %s %s %s (from %s to %s)",
+                symbol,
+                timescale,
+                date,
+                from_date,
+                to_date,
+            )
         aggs = await loop.run_in_executor(
             None,
             lambda: list(client.list_aggs(
@@ -124,12 +139,19 @@ async def load_symbol_data(
                 timespan=config['timespan'],
                 from_=from_date,
                 to=to_date,
-                limit=50000
+                sort='asc',
+                limit=50000,
+                adjusted=True,
             ))
         )
         
         if logger.isEnabledFor(logging.DEBUG):
-            logger.debug("Polygon returned %s bars for %s %s", len(aggs), symbol, timescale)
+            logger.debug(
+                "Polygon returned %s bars for %s %s",
+                len(aggs),
+                symbol,
+                timescale,
+            )
         
         # Optimize hot path: bind locals to avoid repeated lookups
         bars = []
@@ -140,6 +162,10 @@ async def load_symbol_data(
         
         for agg in aggs:
             timestamp = ts_from_ms(agg.timestamp / 1000, tz=utc)
+            
+            # Only keep bars that match the requested date when using the wider 1day window
+            if timescale == '1day' and timestamp.date() != date:
+                continue
             append(MarketData(
                 time=timestamp,
                 symbol=symbol_upper,
@@ -282,6 +308,17 @@ async def create_validation(symbol: str, date: datetime.date, timescale: str, ba
     """Create validation record for symbol/date/timescale."""
     bar_count = len([b for b in bars if b.time.date() == date])
     is_complete = bar_count > 0
+    
+    if logger.isEnabledFor(logging.DEBUG):
+        logger.debug(
+            "Validation summary: %s %s %s bar_count=%s expected=%s is_complete=%s",
+            symbol,
+            timescale,
+            date,
+            bar_count,
+            expected,
+            is_complete,
+        )
     
     date_bars = [b for b in bars if b.time.date() == date]
     first_bar = min(b.time for b in date_bars) if date_bars else None

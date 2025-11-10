@@ -62,6 +62,17 @@ async def fetch_screener_data_unified(
         ]
     """
     
+    logger.info(
+        "[UNIFIED] fetch_screener_data_unified called with market_cap=(%s, %s), float=(%s, %s), asset_types=%s, min_rv=%s, target_timestamp=%s",
+        market_cap_min,
+        market_cap_max,
+        float_min,
+        float_max,
+        asset_types,
+        min_relative_volume,
+        target_timestamp.isoformat() if target_timestamp else None,
+    )
+
     # Determine mode and dates (silent unless debug)
     MIN_SYMBOLS_FOR_DAILY = 1000
 
@@ -202,11 +213,24 @@ async def fetch_screener_data_unified(
                 return []
             
             # STEP 1.5: Apply database filters if specified (market cap, float, asset types)
-            if market_cap_min is not None or market_cap_max is not None or float_min is not None or float_max is not None:
+            should_apply_db_filters = (
+                bool(asset_types)
+                or market_cap_min is not None
+                or market_cap_max is not None
+                or float_min is not None
+                or float_max is not None
+            )
+
+            if should_apply_db_filters:
                 from app.services.screener.ticker_filter import get_filtered_tickers, FilterCriteria
                 
                 logger.info(
-                    f"[UNIFIED] Applying database filters: market_cap=({market_cap_min}, {market_cap_max}), float=({float_min}, {float_max})"
+                    "[UNIFIED] Applying database filters: asset_types=%s, market_cap=(%s, %s), float=(%s, %s)",
+                    asset_types,
+                    market_cap_min,
+                    market_cap_max,
+                    float_min,
+                    float_max,
                 )
                 
                 criteria = FilterCriteria(
@@ -314,7 +338,8 @@ async def fetch_screener_data_unified(
 
             trailing_start = today_start - timedelta(days=14)
 
-            trailing_volume_map: Dict[str, float] = {}
+            trailing_volume_sum_map: Dict[str, float] = {}
+            trailing_volume_count_map: Dict[str, int] = {}
             week_ago_volume_map: Dict[str, float] = {}
             ticker_details_map: Dict[str, Dict[str, Any]] = {}
 
@@ -326,7 +351,10 @@ async def fetch_screener_data_unified(
                 )
                 # Query trailing 14 calendar days of volume (excluding today)
                 trailing_stmt = text("""
-                    SELECT symbol, COALESCE(SUM(volume), 0) AS volume
+                    SELECT 
+                        symbol, 
+                        COALESCE(SUM(volume), 0) AS volume,
+                        COUNT(*) AS day_count
                     FROM market_data
                     WHERE timescale = '1day'
                       AND symbol = ANY(:symbols)
@@ -344,7 +372,8 @@ async def fetch_screener_data_unified(
                     },
                 )
                 for row in trailing_result:
-                    trailing_volume_map[row[0]] = float(row[1]) if row[1] else 0.0
+                    trailing_volume_sum_map[row[0]] = float(row[1]) if row[1] else 0.0
+                    trailing_volume_count_map[row[0]] = int(row[2]) if row[2] else 0
 
                 # Query same-day volume from one week ago using hourly bars up to matching time
                 week_stmt = text("""
@@ -404,10 +433,12 @@ async def fetch_screener_data_unified(
                     continue
 
                 today_volume = today_volume_map.get(symbol, 0.0)
-                trailing_volume = trailing_volume_map.get(symbol, 0.0)
+                trailing_sum = trailing_volume_sum_map.get(symbol, 0.0)
+                trailing_count = trailing_volume_count_map.get(symbol, 0)
+                trailing_avg = (trailing_sum / trailing_count) if trailing_count > 0 else 0.0
                 week_ago_volume = week_ago_volume_map.get(symbol, 0.0)
 
-                rv14_value = (today_volume / trailing_volume) if trailing_volume else 0.0
+                rv14_value = (today_volume / trailing_avg) if trailing_avg else 0.0
                 rv_last_week = (today_volume / week_ago_volume) if week_ago_volume else 0.0
 
                 if min_relative_volume is not None and rv14_value < min_relative_volume:

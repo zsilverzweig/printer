@@ -152,7 +152,7 @@ class SnapshotIngestionService:
             # Fetch snapshots from Polygon (runs in thread pool since it's synchronous)
             snapshots = await asyncio.to_thread(fetch_snapshot_all, self.api_key)
             snapshot_count = len(snapshots or [])
-            logger.info("Snapshot ingestion fetched %d snapshots", snapshot_count)
+            logger.debug("Snapshot ingestion fetched %d snapshots", snapshot_count)
             
             if not snapshots:
                 logger.warning("No snapshots returned from Polygon API")
@@ -176,7 +176,7 @@ class SnapshotIngestionService:
                 if latest_trade:
                     latest_trades.append(latest_trade)
             if latest_trades and not self._logged_trade_sample:
-                logger.info(
+                logger.debug(
                     "Sample extracted trades: %s",
                     [
                         {
@@ -193,16 +193,16 @@ class SnapshotIngestionService:
             if minute_bars:
                 await self._insert_minute_bars(minute_bars)
             else:
-                logger.info("Snapshot ingestion extracted 0 minute bars from %d snapshots", snapshot_count)
+                logger.debug("Snapshot ingestion extracted 0 minute bars from %d snapshots", snapshot_count)
             
             # Batch upsert latest trades
             if latest_trades:
                 await self._upsert_latest_trades(latest_trades)
             else:
-                logger.info("Snapshot ingestion extracted 0 latest trades from %d snapshots", snapshot_count)
+                logger.debug("Snapshot ingestion extracted 0 latest trades from %d snapshots", snapshot_count)
             
             self.metrics.batches_processed += 1
-            logger.info(
+            logger.debug(
                 f"Processed {len(snapshots)} snapshots: "
                 f"{len(minute_bars)} bars, {len(latest_trades)} trades"
             )
@@ -421,7 +421,7 @@ class SnapshotIngestionService:
             self.metrics.minute_bars_inserted += total_inserted
             
             if total_inserted > 0:
-                logger.info(f"Inserted {total_inserted} minute bars from snapshots (gap filling)")
+                logger.debug(f"Inserted {total_inserted} minute bars from snapshots (gap filling)")
                 
         except Exception as e:
             logger.error(f"Error inserting minute bars: {e}", exc_info=True)
@@ -484,7 +484,7 @@ class SnapshotIngestionService:
                     await session.commit()
                     
                     if not self._logged_trade_sample and batch:
-                        logger.info(
+                        logger.debug(
                             "Sample latest trade upsert: %s",
                             {
                                 "symbol": batch[0]["symbol"],
@@ -500,7 +500,7 @@ class SnapshotIngestionService:
             
             self.metrics.trades_updated += total_updated
             
-            logger.info(f"Updated {total_updated} latest trades from snapshots")
+            logger.debug(f"Updated {total_updated} latest trades from snapshots")
                 
         except Exception as e:
             logger.error(f"Error upserting latest trades: {e}", exc_info=True)

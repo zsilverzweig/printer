@@ -56,6 +56,8 @@ class ScreenerService:
         asset_types: Optional[List[str]],
         market_cap_min: Optional[int],
         market_cap_max: Optional[int],
+        float_min: Optional[int],
+        float_max: Optional[int],
     ) -> List[dict]:
         if not snapshots:
             return []
@@ -74,6 +76,8 @@ class ScreenerService:
             asset_types=asset_types,
             market_cap_min=market_cap_min,
             market_cap_max=market_cap_max,
+            float_min=float_min,
+            float_max=float_max,
         )
 
     async def compute_live(
@@ -123,6 +127,8 @@ class ScreenerService:
             asset_types=asset_types,
             market_cap_min=market_cap_min,
             market_cap_max=market_cap_max,
+            float_min=float_min,
+            float_max=float_max,
         )
 
     async def compute_historical(

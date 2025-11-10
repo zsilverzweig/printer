@@ -265,7 +265,9 @@ async def run_screener_with_inline_criteria(
                 technical_filters=technical_filters,
                 asset_types=asset_types,
                 market_cap_min=market_cap_min,
-                market_cap_max=market_cap_max
+                market_cap_max=market_cap_max,
+                float_min=float_min,
+                float_max=float_max,
             )
             filter_breakdown_data = screener_service.get_last_live_filter_breakdown()
         
@@ -439,7 +441,9 @@ async def run_screener_with_criteria(
                 technical_filters=technical_filters,
                 asset_types=asset_types,
                 market_cap_min=market_cap_min,
-                market_cap_max=market_cap_max
+                market_cap_max=market_cap_max,
+                float_min=float_min,
+                float_max=float_max,
             )
             filter_breakdown_data = screener_service.get_last_live_filter_breakdown()
         

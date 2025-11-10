@@ -93,11 +93,12 @@ async def load_date_range_data(
                 # Check which dates need data for this symbol
                 result = await session.execute(
                     text("""
-                        SELECT DISTINCT date
-                        FROM symbol_date_validation
-                        WHERE symbol = :symbol
-                          AND date BETWEEN :start_date AND :end_date
-                          AND timescale = :timescale
+                    SELECT DISTINCT date
+                    FROM symbol_date_validation
+                    WHERE symbol = :symbol
+                      AND date BETWEEN :start_date AND :end_date
+                      AND timescale = :timescale
+                      AND is_complete = true
                     """),
                     {
                         "symbol": symbol_upper,
@@ -215,6 +216,7 @@ async def load_yesterday_data(init_db_flag: bool = True, api_key: Optional[str] 
                     WHERE symbol = ANY(:symbols)
                       AND date = :date
                       AND timescale = :timescale
+                      AND is_complete = true
                 """),
                 {
                     "symbols": symbols_upper,
@@ -251,7 +253,14 @@ async def load_yesterday_data(init_db_flag: bool = True, api_key: Optional[str] 
                 processed += 1
                 try:
                     if logger.isEnabledFor(logging.DEBUG):
-                        logger.debug("Loading %s %s (%s/%s)...", symbol, timescale, idx, total_symbols)
+                        logger.debug(
+                            "Loading %s %s for %s (%s/%s pending)",
+                            symbol,
+                            timescale,
+                            yesterday,
+                            idx,
+                            total_symbols,
+                        )
                     bars = await load_symbol_data(client, symbol, yesterday, timescale, config)
                     
                     if bars:
@@ -263,9 +272,13 @@ async def load_yesterday_data(init_db_flag: bool = True, api_key: Optional[str] 
                         if logger.isEnabledFor(logging.DEBUG):
                             logger.debug("%s: %s bars loaded and validated", symbol, len(bars))
                     else:
-                        # No data, but mark as validated
                         if logger.isEnabledFor(logging.DEBUG):
-                            logger.debug("%s: No data available, marking as validated", symbol)
+                            logger.debug(
+                                "%s %s %s: No data available, marking as validated",
+                                symbol,
+                                timescale,
+                                yesterday,
+                            )
                         await create_validation(symbol, yesterday, timescale, [])
                         succeeded += 1
                     
@@ -307,32 +320,48 @@ async def load_comprehensive_data(init_db_flag: bool = True, api_key: Optional[s
     
     today = datetime.now(timezone.utc).date()
     
-    # Phase 1: Load yesterday's data (all timescales)
+    # Define timescale groups so we can prioritize daily bars first
+    daily_timescales = ['1day']
+    intraday_timescales = ['1hour', '15min', '5min', '1min']
+
+    # Phase 1: Load yesterday's daily data first
     yesterday = today - timedelta(days=1)
     while yesterday.weekday() >= 5:  # Skip weekends
         yesterday -= timedelta(days=1)
     
     await load_date_range_data(
-        client, symbols, yesterday, yesterday, 
-        timescales=['1day', '1hour', '15min', '5min', '1min']
+        client, symbols, yesterday, yesterday,
+        timescales=daily_timescales
     )
     
-    # Phase 2: Load today's data (all timescales) - up to current time
-    # Only load today if it's a weekday
+    # Phase 2: Load today's daily data (if weekday)
     if today.weekday() < 5:
         await load_date_range_data(
             client, symbols, today, today,
-            timescales=['1day', '1hour', '15min', '5min', '1min']
+            timescales=daily_timescales
         )
     
-    # Phase 3: Load 7 days of hourly bars
+    # Phase 3: Load remaining intraday data for yesterday
+    await load_date_range_data(
+        client, symbols, yesterday, yesterday,
+        timescales=intraday_timescales
+    )
+
+    # Phase 4: Load today's intraday data (if weekday)
+    if today.weekday() < 5:
+        await load_date_range_data(
+            client, symbols, today, today,
+            timescales=intraday_timescales
+        )
+
+    # Phase 5: Load 7 days of hourly bars
     start_date = today - timedelta(days=7)
     await load_date_range_data(
         client, symbols, start_date, yesterday - timedelta(days=1),
         timescales=['1hour']
     )
     
-    # Phase 4: Load 5min/15min for last 7 days
+    # Phase 6: Load 5min/15min for last 7 days
     start_date = today - timedelta(days=7)
     await load_date_range_data(
         client, symbols, start_date, yesterday - timedelta(days=1),
