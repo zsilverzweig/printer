@@ -89,6 +89,9 @@ class SnapshotIngestionService:
         # State
         self.is_running = False
         self.should_stop = False
+        self._missing_last_trade_warnings = 0
+        self._missing_last_trade_fields_warnings = 0
+        self._logged_trade_sample = False
         
         # Background task
         self.fetch_task: Optional[asyncio.Task] = None
@@ -148,6 +151,8 @@ class SnapshotIngestionService:
         try:
             # Fetch snapshots from Polygon (runs in thread pool since it's synchronous)
             snapshots = await asyncio.to_thread(fetch_snapshot_all, self.api_key)
+            snapshot_count = len(snapshots or [])
+            logger.info("Snapshot ingestion fetched %d snapshots", snapshot_count)
             
             if not snapshots:
                 logger.warning("No snapshots returned from Polygon API")
@@ -170,17 +175,34 @@ class SnapshotIngestionService:
                 latest_trade = self._extract_latest_trade(snapshot)
                 if latest_trade:
                     latest_trades.append(latest_trade)
+            if latest_trades and not self._logged_trade_sample:
+                logger.info(
+                    "Sample extracted trades: %s",
+                    [
+                        {
+                            "symbol": lt["symbol"],
+                            "price": lt["price"],
+                            "timestamp": lt["timestamp"],
+                        }
+                        for lt in latest_trades[:3]
+                    ],
+                )
+                self._logged_trade_sample = True
             
             # Batch insert minute bars (only if they don't exist)
             if minute_bars:
                 await self._insert_minute_bars(minute_bars)
+            else:
+                logger.info("Snapshot ingestion extracted 0 minute bars from %d snapshots", snapshot_count)
             
             # Batch upsert latest trades
             if latest_trades:
                 await self._upsert_latest_trades(latest_trades)
+            else:
+                logger.info("Snapshot ingestion extracted 0 latest trades from %d snapshots", snapshot_count)
             
             self.metrics.batches_processed += 1
-            logger.debug(
+            logger.info(
                 f"Processed {len(snapshots)} snapshots: "
                 f"{len(minute_bars)} bars, {len(latest_trades)} trades"
             )
@@ -239,29 +261,72 @@ class SnapshotIngestionService:
             last_trade = snapshot.get("lastTrade")
             
             if not ticker or not last_trade:
+                self._missing_last_trade_warnings += 1
+                if self._missing_last_trade_warnings <= 5:
+                    logger.warning(
+                        "Snapshot missing lastTrade data for %s (ticker=%s)",
+                        "unknown" if not ticker else "provided",
+                        ticker,
+                    )
                 return None
             
             # Extract fields from last trade
             # Polygon lastTrade structure: {p, s, t, x, c}
             price = last_trade.get("p")
-            timestamp = last_trade.get("t")
+            timestamp_raw = last_trade.get("t")
             
-            if not price or not timestamp:
+            if price is None or timestamp_raw is None:
+                self._missing_last_trade_fields_warnings += 1
+                if self._missing_last_trade_fields_warnings <= 5:
+                    logger.warning(
+                        "Snapshot lastTrade missing price/timestamp for %s: %s",
+                        ticker,
+                        last_trade,
+                    )
                 return None
             
-            # Convert milliseconds to datetime
-            dt = datetime.fromtimestamp(timestamp / 1000, tz=timezone.utc)
+            if price == 0:
+                self._missing_last_trade_fields_warnings += 1
+                if self._missing_last_trade_fields_warnings <= 5:
+                    logger.warning(
+                        "Snapshot lastTrade reported zero price for %s: %s",
+                        ticker,
+                        last_trade,
+                    )
+                return None
+
+            # Polygon returns nanosecond timestamps; fall back to micro/milli if already smaller.
+            if timestamp_raw > 1_000_000_000_000:  # nanoseconds
+                timestamp_seconds = timestamp_raw / 1_000_000_000
+            elif timestamp_raw > 1_000_000:  # microseconds
+                timestamp_seconds = timestamp_raw / 1_000_000
+            else:
+                timestamp_seconds = timestamp_raw / 1000
+
+            try:
+                dt = datetime.fromtimestamp(timestamp_seconds, tz=timezone.utc)
+            except Exception as exc:
+                logger.warning(
+                    "Snapshot lastTrade timestamp conversion failed for %s (raw=%s): %s",
+                    ticker,
+                    timestamp_raw,
+                    exc,
+                )
+                return None
             
             # Get conditions as comma-separated string if present
             conditions = last_trade.get("c")
             conditions_str = ",".join(map(str, conditions)) if conditions else None
+            
+            exchange_code = last_trade.get("x")
+            exchange_value = str(exchange_code) if exchange_code is not None else None
             
             return {
                 "symbol": ticker,
                 "price": float(price),
                 "timestamp": dt,
                 "size": int(last_trade.get("s")) if last_trade.get("s") else None,
-                "exchange": last_trade.get("x"),
+                "exchange": exchange_value,
                 "conditions": conditions_str,
                 "updated_at": datetime.now(timezone.utc)
             }
@@ -342,7 +407,7 @@ class SnapshotIngestionService:
             self.metrics.minute_bars_inserted += total_inserted
             
             if total_inserted > 0:
-                logger.debug(f"Inserted {total_inserted} minute bars from snapshots (gap filling)")
+                logger.info(f"Inserted {total_inserted} minute bars from snapshots (gap filling)")
                 
         except Exception as e:
             logger.error(f"Error inserting minute bars: {e}", exc_info=True)
@@ -363,6 +428,7 @@ class SnapshotIngestionService:
         - Prevents "ON CONFLICT DO UPDATE command cannot affect row a second time" error
         """
         if not trades:
+            logger.info("Snapshot ingestion received empty latest trade batch to upsert")
             return
         
         # Deduplicate trades by symbol - keep the last occurrence
@@ -402,12 +468,24 @@ class SnapshotIngestionService:
                     result = await session.execute(stmt)
                     await session.commit()
                     
+                    if not self._logged_trade_sample and batch:
+                        logger.info(
+                            "Sample latest trade upsert: %s",
+                            {
+                                "symbol": batch[0]["symbol"],
+                                "price": batch[0]["price"],
+                                "timestamp": batch[0]["timestamp"],
+                                "exchange": batch[0]["exchange"],
+                            },
+                        )
+                        self._logged_trade_sample = True
+                    
                     updated = result.rowcount
                     total_updated += updated
             
             self.metrics.trades_updated += total_updated
             
-            logger.debug(f"Updated {total_updated} latest trades from snapshots")
+            logger.info(f"Updated {total_updated} latest trades from snapshots")
                 
         except Exception as e:
             logger.error(f"Error upserting latest trades: {e}", exc_info=True)

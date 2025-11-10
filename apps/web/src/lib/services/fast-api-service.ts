@@ -162,14 +162,17 @@ export class FastApiService {
         return {
           ticker: toStr(r["ticker"] ?? r["T"] ?? ""),
           price: toNum(r["price"] ?? r["close"] ?? r["c"]),
-          last_trade_price: toNullableNum(r["last_trade_price"]) ??
+          last_trade_price:
+            toNullableNum(r["last_trade_price"]) ??
             toNum(r["price"] ?? r["close"] ?? r["c"]),
           prev_open: toNum(r["prev_open"] ?? r["open"] ?? r["o"]),
           prev_high: toNum(r["prev_high"] ?? r["high"] ?? r["h"] ?? r["c"]),
           prev_low: toNum(r["prev_low"] ?? r["low"] ?? r["l"] ?? r["c"]),
           prev_close: toNum(r["prev_close"] ?? r["close"] ?? r["c"]),
           prev_volume: toNum(r["prev_volume"] ?? r["volume"] ?? r["v"]),
-          today_vol: toNullableNum(r["today_vol"] ?? r["today_volume"] ?? r["volume_today"]),
+          today_vol: toNullableNum(
+            r["today_vol"] ?? r["today_volume"] ?? r["volume_today"]
+          ),
           rv14: toNullableNum(r["rv14"] ?? r["rv"]),
           rv_lw: toNullableNum(r["rv_lw"]),
           change_close: toNullableNum(r["change_close"]),
