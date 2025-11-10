@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 
 from app.services.screener.screener_compute import ScreenerCompute
 from app.services.screener.screener_filters import (
+    is_allowed_exchange,
     is_likely_etf,
     passes_price_filter,
     passes_volume_filter,
@@ -49,7 +50,7 @@ class ScreenerHistorical:
             min_change_percent: Minimum % change from yesterday's close
             max_change_percent: Maximum % change from yesterday's close
             min_relative_volume: Minimum relative volume (RV14) filter
-            order_by: Field to sort by (rv14, avg_volume, change_close)
+            order_by: Field to sort by (rv14, rv_lw, avg_volume, price)
             limit: Maximum number of results to return
             technical_filters: Optional dict of technical analysis filters
             exclude_etfs: Whether to exclude ETFs (default: True)
@@ -97,103 +98,103 @@ class ScreenerHistorical:
             rows: List[dict] = []
             processed_count = 0
             filtered_count = 0
-            
-            # NOTE: Market cap filtering is now handled in the unified data fetcher for efficiency
-            
+
+            # Pre-fetch supporting metrics to mirror live screener behaviour
+            sum_last_14, last_week_partial = await self.compute._fetch_volume_metrics(
+                symbols_list, timestamp
+            )
+            ticker_details = await self.compute._fetch_ticker_details(symbols_list)
+
             # Process all symbols (now using unified snapshot format - same as live screener!)
             step_start = time.time()
             self.logger.info(f"[HISTORICAL SCREENER] Processing {len(snapshots)} symbols with filters...")
-            
+
             # Process each snapshot
             for snapshot in snapshots:
                 symbol = snapshot["ticker"]
                 current_price = snapshot["price"]
                 day = snapshot["day"]
-                
+
                 # Skip if no daily close
                 if not day.get("c"):
                     continue
-                
+
                 processed_count += 1
-                
-                yesterday_close = day["c"]
+
                 # Use accumulated intraday volume (from market open to timestamp)
-                # This is the actual volume "as of" the timestamp, not the full day's volume
-                current_volume = intraday_volume.get(symbol, day["v"])  # Fallback to daily if not available
-                
-                # Apply optional basic filters
+                today_vol = intraday_volume.get(symbol, day["v"])
+
+                details = ticker_details.get(symbol, {})
+                type_value = details.get("type")
+                primary_exchange = details.get("primary_exchange") or snapshot.get("primary_exchange")
+
+                if not is_allowed_exchange(primary_exchange):
+                    filtered_count += 1
+                    continue
+
+                if exclude_etfs and ((type_value and type_value.upper() == "ETF") or is_likely_etf(symbol)):
+                    filtered_count += 1
+                    continue
+
+                if asset_types:
+                    if not type_value or type_value not in asset_types:
+                        filtered_count += 1
+                        continue
+
                 if min_price is not None or max_price is not None:
                     filter_min = min_price if min_price is not None else 0.0
-                    filter_max = max_price if max_price is not None else float('inf')
-                    if not passes_price_filter(current_price, yesterday_close, filter_min, filter_max):
+                    filter_max = max_price if max_price is not None else float("inf")
+                    if not passes_price_filter(current_price, current_price, filter_min, filter_max):
                         filtered_count += 1
                         continue
-                
-                if min_volume is not None:
-                    # Volume filter uses current accumulated volume, not yesterday's full daily volume
-                    if not passes_volume_filter(current_volume, min_volume):
-                        filtered_count += 1
-                        continue
-                
-                # Apply asset type filtering if specified
-                if asset_types and len(asset_types) > 0:
-                    # For now, use ETF detection as fallback if asset type not available
-                    # TODO: Query TickerDetails for actual asset type when available
-                    ticker_type = None
-                    if is_likely_etf(symbol):
-                        ticker_type = "ETF"
-                    else:
-                        ticker_type = "CS"
-                    
-                    if ticker_type not in asset_types:
-                        filtered_count += 1
-                        continue
-                elif exclude_etfs:
-                    # Fallback to ETF exclusion if no asset_types specified
-                    if is_likely_etf(symbol):
-                        filtered_count += 1
-                        continue
-                
-                # Calculate change percent
-                change_close_pct = (
-                    ((current_price - yesterday_close) / yesterday_close) * 100
-                    if yesterday_close > 0
-                    else 0.0
-                )
-                
-                # Use signed value, not absolute - allows filtering positive/negative separately
-                if min_change_percent is not None and change_close_pct < min_change_percent:
-                    filtered_count += 1
-                    continue
-                
-                # Use signed value, not absolute - allows filtering positive/negative separately
-                if max_change_percent is not None and change_close_pct > max_change_percent:
+
+                if min_volume is not None and not passes_volume_filter(today_vol, min_volume):
                     filtered_count += 1
                     continue
 
-                # NOTE: RV14 filtering now handled in unified data fetcher for efficiency
-                # Snapshots already filtered by min_relative_volume if specified
+                sum_14_volume = sum_last_14.get(symbol, 0.0)
+                rv14 = (today_vol / sum_14_volume) if sum_14_volume else 0.0
 
-                # Get RV14 from snapshot (already calculated by unified fetcher)
-                rv14 = snapshot.get("rv14", 0.0)
+                last_week_volume = last_week_partial.get(symbol, 0.0)
+                rv_lw = (today_vol / last_week_volume) if last_week_volume else 0.0
 
-                # Build result row (matches live screener format)
+                if min_relative_volume is not None and rv14 < min_relative_volume:
+                    filtered_count += 1
+                    continue
+
+                market_cap = details.get("market_cap")
+                if market_cap_min is not None:
+                    if market_cap is None or market_cap < market_cap_min:
+                        filtered_count += 1
+                        continue
+                if market_cap_max is not None:
+                    if market_cap is None or market_cap > market_cap_max:
+                        filtered_count += 1
+                        continue
+
+                public_float = details.get("public_float")
+                if float_min is not None:
+                    if public_float is None or public_float < float_min:
+                        filtered_count += 1
+                        continue
+                if float_max is not None:
+                    if public_float is None or public_float > float_max:
+                        filtered_count += 1
+                        continue
+
                 row = {
                     "ticker": symbol,
-                    "open": day["o"],
-                    "high": day["h"],
-                    "low": day["l"],
-                    "close": yesterday_close,
                     "price": current_price,
-                    "today_vol": current_volume,  # Accumulated intraday volume up to timestamp
-                    "rv": rv14,
+                    "today_vol": today_vol,
                     "rv14": rv14,
-                    "change_close": change_close_pct,
-                    # TODO: Add 90-day high/low if needed for technical filters
-                    "ninety_day_high": None,
-                    "ninety_day_low": None,
+                    "rv_lw": rv_lw,
+                    "type": type_value,
+                    "primary_exchange": primary_exchange,
+                    "sic_description": details.get("sic_description"),
+                    "market_cap": market_cap,
+                    "public_float": public_float,
                 }
-                
+
                 rows.append(row)
             
             step_time = time.time() - step_start
@@ -228,8 +229,9 @@ class ScreenerHistorical:
             self.logger.info(f"[HISTORICAL SCREENER] Sorting by {order_by}...")
             sort_key = {
                 "rv14": lambda x: x["rv14"],
+                "rv_lw": lambda x: x.get("rv_lw", 0),
                 "avg_volume": lambda x: x["today_vol"],
-                "change_close": lambda x: x.get("change_close", 0),
+                "price": lambda x: x.get("price", 0),
             }.get(order_by, lambda x: x["rv14"])
             rows.sort(key=sort_key, reverse=True)
             

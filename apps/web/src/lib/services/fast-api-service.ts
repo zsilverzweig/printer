@@ -146,20 +146,33 @@ export class FastApiService {
         const r = raw as Record<string, unknown>;
         const toNum = (v: unknown, fallback = 0): number =>
           typeof v === "number" ? v : Number(v ?? fallback) || fallback;
-        const toStr = (v: unknown, fallback = ""): string =>
-          typeof v === "string" ? v : String(v ?? fallback);
+        const toNullableNumber = (v: unknown): number | null => {
+          if (v === null || v === undefined) {
+            return null;
+          }
+          const parsed = Number(v);
+          return Number.isFinite(parsed) ? parsed : null;
+        };
+        const toStrOrNull = (v: unknown): string | null => {
+          if (v === null || v === undefined) {
+            return null;
+          }
+          return typeof v === "string" ? v : String(v);
+        };
 
         return {
-          ticker: toStr(r["T"] ?? r["ticker"] ?? ""),
-          open: toNum(r["o"] ?? r["open"]),
-          high: toNum(r["h"] ?? r["high"] ?? r["c"]),
-          low: toNum(r["l"] ?? r["low"] ?? r["c"]),
-          close: toNum(r["c"] ?? r["close"]),
-          price: toNum(r["price"] ?? r["c"] ?? r["close"]),
-          volume: toNum(r["v"] ?? r["volume"]),
-          transactions: toNum(r["n"] ?? r["transactions"]),
-          window_start: toNum(r["t"] ?? r["window_start"]),
-          rv: toNum(r["rv"]),
+          ticker: typeof r["ticker"] === "string"
+            ? (r["ticker"] as string)
+            : String(r["ticker"] ?? r["T"] ?? ""),
+          price: toNum(r["price"] ?? r["c"] ?? 0),
+          today_vol: toNum(r["today_vol"] ?? r["volume"] ?? 0),
+          rv14: toNum(r["rv14"] ?? 0),
+          rv_lw: toNum(r["rv_lw"] ?? 0),
+          type: toStrOrNull(r["type"]),
+          primary_exchange: toStrOrNull(r["primary_exchange"] ?? r["exchange"]),
+          sic_description: toStrOrNull(r["sic_description"]),
+          market_cap: toNullableNumber(r["market_cap"]),
+          public_float: toNullableNumber(r["public_float"]),
         };
       });
     }

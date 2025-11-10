@@ -82,6 +82,7 @@ def extract_snapshot_data(snapshot: Any) -> Dict[str, Any]:
         "ticker": None,
         "price": None,
         "volume": None,
+        "today_vol": None,
         "exchange": None,
     }
     
@@ -97,11 +98,29 @@ def extract_snapshot_data(snapshot: Any) -> Dict[str, Any]:
                 (last_trade.get("p") if isinstance(last_trade, dict) else None)
             )
         
-        day = snapshot.get("day") or {}
-        result["volume"] = (
-            (day.get("volume") if isinstance(day, dict) else None) or
-            (day.get("v") if isinstance(day, dict) else None)
-        )
+        # Polygon snapshots expose day level data at the top level under "day" while
+        # Massive snapshots wrap bars inside a "bars" object. Support both so the
+        # screener can operate regardless of the upstream data source.
+        bars = snapshot.get("bars") if isinstance(snapshot.get("bars"), dict) else None
+        day = None
+        if bars and isinstance(bars.get("day"), dict):
+            day = bars.get("day")
+        elif isinstance(snapshot.get("day"), dict):
+            day = snapshot.get("day")
+        else:
+            day = snapshot.get("day") or {}
+
+        volume_value = None
+        if isinstance(day, dict):
+            volume_value = (
+                day.get("volume")
+                or day.get("v")
+                or day.get("total_volume")
+            )
+
+        if volume_value is not None:
+            result["volume"] = volume_value
+            result["today_vol"] = volume_value
         
         result["exchange"] = (
             snapshot.get("primary_exchange") or
@@ -114,8 +133,16 @@ def extract_snapshot_data(snapshot: Any) -> Dict[str, Any]:
         last_trade = getattr(snapshot, "last_trade", None)
         result["price"] = getattr(last_trade, "price", None) if last_trade else None
         
-        day = getattr(snapshot, "day", None)
-        result["volume"] = getattr(day, "volume", None) if day else None
+        day = None
+        bars = getattr(snapshot, "bars", None)
+        if bars and getattr(bars, "day", None):
+            day = getattr(bars, "day", None)
+        else:
+            day = getattr(snapshot, "day", None)
+
+        if day:
+            result["volume"] = getattr(day, "volume", None)
+            result["today_vol"] = getattr(day, "volume", None)
         
         result["exchange"] = (
             getattr(snapshot, "primary_exchange", None) or

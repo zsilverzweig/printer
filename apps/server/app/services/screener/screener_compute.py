@@ -2,33 +2,37 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional, Tuple
 
+from sqlalchemy import select, text
+
+from app.models.assets import TickerDetails
+from app.services.core.database import get_async_session
+from app.services.core.time_context import get_current_time
 from app.services.screener.screener_data import ScreenerDataLoader
 from app.services.screener.screener_filters import (
     is_allowed_exchange,
     is_likely_etf,
-    passes_price_filter,
-    passes_volume_filter,
 )
 from app.services.screener.screener_snapshot import extract_snapshot_data
 
 
 class ScreenerCompute:
     """Handles screener computation: filtering, sorting, and result generation."""
-    
+
     def __init__(self, data_loader: ScreenerDataLoader):
         self.logger = logging.getLogger("app.screener.compute")
         self.data_loader = data_loader
-    
+
     async def compute(
         self,
         snaps: List[Any],
         min_price: Optional[float] = None,
         max_price: Optional[float] = None,
         min_volume: Optional[float] = None,
-        min_change_percent: Optional[float] = None,
-        max_change_percent: Optional[float] = None,
+        min_change_percent: Optional[float] = None,  # Ignored in streamlined version
+        max_change_percent: Optional[float] = None,  # Ignored in streamlined version
         min_relative_volume: Optional[float] = None,
         order_by: str = "rv14",
         limit: int = 200,
@@ -40,371 +44,360 @@ class ScreenerCompute:
         float_min: Optional[int] = None,
         float_max: Optional[int] = None,
     ) -> List[dict]:
-        """Compute filtered and sorted screener results from market snapshots.
+        """Compute filtered and sorted screener results from market snapshots."""
 
-        Args:
-            snaps: List of market snapshots
-            min_price: Minimum price filter (for yesterday's close)
-            max_price: Maximum price filter (for yesterday's close)
-            min_volume: Minimum volume for liquidity
-            min_change_percent: Minimum % change from yesterday's close
-            max_change_percent: Maximum % change from yesterday's close
-            min_relative_volume: Minimum relative volume (RV14) filter
-            order_by: Field to sort by (rv14 or avg_volume)
-            limit: Maximum number of results to return
-            technical_filters: Optional dict of technical analysis filters
-            exclude_etfs: Whether to exclude ETFs (default: True)
-            asset_types: Optional list of asset types to include (e.g., ["CS", "ETF"])
-            market_cap_min: Minimum market cap filter (in dollars)
-            market_cap_max: Maximum market cap filter (in dollars)
-            float_min: Minimum public float filter (in dollars)
-            float_max: Maximum public float filter (in dollars)
-
-        Returns:
-            List of screener result dictionaries
-        """
-        # Build price and volume maps from snapshots, and snapshot OHLC lookup
-        price_map: Dict[str, float] = {}
-        volume_map: Dict[str, float] = {}
-        snapshot_ohlc_map: Dict[str, Dict[str, float]] = {}  # ticker -> OHLC data
-        snapshots_dict: Dict[str, dict] = {}  # Full snapshot data for metrics access
-        filtered_by_exchange = 0
-        
-        # Debug: log structure of first snapshot
-        if snaps and self.logger.isEnabledFor(logging.DEBUG):
+        if technical_filters:
             self.logger.debug(
-                "First snapshot structure: %s", snaps[0] if len(snaps) > 0 else "empty"
+                "Technical filters provided but ignored in streamlined screener: %s",
+                technical_filters,
             )
-        
+
+        symbol_snapshots: Dict[str, Dict[str, Any]] = {}
+        filtered_by_exchange = 0
+
         for snapshot in snaps:
             data = extract_snapshot_data(snapshot)
-            ticker = data["ticker"]
-            price = data["price"]
-            volume = data["volume"]
-            exchange = data["exchange"]
-            
+            ticker = data.get("ticker")
             if not ticker:
                 continue
-            
-            # Apply exchange filter
+
+            exchange = data.get("exchange")
             if not is_allowed_exchange(exchange):
                 filtered_by_exchange += 1
                 continue
-            
-            # Store full snapshot for metrics access
-            snapshots_dict[ticker] = snapshot
-            
-            # Store price and volume
-            if price is not None:
-                try:
-                    price_map[ticker] = float(price)
-                except Exception:
-                    pass
-            
-            if volume is not None:
-                try:
-                    volume_map[ticker] = float(volume)
-                except Exception:
-                    pass
-            
-            # Extract OHLC from snapshot 'day' field if available
-            if isinstance(snapshot, dict) and "day" in snapshot:
-                day_data = snapshot["day"]
-                if isinstance(day_data, dict):
-                    snapshot_ohlc_map[ticker] = {
-                        "o": float(day_data.get("o") or 0.0),
-                        "h": float(day_data.get("h") or 0.0),
-                        "l": float(day_data.get("l") or 0.0),
-                        "c": float(day_data.get("c") or 0.0),
-                        "v": float(day_data.get("v") or 0.0),
-                    }
-        
-        # Process stocks - use snapshot data directly if last_day_ohlc is empty
+
+            price = self._safe_float(data.get("price"))
+            if price is None:
+                continue
+
+            today_vol_value = data.get("today_vol")
+            if today_vol_value is None:
+                today_vol_value = data.get("volume")
+            today_vol = self._safe_float(today_vol_value) or 0.0
+
+            symbol_snapshots[ticker] = {
+                "price": price,
+                "today_vol": today_vol,
+                "exchange": exchange,
+            }
+
+        if not symbol_snapshots:
+            self.logger.info(
+                "Screener: no symbols available after parsing snapshots (filtered_by_exchange=%s)",
+                filtered_by_exchange,
+            )
+            return []
+
+        tickers = list(symbol_snapshots.keys())
+        as_of = get_current_time()
+        sum_last_14, last_week_partial = await self._fetch_volume_metrics(tickers, as_of)
+        ticker_details = await self._fetch_ticker_details(tickers)
+
         rows: List[dict] = []
-        self.logger.debug(f"_compute: Processing stocks")
-        self.logger.debug(f"_compute: Price map has {len(price_map)} entries")
-        self.logger.debug(f"_compute: snapshot_ohlc_map has {len(snapshot_ohlc_map)} entries")
-        self.logger.debug(f"_compute: last_day_ohlc has {len(self.data_loader.last_day_ohlc)} entries")
-        
         processed_count = 0
         filtered_count = 0
-        missing_price_count = 0
-        
-        # Build ticker set from either last_day_ohlc or price_map
-        tickers_to_process = (
-            set(self.data_loader.last_day_ohlc.keys())
-            if self.data_loader.last_day_ohlc
-            else set(price_map.keys())
-        )
 
-        # Apply database filtering if specified (market cap, float, asset types)
-        if market_cap_min is not None or market_cap_max is not None or float_min is not None or float_max is not None:
-            from app.services.screener.ticker_filter import get_filtered_tickers, FilterCriteria
+        for ticker in tickers:
+            snapshot_data = symbol_snapshots[ticker]
+            price = snapshot_data["price"]
+            today_vol = snapshot_data["today_vol"]
 
-            self.logger.info(
-                "Applying database filters: market_cap=(%s, %s), float=(%s, %s)",
-                market_cap_min,
-                market_cap_max,
-                float_min,
-                float_max
-            )
+            sum_14_volume = sum_last_14.get(ticker, 0.0)
+            rv14 = (today_vol / sum_14_volume) if sum_14_volume else 0.0
 
-            criteria = FilterCriteria(
-                asset_types=asset_types if asset_types else None,
-                market_cap_min=market_cap_min,
-                market_cap_max=market_cap_max,
-                float_min=float_min,
-                float_max=float_max,
-            )
+            last_week_volume = last_week_partial.get(ticker, 0.0)
+            rv_lw = (today_vol / last_week_volume) if last_week_volume else 0.0
 
-            allowed_tickers = await get_filtered_tickers(criteria)
-            allowed_tickers_set = set(allowed_tickers)
+            details = ticker_details.get(ticker, {})
+            type_value = details.get("type")
+            primary_exchange = details.get("primary_exchange") or snapshot_data.get("exchange")
 
-            # Filter tickers_to_process to only include those that meet database criteria
-            original_count = len(tickers_to_process)
-            tickers_to_process = tickers_to_process & allowed_tickers_set
-
-            self.logger.info(
-                "Database filters reduced tickers from %d to %d",
-                original_count,
-                len(tickers_to_process)
-            )
-
-        # NOTE: RV14 and other metrics are now pre-calculated and included in snapshots
-        # via the unified data fetcher. No need to calculate on-demand anymore!
-        
-        for ticker in tickers_to_process:
-            # Get OHLC data - prefer last_day_ohlc, fallback to snapshot
-            if ticker in self.data_loader.last_day_ohlc:
-                ohlc = self.data_loader.last_day_ohlc[ticker]
-                yesterday_close = ohlc.get("c", 0.0)
-                yesterday_vol = ohlc.get("v", 0.0)
-                yesterday_open = ohlc.get("o", 0.0)
-                yesterday_high = ohlc.get("h", 0.0)
-                yesterday_low = ohlc.get("l", 0.0)
-            elif ticker in snapshot_ohlc_map:
-                # Use OHLC from snapshot
-                ohlc = snapshot_ohlc_map[ticker]
-                yesterday_close = ohlc.get("c", 0.0)
-                yesterday_vol = ohlc.get("v", 0.0)
-                yesterday_open = ohlc.get("o", 0.0)
-                yesterday_high = ohlc.get("h", 0.0)
-                yesterday_low = ohlc.get("l", 0.0)
-            else:
-                # Fallback: use current price as close if no day data
-                current_price = price_map.get(ticker)
-                if current_price is None:
-                    missing_price_count += 1
-                    continue
-                yesterday_close = current_price
-                yesterday_vol = volume_map.get(ticker, 0.0)
-                yesterday_open = current_price
-                yesterday_high = current_price
-                yesterday_low = current_price
-            
-            # Get current price from snapshot
-            current_price = price_map.get(ticker)
-            if current_price is None:
-                missing_price_count += 1
+            if not is_allowed_exchange(primary_exchange):
+                filtered_count += 1
                 continue
-            
+
+            if exclude_etfs and ((type_value and type_value.upper() == "ETF") or is_likely_etf(ticker)):
+                filtered_count += 1
+                continue
+
+            if asset_types:
+                if not type_value or type_value not in asset_types:
+                    filtered_count += 1
+                    continue
+
+            if min_price is not None and price < min_price:
+                filtered_count += 1
+                continue
+            if max_price is not None and price > max_price:
+                filtered_count += 1
+                continue
+
+            if min_volume is not None and today_vol < min_volume:
+                filtered_count += 1
+                continue
+
+            if min_relative_volume is not None and rv14 < min_relative_volume:
+                filtered_count += 1
+                continue
+
+            market_cap = details.get("market_cap")
+            if market_cap_min is not None:
+                if market_cap is None or market_cap < market_cap_min:
+                    filtered_count += 1
+                    continue
+            if market_cap_max is not None:
+                if market_cap is None or market_cap > market_cap_max:
+                    filtered_count += 1
+                    continue
+
+            public_float = details.get("public_float")
+            if float_min is not None:
+                if public_float is None or public_float < float_min:
+                    filtered_count += 1
+                    continue
+            if float_max is not None:
+                if public_float is None or public_float > float_max:
+                    filtered_count += 1
+                    continue
+
+            rows.append(
+                {
+                    "ticker": ticker,
+                    "price": price,
+                    "today_vol": today_vol,
+                    "rv14": rv14,
+                    "rv_lw": rv_lw,
+                    "type": type_value,
+                    "primary_exchange": primary_exchange,
+                    "sic_description": details.get("sic_description"),
+                    "market_cap": market_cap,
+                    "public_float": public_float,
+                }
+            )
             processed_count += 1
-            
-            # Apply optional filters
-            if min_price is not None or max_price is not None:
-                filter_min = min_price if min_price is not None else 0.0
-                filter_max = max_price if max_price is not None else float('inf')
-                if not passes_price_filter(current_price, yesterday_close, filter_min, filter_max):
-                    filtered_count += 1
-                    continue
-            
-            if min_volume is not None:
-                if not passes_volume_filter(yesterday_vol, min_volume):
-                    filtered_count += 1
-                    continue
 
-            # Filter by minimum relative volume (if specified and not already filtered by fetcher)
-            if min_relative_volume is not None:
-                snapshot = snapshots_dict.get(ticker, {})
-                rv14 = snapshot.get("rv14", 0.0)
-                if rv14 < min_relative_volume:
-                    filtered_count += 1
-                    continue
-
-            # Apply asset type filtering if specified
-            if asset_types and len(asset_types) > 0:
-                # For now, use ETF detection as fallback if asset type not available
-                # TODO: Query TickerDetails for actual asset type when available
-                ticker_type = None
-                # Try to infer from ticker patterns if not in database
-                if is_likely_etf(ticker):
-                    ticker_type = "ETF"
-                else:
-                    # Assume common stock if not ETF-like
-                    ticker_type = "CS"
-                
-                if ticker_type not in asset_types:
-                    filtered_count += 1
-                    continue
-            elif exclude_etfs:
-                # Fallback to ETF exclusion if no asset_types specified
-                if is_likely_etf(ticker):
-                    filtered_count += 1
-                    continue
-            
-            # Calculate change percent before adding to rows
-            change_close_pct = (
-                ((current_price - yesterday_close) / yesterday_close) * 100
-                if yesterday_close > 0
-                else 0.0
-            )
-            
-            # Filter by minimum change percent (only if specified)
-            # Use signed value, not absolute - allows filtering positive/negative separately
-            if min_change_percent is not None and change_close_pct < min_change_percent:
-                filtered_count += 1
-                continue
-            
-            # Filter by maximum change percent (if specified)
-            # Use signed value, not absolute - allows filtering positive/negative separately
-            if max_change_percent is not None and change_close_pct > max_change_percent:
-                filtered_count += 1
-                continue
-            
-            # Get pre-calculated metrics from snapshot (already fetched by unified fetcher)
-            snapshot = snapshots_dict.get(ticker, {})
-            rv14 = snapshot.get("rv14", 0.0)
-            
-            # Calculate percentage changes for different timeframes
-            changes = self.data_loader.price_tracker.calculate_all_changes(ticker)
-            
-            rows.append({
-                "ticker": ticker,
-                "open": yesterday_open,
-                "high": yesterday_high,
-                "low": yesterday_low,
-                "close": yesterday_close,
-                "price": current_price,
-                "today_vol": yesterday_vol,
-                "volume": yesterday_vol,
-                "rv": rv14,
-                "rv14": rv14,
-                "change_1m": changes["change_1m"],
-                "change_5m": changes["change_5m"],
-                "change_1h": changes["change_1h"],
-                "change_close": change_close_pct,
-                "change_close_pct": change_close_pct,
-            })
-        
-        # Apply technical filters if provided
-        if technical_filters:
-            rows = await self._apply_technical_filters(rows, technical_filters, is_historical=False)
-        
-        # Sort results
         sort_key = {
-            "rv14": lambda x: x["rv14"],
-            "avg_volume": lambda x: x["today_vol"],
-            "change_close": lambda x: x.get("change_close", 0),
-        }.get(order_by, lambda x: x["rv14"])
+            "rv14": lambda x: x.get("rv14", 0.0),
+            "rv_lw": lambda x: x.get("rv_lw", 0.0),
+            "today_vol": lambda x: x.get("today_vol", 0.0),
+            "price": lambda x: x.get("price", 0.0),
+        }.get(order_by, lambda x: x.get("rv14", 0.0))
+
         rows.sort(key=sort_key, reverse=True)
-        
-        # Log filtering statistics
+
         self.logger.info(
-            "Screener: %s processed → %s results (filtered: %s)",
+            "Screener: %s processed → %s results (filtered=%s, filtered_by_exchange=%s)",
             processed_count,
             len(rows),
             filtered_count,
+            filtered_by_exchange,
         )
-        
-        return rows[:limit]
-    
+
+        if len(rows) > limit:
+            rows = rows[:limit]
+
+        return rows
+
+    async def _fetch_volume_metrics(
+        self, symbols: List[str], as_of: datetime
+    ) -> Tuple[Dict[str, float], Dict[str, float]]:
+        """Fetch supporting volume metrics used for RV calculations."""
+
+        if not symbols:
+            return {}, {}
+
+        if as_of.tzinfo is None:
+            as_of = as_of.replace(tzinfo=timezone.utc)
+        else:
+            as_of = as_of.astimezone(timezone.utc)
+
+        start_of_day = datetime.combine(as_of.date(), datetime.min.time(), tzinfo=timezone.utc)
+        elapsed = as_of - start_of_day
+        last_week_start = start_of_day - timedelta(days=7)
+        last_week_end = last_week_start + elapsed
+
+        async with get_async_session() as session:
+            fourteen_stmt = text(
+                """
+                WITH ranked AS (
+                    SELECT
+                        symbol,
+                        volume,
+                        ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY time DESC) AS rn
+                    FROM market_data
+                    WHERE timescale = '1day'
+                      AND symbol = ANY(:symbols)
+                      AND time < :day_start
+                )
+                SELECT symbol, SUM(volume) AS total_volume
+                FROM ranked
+                WHERE rn <= 14
+                GROUP BY symbol
+                """
+            )
+            result = await session.execute(
+                fourteen_stmt,
+                {"symbols": symbols, "day_start": start_of_day},
+            )
+            sum_last_14 = {
+                row[0]: float(row[1]) if row[1] is not None else 0.0
+                for row in result
+            }
+
+            last_week_stmt = text(
+                """
+                SELECT
+                    symbol,
+                    SUM(volume) AS total_volume
+                FROM market_data
+                WHERE timescale = '1hour'
+                  AND symbol = ANY(:symbols)
+                  AND time >= :start_time
+                  AND time < :end_time
+                GROUP BY symbol
+                """
+            )
+            result = await session.execute(
+                last_week_stmt,
+                {
+                    "symbols": symbols,
+                    "start_time": last_week_start,
+                    "end_time": last_week_end,
+                },
+            )
+            last_week_partial = {
+                row[0]: float(row[1]) if row[1] is not None else 0.0
+                for row in result
+            }
+
+        return sum_last_14, last_week_partial
+
+    async def _fetch_ticker_details(self, symbols: List[str]) -> Dict[str, Dict[str, Any]]:
+        """Fetch ticker metadata (type, exchange, market cap, float)."""
+
+        if not symbols:
+            return {}
+
+        async with get_async_session() as session:
+            stmt = (
+                select(
+                    TickerDetails.symbol,
+                    TickerDetails.type,
+                    TickerDetails.primary_exchange,
+                    TickerDetails.sic_description,
+                    TickerDetails.market_cap,
+                    TickerDetails.public_float,
+                )
+                .where(TickerDetails.symbol.in_(symbols))
+            )
+            result = await session.execute(stmt)
+            rows = result.fetchall()
+
+        details: Dict[str, Dict[str, Any]] = {}
+        for row in rows:
+            mapping = row._mapping
+            market_cap = mapping["market_cap"]
+            public_float = mapping["public_float"]
+            details[mapping["symbol"]] = {
+                "type": mapping["type"],
+                "primary_exchange": mapping["primary_exchange"],
+                "sic_description": mapping["sic_description"],
+                "market_cap": float(market_cap) if market_cap is not None else None,
+                "public_float": float(public_float) if public_float is not None else None,
+            }
+
+        return details
+
+    @staticmethod
+    def _safe_float(value: Any) -> Optional[float]:
+        """Safely convert a value to float."""
+
+        if value is None:
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
     async def _apply_technical_filters(
         self,
         rows: List[dict],
         technical_filters: Dict[str, Any],
         is_historical: bool = False
     ) -> List[dict]:
-        """Apply technical analysis filters to screener results.
-        
-        Args:
-            rows: List of screener result dicts
-            technical_filters: Dict of technical filter criteria
-            is_historical: Whether we're in historical mode (affects bar retrieval)
-            
-        Returns:
-            Filtered list of rows
-        """
+        """Apply technical analysis filters to screener results."""
+
         from app.lib.technical_analysis import (
             find_swing_points,
             find_equal_levels,
             find_support_resistance,
             is_price_near_level,
         )
-        
+
         filtered_rows = []
-        
+
         for row in rows:
             symbol = row["ticker"]
-            current_price = row["price"]
-            
-            # Get bars for technical analysis
+            current_price = row.get("price")
+
             if is_historical:
                 bars = row.get("_historical_bars", [])
             else:
-                # For live mode, would need to track recent bars
-                # For now, skip technical filters in live mode
                 bars = []
-            
+
             passed = True
-            
-            # Near resistance filter
+
             if technical_filters.get("near_resistance") and bars:
                 swing_points = find_swing_points(bars)
                 resistance_levels = find_support_resistance(swing_points, is_support=False)
-                if not any(is_price_near_level(current_price, level, tolerance_pct=2.0) 
-                          for level in resistance_levels):
+                if not any(
+                    is_price_near_level(current_price, level, tolerance_pct=2.0)
+                    for level in resistance_levels
+                ):
                     passed = False
-            
-            # Near support filter
+
             if technical_filters.get("near_support") and bars:
                 swing_points = find_swing_points(bars)
                 support_levels = find_support_resistance(swing_points, is_support=True)
-                if not any(is_price_near_level(current_price, level, tolerance_pct=2.0) 
-                          for level in support_levels):
+                if not any(
+                    is_price_near_level(current_price, level, tolerance_pct=2.0)
+                    for level in support_levels
+                ):
                     passed = False
-            
-            # Equal highs filter
+
             if technical_filters.get("has_equal_highs") and bars:
                 swing_points = find_swing_points(bars)
-                equal_levels = find_equal_levels(swing_points, is_support=False, tolerance_pct=1.0)
+                equal_levels = find_equal_levels(
+                    swing_points, is_support=False, tolerance_pct=1.0
+                )
                 if not equal_levels:
                     passed = False
-            
-            # Equal lows filter
+
             if technical_filters.get("has_equal_lows") and bars:
                 swing_points = find_swing_points(bars)
-                equal_levels = find_equal_levels(swing_points, is_support=True, tolerance_pct=1.0)
+                equal_levels = find_equal_levels(
+                    swing_points, is_support=True, tolerance_pct=1.0
+                )
                 if not equal_levels:
                     passed = False
-            
-            # Above 90-day high filter
+
             if technical_filters.get("above_90day_high"):
-                if row.get("ninety_day_high") and current_price <= row["ninety_day_high"]:
+                ninety_high = row.get("ninety_day_high")
+                if ninety_high is not None and current_price is not None and current_price <= ninety_high:
                     passed = False
-            
-            # Below 90-day low filter
+
             if technical_filters.get("below_90day_low"):
-                if row.get("ninety_day_low") and current_price >= row["ninety_day_low"]:
+                ninety_low = row.get("ninety_day_low")
+                if ninety_low is not None and current_price is not None and current_price >= ninety_low:
                     passed = False
-            
-            # Relative volume filter
-            if technical_filters.get("relative_volume_min"):
-                min_rv = technical_filters["relative_volume_min"]
-                if row.get("rv14", 0) < min_rv:
+
+            if technical_filters.get("min_relative_volume") is not None:
+                min_rv = technical_filters["min_relative_volume"]
+                rv_value = row.get("rv14")
+                if rv_value is None or rv_value < min_rv:
                     passed = False
-            
+
             if passed:
                 filtered_rows.append(row)
-        
-        return filtered_rows
 
+        return filtered_rows

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TypedDict, Optional, List, Dict, Any
+from typing import TypedDict, Optional, List, Dict, Any, NotRequired
 from enum import Enum
 from pydantic import BaseModel
 
@@ -30,31 +30,19 @@ class PolygonAggBar(TypedDict, total=False):
     n: int
 
 
-class ScreenerResult(TypedDict):
-    """Screener output combining yesterday's OHLC with current price and volume metrics.
-    
-    Fields:
-        ticker: Stock ticker symbol
-        open: Yesterday's open price
-        high: Yesterday's high price
-        low: Yesterday's low price
-        close: Yesterday's close price
-        price: Current price from today's snapshot
-        today_vol: Current volume from today's snapshot
-        rv14: Relative volume vs 14-day average
-        rv30: Relative volume vs 30-day average
-        rv60: Relative volume vs 60-day average
-    """
+class ScreenerResult(TypedDict, total=False):
+    """Screener output using Massive snapshot data and streamlined metrics."""
+
     ticker: str
-    open: float
-    high: float
-    low: float
-    close: float
     price: float
     today_vol: float
     rv14: float
-    rv30: float
-    rv60: float
+    rv_lw: float
+    type: NotRequired[str]
+    primary_exchange: NotRequired[str]
+    sic_description: NotRequired[str]
+    market_cap: NotRequired[float]
+    public_float: NotRequired[float]
 
 
 class ScreenerCriteria(BaseModel):
