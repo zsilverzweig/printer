@@ -25,6 +25,112 @@ interface NocRealtimeChartProps {
 type Timeframe = "1m" | "5m" | "15m" | "1h" | "1d"; // Database timeframes
 type LookbackPeriod = "1hr" | "4hr" | "1d" | "1w" | "1m"; // Lookback periods
 
+const BASE_BAR_KEYS = new Set<string>([
+  "ev",
+  "event_type",
+  "sym",
+  "symbol",
+  "T",
+  "pair",
+  "s",
+  "start",
+  "start_timestamp",
+  "e",
+  "end",
+  "end_timestamp",
+  "t",
+  "timestamp",
+  "time",
+  "updated_at",
+  "window_start",
+  "window_end",
+  "o",
+  "open",
+  "h",
+  "high",
+  "l",
+  "low",
+  "c",
+  "close",
+  "v",
+  "volume",
+  "vw",
+  "vwap",
+  "n",
+  "trade_count",
+  "av",
+  "accumulated_volume",
+  "op",
+  "a",
+  "z",
+  "price",
+  "market",
+  "conditions",
+  "exchange",
+  "type",
+  "message",
+  "status",
+  "request_id",
+]);
+
+const NESTED_METRIC_KEYS = new Set(["metrics", "indicators", "indicator_values"]);
+
+function extractIndicatorMetrics(source: unknown): AggregateBar["metrics"] | undefined {
+  if (!source || typeof source !== "object") {
+    return undefined;
+  }
+
+  const metrics: Record<string, number | null | undefined> = {};
+
+  const addMetric = (key: string, value: unknown) => {
+    if (typeof value === "number" || value === null) {
+      metrics[key] = value;
+    }
+  };
+
+  for (const nestedKey of NESTED_METRIC_KEYS) {
+    const nested = (source as Record<string, unknown>)[nestedKey];
+    if (nested && typeof nested === "object") {
+      for (const [key, value] of Object.entries(
+        nested as Record<string, unknown>
+      )) {
+        addMetric(key, value);
+      }
+    }
+  }
+
+  for (const [key, value] of Object.entries(source as Record<string, unknown>)) {
+    if (BASE_BAR_KEYS.has(key) || NESTED_METRIC_KEYS.has(key)) {
+      continue;
+    }
+    addMetric(key, value);
+  }
+
+  return Object.keys(metrics).length > 0 ? metrics : undefined;
+}
+
+function mergeMetricMaps(
+  existing?: AggregateBar["metrics"],
+  incoming?: AggregateBar["metrics"]
+): AggregateBar["metrics"] | undefined {
+  if (existing && incoming) {
+    return { ...existing, ...incoming };
+  }
+  return incoming ?? existing;
+}
+
+function applyIndicatorFields(
+  target: AggregateBar,
+  metrics?: AggregateBar["metrics"]
+): void {
+  if (!metrics) return;
+  for (const [key, value] of Object.entries(metrics)) {
+    if (typeof value === "number" || value === null) {
+      (target as Record<string, number | null | undefined>)[key] = value;
+    }
+  }
+}
+
 /**
  * Real-time candlestick chart for NOC
  * Subscribes to Polygon aggregate bars (real-time, not delayed)
@@ -123,6 +229,12 @@ export function NocRealtimeChart({
             n: m.n || m.accumulated_volume, // number of transactions
           };
 
+          const realtimeMetrics = extractIndicatorMetrics(m);
+          if (realtimeMetrics) {
+            bar.metrics = realtimeMetrics;
+            applyIndicatorFields(bar, realtimeMetrics);
+          }
+
           if (
             !bar.t ||
             bar.o == null ||
@@ -157,7 +269,12 @@ export function NocRealtimeChart({
               if (currentBars.length > 0) {
                 const existing = currentBars[0];
                 // Merge: keep earliest open, update close, expand high/low, sum volume
+                const mergedMetrics = mergeMetricMaps(
+                  existing.metrics,
+                  bar.metrics
+                );
                 updatedCurrentBar = {
+                  ...existing,
                   t: minuteTimestamp,
                   o: existing.o, // Keep original open
                   h: Math.max(existing.h, bar.h), // Highest high
@@ -167,6 +284,12 @@ export function NocRealtimeChart({
                   vw: bar.vw, // Latest VWAP
                   n: (existing.n || 0) + (bar.n || 0), // Cumulative transactions
                 };
+                if (mergedMetrics) {
+                  updatedCurrentBar.metrics = mergedMetrics;
+                  applyIndicatorFields(updatedCurrentBar, mergedMetrics);
+                } else {
+                  delete updatedCurrentBar.metrics;
+                }
               } else {
                 // First bar for this minute
                 updatedCurrentBar = { ...bar, t: minuteTimestamp };
@@ -261,16 +384,24 @@ export function NocRealtimeChart({
 
         // Transform database format to AggregateBar format
         const historicalBars: AggregateBar[] = data.bars
-          .map((bar: any) => ({
-            t: new Date(bar.time).getTime(), // ISO string to milliseconds
-            o: bar.open ?? 0,
-            h: bar.high ?? 0,
-            l: bar.low ?? 0,
-            c: bar.close ?? 0,
-            v: bar.volume ?? undefined,
-            vw: bar.vwap ?? undefined,
-            n: bar.trade_count ?? undefined,
-          }))
+          .map((rawBar: any) => {
+            const normalizedBar: AggregateBar = {
+              t: new Date(rawBar.time).getTime(), // ISO string to milliseconds
+              o: rawBar.open ?? 0,
+              h: rawBar.high ?? 0,
+              l: rawBar.low ?? 0,
+              c: rawBar.close ?? 0,
+              v: rawBar.volume ?? undefined,
+              vw: rawBar.vwap ?? undefined,
+              n: rawBar.trade_count ?? undefined,
+            };
+            const metrics = extractIndicatorMetrics(rawBar);
+            if (metrics) {
+              normalizedBar.metrics = metrics;
+              applyIndicatorFields(normalizedBar, metrics);
+            }
+            return normalizedBar;
+          })
           .filter(
             (bar: AggregateBar) =>
               bar.t &&

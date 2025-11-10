@@ -12,6 +12,23 @@ export interface AggregateBar {
   v?: number; // Volume (optional)
   vw?: number; // Volume-weighted average price (optional)
   n?: number; // Number of transactions (optional)
+  /**
+   * Optional map of additional indicator metrics (EMA, MACD, RSI, etc)
+   * populated by upstream services. Keys are indicator names, values are the
+   * numeric readings (or null when unavailable).
+   */
+  metrics?: Record<string, number | null | undefined>;
+  // Commonly-used indicator shortcuts exposed directly on the bar for
+  // convenience when available from the API.
+  ema_12?: number | null;
+  ema_26?: number | null;
+  ema_50?: number | null;
+  ema_200?: number | null;
+  macd_line?: number | null;
+  macd_signal?: number | null;
+  macd_histogram?: number | null;
+  rsi_14?: number | null;
+  atr_14?: number | null;
 }
 
 /**
