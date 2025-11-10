@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 
 from app.services.screener.screener_data import ScreenerDataLoader
 from app.services.screener.screener_filters import (
+    ETF_TYPE_CODES,
     is_allowed_exchange,
     is_likely_etf,
     passes_price_filter,
@@ -274,17 +275,32 @@ class ScreenerCompute:
         add_step("After relative volume filter", len(working_entries))
 
         # Asset type / ETF filtering
+        asset_types_upper = {t.upper() for t in asset_types} if asset_types else set()
         next_entries = []
         for entry in working_entries:
             ticker = entry["ticker"]
-            if asset_types and len(asset_types) > 0:
-                ticker_type = "ETF" if is_likely_etf(ticker) else "CS"
-                if ticker_type not in asset_types:
+            snapshot = entry["snapshot"]
+            snapshot_type = (snapshot.get("type") or "").upper()
+
+            if snapshot_type:
+                if snapshot_type in ETF_TYPE_CODES:
+                    normalized_type = "ETF"
+                else:
+                    normalized_type = snapshot_type
+            else:
+                normalized_type = "ETF" if is_likely_etf(ticker) else "CS"
+
+            if asset_types_upper:
+                if normalized_type not in asset_types_upper:
                     asset_type_filtered_count += 1
                     continue
-            elif exclude_etfs and is_likely_etf(ticker):
-                asset_type_filtered_count += 1
-                continue
+            elif exclude_etfs:
+                if normalized_type in ETF_TYPE_CODES:
+                    asset_type_filtered_count += 1
+                    continue
+                if not snapshot_type and normalized_type == "ETF":
+                    asset_type_filtered_count += 1
+                    continue
             next_entries.append(entry)
         working_entries = next_entries
         add_step("After asset type / ETF filter", len(working_entries))

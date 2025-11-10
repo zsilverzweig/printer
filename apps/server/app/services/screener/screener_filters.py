@@ -12,6 +12,14 @@ ALLOWED_EXCHANGES: Set[str] = {
     'XASE',  # NYSE American (formerly AMEX)
 }
 
+# Asset type codes that should be treated as ETFs/pooled vehicles
+ETF_TYPE_CODES: Set[str] = {
+    "ETF",
+    "ETN",
+    "ETV",
+    "ETS",
+}
+
 
 def is_allowed_exchange(exchange: str | None) -> bool:
     """Check if an exchange is in the allowed list."""

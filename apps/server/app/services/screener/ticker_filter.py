@@ -30,7 +30,7 @@ class FilterCriteria:
         float_max: Optional[int] = None,
         sic_codes: Optional[List[str]] = None,
     ):
-        self.asset_types = asset_types or []
+        self.asset_types = [atype.upper() for atype in asset_types] if asset_types else []
         self.market_cap_min = market_cap_min
         self.market_cap_max = market_cap_max
         self.float_min = float_min
