@@ -10,6 +10,10 @@ from app.services.market import market as market_service
 from app.services.ai import analytics as analytics_service
 from app.services.core.startup_orchestrator import get_orchestrator
 from app.services.market.background_metrics_loader import ProcessingStats
+from app.services.market.metrics_calculator import METRIC_FIELDS
+
+
+_METRIC_COLUMNS_SQL = ",\n                ".join(METRIC_FIELDS)
 
 router = APIRouter()
 
@@ -436,8 +440,8 @@ async def get_historical_bars(
         )
     
     async with get_async_session() as session:
-        query = text("""
-            SELECT 
+        query = text(f"""
+            SELECT
                 time,
                 symbol,
                 open,
@@ -446,7 +450,8 @@ async def get_historical_bars(
                 close,
                 volume,
                 vwap,
-                trade_count
+                trade_count,
+                {_METRIC_COLUMNS_SQL}
             FROM market_data
             WHERE symbol = :symbol
               AND timescale = :timescale
@@ -469,16 +474,31 @@ async def get_historical_bars(
         
         bars = []
         for row in result:
+            mapping = row._mapping
+            metrics = {}
+            for field in METRIC_FIELDS:
+                value = mapping[field]
+                metrics[field] = float(value) if value is not None else None
+
+            time_value = mapping["time"]
+            if isinstance(time_value, str):
+                time_str = time_value
+            elif time_value is not None:
+                time_str = time_value.isoformat()
+            else:
+                time_str = None
+
             bars.append({
-                "time": row[0].isoformat(),
-                "symbol": row[1],
-                "open": float(row[2]) if row[2] else None,
-                "high": float(row[3]) if row[3] else None,
-                "low": float(row[4]) if row[4] else None,
-                "close": float(row[5]) if row[5] else None,
-                "volume": int(row[6]) if row[6] else None,
-                "vwap": float(row[7]) if row[7] else None,
-                "trade_count": int(row[8]) if row[8] else None
+                "time": time_str,
+                "symbol": mapping["symbol"],
+                "open": float(mapping["open"]) if mapping["open"] is not None else None,
+                "high": float(mapping["high"]) if mapping["high"] is not None else None,
+                "low": float(mapping["low"]) if mapping["low"] is not None else None,
+                "close": float(mapping["close"]) if mapping["close"] is not None else None,
+                "volume": int(mapping["volume"]) if mapping["volume"] is not None else None,
+                "vwap": float(mapping["vwap"]) if mapping["vwap"] is not None else None,
+                "trade_count": int(mapping["trade_count"]) if mapping["trade_count"] is not None else None,
+                "metrics": metrics,
             })
         
         return {
