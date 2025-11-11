@@ -238,17 +238,18 @@ class StrategyService:
         Returns:
             True if triggered
         """
-        entry_price = state.entry_price
+        metadata = state.strategy_metadata or {}
+        entry_price = metadata.get("trigger_price", state.entry_price)
         
         if entry_price is None:
             return False
         
-        # For market orders or first check: trigger if at or below entry
-        if last_price is None or state.order_type == "market":
-            return current_price <= entry_price
+        if last_price is None:
+            # On first observation, trigger immediately if price is already above entry.
+            return current_price >= entry_price
         
-        # For limit orders: detect crossover from above to at/below
-        return last_price > entry_price >= current_price
+        # Require an upward crossover: price must move from below the entry to at/above it.
+        return last_price < entry_price <= current_price
     
     async def check_stop_hit(
         self,
