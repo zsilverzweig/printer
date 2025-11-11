@@ -8,6 +8,7 @@ export { BacktestDetailsDialog } from "./components/backtest-details-dialog";
 export { BacktestManagement } from "./components/backtest-management";
 export { BacktestsTable } from "./components/backtests-table";
 export { RunBacktestDialog } from "./components/run-backtest-dialog";
+export { ScreenerBacktestTab } from "./components/screener-backtest-tab";
 
 export { useBacktests } from "./hooks/use-backtests";
 

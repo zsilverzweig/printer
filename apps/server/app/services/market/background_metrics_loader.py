@@ -11,11 +11,11 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
-from sqlalchemy import func, or_, select, text
+from sqlalchemy import func, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
-from app.models.market_data import MarketData
+from app.models.market_data import MarketData, SymbolDateValidation
 from app.services.core.database import get_async_session
 from app.services.market.metrics_calculator import METRIC_FIELDS, MetricsCalculator
 
@@ -161,6 +161,15 @@ class BackgroundMetricsLoader:
         Returns:
             List of (symbol, timescale, missing_count) tuples, ordered by missing_count DESC.
         """
+        pending_symbols_stmt = (
+            select(SymbolDateValidation.symbol)
+            .where(
+                SymbolDateValidation.timescale == '1day',
+                SymbolDateValidation.background_metrics_calculated.is_(False),
+            )
+            .distinct()
+        )
+
         ordered_bars = (
             select(
                 MarketData.symbol.label("symbol"),
@@ -210,8 +219,26 @@ class BackgroundMetricsLoader:
         )
 
         async with get_async_session() as session:
-            result = await session.execute(stmt)
+            pending_symbols_result = await session.execute(pending_symbols_stmt)
+            pending_symbols = list(pending_symbols_result.scalars().all())
+
+            if not pending_symbols:
+                return []
+
+            result = await session.execute(
+                stmt.where(ordered_bars.c.symbol.in_(pending_symbols))
+            )
             rows = result.all()
+
+        symbols_with_missing = {row.symbol for row in rows}
+        symbols_without_missing = set(pending_symbols) - symbols_with_missing
+
+        for symbol in symbols_without_missing:
+            logger.debug(
+                "BackgroundMetricsLoader found no missing metrics for %s/1day; marking as calculated",
+                symbol,
+            )
+            await self._mark_metrics_calculated(symbol, '1day')
 
         return [(row.symbol, row.timescale, row.missing_count) for row in rows]
 
@@ -238,6 +265,7 @@ class BackgroundMetricsLoader:
         # Find bars missing metrics for this symbol/timescale
         bars = await self._find_missing_bars(symbol, timescale)
         if not bars:
+            await self._mark_metrics_calculated(symbol, timescale)
             return 0
 
         logger.debug("Processing %d bars for %s/%s", len(bars), symbol, timescale)
@@ -273,6 +301,7 @@ class BackgroundMetricsLoader:
                 await session.rollback()
                 raise
 
+        await self._mark_metrics_calculated(symbol, timescale)
         return processed
 
     async def _find_missing_bars(
@@ -325,6 +354,30 @@ class BackgroundMetricsLoader:
         async with get_async_session() as session:
             result = await session.execute(stmt)
             return list(result.scalars().all())
+
+    async def _mark_metrics_calculated(
+        self,
+        symbol: str,
+        timescale: str
+    ) -> None:
+        """Mark symbol/timescale validation rows as having background metrics calculated."""
+        async with get_async_session() as session:
+            result = await session.execute(
+                update(SymbolDateValidation)
+                .where(
+                    SymbolDateValidation.symbol == symbol,
+                    SymbolDateValidation.timescale == timescale,
+                    SymbolDateValidation.background_metrics_calculated.is_(False),
+                )
+                .values(background_metrics_calculated=True)
+            )
+            await session.commit()
+        if result.rowcount:
+            logger.debug(
+                "Marked background metrics as calculated for %s/%s",
+                symbol,
+                timescale,
+            )
 
     async def _seed_calculator(
         self,

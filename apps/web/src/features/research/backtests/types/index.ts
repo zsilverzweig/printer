@@ -11,7 +11,7 @@ export interface Backtest {
   date: string; // ISO date string (YYYY-MM-DD)
   status: "running" | "completed" | "failed" | "cancelled";
   strategyId?: string;
-  strategyConfig?: Record<string, any>;
+  strategyConfig?: Record<string, unknown>;
   screeningCriteriaId?: string;
   screeningCriteriaName?: string;
 
@@ -92,7 +92,7 @@ export interface BacktestTradesResponse {
 
 export interface StrategyScreenerCombo {
   strategyId: string;
-  strategyConfig?: Record<string, any>;
+  strategyConfig?: Record<string, unknown>;
   screeningCriteriaId?: string | null;
 }
 
@@ -133,4 +133,34 @@ export interface MultiStrategyBacktestResponse {
   parentRunId: string;
   backtests: MultiStrategyBacktestResult[];
   summary: MultiStrategyBacktestSummary;
+}
+
+export interface ScreenerBacktestRunRequest {
+  date: string; // YYYY-MM-DD format
+  intervalMinutes?: number;
+}
+
+export interface ScreenerBacktestPoint {
+  timestampUtc: string;
+  timestampLocal: string;
+  count: number;
+  tickers: string[];
+}
+
+export interface ScreenerBacktestSeries {
+  criteriaId: string;
+  criteriaName: string;
+  description?: string | null;
+  totalHits: number;
+  uniqueTickerCount: number;
+  points: ScreenerBacktestPoint[];
+}
+
+export interface ScreenerBacktestResponse {
+  date: string;
+  startUtc: string;
+  endUtc: string;
+  intervalMinutes: number;
+  criteriaCount: number;
+  series: ScreenerBacktestSeries[];
 }

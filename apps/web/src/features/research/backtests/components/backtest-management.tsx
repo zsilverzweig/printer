@@ -17,6 +17,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/lib/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/lib/components/ui/tabs";
+import { useUrlTabs } from "@/lib/hooks/use-url-tabs";
 import { toastError, toastSuccess } from "@/lib/utils/toast";
 
 import { useBacktests } from "../hooks/use-backtests";
@@ -29,6 +31,7 @@ import { BacktestDetailsDialog } from "./backtest-details-dialog";
 import { BacktestsTable } from "./backtests-table";
 import { MultiStrategyBacktestDialog } from "./multi-strategy-backtest-dialog";
 import { RunBacktestDialog } from "./run-backtest-dialog";
+import { ScreenerBacktestTab } from "./screener-backtest-tab";
 
 export function BacktestManagement() {
   const [showRunDialog, setShowRunDialog] = useState(false);
@@ -46,6 +49,10 @@ export function BacktestManagement() {
     runMultiStrategyBacktest,
     refresh,
   } = useBacktests();
+
+  const [activeTab, setActiveTab] = useUrlTabs({ defaultTab: "strategy" });
+  const tabValue = activeTab || "strategy";
+  const isStrategyTab = tabValue === "strategy";
 
   const handleRunBacktest = async (request: RunBacktestRequest) => {
     try {
@@ -104,77 +111,92 @@ export function BacktestManagement() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h1 className="text-3xl font-bold">Backtests</h1>
-          <p className="text-muted-foreground mt-1">
-            Run and manage backtests for your funds
+          <p className="mt-1 text-muted-foreground">
+            Manage strategy and screener backtests from a single workspace.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={refresh} disabled={loading}>
-            <RefreshCw
-              className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`}
-            />
-            Refresh
-          </Button>
-          <Button variant="outline" onClick={() => setShowRunDialog(true)}>
-            <Play className="h-4 w-4 mr-2" />
-            Run Backtest
-          </Button>
-          <Button onClick={() => setShowMultiStrategyDialog(true)}>
-            <Layers className="h-4 w-4 mr-2" />
-            Multi-Strategy Backtest
-          </Button>
-        </div>
+        {isStrategyTab ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="outline" onClick={refresh} disabled={loading}>
+              <RefreshCw
+                className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`}
+              />
+              Refresh
+            </Button>
+            <Button variant="outline" onClick={() => setShowRunDialog(true)}>
+              <Play className="mr-2 h-4 w-4" />
+              Run Backtest
+            </Button>
+            <Button onClick={() => setShowMultiStrategyDialog(true)}>
+              <Layers className="mr-2 h-4 w-4" />
+              Multi-Strategy Backtest
+            </Button>
+          </div>
+        ) : null}
       </div>
 
-      {/* Error Display */}
-      {error && (
-        <Card className="border-red-200 bg-red-50 dark:bg-red-950/50">
-          <CardContent className="p-6">
-            <div className="text-red-800 dark:text-red-200">{error}</div>
-          </CardContent>
-        </Card>
-      )}
+      <Tabs
+        value={tabValue}
+        onValueChange={setActiveTab}
+        className="space-y-6"
+      >
+        <TabsList>
+          <TabsTrigger value="strategy">Strategy Backtests</TabsTrigger>
+          <TabsTrigger value="screener">Screener Backtests</TabsTrigger>
+        </TabsList>
 
-      {/* Backtests Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Backtests ({backtests.length})</CardTitle>
-          <CardDescription>
-            View and manage all backtest executions
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <BacktestsTable
-            backtests={backtests}
-            onViewDetails={handleViewDetails}
-            onRefresh={refresh}
-            loading={loading}
+        <TabsContent value="strategy" className="space-y-6">
+          {error ? (
+            <Card className="border-red-200 bg-red-50 dark:bg-red-950/50">
+              <CardContent className="p-6">
+                <div className="text-red-800 dark:text-red-200">{error}</div>
+              </CardContent>
+            </Card>
+          ) : null}
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Backtests ({backtests.length})</CardTitle>
+              <CardDescription>
+                View and manage all backtest executions.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <BacktestsTable
+                backtests={backtests}
+                onViewDetails={handleViewDetails}
+                onRefresh={refresh}
+                loading={loading}
+              />
+            </CardContent>
+          </Card>
+
+          <RunBacktestDialog
+            open={showRunDialog}
+            onOpenChange={setShowRunDialog}
+            onSubmit={handleRunBacktest}
           />
-        </CardContent>
-      </Card>
 
-      {/* Dialogs */}
-      <RunBacktestDialog
-        open={showRunDialog}
-        onOpenChange={setShowRunDialog}
-        onSubmit={handleRunBacktest}
-      />
+          <MultiStrategyBacktestDialog
+            open={showMultiStrategyDialog}
+            onOpenChange={setShowMultiStrategyDialog}
+            onSubmit={handleRunMultiStrategyBacktest}
+          />
 
-      <MultiStrategyBacktestDialog
-        open={showMultiStrategyDialog}
-        onOpenChange={setShowMultiStrategyDialog}
-        onSubmit={handleRunMultiStrategyBacktest}
-      />
+          <BacktestDetailsDialog
+            backtest={selectedBacktest}
+            open={showDetailsDialog}
+            onOpenChange={setShowDetailsDialog}
+          />
+        </TabsContent>
 
-      <BacktestDetailsDialog
-        backtest={selectedBacktest}
-        open={showDetailsDialog}
-        onOpenChange={setShowDetailsDialog}
-      />
+        <TabsContent value="screener">
+          <ScreenerBacktestTab />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

@@ -189,6 +189,7 @@ class SymbolDateValidation(Base):
         first_bar_time: Timestamp of first bar for this symbol/date/timescale
         last_bar_time: Timestamp of last bar for this symbol/date/timescale
         validated_at: When this record was last validated
+        background_metrics_calculated: Whether background metrics were precomputed
         notes: Any issues or notes about the data
     """
     __tablename__ = "symbol_date_validation"
@@ -226,6 +227,11 @@ class SymbolDateValidation(Base):
         DateTime(timezone=True),
         nullable=False,
         default=utcnow_aware
+    )
+    background_metrics_calculated: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False
     )
     notes: Mapped[str | None] = mapped_column(
         Text,
@@ -296,6 +302,10 @@ class MarketDataBacktestLookup(Base):
         nullable=True
     )
     volume: Mapped[int | None] = mapped_column(
+        BigInteger,
+        nullable=True
+    )
+    today_volume: Mapped[int | None] = mapped_column(
         BigInteger,
         nullable=True
     )

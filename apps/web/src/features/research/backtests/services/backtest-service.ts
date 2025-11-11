@@ -12,6 +12,8 @@ import type {
   MultiStrategyBacktestRequest,
   MultiStrategyBacktestResponse,
   RunBacktestRequest,
+  ScreenerBacktestRunRequest,
+  ScreenerBacktestResponse,
 } from "../types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -47,6 +49,41 @@ function parseBacktest(data: any): Backtest {
     liveOrders: data.live_orders ?? data.liveOrders,
     liveFilled: data.live_filled ?? data.liveFilled,
     liveTransactions: data.live_transactions ?? data.liveTransactions,
+  };
+}
+
+function parseScreenerBacktest(data: any): ScreenerBacktestResponse {
+  const rawSeries = Array.isArray(data.series) ? data.series : [];
+
+  return {
+    date: data.date,
+    startUtc: data.start_utc ?? data.startUtc,
+    endUtc: data.end_utc ?? data.endUtc,
+    intervalMinutes: Number(
+      data.interval_minutes ?? data.intervalMinutes ?? 60
+    ),
+    criteriaCount: Number(
+      data.criteria_count ?? data.criteriaCount ?? rawSeries.length
+    ),
+    series: rawSeries.map((series: any) => {
+      const rawPoints = Array.isArray(series.points) ? series.points : [];
+
+      return {
+        criteriaId: series.criteria_id ?? series.criteriaId,
+        criteriaName: series.criteria_name ?? series.criteriaName,
+        description: series.description ?? null,
+        totalHits: Number(series.total_hits ?? series.totalHits ?? 0),
+        uniqueTickerCount: Number(
+          series.unique_ticker_count ?? series.uniqueTickerCount ?? 0
+        ),
+        points: rawPoints.map((point: any) => ({
+          timestampUtc: point.timestamp_utc ?? point.timestampUtc,
+          timestampLocal: point.timestamp_local ?? point.timestampLocal,
+          count: Number(point.count ?? 0),
+          tickers: Array.isArray(point.tickers) ? point.tickers : [],
+        })),
+      };
+    }),
   };
 }
 
@@ -228,5 +265,34 @@ export const backtestService = {
       backtests: data.backtests || [],
       summary: data.summary || {},
     };
+  },
+
+  /**
+   * Run screener backtest across all criteria for a given date.
+   */
+  async runScreenerBacktest(
+    request: ScreenerBacktestRunRequest
+  ): Promise<ScreenerBacktestResponse> {
+    const response = await fetch(`${API_BASE}/api/backtests/screener/run`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        date: request.date,
+        interval_minutes: request.intervalMinutes ?? 60,
+      }),
+    });
+
+    const data = await response.json().catch(() => null);
+
+    if (!response.ok || !data) {
+      const detail =
+        (data && (data.detail ?? data.message)) ||
+        "Failed to run screener backtest";
+      throw new Error(detail);
+    }
+
+    return parseScreenerBacktest(data);
   },
 };

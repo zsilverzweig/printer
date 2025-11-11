@@ -9,12 +9,13 @@ from datetime import date, datetime
 from typing import List, Optional, Dict, Any
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select, and_
 
 from app.models.strategies import Backtest, Fund, Order, Transaction, Trade
 from app.services.core.database import get_async_session
 from app.services.backtest.backtest_coordinator import BacktestCoordinator
+from app.services.backtest.screener_backtest_service import ScreenerBacktestService
 
 logger = logging.getLogger(__name__)
 
@@ -108,6 +109,97 @@ class BacktestTradeResponse(BaseModel):
     
     class Config:
         from_attributes = True
+
+
+class ScreenerBacktestRunRequest(BaseModel):
+    date: date
+    interval_minutes: int = Field(60, ge=1, le=360)
+
+
+class ScreenerBacktestPointResponse(BaseModel):
+    timestamp_utc: datetime
+    timestamp_local: datetime
+    count: int
+    tickers: List[str]
+
+
+class ScreenerBacktestSeriesResponse(BaseModel):
+    criteria_id: str
+    criteria_name: str
+    description: Optional[str]
+    total_hits: int
+    unique_ticker_count: int
+    points: List[ScreenerBacktestPointResponse]
+
+
+class ScreenerBacktestResponse(BaseModel):
+    date: date
+    start_utc: datetime
+    end_utc: datetime
+    interval_minutes: int
+    criteria_count: int
+    series: List[ScreenerBacktestSeriesResponse]
+
+
+@router.post("/screener/run", response_model=ScreenerBacktestResponse)
+async def run_screener_backtest(request: ScreenerBacktestRunRequest):
+    """
+    Run screener backtests across all screening criteria for a given date.
+
+    Executes each screener at hourly intervals (configurable) across the
+    regular trading session and returns the aggregated match counts.
+    """
+    service = ScreenerBacktestService()
+
+    try:
+        result = await service.run(
+            target_date=request.date,
+            interval_minutes=request.interval_minutes,
+        )
+
+        series_payload = [
+            ScreenerBacktestSeriesResponse(
+                criteria_id=series.criteria_id,
+                criteria_name=series.criteria_name,
+                description=series.description,
+                total_hits=series.total_hits,
+                unique_ticker_count=series.unique_ticker_count,
+                points=[
+                    ScreenerBacktestPointResponse(
+                        timestamp_utc=point.timestamp_utc,
+                        timestamp_local=point.timestamp_local,
+                        count=point.count,
+                        tickers=list(point.tickers),
+                    )
+                    for point in series.points
+                ],
+            )
+            for series in result.series
+        ]
+
+        return ScreenerBacktestResponse(
+            date=result.date,
+            start_utc=result.start_utc,
+            end_utc=result.end_utc,
+            interval_minutes=result.interval_minutes,
+            criteria_count=len(series_payload),
+            series=series_payload,
+        )
+
+    except ValueError as exc:
+        logger.error("Validation error running screener backtest: %s", exc)
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        logger.error("Service unavailable for screener backtest: %s", exc)
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Error running screener backtest: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to run screener backtest: {str(exc)}",
+        ) from exc
 
 
 @router.post("/run", response_model=BacktestResponse)

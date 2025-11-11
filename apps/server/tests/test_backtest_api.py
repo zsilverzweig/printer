@@ -14,6 +14,7 @@ Also tests that backtest orders/positions/transactions behave the same as non-ba
 import pytest
 import uuid
 from datetime import date, datetime, timezone
+from zoneinfo import ZoneInfo
 from unittest.mock import patch, Mock, AsyncMock, MagicMock
 
 from fastapi.testclient import TestClient
@@ -21,7 +22,100 @@ from fastapi import status
 
 from app.main import app
 from app.models.strategies import Fund, Backtest, Order, Transaction, Trade, ScreeningCriteria
+from app.services.backtest.screener_backtest_service import (
+    ScreenerBacktestResult,
+    ScreenerBacktestSeries,
+    ScreenerBacktestPoint,
+)
 from tests.test_builders import build_fund, build_order, build_transaction
+
+
+@pytest.mark.asyncio
+async def test_run_screener_backtest_success():
+    """Test running the screener backtest endpoint successfully."""
+    client = TestClient(app)
+
+    sample_result = ScreenerBacktestResult(
+        date=date(2024, 1, 15),
+        start_utc=datetime(2024, 1, 15, 14, 30, tzinfo=timezone.utc),
+        end_utc=datetime(2024, 1, 15, 20, 0, tzinfo=timezone.utc),
+        interval_minutes=60,
+        series=[
+            ScreenerBacktestSeries(
+                criteria_id="crit-1",
+                criteria_name="Breakouts",
+                description="Top movers",
+                points=[
+                    ScreenerBacktestPoint(
+                        timestamp_utc=datetime(2024, 1, 15, 14, 30, tzinfo=timezone.utc),
+                        timestamp_local=datetime(
+                            2024, 1, 15, 9, 30, tzinfo=ZoneInfo("America/New_York")
+                        ),
+                        count=3,
+                        tickers=["AAPL", "MSFT", "TSLA"],
+                    )
+                ],
+                total_hits=3,
+                unique_ticker_count=3,
+            )
+        ],
+    )
+
+    with patch("app.routers.backtests.ScreenerBacktestService") as mock_service_cls:
+        mock_service = MagicMock()
+        mock_service.run = AsyncMock(return_value=sample_result)
+        mock_service_cls.return_value = mock_service
+
+        response = client.post(
+            "/api/backtests/screener/run",
+            json={"date": "2024-01-15", "interval_minutes": 60},
+        )
+
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["criteria_count"] == 1
+    assert data["interval_minutes"] == 60
+    assert data["series"][0]["criteria_id"] == "crit-1"
+    assert data["series"][0]["points"][0]["count"] == 3
+    assert data["series"][0]["points"][0]["tickers"] == ["AAPL", "MSFT", "TSLA"]
+
+
+@pytest.mark.asyncio
+async def test_run_screener_backtest_validation_error():
+    """Test screener backtest endpoint returns 400 on validation errors."""
+    client = TestClient(app)
+
+    with patch("app.routers.backtests.ScreenerBacktestService") as mock_service_cls:
+        mock_service = MagicMock()
+        mock_service.run = AsyncMock(side_effect=ValueError("invalid interval"))
+        mock_service_cls.return_value = mock_service
+
+        response = client.post(
+            "/api/backtests/screener/run",
+            json={"date": "2024-01-15", "interval_minutes": 0},
+        )
+
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert "invalid interval" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_run_screener_backtest_service_unavailable():
+    """Test screener backtest endpoint returns 503 if service unavailable."""
+    client = TestClient(app)
+
+    with patch("app.routers.backtests.ScreenerBacktestService") as mock_service_cls:
+        mock_service = MagicMock()
+        mock_service.run = AsyncMock(side_effect=RuntimeError("service down"))
+        mock_service_cls.return_value = mock_service
+
+        response = client.post(
+            "/api/backtests/screener/run",
+            json={"date": "2024-01-15"},
+        )
+
+    assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+    assert "service down" in response.json()["detail"]
 
 
 @pytest.mark.asyncio

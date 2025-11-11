@@ -43,9 +43,12 @@ from app.services.core.database import get_async_session, init_db
 from app.services.core.time_context import get_current_time
 from app.services.screener.screener_snapshot import fetch_snapshot_all
 from app.services.market.market_data_service import get_market_data_service
+from app.services.market.metrics_calculator import METRIC_FIELDS, METRIC_TIMESCALES
+from app.services.backtest.backtest_lookup_service import EXPECTED_MINUTES_BY_TIMESCALE
 
 
 _EASTERN_TIMEZONE = ZoneInfo("America/New_York")
+_METRICS_COMPLETENESS_THRESHOLD = 0.9
 
 
 def _get_et_today() -> date:
@@ -112,6 +115,136 @@ async def _fetch_validation_summary(
     return summary
 
 
+async def _fetch_metrics_summary(
+    dates: Sequence[date],
+    timescales: Sequence[str],
+) -> Dict[str, Dict[str, Dict[str, Any]]]:
+    """Aggregate technical metrics coverage for the requested dates/timescales."""
+    if not dates or not timescales:
+        return {}
+
+    relevant_timescales = [ts for ts in timescales if ts in METRIC_TIMESCALES]
+    if not relevant_timescales:
+        return {}
+
+    start_date = min(dates)
+    end_date = max(dates)
+    start_ts = datetime.combine(start_date, datetime.min.time()).replace(tzinfo=timezone.utc)
+    end_ts = datetime.combine(end_date + timedelta(days=1), datetime.min.time()).replace(
+        tzinfo=timezone.utc
+    )
+
+    metric_condition = " AND ".join(f"{field} IS NOT NULL" for field in METRIC_FIELDS)
+    summary: Dict[str, Dict[str, Dict[str, Any]]] = {}
+
+    async with get_async_session() as session:
+        result = await session.execute(
+            text(
+                f"""
+                SELECT
+                    DATE(time) AS day,
+                    timescale,
+                    COUNT(*) AS total_rows,
+                    COUNT(*) FILTER (WHERE {metric_condition}) AS metric_rows,
+                    COUNT(DISTINCT symbol) AS symbol_count
+                FROM market_data
+                WHERE timescale = ANY(:timescales)
+                  AND time >= :start_ts
+                  AND time < :end_ts
+                GROUP BY day, timescale
+                """
+            ),
+            {
+                "timescales": relevant_timescales,
+                "start_ts": start_ts,
+                "end_ts": end_ts,
+            },
+        )
+
+        for row in result:
+            mapping = row._mapping
+            day: date = mapping["day"]
+            timescale = mapping["timescale"]
+            total_rows = int(mapping["total_rows"] or 0)
+            metric_rows = int(mapping["metric_rows"] or 0)
+            ratio = (metric_rows / total_rows) if total_rows else 0.0
+
+            summary.setdefault(day.isoformat(), {})[timescale] = {
+                "has_data": total_rows > 0,
+                "total_rows": total_rows,
+                "metric_rows": metric_rows,
+                "metric_ratio": ratio,
+                "symbol_count": int(mapping["symbol_count"] or 0),
+            }
+
+    return summary
+
+
+async def _fetch_backtest_lookup_summary(
+    dates: Sequence[date],
+    timescales: Sequence[str],
+) -> Dict[str, Dict[str, Dict[str, Any]]]:
+    """Aggregate backtest lookup coverage for the requested dates/timescales."""
+    if not dates or not timescales:
+        return {}
+
+    relevant_timescales = [ts for ts in timescales if ts in EXPECTED_MINUTES_BY_TIMESCALE]
+    if not relevant_timescales:
+        return {}
+
+    start_date = min(dates)
+    end_date = max(dates)
+    start_ts = datetime.combine(start_date, datetime.min.time()).replace(tzinfo=timezone.utc)
+    end_ts = datetime.combine(end_date + timedelta(days=1), datetime.min.time()).replace(
+        tzinfo=timezone.utc
+    )
+
+    summary: Dict[str, Dict[str, Dict[str, Any]]] = {}
+
+    async with get_async_session() as session:
+        result = await session.execute(
+            text(
+                """
+                SELECT
+                    DATE(lookup_time) AS day,
+                    timescale,
+                    COUNT(*) AS total_rows,
+                    COUNT(DISTINCT symbol) AS symbol_count,
+                    COUNT(DISTINCT lookup_time) AS minute_count
+                FROM market_data_backtest_lookup
+                WHERE timescale = ANY(:timescales)
+                  AND lookup_time >= :start_ts
+                  AND lookup_time < :end_ts
+                GROUP BY day, timescale
+                """
+            ),
+            {
+                "timescales": relevant_timescales,
+                "start_ts": start_ts,
+                "end_ts": end_ts,
+            },
+        )
+
+        for row in result:
+            mapping = row._mapping
+            day: date = mapping["day"]
+            timescale = mapping["timescale"]
+            expected_minutes = EXPECTED_MINUTES_BY_TIMESCALE.get(timescale, 0)
+            minute_count = int(mapping["minute_count"] or 0)
+            ratio = (minute_count / expected_minutes) if expected_minutes else 0.0
+
+            summary.setdefault(day.isoformat(), {})[timescale] = {
+                "has_data": minute_count > 0,
+                "total_rows": int(mapping["total_rows"] or 0),
+                "symbol_count": int(mapping["symbol_count"] or 0),
+                "minute_count": minute_count,
+                "expected_minutes": expected_minutes,
+                "minute_ratio": ratio,
+            }
+
+    return summary
+
+
 def _format_table(rows: List[List[str]], headers: List[str]) -> str:
     """Render rows as a simple ASCII table."""
     widths = [len(header) for header in headers]
@@ -147,6 +280,8 @@ async def detect_market_data_gaps(
         service = get_market_data_service()
         coverage = await service.get_coverage_summary(recent_days, timescales)
         validation = await _fetch_validation_summary(recent_days, timescales)
+        metrics = await _fetch_metrics_summary(recent_days, timescales)
+        backtest_lookup = await _fetch_backtest_lookup_summary(recent_days, timescales)
 
         rows: List[List[str]] = []
         headers = [
@@ -158,12 +293,44 @@ async def detect_market_data_gaps(
             "Last Bar",
             "Validation Rows",
             "Complete Rows",
+            "Metrics",
+            "Backtest Lookup",
         ]
 
         def fmt_ts(ts_value: Optional[datetime]) -> str:
             if not ts_value:
                 return "--"
             return ts_value.astimezone(timezone.utc).strftime("%H:%M")
+
+        def fmt_metrics_status(day_key: str, timescale_key: str) -> str:
+            if timescale_key not in METRIC_TIMESCALES:
+                return "--"
+            entry = metrics.get(day_key, {}).get(timescale_key)
+            if not entry:
+                return "No data"
+            if not entry.get("has_data"):
+                return "No data"
+            ratio = entry.get("metric_ratio", 0.0)
+            total = entry.get("total_rows", 0)
+            metric_rows = entry.get("metric_rows", 0)
+            status = "OK" if ratio >= _METRICS_COMPLETENESS_THRESHOLD else "Partial"
+            return f"{status} {ratio * 100:.0f}% ({metric_rows}/{total})"
+
+        def fmt_lookup_status(day_key: str, timescale_key: str) -> str:
+            if timescale_key not in EXPECTED_MINUTES_BY_TIMESCALE:
+                return "--"
+            entry = backtest_lookup.get(day_key, {}).get(timescale_key)
+            if not entry:
+                return "No data"
+            if not entry.get("has_data"):
+                return "No data"
+            ratio = entry.get("minute_ratio", 0.0)
+            minutes = entry.get("minute_count", 0)
+            expected = entry.get("expected_minutes", 0)
+            if not expected:
+                return f"Partial {ratio * 100:.0f}% ({minutes}m)"
+            status = "OK" if expected and minutes >= expected else "Partial"
+            return f"{status} {ratio * 100:.0f}% ({minutes}/{expected})"
 
         for day in recent_days:
             day_iso = day.isoformat()
@@ -181,6 +348,8 @@ async def detect_market_data_gaps(
                         fmt_ts(coverage_entry.get("last_bar")),
                         str(validation_entry.get("validation_rows", 0)),
                         str(validation_entry.get("complete_rows", 0)),
+                        fmt_metrics_status(day_iso, timescale),
+                        fmt_lookup_status(day_iso, timescale),
                     ]
                 )
 
@@ -240,6 +409,8 @@ async def detect_market_data_gaps(
                             "symbols_to_load": symbols_to_load,
                             "coverage": coverage.get(day.isoformat(), {}).get(timescale, {}),
                             "validation": validation.get((day, timescale), {}),
+                            "metrics": metrics.get(day.isoformat(), {}).get(timescale, {}),
+                            "backtest_lookup": backtest_lookup.get(day.isoformat(), {}).get(timescale, {}),
                         }
                     )
 
@@ -247,6 +418,8 @@ async def detect_market_data_gaps(
             "table": table,
             "coverage": coverage,
             "validation": validation,
+            "metrics": metrics,
+            "backtest_lookup": backtest_lookup,
             "gaps": gaps,
         }
 
@@ -380,9 +553,25 @@ async def load_date_range_data(
     while current <= end_date:
         dates.append(current)
         current += timedelta(days=1)
+
+    # Skip dates that are in the future relative to the current time context
+    now_utc = get_current_time()
+    if now_utc.tzinfo is None:
+        now_utc = now_utc.replace(tzinfo=timezone.utc)
+    now_et = now_utc.astimezone(_EASTERN_TIMEZONE)
+    current_trading_day = now_et.date()
+    dates = [d for d in dates if d <= current_trading_day]
     
     # Process each timescale
     for timescale in timescales:
+        if timescale == '1day':
+            timescale_dates = list(dates)
+        else:
+            timescale_dates = list(dates)
+
+        if not timescale_dates:
+            continue
+
         config = TIMESCALE_CONFIG[timescale]
         
         processed = 0
@@ -412,7 +601,7 @@ async def load_date_range_data(
                     }
                 )
                 existing_dates = {row[0] for row in result}
-                missing_dates = [d for d in dates if d not in existing_dates]
+                missing_dates = [d for d in timescale_dates if d not in existing_dates]
                 if missing_dates:
                     symbols_needing_data.append((symbol, missing_dates))
         
@@ -423,14 +612,32 @@ async def load_date_range_data(
         semaphore = asyncio.Semaphore(3)
         
         async def process_symbol_date(symbol: str, date: datetime.date):
-            nonlocal processed, succeeded, failed
+            nonlocal processed, succeeded, failed, skipped
             
             async with semaphore:
                 processed += 1
                 try:
                     bars = await load_symbol_data(client, symbol, date, timescale, config)
+                    # Drop any bars that are in the future or outside the requested date
+                    bars = [
+                        bar for bar in bars
+                        if bar.time <= now_utc and bar.time.date() == date
+                    ]
                     if bars:
                         await insert_bars(bars)
+
+                    if date >= current_trading_day:
+                        skipped += 1
+                        if logger.isEnabledFor(logging.DEBUG):
+                            logger.debug(
+                                "Skipping validation for %s %s %s (current trading day)",
+                                symbol,
+                                timescale,
+                                date,
+                            )
+                        return
+
+                    if bars:
                         await create_validation(symbol, date, timescale, bars)
                         succeeded += 1
                     else:
