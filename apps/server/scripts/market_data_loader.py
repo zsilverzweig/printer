@@ -626,17 +626,6 @@ async def load_date_range_data(
                     if bars:
                         await insert_bars(bars)
 
-                    if date >= current_trading_day:
-                        skipped += 1
-                        if logger.isEnabledFor(logging.DEBUG):
-                            logger.debug(
-                                "Skipping validation for %s %s %s (current trading day)",
-                                symbol,
-                                timescale,
-                                date,
-                            )
-                        return
-
                     if bars:
                         await create_validation(symbol, date, timescale, bars)
                         succeeded += 1

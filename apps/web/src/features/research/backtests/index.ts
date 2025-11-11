@@ -11,6 +11,9 @@ export { RunBacktestDialog } from "./components/run-backtest-dialog";
 export { ScreenerBacktestTab } from "./components/screener-backtest-tab";
 
 export { useBacktests } from "./hooks/use-backtests";
+export { useBacktestDetails } from "./hooks/use-backtest-details";
+
+export { BacktestDetailsPage } from "./pages/backtest-details";
 
 export { backtestService } from "./services/backtest-service";
 

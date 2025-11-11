@@ -202,6 +202,80 @@ class AlpacaBacktestWrapper:
         """
         return []
     
+    async def get_open_orders(self, symbol: Optional[str] = None) -> list:
+        """
+        Get open orders during backtest.
+        
+        Backtests don't maintain broker-side order book, so return empty list.
+        """
+        return []
+    
+    async def place_market_order(
+        self,
+        symbol: str,
+        qty: float,
+        side: str,
+        time_in_force: str = "day"
+    ) -> Dict[str, Any]:
+        """
+        Mimic Alpaca market order placement for compatibility with OrderExecutor.
+        """
+        order_id = f"BT_{uuid.uuid4()}"
+        logger.info(
+            f"[BACKTEST] place_market_order: {side} {qty} {symbol} (order_id={order_id})"
+        )
+        now = get_current_time().isoformat()
+        return {
+            "id": order_id,
+            "client_order_id": order_id,
+            "symbol": symbol,
+            "qty": str(qty),
+            "side": side,
+            "order_type": "market",
+            "type": "market",
+            "time_in_force": time_in_force,
+            "status": "accepted",
+            "filled_qty": "0",
+            "filled_avg_price": None,
+            "submitted_at": now,
+            "created_at": now,
+            "updated_at": now,
+        }
+    
+    async def place_limit_order(
+        self,
+        symbol: str,
+        qty: float,
+        side: str,
+        limit_price: float,
+        time_in_force: str = "day"
+    ) -> Dict[str, Any]:
+        """
+        Mimic Alpaca limit order placement for compatibility with OrderExecutor.
+        """
+        order_id = f"BT_{uuid.uuid4()}"
+        logger.info(
+            f"[BACKTEST] place_limit_order: {side} {qty} {symbol} @{limit_price:.2f} (order_id={order_id})"
+        )
+        now = get_current_time().isoformat()
+        return {
+            "id": order_id,
+            "client_order_id": order_id,
+            "symbol": symbol,
+            "qty": str(qty),
+            "side": side,
+            "order_type": "limit",
+            "type": "limit",
+            "limit_price": str(limit_price),
+            "time_in_force": time_in_force,
+            "status": "accepted",
+            "filled_qty": "0",
+            "filled_avg_price": None,
+            "submitted_at": now,
+            "created_at": now,
+            "updated_at": now,
+        }
+    
     async def get_account(self) -> Dict[str, Any]:
         """
         Get account info during backtest.

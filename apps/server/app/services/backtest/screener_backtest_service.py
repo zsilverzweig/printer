@@ -204,12 +204,19 @@ class ScreenerBacktestService:
             statement = select(ScreeningCriteria).order_by(ScreeningCriteria.name)
 
             if fund_ids:
+                criteria_id_subquery = (
+                    select(Fund.screening_criteria_id)
+                    .where(
+                        Fund.id.in_(fund_ids),
+                        Fund.screening_criteria_id.isnot(None),
+                    )
+                    .distinct()
+                )
+
                 statement = (
                     select(ScreeningCriteria)
-                    .join(Fund, Fund.screening_criteria_id == ScreeningCriteria.id)
-                    .where(Fund.id.in_(fund_ids))
+                    .where(ScreeningCriteria.id.in_(criteria_id_subquery))
                     .order_by(ScreeningCriteria.name)
-                    .distinct()
                 )
 
             result = await session.execute(statement)

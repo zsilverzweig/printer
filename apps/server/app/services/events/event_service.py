@@ -13,6 +13,8 @@ from app.services.core.time_context import get_current_time
 from sqlalchemy import select
 
 from app.models.events import AITradeEvent, AlpacaTradeEvent, StrategyEngineEvent
+from app.models.backtests import BacktestEvent
+from app.services.backtest.progress_broker import backtest_progress_broker
 from app.services.core.database import get_async_session
 import json
 
@@ -103,6 +105,71 @@ class EventService:
             logger.error(
                 f"❌ Failed to log AI trade event for {ticker}: {e}",
                 exc_info=True
+            )
+            return None
+    
+    async def log_backtest_event(
+        self,
+        backtest_id: str,
+        fund_id: str,
+        event_type: str,
+        *,
+        simulated_time: Optional[datetime] = None,
+        message: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        sequence: Optional[int] = None,
+    ) -> Optional[str]:
+        """
+        Persist a lifecycle event specific to backtest execution.
+        """
+        try:
+            if simulated_time and simulated_time.tzinfo is None:
+                simulated_time = simulated_time.replace(tzinfo=timezone.utc)
+
+            event = BacktestEvent(
+                backtest_id=backtest_id,
+                fund_id=fund_id,
+                event_type=event_type,
+                simulated_time=simulated_time,
+                message=message,
+                metadata=metadata or {},
+                sequence=sequence or 0,
+            )
+
+            async with get_async_session() as session:
+                session.add(event)
+                await session.commit()
+                await session.refresh(event)
+
+            payload = {
+                "id": event.id,
+                "backtest_id": event.backtest_id,
+                "fund_id": event.fund_id,
+                "event_type": event.event_type,
+                "simulated_time": event.simulated_time.isoformat() if event.simulated_time else None,
+                "sequence": event.sequence,
+                "message": event.message,
+                "metadata": event.metadata or {},
+                "created_at": event.created_at.isoformat() if event.created_at else None,
+            }
+
+            await backtest_progress_broker.publish(backtest_id, payload)
+
+            logger.debug(
+                "📈 Logged backtest event: id=%s backtest=%s type=%s sequence=%s",
+                event.id,
+                backtest_id[:8],
+                event_type,
+                event.sequence,
+            )
+            return event.id
+        except Exception as exc:
+            logger.error(
+                "❌ Failed to log backtest event for backtest_id=%s type=%s: %s",
+                backtest_id,
+                event_type,
+                exc,
+                exc_info=True,
             )
             return None
     

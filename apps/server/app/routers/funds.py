@@ -39,6 +39,7 @@ from app.services.trading.alpaca_service import AlpacaService
 from app.services.trading.order_lifecycle import OrderLifecycleManager
 from app.services.trading.reconciliation_service import get_reconciliation_service
 from app.services.strategies.ticker_state_service import get_ticker_state_service
+from app.services.finance.positions_overview import get_grouped_open_positions
 from app.types import TickerStateTransitionCode
 
 logger = logging.getLogger(__name__)
@@ -781,6 +782,21 @@ async def list_funds(include_archived: bool = False) -> List[dict]:
     except Exception as e:
         logger.error(f"Error listing funds: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/funds/positions")
+async def list_all_fund_positions() -> dict:
+    """
+    Retrieve open positions grouped by symbol across all funds.
+    """
+    try:
+        positions = await get_grouped_open_positions()
+        return {"positions": positions}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error loading grouped positions: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to load positions overview")
 
 
 @router.get("/funds/{fund_id}", response_model=FundResponse)

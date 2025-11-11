@@ -6,6 +6,8 @@
 
 import type {
   Backtest,
+  BacktestEvent,
+  BacktestEventsResponse,
   BacktestListResponse,
   BacktestOrdersResponse,
   BacktestTradesResponse,
@@ -87,6 +89,20 @@ function parseScreenerBacktest(data: any): ScreenerBacktestResponse {
   };
 }
 
+function parseBacktestEvent(data: any): BacktestEvent {
+  return {
+    id: data.id,
+    backtestId: data.backtest_id ?? data.backtestId,
+    fundId: data.fund_id ?? data.fundId,
+    eventType: data.event_type ?? data.eventType,
+    simulatedTime: data.simulated_time ?? data.simulatedTime ?? null,
+    sequence: Number(data.sequence ?? 0),
+    message: data.message ?? null,
+    metadata: typeof data.metadata === "object" && data.metadata !== null ? data.metadata : {},
+    createdAt: data.created_at ?? data.createdAt,
+  };
+}
+
 export const backtestService = {
   /**
    * List backtests with optional filters
@@ -121,6 +137,55 @@ export const backtestService = {
       total: data.total ?? data.backtests.length,
       limit: data.limit ?? limit,
       offset: data.offset ?? offset,
+    };
+  },
+
+  /**
+   * Fetch persisted backtest events for initial hydration
+   */
+  async getBacktestEvents(backtestId: string, limit: number = 1000): Promise<BacktestEventsResponse> {
+    const response = await fetch(
+      `${API_BASE}/api/backtests/${backtestId}/events?limit=${limit}`
+    );
+    if (!response.ok) {
+      throw new Error("Failed to fetch backtest events");
+    }
+    const data = await response.json();
+    const rawEvents = Array.isArray(data.events) ? data.events : [];
+    return {
+      backtestId: data.backtest_id ?? data.backtestId ?? backtestId,
+      events: rawEvents.map(parseBacktestEvent),
+    };
+  },
+
+  /**
+   * Subscribe to backtest websocket for live updates
+   */
+  openBacktestWebSocket(
+    backtestId: string,
+    onEvent: (event: BacktestEvent) => void,
+    onError?: (error: Event) => void
+  ): () => void {
+    const wsUrl = new URL(`/api/backtests/ws/${backtestId}`, API_BASE);
+    wsUrl.protocol = wsUrl.protocol.replace("http", "ws");
+
+    const socket = new WebSocket(wsUrl.toString());
+
+    socket.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+        onEvent(parseBacktestEvent(payload));
+      } catch (error) {
+        console.error("Failed to parse backtest event message:", error);
+      }
+    };
+
+    if (onError) {
+      socket.onerror = onError;
+    }
+
+    return () => {
+      socket.close();
     };
   },
 

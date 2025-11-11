@@ -4,22 +4,54 @@ Backtest API endpoints.
 Provides endpoints for running backtests, querying results, and managing backtest execution.
 """
 
+import asyncio
+import json
 import logging
 from datetime import date, datetime
 from typing import List, Optional, Dict, Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.responses import StreamingResponse
+from starlette.websockets import WebSocketState
 from pydantic import BaseModel, Field
 from sqlalchemy import select, and_
 
 from app.models.strategies import Backtest, Fund, Order, Transaction, Trade
+from app.models.backtests import BacktestEvent
 from app.services.core.database import get_async_session
 from app.services.backtest.backtest_coordinator import BacktestCoordinator
 from app.services.backtest.screener_backtest_service import ScreenerBacktestService
+from app.services.backtest.progress_broker import backtest_progress_broker
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _serialize_backtest_event(event: BacktestEvent) -> Dict[str, Any]:
+    return {
+        "id": event.id,
+        "backtest_id": event.backtest_id,
+        "fund_id": event.fund_id,
+        "event_type": event.event_type,
+        "simulated_time": event.simulated_time.isoformat() if event.simulated_time else None,
+        "sequence": event.sequence,
+        "message": event.message,
+        "metadata": event.metadata or {},
+        "created_at": event.created_at.isoformat() if event.created_at else None,
+    }
+
+
+async def _load_backtest_events(backtest_id: str) -> List[Dict[str, Any]]:
+    async with get_async_session() as session:
+        stmt = (
+            select(BacktestEvent)
+            .where(BacktestEvent.backtest_id == backtest_id)
+            .order_by(BacktestEvent.created_at, BacktestEvent.sequence)
+        )
+        result = await session.execute(stmt)
+        events = result.scalars().all()
+    return [_serialize_backtest_event(event) for event in events]
 
 
 # Request/Response Models
@@ -273,6 +305,75 @@ async def get_backtest(backtest_id: str):
             raise HTTPException(status_code=404, detail=f"Backtest {backtest_id} not found")
         
         return _serialize_backtest(backtest)
+
+
+@router.get("/{backtest_id}/events")
+async def get_backtest_events(backtest_id: str, limit: int = 1000):
+    """
+    Return persisted backtest events for initial page load.
+    """
+    async with get_async_session() as session:
+        stmt = (
+            select(BacktestEvent)
+            .where(BacktestEvent.backtest_id == backtest_id)
+            .order_by(BacktestEvent.created_at, BacktestEvent.sequence)
+            .limit(limit)
+        )
+        result = await session.execute(stmt)
+        events = result.scalars().all()
+
+    return {
+        "backtest_id": backtest_id,
+        "events": [_serialize_backtest_event(event) for event in events],
+    }
+
+
+@router.get("/{backtest_id}/stream")
+async def stream_backtest_progress(backtest_id: str):
+    """
+    Stream backtest events as newline-delimited JSON payloads.
+    """
+
+    async def event_generator():
+        history = await _load_backtest_events(backtest_id)
+        for event in history:
+            yield (json.dumps(event) + "\n").encode("utf-8")
+
+        try:
+            async with backtest_progress_broker.stream(backtest_id) as queue:
+                while True:
+                    payload = await queue.get()
+                    yield (json.dumps(payload) + "\n").encode("utf-8")
+        except asyncio.CancelledError:
+            logger.debug("Backtest stream cancelled for %s", backtest_id)
+            return
+
+    return StreamingResponse(event_generator(), media_type="application/json")
+
+
+@router.websocket("/ws/{backtest_id}")
+async def backtest_progress_websocket(websocket: WebSocket, backtest_id: str):
+    """
+    WebSocket endpoint for live backtest progress updates.
+    """
+    await websocket.accept()
+    try:
+        history = await _load_backtest_events(backtest_id)
+        for event in history:
+            await websocket.send_json(event)
+
+        async with backtest_progress_broker.stream(backtest_id) as queue:
+            while True:
+                payload = await queue.get()
+                await websocket.send_json(payload)
+    except WebSocketDisconnect:
+        logger.info("Backtest progress WebSocket disconnected for %s", backtest_id)
+    except Exception as exc:
+        logger.error("Backtest progress WebSocket error for %s: %s", backtest_id, exc, exc_info=True)
+        await websocket.close(code=1011)
+    finally:
+        if websocket.application_state != WebSocketState.DISCONNECTED:
+            await websocket.close()
 
 
 @router.get("/{backtest_id}/orders")

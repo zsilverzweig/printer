@@ -10,6 +10,7 @@ Orchestrates the execution of a backtest by:
 """
 
 import logging
+import time
 import uuid
 from datetime import datetime, date, timedelta, timezone, time as dt_time
 
@@ -229,7 +230,7 @@ class BacktestCoordinator:
             )
             
             # Step 1: Ensure data availability
-            await self._ensure_data_available(fund, backtest_date)
+            await self._ensure_data_available(fund, backtest_date, backtest_id)
             
             # Step 2: Run trading day
             await self._run_trading_day(backtest_id, fund, backtest_date)
@@ -418,7 +419,8 @@ class BacktestCoordinator:
     async def _ensure_data_available(
         self,
         fund: Fund,
-        backtest_date: date
+        backtest_date: date,
+        backtest_id: str
     ) -> None:
         """
         Ensure minute bar data is available for backtest date.
@@ -444,11 +446,31 @@ class BacktestCoordinator:
                 # Populate the lookup table for this date
                 result = await populate_lookup_for_date(backtest_date, timescale='1min')
                 logger.info(f"✅ Lookup table populated: {result['total_rows']:,} rows for {result['symbols']} symbols")
+                await event_service.log_backtest_event(
+                    backtest_id=backtest_id,
+                    fund_id=fund.id,
+                    event_type="lookup_populated",
+                    simulated_time=datetime.combine(backtest_date, dt_time(9, 30)).replace(tzinfo=timezone.utc),
+                    message=f"Populated lookup for {backtest_date}",
+                    metadata={
+                        "total_rows": result.get("total_rows"),
+                        "symbols": result.get("symbols"),
+                        "size": result.get("size"),
+                    },
+                )
             except Exception as e:
                 logger.error(f"❌ Failed to populate lookup table: {e}", exc_info=True)
                 raise ValueError(f"Failed to populate lookup data for {backtest_date}: {str(e)}")
         else:
             logger.info(f"✅ Lookup data exists: {coverage['total_rows']:,} rows, {coverage['symbols']} symbols, {coverage['minutes']} minutes")
+            await event_service.log_backtest_event(
+                backtest_id=backtest_id,
+                fund_id=fund.id,
+                event_type="lookup_verified",
+                simulated_time=datetime.combine(backtest_date, dt_time(9, 30)).replace(tzinfo=timezone.utc),
+                message=f"Lookup coverage verified for {backtest_date}",
+                metadata=coverage,
+            )
         
         logger.info(f"✅ Data check complete for {backtest_date}")
     
@@ -530,12 +552,21 @@ class BacktestCoordinator:
             
             logger.info(f"⏱️  Backtest time window: {start_time} to {end_time}")
             
-            # Track balance separately for this backtest (don't modify real fund balance)
-            # Store original balance to restore later
-            original_fund_balance = fund.balance
-            
-            # Create a simulated balance tracker for this backtest
-            backtest_balance = original_fund_balance
+            loop_wall_start = time.perf_counter()
+            iteration_sequence = 0
+            await event_service.log_backtest_event(
+                backtest_id=backtest_id,
+                fund_id=fund.id,
+                event_type="start",
+                simulated_time=start_time,
+                sequence=iteration_sequence,
+                message="Backtest trading loop started",
+                metadata={
+                    "start_time": start_time.isoformat(),
+                    "end_time": end_time.isoformat(),
+                    "monitoring_interval_minutes": MONITORING_INTERVAL_MINUTES,
+                },
+            )
             
             # PRE-COMPUTE all screener results for the day (much faster than running during loop!)
             logger.info(f"🔍 Pre-computing screener results for entire trading day...")
@@ -565,6 +596,14 @@ class BacktestCoordinator:
             MONITORING_INTERVAL_MINUTES = 5
             
             while current_time <= end_time:
+                iteration_sequence += 1
+                iteration_wall_start = time.perf_counter()
+                tickers_analyzed = 0
+                filled_count = 0
+                pending_orders_snapshot_count = 0
+                iteration_metadata: Dict[str, Any] = {}
+                active_positions: Optional[Dict[str, Any]] = None
+
                 # Update backtest time context
                 update_backtest_time(current_time)
                 
@@ -582,7 +621,7 @@ class BacktestCoordinator:
                         # Get screened tickers using HISTORICAL screener at backtest time
                         from app.services.screener.screener import get_screener_service
                         screener = get_screener_service()
-                        tickers = []
+                        tickers: List[str] = []
                         
                         # Check cache first (historical data never changes for a given timestamp!)
                         cache_key = current_time.isoformat()
@@ -633,109 +672,54 @@ class BacktestCoordinator:
                             except Exception as e:
                                 logger.warning(f"Could not run historical screener: {e}", exc_info=True)
                         
-                        if not tickers:
-                            # No screener results, skip this iteration
-                            logger.warning(f"[BT:{backtest_id[:8]}] ⚠️  No tickers from screener at {current_time.strftime('%H:%M')}, skipping iteration")
-                        else:
-                            logger.info(f"[BT:{backtest_id[:8]}] 📋 Analyzing {len(tickers)} tickers from screener: {tickers[:5]}{'...' if len(tickers) > 5 else ''}")
-                            entry_signals_found = 0
-                            # Run entry analysis for each ticker
-                            if not tickers:
-                                logger.warning(f"[BT:{backtest_id[:8]}] ⚠️  No tickers to process for iteration {iteration_count}")
-                            
-                            for ticker in tickers:
-                                try:
-                                    logger.debug(f"[BT:{backtest_id[:8]}] 📊 Analyzing {ticker} for entry signal")
-                                    # Get market data snapshot
-                                    market_data = await market_data_provider.build_market_data(ticker)
-                                    
-                                    # Run strategy entry analysis
-                                    entry_level = await execution_strategy.analyze_entry(ticker, market_data)
-                                    
-                                    if entry_level:
-                                        entry_signals_found += 1
-                                        logger.info(f"[BT:{backtest_id[:8]}] 📊 {ticker}: Entry signal at ${entry_level.entry_price:.2f}, stop=${entry_level.stop_loss:.2f}")
-                                        
-                                        # For backtest, immediately execute market orders
-                                        # (In live mode, we'd persist levels and wait for triggers)
-                                        if entry_level.order_type == "market":
-                                            # Calculate position size
-                                            # Use fund override if set, otherwise use default
-                                            effective_size = fund.size_per_trade if fund.size_per_trade is not None else DEFAULT_SIZE_PER_TRADE
-                                            position_size = effective_size / entry_level.entry_price
-                                            
-                                            # Check if we have enough cash
-                                            if backtest_balance < effective_size:
-                                                logger.warning(f"[BT:{backtest_id[:8]}] ⚠️  Insufficient balance (${backtest_balance:.2f}) for trade (${effective_size:.2f}), skipping")
-                                                continue
-                                            
-                                            # Submit order via backtest wrapper
-                                            logger.info(f"[BT:{backtest_id[:8]}] 🎯 Submitting buy order: {position_size:.2f} shares of {ticker} @ ${entry_level.entry_price:.2f} (${effective_size:.2f})")
-                                            try:
-                                                order_result = await alpaca_wrapper.submit_order(
-                                                    symbol=ticker,
-                                                    qty=position_size,
-                                                    side='buy',
-                                                    order_type='market'
-                                                )
-                                                logger.info(f"[BT:{backtest_id[:8]}] ✅ Order submitted: {order_result['id']}")
-                                            except Exception as order_error:
-                                                logger.error(
-                                                    f"[BT:{backtest_id[:8]}] ❌ Failed to submit order for {ticker}: {order_error}",
-                                                    exc_info=True
-                                                )
-                                                # Continue with other tickers even if one fails
-                                                continue
-                                    else:
-                                        logger.debug(f"[BT:{backtest_id[:8]}] ❌ {ticker}: No entry signal from strategy")
-                                
-                                except ValueError as e:
-                                    # Expected: No bar data for low-volume stocks
-                                    if "No bar data available" in str(e):
-                                        # Silent skip - this is normal for low-volume stocks
-                                        logger.debug(f"[BT:{backtest_id[:8]}] ⚠️  {ticker}: No bar data available (skipping)")
-                                    else:
-                                        logger.error(f"[BT:{backtest_id[:8]}] ❌ Error analyzing {ticker}: {e}", exc_info=True)
-                                    continue
-                                except Exception as e:
-                                    logger.error(f"[BT:{backtest_id[:8]}] ❌ Error analyzing {ticker}: {e}", exc_info=True)
-                                    continue
-                            
-                            if entry_signals_found > 0:
-                                logger.info(f"[BT:{backtest_id[:8]}] ✅ Found {entry_signals_found} entry signal(s) from {len(tickers)} tickers")
-                            else:
-                                logger.debug(f"[BT:{backtest_id[:8]}] ℹ️  No entry signals from {len(tickers)} tickers at this iteration")
+                        tickers_analyzed = len(tickers)
                         
-                        # Update position management for open positions
-                        active_positions = strategy_engine._position_cache
-                        for symbol, position in active_positions.items():
-                            try:
-                                # Get current market data
-                                market_data = await market_data_provider.build_market_data(symbol)
-                                position.current_price = market_data.price
-                                
-                                # Update position P&L
-                                position.unrealized_pnl = (market_data.price - position.entry_price) * position.quantity
-                                position.unrealized_pnl_percent = ((market_data.price - position.entry_price) / position.entry_price) * 100
-                                
-                                # Get stop update from strategy
-                                stop_update = await execution_strategy.manage_position(position, market_data)
-                                
-                                # Check if we should exit
-                                if stop_update.force_exit or market_data.price <= stop_update.current_stop:
-                                    logger.info(f"🚪 Exiting {symbol} at ${market_data.price:.2f} (stop=${stop_update.current_stop:.2f})")
-                                    
-                                    # Submit sell order
-                                    await alpaca_wrapper.submit_order(
-                                        symbol=symbol,
-                                        qty=position.quantity,
-                                        side='sell',
-                                        order_type='market'
-                                    )
+                        try:
+                            # Cancel stale orders similar to live engine
+                            pending_orders = await strategy_engine.get_pending_orders()
+                            pending_orders_snapshot_count = len(pending_orders)
+                            max_age = (
+                                fund.max_order_age_seconds
+                                if fund.max_order_age_seconds is not None
+                                else strategy_engine.default_max_order_age_seconds
+                            )
+                            await strategy_engine.order_executor.cancel_stale_orders(max_age, pending_orders)
                             
-                            except Exception as e:
-                                logger.error(f"Error managing position {symbol}: {e}", exc_info=True)
-                                continue
+                            if not tickers:
+                                logger.warning(
+                                    f"[BT:{backtest_id[:8]}] ⚠️  No tickers from screener at {current_time.strftime('%H:%M')}"
+                                )
+                            
+                            # Run setup phase when required
+                            if tickers and execution_strategy.requires_setup:
+                                tickers = await strategy_engine.screener_connector.run_setup_phase(tickers)
+                            
+                            # Refresh fund balance before risk checks
+                            await strategy_engine.refresh_fund_balance()
+                            
+                            # Use cached positions (kept in sync after fills)
+                            active_positions = await strategy_engine.get_active_positions()
+                            
+                            can_trade, restriction_reason = await strategy_engine.risk_manager.check_risk_limits(
+                                active_positions,
+                                strategy_engine.fund.balance
+                            )
+                            
+                            # Entry analysis persists levels via StrategyService
+                            await strategy_engine.screener_connector.run_entry_analysis(
+                                tickers,
+                                active_positions,
+                                can_trade,
+                                restriction_reason
+                            )
+                            
+                            # Level monitoring mirrors live engine flow
+                            await strategy_engine.level_monitor.check_entry_triggers(strategy_engine.order_executor)
+                            await strategy_engine.level_monitor.update_position_management(active_positions, strategy_engine.order_executor)
+                            await strategy_engine.level_monitor.check_stop_triggers(active_positions, strategy_engine.order_executor)
+                        
+                        except Exception as engine_error:
+                            logger.error(f"[BT:{backtest_id[:8]}] Error in strategy iteration: {engine_error}", exc_info=True)
                     
                     except Exception as e:
                         logger.error(f"Error in strategy iteration: {e}", exc_info=True)
@@ -786,15 +770,89 @@ class BacktestCoordinator:
                             fund.id,
                             backtest_id
                         )
+                        await strategy_engine.refresh_fund_balance()
+                        active_positions = await strategy_engine.get_active_positions()
+
+                if active_positions is None:
+                    active_positions = await strategy_engine.get_active_positions()
+                active_positions_count = len(active_positions or {})
+
+                if minute_count % MONITORING_INTERVAL_MINUTES != 0:
+                    snapshot_orders = await strategy_engine.get_pending_orders()
+                    pending_orders_snapshot_count = len(snapshot_orders)
+
+                iteration_duration_ms = (time.perf_counter() - iteration_wall_start) * 1000
+                elapsed_wall_ms = (time.perf_counter() - loop_wall_start) * 1000
+
+                logger.info(
+                    "[BT:%s] minute=%d sim_time=%s tickers=%d positions=%d pending_orders=%d fills=%d iter_ms=%.1f elapsed_ms=%.1f",
+                    backtest_id[:8],
+                    minute_count,
+                    current_time.isoformat(),
+                    tickers_analyzed,
+                    active_positions_count,
+                    pending_orders_snapshot_count,
+                    filled_count,
+                    iteration_duration_ms,
+                    elapsed_wall_ms,
+                )
+
+                iteration_metadata.update(
+                    {
+                        "minute_index": minute_count,
+                        "tickers_analyzed": tickers_analyzed,
+                        "active_positions": active_positions_count,
+                        "pending_orders": pending_orders_snapshot_count,
+                        "filled_orders": filled_count,
+                        "iteration_ms": round(iteration_duration_ms, 3),
+                        "elapsed_ms": round(elapsed_wall_ms, 3),
+                    }
+                )
+
+                await event_service.log_backtest_event(
+                    backtest_id=backtest_id,
+                    fund_id=fund.id,
+                    event_type="iteration",
+                    simulated_time=current_time,
+                    sequence=iteration_sequence,
+                    message=f"Iteration {iteration_sequence} at {current_time.strftime('%H:%M')}",
+                    metadata=iteration_metadata,
+                )
                 
                 # Advance to next minute
                 current_time += timedelta(minutes=1)
                 minute_count += 1
             
             logger.info(f"✅ Trading day complete: {minute_count} minutes simulated, {iteration_count} strategy iterations")
+            await event_service.log_backtest_event(
+                backtest_id=backtest_id,
+                fund_id=fund.id,
+                event_type="complete",
+                simulated_time=end_time,
+                sequence=iteration_sequence + 1,
+                message="Backtest trading loop completed",
+                metadata={
+                    "total_minutes": minute_count,
+                    "strategy_iterations": iteration_count,
+                    "elapsed_ms": round((time.perf_counter() - loop_wall_start) * 1000, 3),
+                },
+            )
             
         except Exception as e:
             logger.error(f"Error running strategy engine: {e}", exc_info=True)
+            failure_sim_time = current_time if "current_time" in locals() else None
+            await event_service.log_backtest_event(
+                backtest_id=backtest_id,
+                fund_id=fund.id,
+                event_type="error",
+                simulated_time=failure_sim_time,
+                sequence=iteration_sequence + 1,
+                message=f"Backtest trading loop failed: {e}",
+                metadata={
+                    "minute_index": minute_count,
+                    "strategy_iterations": iteration_count,
+                },
+            )
             raise
     
     async def _precompute_screener_results(

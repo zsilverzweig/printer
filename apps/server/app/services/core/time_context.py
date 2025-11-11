@@ -50,6 +50,7 @@ class BacktestContext:
             current_time = current_time.replace(tzinfo=timezone.utc)
         self.current_time = current_time
         self.is_backtest = True
+        self.sequence = 0
     
     def __repr__(self) -> str:
         return f"BacktestContext(id={self.backtest_id}, time={self.current_time})"
@@ -149,4 +150,29 @@ def get_backtest_id() -> Optional[str]:
     """
     ctx = _backtest_context.get()
     return ctx.backtest_id if ctx else None
+
+
+def get_backtest_sequence() -> Optional[int]:
+    """
+    Get current backtest event sequence without incrementing.
+    
+    Returns:
+        Current sequence integer or None if not in backtest mode.
+    """
+    ctx = _backtest_context.get()
+    return ctx.sequence if ctx else None
+
+
+def next_backtest_sequence() -> int:
+    """
+    Increment and retrieve the next backtest event sequence.
+    
+    Returns:
+        Incremented sequence integer (0 when not in backtest mode).
+    """
+    ctx = _backtest_context.get()
+    if not ctx:
+        return 0
+    ctx.sequence += 1
+    return ctx.sequence
 

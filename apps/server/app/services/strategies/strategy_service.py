@@ -11,6 +11,7 @@ from typing import List, Dict, Optional, Tuple, Any
 from datetime import datetime
 
 from app.services.core.time_context import get_current_time
+from app.services.backtest.backtest_event_logger import log_event as log_backtest_event
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -102,6 +103,19 @@ class StrategyService:
                 f"(stop: ${level.stop_loss:.2f}, state_id: {state_id})"
             )
         
+        await log_backtest_event(
+            fund_id,
+            "entry_level_created",
+            metadata={
+                "symbol": symbol,
+                "state_id": state_id,
+                "entry_price": level.entry_price,
+                "stop_loss": level.stop_loss,
+                "confidence": level.confidence,
+                "order_type": level.order_type,
+            },
+        )
+        
         return state_id
     
     async def persist_management_state(
@@ -168,6 +182,18 @@ class StrategyService:
                 logger.debug(f"Created management state: {symbol} stop=${stop_update.current_stop:.2f}")
             
             await session.commit()
+        
+        await log_backtest_event(
+            fund_id,
+            "management_state_updated",
+            metadata={
+                "symbol": symbol,
+                "state_id": state_id,
+                "current_stop": stop_update.current_stop,
+                "force_exit": stop_update.force_exit,
+                "exit_reason": stop_update.exit_reason,
+            },
+        )
         
         return state_id
     

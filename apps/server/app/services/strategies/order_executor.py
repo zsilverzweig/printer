@@ -11,7 +11,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from app.services.core.time_context import get_current_time
+from app.services.core.time_context import get_current_time, get_backtest_id
 
 from sqlalchemy import select
 
@@ -143,6 +143,7 @@ class OrderExecutor:
             submitted_at = get_current_time()
             
             try:
+                backtest_id = get_backtest_id()
                 async with get_async_session() as session:
                     # Validate with row-level lock
                     is_valid, error_msg = await self.order_lifecycle.validate_buy_order(
@@ -170,6 +171,7 @@ class OrderExecutor:
                         id=trade_id,
                         fund_id=self.fund_id,
                         symbol=symbol,
+                        backtest_id=backtest_id,
                         entry_order_id=order_id,
                         entry_time=submitted_at,
                         entry_price=market_data.price,  # Will be updated with actual fill price
@@ -187,6 +189,7 @@ class OrderExecutor:
                         alpaca_order_id="",
                         fund_id=self.fund_id,
                         trade_id=trade_id,  # Link to new trade
+                        backtest_id=backtest_id,
                         symbol=symbol,
                         side="buy",
                         quantity=quantity,
@@ -256,6 +259,8 @@ class OrderExecutor:
                         result = await session.execute(stmt)
                         order_record = result.scalar_one()
                         order_record.alpaca_order_id = alpaca_order_id
+                        if backtest_id:
+                            order_record.backtest_id = backtest_id
                         await session.commit()
                     logger.debug(f"✅ Order record updated with Alpaca ID: {alpaca_order_id}")
                     
@@ -468,6 +473,7 @@ class OrderExecutor:
             logger.debug(f"📝 Creating sell order record: {position.symbol} sell {actual_quantity} shares")
             
             try:
+                backtest_id = get_backtest_id()
                 # Create order in DB
                 async with get_async_session() as session:
                     order_record = Order(
@@ -475,6 +481,7 @@ class OrderExecutor:
                         alpaca_order_id="",
                         fund_id=self.fund_id,
                         trade_id=trade_id,  # Link to existing trade
+                        backtest_id=backtest_id,
                         symbol=position.symbol,
                         side="sell",
                         quantity=sell_quantity,
@@ -518,6 +525,8 @@ class OrderExecutor:
                         result = await session.execute(stmt)
                         order_record = result.scalar_one()
                         order_record.alpaca_order_id = alpaca_order_id
+                        if backtest_id:
+                            order_record.backtest_id = backtest_id
                         await session.commit()
                     logger.debug(f"✅ Sell order record updated with Alpaca ID: {alpaca_order_id}")
                     

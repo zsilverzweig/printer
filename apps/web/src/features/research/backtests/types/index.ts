@@ -90,6 +90,23 @@ export interface BacktestTradesResponse {
   total: number;
 }
 
+export interface BacktestEvent {
+  id: string;
+  backtestId: string;
+  fundId: string;
+  eventType: string;
+  simulatedTime?: string | null;
+  sequence: number;
+  message?: string | null;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface BacktestEventsResponse {
+  backtestId: string;
+  events: BacktestEvent[];
+}
+
 export interface StrategyScreenerCombo {
   strategyId: string;
   strategyConfig?: Record<string, unknown>;
