@@ -282,7 +282,7 @@ async def fetch_screener_data_unified(
                 # Use MarketDataService batch query
                 price_data = await market_service.get_latest_prices_batch(
                     symbols=symbols_list,
-                    timeframe="5min",
+                    timeframe="1min",
                     at_timestamp=target_timestamp
                 )
                 
@@ -461,6 +461,13 @@ async def fetch_screener_data_unified(
                     continue
 
                 current_price = price_data.get(symbol) or daily["close"]
+                if symbol == "ABAT" and target_timestamp:
+                    logger.info(
+                        "[UNIFIED][DEBUG] ABAT price lookup at %s -> price_data=%s, daily_close=%s",
+                        target_timestamp.isoformat(),
+                        price_data.get(symbol),
+                        daily["close"],
+                    )
                 details = ticker_details_map.get(symbol, {})
 
                 snapshot = {
