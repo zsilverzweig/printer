@@ -7,7 +7,7 @@ Provides natural language to SQL conversion using OpenAI.
 import json
 import logging
 import os
-from typing import Dict, Any, List
+from typing import Any, Dict, List, Optional
 
 import openai
 from pydantic import BaseModel
@@ -30,7 +30,8 @@ class DBQueryService:
     async def natural_language_to_sql(
         self,
         natural_language: str,
-        tables: List[TableInfo]
+        tables: List[TableInfo],
+        previous_sql_query: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Convert natural language query to SQL.
@@ -38,6 +39,7 @@ class DBQueryService:
         Args:
             natural_language: Natural language question
             tables: List of database tables with their schema
+            previous_sql_query: Optional previously generated SQL query to use as context
             
         Returns:
             Dictionary with success status, SQL query, and explanation
@@ -45,10 +47,23 @@ class DBQueryService:
         # Format schema information for the AI
         schema_text = self._format_schema(tables)
         
+        context_section = ""
+        if previous_sql_query:
+            logger.info(
+                "Including previous SQL context: %s",
+                previous_sql_query.strip().replace("\n", " ")[:200],
+            )
+            context_section = (
+                "\nPREVIOUS SQL QUERY (adjust if helpful):\n"
+                f"{previous_sql_query.strip()}\n"
+            )
+
         prompt = f"""You are a SQL expert. Convert the following natural language query into a PostgreSQL SQL query.
 
 DATABASE SCHEMA:
 {schema_text}
+
+{context_section}
 
 NATURAL LANGUAGE QUERY:
 {natural_language}
