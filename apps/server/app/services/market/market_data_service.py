@@ -365,45 +365,8 @@ class MarketDataService:
         timeframe = self._normalize_timeframe(timeframe)
         
         # For large batches, split into parallel chunks for speed
-        CHUNK_SIZE = 10  # Tiny chunks = maximum parallelism (10 symbols per query, ~130 concurrent)
-        if len(symbols) > CHUNK_SIZE:
-            # Run parallel queries
-            chunks = [symbols[i:i + CHUNK_SIZE] for i in range(0, len(symbols), CHUNK_SIZE)]
-            
-            # Get backtest ID for logging
-            from app.services.core.time_context import get_backtest_id
-            bt_id = get_backtest_id()
-            bt_label = f"[BT:{bt_id[:8]}]" if bt_id else ""
-            
-            logger.info(f"{bt_label} [BATCH] Splitting {len(symbols)} symbols into {len(chunks)} parallel queries")
-            
-            import time
-            start = time.time()
-            
-            # Use semaphore to limit concurrent DB connections (max 5 to avoid "too many clients")
-            semaphore = asyncio.Semaphore(5)
-            
-            async def bounded_query(chunk):
-                async with semaphore:
-                    return await self._get_latest_prices_chunk(chunk, timeframe, at_timestamp)
-            
-            tasks = [bounded_query(chunk) for chunk in chunks]
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            
-            # Merge results
-            price_map = {}
-            for result in results:
-                if isinstance(result, dict):
-                    price_map.update(result)
-                elif isinstance(result, Exception):
-                    logger.warning(f"Chunk query failed: {result}")
-            
-            elapsed = time.time() - start
-            logger.info(f"{bt_label} [BATCH] Completed {len(chunks)} parallel queries in {elapsed:.2f}s ({len(price_map)} symbols)")
-            
-            return price_map
-        
-        # Small batch - single query
+        # Run a single UNNEST + LATERAL query so Timescale handles all symbols in one indexed pass.
+        # This avoids hundreds of round-trips during historical screeners/backtests.
         return await self._get_latest_prices_chunk(symbols, timeframe, at_timestamp)
     
     async def _get_prices_from_lookup_table(
