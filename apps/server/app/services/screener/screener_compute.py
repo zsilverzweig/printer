@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from app.services.screener.screener_data import ScreenerDataLoader
 from app.services.screener.screener_filters import (
@@ -51,6 +51,11 @@ class ScreenerCompute:
         market_cap_max: Optional[int] = None,
         float_min: Optional[int] = None,
         float_max: Optional[int] = None,
+        *,
+        is_historical: bool = False,
+        technical_data_provider: Optional[
+            Callable[[List[dict]], Awaitable[None]]
+        ] = None,
     ) -> List[dict]:
         """Compute filtered and sorted screener results from market snapshots.
 
@@ -422,8 +427,15 @@ class ScreenerCompute:
 
         rows_before_technical = len(rows)
         if technical_filters:
-            rows = await self._apply_technical_filters(rows, technical_filters, is_historical=False)
+            if is_historical and technical_data_provider:
+                await technical_data_provider(rows)
+            rows = await self._apply_technical_filters(
+                rows, technical_filters, is_historical=is_historical
+            )
             technical_filtered_count = max(rows_before_technical - len(rows), 0)
+            if is_historical:
+                for row in rows:
+                    row.pop("_historical_bars", None)
         else:
             technical_filtered_count = 0
 

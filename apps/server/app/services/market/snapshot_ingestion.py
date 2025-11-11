@@ -91,6 +91,8 @@ class SnapshotIngestionService:
         self.should_stop = False
         self._missing_last_trade_warnings = 0
         self._missing_last_trade_fields_warnings = 0
+        self._zero_price_trade_warnings = 0
+        self._zero_price_trade_suppressed = False
         self._logged_trade_sample = False
         
         # Background task
@@ -286,10 +288,24 @@ class SnapshotIngestionService:
                 return None
             
             if price == 0:
-                self._missing_last_trade_fields_warnings += 1
-                if self._missing_last_trade_fields_warnings <= 5:
+                self._zero_price_trade_warnings += 1
+
+                if self._zero_price_trade_warnings <= 5:
                     logger.warning(
                         "Snapshot lastTrade reported zero price for %s: %s",
+                        ticker,
+                        last_trade,
+                    )
+                elif not self._zero_price_trade_suppressed:
+                    logger.warning(
+                        "Snapshot lastTrade reported zero price %s additional times; suppressing further warnings (latest=%s)",
+                        self._zero_price_trade_warnings - 5,
+                        ticker,
+                    )
+                    self._zero_price_trade_suppressed = True
+                else:
+                    logger.debug(
+                        "Suppressing zero-price lastTrade snapshot warning for %s: %s",
                         ticker,
                         last_trade,
                     )

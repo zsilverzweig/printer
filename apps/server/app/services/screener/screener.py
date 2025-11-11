@@ -116,6 +116,7 @@ class ScreenerService:
             min_change_percent=min_change_percent,
             max_change_percent=max_change_percent,
             min_relative_volume=min_relative_volume,
+            max_relative_volume=max_relative_volume,
             min_relative_volume_last_week=min_relative_volume_last_week,
             order_by=order_by,
             limit=limit,

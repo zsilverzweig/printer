@@ -271,21 +271,6 @@ async def _log_market_data_diagnostics(context: str, lookback_days: int = 5) -> 
             diagnostics.get("table", "No data"),
         )
 
-        gaps = diagnostics.get("gaps", [])
-        if gaps:
-            for gap in gaps:
-                sample_missing = ", ".join(gap.get("missing_validation_symbols", [])[:5])
-                
-                logger.info(
-                    "Gap detected: %s %s | missing=%s | sample_missing=[%s]",
-                    gap["date"].isoformat(),
-                    gap["timescale"],
-                    gap.get("missing_validation_count", 0),
-                    sample_missing,
-                )
-        else:
-            logger.info("No outstanding gaps detected for context %s.", context)
-
         return diagnostics
 
     except Exception as exc:
@@ -328,13 +313,6 @@ async def _backfill_gaps_with_client(
         symbols_to_load: List[str] = list(gap.get("symbols_to_load") or [])
         if not symbols_to_load:
             continue
-
-        logger.info(
-            "Backfilling gap %s %s for %s symbols",
-            gap_date,
-            gap_timescale,
-            len(symbols_to_load),
-        )
 
         for batch_symbols in _chunk_symbols(symbols_to_load, max_symbols_per_batch):
             await load_date_range_data(
@@ -448,22 +426,7 @@ async def load_date_range_data(
                 if missing_dates:
                     symbols_needing_data.append((symbol, missing_dates))
         
-        total_symbol_dates = sum(len(dates) for _, dates in symbols_needing_data)
-        logger.info(
-            "🔍 Date-range precheck: timescale=%s, symbols=%s, symbol-date slots needing data=%s",
-            timescale,
-            len(symbols_needing_data),
-            total_symbol_dates,
-        )
-        
         if not symbols_needing_data:
-            logger.info(
-                "✅ All %s symbols already validated for %s between %s and %s; skipping.",
-                len(symbols),
-                timescale,
-                start_date,
-                end_date,
-            )
             continue
         
         # Process with limited concurrency
