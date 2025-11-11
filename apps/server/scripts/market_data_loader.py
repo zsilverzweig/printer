@@ -13,7 +13,7 @@ import asyncio
 import sys
 import os
 from datetime import date, datetime, timedelta, timezone
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 # Add parent directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -117,10 +117,19 @@ def _format_table(rows: List[List[str]], headers: List[str]) -> str:
     return "\n".join(table)
 
 
-async def _log_market_data_diagnostics(context: str, lookback_days: int = 5) -> None:
-    """Log market data vs validation coverage for recent days."""
+async def detect_market_data_gaps(
+    lookback_days: int = 5,
+    timescales: Optional[Sequence[str]] = None,
+    max_symbols_per_gap: Optional[int] = None,
+) -> Dict[str, Any]:
+    """
+    Compute diagnostics and identify gaps between stored bars and validation records.
+
+    Returns:
+        Dict with coverage table, raw coverage/validation maps, and per-gap details.
+    """
     try:
-        timescales = ["1day", "1hour", "15min", "5min", "1min"]
+        timescales = list(timescales or ["1day", "1hour", "15min", "5min", "1min"])
         recent_days = _recent_trading_days(lookback_days)
         service = get_market_data_service()
         coverage = await service.get_coverage_summary(recent_days, timescales)
@@ -163,13 +172,215 @@ async def _log_market_data_diagnostics(context: str, lookback_days: int = 5) -> 
                 )
 
         table = _format_table(rows, headers) if rows else "No coverage data found."
+
+        gaps: List[Dict[str, Any]] = []
+        max_symbols = max_symbols_per_gap or 0
+
+        async with get_async_session() as session:
+            for day in recent_days:
+                for timescale in timescales:
+                    missing_symbols: List[str] = []
+                    incomplete_symbols: List[str] = []
+
+                    missing_result = await session.execute(
+                        text(
+                            """
+                            SELECT td.symbol
+                            FROM ticker_details td
+                            WHERE td.active = true
+                              AND NOT EXISTS (
+                                  SELECT 1
+                                  FROM symbol_date_validation sdv
+                                  WHERE sdv.symbol = td.symbol
+                                    AND sdv.date = :date
+                                    AND sdv.timescale = :timescale
+                              )
+                            """
+                        ),
+                        {"date": day, "timescale": timescale},
+                    )
+                    missing_symbols = [row[0] for row in missing_result]
+
+                    incomplete_result = await session.execute(
+                        text(
+                            """
+                            SELECT symbol
+                            FROM symbol_date_validation
+                            WHERE date = :date
+                              AND timescale = :timescale
+                              AND (is_complete = false OR bar_count <= 0)
+                            """
+                        ),
+                        {"date": day, "timescale": timescale},
+                    )
+                    incomplete_symbols = [row[0] for row in incomplete_result]
+
+                    total_missing = len(missing_symbols)
+                    total_incomplete = len(incomplete_symbols)
+
+                    if not total_missing and not total_incomplete:
+                        continue
+
+                    symbols_to_load: List[str] = []
+                    symbols_to_load.extend(missing_symbols)
+                    symbols_to_load.extend(incomplete_symbols)
+
+                    if symbols_to_load:
+                        symbols_to_load = sorted({symbol.upper() for symbol in symbols_to_load})
+
+                    if max_symbols:
+                        symbols_to_load = symbols_to_load[:max_symbols]
+
+                    gaps.append(
+                        {
+                            "date": day,
+                            "timescale": timescale,
+                            "missing_validation_count": total_missing,
+                            "incomplete_count": total_incomplete,
+                            "missing_validation_symbols": missing_symbols[: max_symbols or None],
+                            "incomplete_symbols": incomplete_symbols[: max_symbols or None],
+                            "symbols_to_load": symbols_to_load,
+                            "coverage": coverage.get(day.isoformat(), {}).get(timescale, {}),
+                            "validation": validation.get((day, timescale), {}),
+                        }
+                    )
+
+        return {
+            "table": table,
+            "coverage": coverage,
+            "validation": validation,
+            "gaps": gaps,
+        }
+
+    except Exception as exc:
+        logger.error("Failed to detect market data gaps: %s", exc, exc_info=True)
+        return {
+            "table": "Diagnostics unavailable (error encountered).",
+            "coverage": {},
+            "validation": {},
+            "gaps": [],
+            "error": str(exc),
+        }
+
+
+async def _log_market_data_diagnostics(context: str, lookback_days: int = 5) -> Dict[str, Any]:
+    """Log market data vs validation coverage for recent days."""
+    try:
+        diagnostics = await detect_market_data_gaps(lookback_days=lookback_days)
         logger.info(
             "Market data coverage diagnostics (%s):\n%s",
             context,
-            table,
+            diagnostics.get("table", "No data"),
         )
+
+        gaps = diagnostics.get("gaps", [])
+        if gaps:
+            for gap in gaps:
+                sample_missing = ", ".join(gap.get("missing_validation_symbols", [])[:5])
+                sample_incomplete = ", ".join(gap.get("incomplete_symbols", [])[:5])
+                logger.info(
+                    "Gap detected: %s %s | missing=%s incomplete=%s | sample_missing=[%s] sample_incomplete=[%s]",
+                    gap["date"].isoformat(),
+                    gap["timescale"],
+                    gap.get("missing_validation_count", 0),
+                    gap.get("incomplete_count", 0),
+                    sample_missing,
+                    sample_incomplete,
+                )
+        else:
+            logger.info("No outstanding gaps detected for context %s.", context)
+
+        return diagnostics
+
     except Exception as exc:
         logger.error("Failed to log market data diagnostics (%s): %s", context, exc, exc_info=True)
+        return {"table": "", "coverage": {}, "validation": {}, "gaps": [], "error": str(exc)}
+
+
+def _chunk_symbols(symbols: Sequence[str], chunk_size: int) -> Iterable[List[str]]:
+    """Yield chunked slices of symbols."""
+    if chunk_size <= 0:
+        yield list(symbols)
+        return
+    for idx in range(0, len(symbols), chunk_size):
+        yield list(symbols[idx : idx + chunk_size])
+
+
+async def _backfill_gaps_with_client(
+    client: RESTClient,
+    gaps: Sequence[Dict[str, Any]],
+    allowed_dates: Optional[Set[date]] = None,
+    allowed_timescales: Optional[Set[str]] = None,
+    max_symbols_per_batch: int = 250,
+) -> int:
+    """
+    Invoke load_date_range_data for each gap slice using the provided Polygon client.
+
+    Returns:
+        Total number of batch loads executed.
+    """
+    batches_executed = 0
+
+    for gap in gaps:
+        gap_date: date = gap.get("date")
+        gap_timescale: str = gap.get("timescale")
+        if allowed_dates and gap_date not in allowed_dates:
+            continue
+        if allowed_timescales and gap_timescale not in allowed_timescales:
+            continue
+
+        symbols_to_load: List[str] = list(gap.get("symbols_to_load") or [])
+        if not symbols_to_load:
+            continue
+
+        logger.info(
+            "Backfilling gap %s %s for %s symbols",
+            gap_date,
+            gap_timescale,
+            len(symbols_to_load),
+        )
+
+        for batch_symbols in _chunk_symbols(symbols_to_load, max_symbols_per_batch):
+            await load_date_range_data(
+                client=client,
+                symbols=batch_symbols,
+                start_date=gap_date,
+                end_date=gap_date,
+                timescales=[gap_timescale],
+            )
+            batches_executed += 1
+
+    return batches_executed
+
+
+async def fill_detected_gaps(
+    api_key: str,
+    gaps: Sequence[Dict[str, Any]],
+    allowed_dates: Optional[Set[date]] = None,
+    allowed_timescales: Optional[Set[str]] = None,
+    max_symbols_per_batch: int = 250,
+) -> int:
+    """
+    Convenience wrapper that creates a Polygon client and fills detected gaps.
+
+    Returns:
+        Total number of batch loads executed.
+    """
+    if not gaps:
+        return 0
+
+    if not api_key:
+        logger.warning("Polygon API key missing; cannot backfill detected gaps.")
+        return 0
+
+    client = create_polygon_client(api_key)
+    return await _backfill_gaps_with_client(
+        client=client,
+        gaps=gaps,
+        allowed_dates=allowed_dates,
+        allowed_timescales=allowed_timescales,
+        max_symbols_per_batch=max_symbols_per_batch,
+    )
 
 
 async def load_date_range_data(
@@ -301,8 +512,6 @@ async def load_yesterday_data(init_db_flag: bool = True, api_key: Optional[str] 
     # Initialize database if needed
     if init_db_flag:
         await init_db()
-    
-    await _log_market_data_diagnostics(context="load_yesterday_data")
 
     # Initialize Polygon client with proper connection pool configuration
     if api_key is None:
@@ -312,7 +521,8 @@ async def load_yesterday_data(init_db_flag: bool = True, api_key: Optional[str] 
     client = create_polygon_client(api_key)
     
     # Get yesterday (skip weekends)
-    yesterday = datetime.now(timezone.utc).date() - timedelta(days=1)
+    today = datetime.now(timezone.utc).date()
+    yesterday = today - timedelta(days=1)
     while yesterday.weekday() >= 5:  # Skip weekends
         yesterday -= timedelta(days=1)
     
@@ -422,6 +632,25 @@ async def load_yesterday_data(init_db_flag: bool = True, api_key: Optional[str] 
         tasks = [process_symbol(symbol, idx) for idx, symbol in enumerate(symbols_needing_data, 1)]
         await asyncio.gather(*tasks, return_exceptions=True)
 
+    diagnostics = await _log_market_data_diagnostics(context="load_yesterday_data")
+    allowed_dates: Set[date] = {yesterday}
+    targeted_timescales: Set[str] = {"1day", "1hour", "15min", "5min", "1min"}
+    additional_batches = await _backfill_gaps_with_client(
+        client=client,
+        gaps=diagnostics.get("gaps", []),
+        allowed_dates=allowed_dates,
+        allowed_timescales=targeted_timescales,
+        max_symbols_per_batch=250,
+    )
+
+    if additional_batches:
+        logger.info(
+            "Executed %s additional backfill batches for %s gaps",
+            additional_batches,
+            ", ".join(sorted(targeted_timescales)),
+        )
+        await _log_market_data_diagnostics(context="load_yesterday_data_post_backfill")
+
 
 async def load_comprehensive_data(init_db_flag: bool = True, api_key: Optional[str] = None):
     """
@@ -501,6 +730,28 @@ async def load_comprehensive_data(init_db_flag: bool = True, api_key: Optional[s
         client, symbols, start_date, yesterday - timedelta(days=1),
         timescales=['15min', '5min']
     )
+
+    diagnostics = await _log_market_data_diagnostics(context="load_comprehensive_data")
+    targeted_timescales: Set[str] = {"1day", "1hour", "15min", "5min", "1min"}
+    lookback_window: Set[date] = {
+        today - timedelta(days=offset) for offset in range(0, 7)
+    }
+    allowed_dates = {d for d in lookback_window if d.weekday() < 5}
+    additional_batches = await _backfill_gaps_with_client(
+        client=client,
+        gaps=diagnostics.get("gaps", []),
+        allowed_dates=allowed_dates,
+        allowed_timescales=targeted_timescales,
+        max_symbols_per_batch=250,
+    )
+
+    if additional_batches:
+        logger.info(
+            "Comprehensive backfill executed %s additional batches across %s",
+            additional_batches,
+            ", ".join(sorted(targeted_timescales)),
+        )
+        await _log_market_data_diagnostics(context="load_comprehensive_data_post_backfill")
 
 
 # Make it importable

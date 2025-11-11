@@ -688,15 +688,11 @@ class RiskManagementHealthCheck(BaseHealthCheck):
 
 class MarketDataLoaderHealthCheck(BaseHealthCheck):
     """
-    Health check that runs the Market Data Loader to ensure comprehensive data coverage.
+    Health check that inspects market data coverage/validation gaps and backfills missing slices.
     
-    Runs the loader in the background (non-blocking) to avoid blocking other health checks.
-    
-    Loads:
-    - All timescales from yesterday
-    - All timescales from today (up to current time)
-    - 7 days of hourly bars
-    - 5min/15min for last 7 days
+    Uses the loader diagnostics to detect unvalidated symbol/date/timescale combinations and
+    schedules targeted gap fills in the background so long-running data repairs do not block
+    the main health monitoring loop.
     """
     
     def __init__(self):
@@ -705,6 +701,7 @@ class MarketDataLoaderHealthCheck(BaseHealthCheck):
         self._last_completed: Optional[datetime] = None
         self._running_task: Optional[asyncio.Task] = None
         self._last_error: Optional[str] = None
+        self._last_report: Optional[dict] = None
     
     async def _run_loader_background(self) -> None:
         """Run the comprehensive market data loader in the background."""
@@ -723,17 +720,34 @@ class MarketDataLoaderHealthCheck(BaseHealthCheck):
             # Import core API key
             import app.core as core_module
             
-            # Run the comprehensive loader
-            self.logger.debug("Running comprehensive market data loader in background...")
-            
-            await market_data_loader_module.load_comprehensive_data(
-                init_db_flag=False,  # Already initialized
-                api_key=core_module.API_KEY
+            self.logger.debug("Running market data diagnostics for health monitor...")
+            diagnostics = await market_data_loader_module._log_market_data_diagnostics(
+                context="health_monitor"
             )
-            
+            gaps = diagnostics.get("gaps", [])
+
+            targeted_timescales = {"1day", "1hour", "15min", "5min", "1min"}
+            if gaps:
+                batches = await market_data_loader_module.fill_detected_gaps(
+                    api_key=core_module.API_KEY,
+                    gaps=gaps,
+                    allowed_timescales=targeted_timescales,
+                    max_symbols_per_batch=250,
+                )
+                if batches:
+                    self.logger.info(
+                        "Health monitor backfill executed %s batch(es) across %s",
+                        batches,
+                        ", ".join(sorted(targeted_timescales)),
+                    )
+                    diagnostics = await market_data_loader_module._log_market_data_diagnostics(
+                        context="health_monitor_post_backfill"
+                    )
+
+            self._last_report = diagnostics
             self._last_completed = get_current_time()
             self._last_error = None
-            self.logger.info("Market data loader completed successfully")
+            self.logger.info("Market data loader health check completed successfully")
             
         except Exception as e:
             self._last_error = str(e)
@@ -753,7 +767,8 @@ class MarketDataLoaderHealthCheck(BaseHealthCheck):
                     "status": "running",
                     "started_at": self._last_run.isoformat() if self._last_run else None,
                     "last_completed": self._last_completed.isoformat() if self._last_completed else None,
-                    "last_error": self._last_error
+                    "last_error": self._last_error,
+                    "outstanding_gaps": len((self._last_report or {}).get("gaps", []))
                 }
             )
         
@@ -769,7 +784,11 @@ class MarketDataLoaderHealthCheck(BaseHealthCheck):
                 "status": "started",
                 "started_at": self._last_run.isoformat(),
                 "last_completed": self._last_completed.isoformat() if self._last_completed else None,
-                "last_error": self._last_error
+                "last_error": self._last_error,
+                "last_report": {
+                    "gap_count": len((self._last_report or {}).get("gaps", [])),
+                    "table": (self._last_report or {}).get("table"),
+                },
             }
         )
 
