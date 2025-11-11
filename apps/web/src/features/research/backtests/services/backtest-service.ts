@@ -273,15 +273,21 @@ export const backtestService = {
   async runScreenerBacktest(
     request: ScreenerBacktestRunRequest
   ): Promise<ScreenerBacktestResponse> {
+    const payload: Record<string, unknown> = {
+      date: request.date,
+      interval_minutes: request.intervalMinutes ?? 60,
+    };
+
+    if (request.fundIds && request.fundIds.length > 0) {
+      payload.fund_ids = request.fundIds;
+    }
+
     const response = await fetch(`${API_BASE}/api/backtests/screener/run`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        date: request.date,
-        interval_minutes: request.intervalMinutes ?? 60,
-      }),
+      body: JSON.stringify(payload),
     });
 
     const data = await response.json().catch(() => null);

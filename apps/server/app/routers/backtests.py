@@ -114,6 +114,11 @@ class BacktestTradeResponse(BaseModel):
 class ScreenerBacktestRunRequest(BaseModel):
     date: date
     interval_minutes: int = Field(60, ge=1, le=360)
+    fund_ids: Optional[List[str]] = Field(
+        default=None,
+        description="Optional fund IDs to limit screener backtest scope",
+        min_items=1,
+    )
 
 
 class ScreenerBacktestPointResponse(BaseModel):
@@ -155,6 +160,7 @@ async def run_screener_backtest(request: ScreenerBacktestRunRequest):
         result = await service.run(
             target_date=request.date,
             interval_minutes=request.interval_minutes,
+            fund_ids=request.fund_ids,
         )
 
         series_payload = [

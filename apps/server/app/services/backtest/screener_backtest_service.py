@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional, Sequence
 
 from sqlalchemy import select
 
-from app.models.strategies import ScreeningCriteria
+from app.models.strategies import Fund, ScreeningCriteria
 from app.services.core.database import get_async_session
 from app.services.screener.screener import get_screener_service
 
@@ -81,6 +81,7 @@ class ScreenerBacktestService:
         target_date: date,
         *,
         interval_minutes: int = 60,
+        fund_ids: Optional[Sequence[str]] = None,
     ) -> ScreenerBacktestResult:
         """
         Run screener backtests for all screening criteria on the given date.
@@ -103,8 +104,10 @@ class ScreenerBacktestService:
         if not screener_service:
             raise RuntimeError("Screener service is not initialized")
 
-        criteria_records = await self._load_screening_criteria()
+        criteria_records = await self._load_screening_criteria(fund_ids=fund_ids)
         if not criteria_records:
+            if fund_ids:
+                raise ValueError("No screening criteria are configured for the selected fund(s)")
             raise ValueError("No screening criteria are configured")
 
         local_points = self._generate_time_points(
@@ -193,12 +196,23 @@ class ScreenerBacktestService:
             series=series_results,
         )
 
-    async def _load_screening_criteria(self) -> Sequence[ScreeningCriteria]:
+    async def _load_screening_criteria(
+        self, *, fund_ids: Optional[Sequence[str]] = None
+    ) -> Sequence[ScreeningCriteria]:
         """Load all screening criteria sorted by name."""
         async with get_async_session() as session:
-            result = await session.execute(
-                select(ScreeningCriteria).order_by(ScreeningCriteria.name)
-            )
+            statement = select(ScreeningCriteria).order_by(ScreeningCriteria.name)
+
+            if fund_ids:
+                statement = (
+                    select(ScreeningCriteria)
+                    .join(Fund, Fund.screening_criteria_id == ScreeningCriteria.id)
+                    .where(Fund.id.in_(fund_ids))
+                    .order_by(ScreeningCriteria.name)
+                    .distinct()
+                )
+
+            result = await session.execute(statement)
             return result.scalars().all()
 
     def _generate_time_points(

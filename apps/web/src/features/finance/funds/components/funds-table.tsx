@@ -6,7 +6,14 @@
 
 "use client";
 
-import { Play, Square, Trash2, TrendingDown, TrendingUp } from "lucide-react";
+import {
+  Copy,
+  Play,
+  Square,
+  Trash2,
+  TrendingDown,
+  TrendingUp,
+} from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
@@ -43,6 +50,7 @@ interface FundsTableProps {
 interface FundRowProps {
   fund: Fund;
   onStartStop: (fundId: string, isTrading: boolean) => Promise<void>;
+  onDuplicate: (fund: Fund) => Promise<void>;
   selected: boolean;
   onSelect: (fundId: string, selected: boolean) => void;
   lifecycleSummary?: FundLifecycleSummary;
@@ -75,16 +83,15 @@ export function buildLifecycleSummaries(
 function FundRow({
   fund,
   onStartStop,
+  onDuplicate,
   selected,
   onSelect,
   lifecycleSummary,
 }: FundRowProps) {
   const [actionLoading, setActionLoading] = useState(false);
+  const [duplicateLoading, setDuplicateLoading] = useState(false);
   const modeColor = fund.mode === "sim" ? "bg-blue-500" : "bg-green-500";
   const modeLabel = fund.mode === "sim" ? "SIM" : "REAL";
-
-  // Check if this is a backtest fund (name contains "_backtest_")
-  const isBacktestFund = fund.name.includes("_backtest_");
 
   // Connect to real-time WebSocket for fund data
   const { data, isConnecting, error } = useFundRealtime(fund.id);
@@ -135,6 +142,17 @@ function FundRow({
       await onStartStop(fund.id, isActive);
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  const handleDuplicate = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDuplicateLoading(true);
+    try {
+      await onDuplicate(fund);
+    } finally {
+      setDuplicateLoading(false);
     }
   };
 
@@ -273,27 +291,45 @@ function FundRow({
         </span>
       </TableCell>
       <TableCell className="text-center">
-        <Button
-          size="sm"
-          variant={isActive ? "destructive" : "default"}
-          onClick={handleStartStop}
-          disabled={actionLoading}
-          className="min-w-[80px]"
-        >
-          {actionLoading ? (
-            <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-          ) : isActive ? (
-            <>
-              <Square className="h-4 w-4 mr-1.5" />
-              Stop
-            </>
-          ) : (
-            <>
-              <Play className="h-4 w-4 mr-1.5" />
-              Start
-            </>
-          )}
-        </Button>
+        <div className="flex items-center justify-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleDuplicate}
+            disabled={duplicateLoading || actionLoading}
+            className="min-w-[80px]"
+          >
+            {duplicateLoading ? (
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+            ) : (
+              <>
+                <Copy className="h-4 w-4 mr-1.5" />
+                Duplicate
+              </>
+            )}
+          </Button>
+          <Button
+            size="sm"
+            variant={isActive ? "destructive" : "default"}
+            onClick={handleStartStop}
+            disabled={actionLoading || duplicateLoading}
+            className="min-w-[80px]"
+          >
+            {actionLoading ? (
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+            ) : isActive ? (
+              <>
+                <Square className="h-4 w-4 mr-1.5" />
+                Stop
+              </>
+            ) : (
+              <>
+                <Play className="h-4 w-4 mr-1.5" />
+                Start
+              </>
+            )}
+          </Button>
+        </div>
       </TableCell>
     </TableRow>
   );
@@ -416,6 +452,61 @@ export function FundsTable({
           err instanceof Error
             ? err.message
             : "Failed to update trading status",
+      });
+    }
+  };
+
+  const handleDuplicateFund = async (fund: Fund) => {
+    const defaultName = `${fund.name} Copy`;
+    const userInput =
+      typeof window !== "undefined"
+        ? window.prompt("Enter a name for the duplicated fund", defaultName)
+        : defaultName;
+
+    if (userInput === null) {
+      return;
+    }
+
+    const name = (userInput ?? "").trim();
+    if (!name) {
+      toastError("Duplicate Failed", {
+        description: "Fund name cannot be empty.",
+      });
+      return;
+    }
+
+    try {
+      await fundService.createFund({
+        name,
+        description: fund.description,
+        mode: fund.mode,
+        initialBalance: 0,
+        icon: fund.icon,
+        iconColor: fund.iconColor,
+        strategyId: fund.strategyId ?? undefined,
+        strategyConfig: fund.strategyConfig ?? {},
+        screeningCriteriaId: fund.screeningCriteriaId ?? undefined,
+        maxLossPercent: fund.maxLossPercent ?? undefined,
+        maxLossDollars: fund.maxLossDollars ?? undefined,
+        maxGivebackPercent: fund.maxGivebackPercent ?? undefined,
+        maxOrderAgeSeconds: fund.maxOrderAgeSeconds ?? undefined,
+        sizePerTrade: fund.sizePerTrade ?? undefined,
+        minBetPercent: fund.minBetPercent ?? undefined,
+        maxBetPercent: fund.maxBetPercent ?? undefined,
+        maxTotalExposure: fund.maxTotalExposure ?? undefined,
+        tradingStartTime: fund.tradingStartTime ?? undefined,
+        tradingEndTime: fund.tradingEndTime ?? undefined,
+        timezone: fund.timezone ?? undefined,
+      });
+
+      toastSuccess("Fund duplicated", {
+        description: `${name} created without initial balance.`,
+      });
+      onRefresh?.();
+    } catch (err) {
+      toastError("Duplicate Failed", {
+        description:
+          err instanceof Error ? err.message : "Failed to duplicate fund",
       });
     }
   };
@@ -613,6 +704,7 @@ export function FundsTable({
                   key={fund.id}
                   fund={fund}
                   onStartStop={handleStartStop}
+                  onDuplicate={handleDuplicateFund}
                   selected={selectedFundIds.has(fund.id)}
                   onSelect={handleSelectFund}
                   lifecycleSummary={computedLifecycleSummaries[fund.id]}

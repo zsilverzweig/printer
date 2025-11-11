@@ -138,6 +138,7 @@ export interface MultiStrategyBacktestResponse {
 export interface ScreenerBacktestRunRequest {
   date: string; // YYYY-MM-DD format
   intervalMinutes?: number;
+  fundIds?: string[];
 }
 
 export interface ScreenerBacktestPoint {

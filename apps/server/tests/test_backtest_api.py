@@ -81,6 +81,34 @@ async def test_run_screener_backtest_success():
 
 
 @pytest.mark.asyncio
+async def test_run_screener_backtest_with_fund_filter():
+    """Ensure screener backtest forwards fund filter to service."""
+    client = TestClient(app)
+
+    sample_result = ScreenerBacktestResult(
+        date=date(2024, 2, 1),
+        start_utc=datetime(2024, 2, 1, 14, 30, tzinfo=timezone.utc),
+        end_utc=datetime(2024, 2, 1, 20, 0, tzinfo=timezone.utc),
+        interval_minutes=45,
+        series=[],
+    )
+
+    with patch("app.routers.backtests.ScreenerBacktestService") as mock_service_cls:
+        mock_service = MagicMock()
+        mock_service.run = AsyncMock(return_value=sample_result)
+        mock_service_cls.return_value = mock_service
+
+        response = client.post(
+            "/api/backtests/screener/run",
+            json={"date": "2024-02-01", "interval_minutes": 45, "fund_ids": ["fund-123"]},
+        )
+
+    assert response.status_code == status.HTTP_200_OK
+    call_kwargs = mock_service.run.await_args.kwargs
+    assert call_kwargs["fund_ids"] == ["fund-123"]
+
+
+@pytest.mark.asyncio
 async def test_run_screener_backtest_validation_error():
     """Test screener backtest endpoint returns 400 on validation errors."""
     client = TestClient(app)
