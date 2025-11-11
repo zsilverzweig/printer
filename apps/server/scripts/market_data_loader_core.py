@@ -308,17 +308,17 @@ async def insert_bars(bars: List[MarketData]) -> None:
 async def create_validation(symbol: str, date: datetime.date, timescale: str, bars: List[MarketData]) -> None:
     """Create validation record for symbol/date/timescale."""
     bar_count = len([b for b in bars if b.time.date() == date])
-    is_complete = bar_count > 0
+    
     
     if logger.isEnabledFor(logging.DEBUG):
         logger.debug(
-            "Validation summary: %s %s %s bar_count=%s expected=%s is_complete=%s",
+            "Validation summary: %s %s %s bar_count=%s",
             symbol,
             timescale,
             date,
             bar_count,
-            expected,
-            is_complete,
+    
+            
         )
     
     date_bars = [b for b in bars if b.time.date() == date]
@@ -335,7 +335,6 @@ async def create_validation(symbol: str, date: datetime.date, timescale: str, ba
             "symbol": symbol.upper(),
             "date": date,
             "timescale": timescale,
-            "is_complete": is_complete,
             "bar_count": bar_count,
             "first_bar_time": first_bar,
             "last_bar_time": last_bar,
@@ -345,7 +344,6 @@ async def create_validation(symbol: str, date: datetime.date, timescale: str, ba
             index_elements=["symbol", "date", "timescale"],
             set_={
                 "bar_count": stmt.excluded.bar_count,
-                "is_complete": stmt.excluded.is_complete,
                 "first_bar_time": stmt.excluded.first_bar_time,
                 "last_bar_time": stmt.excluded.last_bar_time,
                 "validated_at": stmt.excluded.validated_at

@@ -286,7 +286,7 @@ class StartupOrchestrator:
             self.logger.log_error("Screener Service", e)
             self.errors.append(f"Screener Service: {str(e)}")
         
-        # Market Data Loading (yesterday's data)
+        # Market Data Loading (comprehensive coverage)
         try:
             import importlib.util
             script_path = os.path.join(
@@ -300,13 +300,13 @@ class StartupOrchestrator:
             
             # Run in background (non-blocking)
             asyncio.create_task(
-                market_data_loader_module.load_yesterday_data(
+                market_data_loader_module.load_comprehensive_data(
                     init_db_flag=False,
                     api_key=core_module.API_KEY
                 )
             )
             self.services["Market Data Loader"] = Status.OK
-            self.logger.log_service("Market Data Loader", Status.OK, "loading yesterday's data (background)")
+            self.logger.log_service("Market Data Loader", Status.OK, "loading comprehensive data (background)")
         except Exception as e:
             self.services["Market Data Loader"] = Status.FAIL
             self.logger.log_error("Market Data Loader", e)

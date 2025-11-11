@@ -179,15 +179,12 @@ class SymbolDateValidation(Base):
     Tracks which symbol/date/timescale combinations have been attempted during loading.
 
     Rather than relying on heuristics about how many bars "should" exist, a validation
-    record now indicates that we've run a collection job for that slice. `is_complete`
-    represents whether any bars were persisted for that run (at least one bar stored),
-    while `bar_count` captures the exact number of rows written.
+    record now indicates that we've run a collection job for that slice. 
 
     Attributes:
         symbol: Ticker symbol
         date: Trading date being validated
         timescale: Granularity ('1min', '5min', '15min', '1hour', '1day')
-        is_complete: True if the load stored one or more bars
         bar_count: Actual number of bars stored
         first_bar_time: Timestamp of first bar for this symbol/date/timescale
         last_bar_time: Timestamp of last bar for this symbol/date/timescale
@@ -211,11 +208,6 @@ class SymbolDateValidation(Base):
         primary_key=True,
         nullable=False,
         default='1min'
-    )
-    is_complete: Mapped[bool] = mapped_column(
-        Boolean,
-        nullable=False,
-        default=False
     )
     bar_count: Mapped[int] = mapped_column(
         Integer,
@@ -241,7 +233,7 @@ class SymbolDateValidation(Base):
     )
     
     def __repr__(self) -> str:
-        return f"<SymbolDateValidation(symbol={self.symbol}, date={self.date}, timescale={self.timescale}, is_complete={self.is_complete})>"
+        return f"<SymbolDateValidation(symbol={self.symbol}, date={self.date}, timescale={self.timescale})>"
 
 
 class MarketDataBacktestLookup(Base):

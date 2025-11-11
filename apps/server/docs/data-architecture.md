@@ -184,7 +184,6 @@ TODO: can the app handle 10k bars a second? How long after the second does this 
 - `symbol` (string, primary key)
 - `date` (date, primary key)
 - `timescale` (string, primary key)
-- `is_complete` (boolean): True if the load stored one or more bars
 - `bar_count` (integer): Actual number of bars stored
 - `first_bar_time`, `last_bar_time` (datetime, nullable)
 - `validated_at` (datetime): When validation was last updated
@@ -477,7 +476,6 @@ This allows filtering and analysis by trading session.
 
    - Presence of validation records for requested date ranges
    - Time range coverage (first_bar_time to last_bar_time)
-   - `is_complete` flag indicates whether any bars were stored
 
 3. **Usage**:
    - `MarketDataService` checks validation before API fallback

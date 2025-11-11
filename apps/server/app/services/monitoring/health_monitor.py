@@ -81,9 +81,6 @@ class MarketDataHealthCheck(BaseHealthCheck):
     - Data freshness: Is recent data being ingested?
     - Validation coverage: Have we attempted to load data for most active symbols?
     - Missing validations: Are there symbols/dates we haven't tried to load yet?
-    
-    Note: We do NOT flag incomplete validations (is_complete=FALSE) as problems.
-    If we tried to load data and got incomplete results, that's all Polygon has.
     """
     
     def __init__(self, lookback_days: int = 30):
@@ -197,8 +194,7 @@ class MarketDataHealthCheck(BaseHealthCheck):
                 text("""
                     SELECT 
                         COUNT(DISTINCT symbol) as validated_symbols,
-                        COUNT(*) as total_validations,
-                        COUNT(CASE WHEN is_complete THEN 1 END) as complete_validations
+                        COUNT(*) as total_validations
                     FROM symbol_date_validation
                     WHERE date >= :cutoff_date
                 """),
@@ -216,7 +212,6 @@ class MarketDataHealthCheck(BaseHealthCheck):
             
             validated_symbols = row[0] or 0
             total_validations = row[1] or 0
-            complete_validations = row[2] or 0
             
             # Count total active symbols in ticker_details
             result = await session.execute(
@@ -233,17 +228,13 @@ class MarketDataHealthCheck(BaseHealthCheck):
             coverage_pct = (validated_symbols / total_active_symbols * 100) if total_active_symbols > 0 else 0
             is_healthy = coverage_pct >= 90.0
             
-            completion_rate = (complete_validations / total_validations * 100) if total_validations > 0 else 0
-            
             return {
                 "is_healthy": is_healthy,
-                "message": f"{validated_symbols}/{total_active_symbols} active symbols validated ({coverage_pct:.1f}% coverage, {completion_rate:.1f}% complete)",
+                "message": f"{validated_symbols}/{total_active_symbols} active symbols validated ({coverage_pct:.1f}% coverage)",
                 "validated_symbols": validated_symbols,
                 "total_active_symbols": total_active_symbols,
                 "coverage_pct": coverage_pct,
                 "total_validations": total_validations,
-                "complete_validations": complete_validations,
-                "completion_rate": completion_rate,
                 "lookback_days": self.lookback_days
             }
             
@@ -257,10 +248,6 @@ class MarketDataHealthCheck(BaseHealthCheck):
     async def _check_for_gaps(self, session: AsyncSession) -> Dict:
         """
         Check for missing validation records (dates we haven't tried to load).
-        
-        NOTE: We intentionally DO NOT flag incomplete validations (is_complete=FALSE)
-        as problems. If we tried to load data and got incomplete results, that's all
-        Polygon has for that symbol/date. No point retrying or flagging as unhealthy.
         
         We only flag:
         1. Symbols with NO validation records at all
@@ -400,12 +387,8 @@ class BacktestDataHealthCheck(BaseHealthCheck):
             symbols = row[1]
             minutes = row[2]
             
-            # We expect ~391 minutes (9:30-16:00) and substantial data
-            is_complete = total_rows > 10000 and minutes >= 300
-            
             coverage[target_date.isoformat()] = {
                 "has_data": total_rows > 0,
-                "is_complete": is_complete,
                 "total_rows": total_rows,
                 "symbols": symbols,
                 "minutes": minutes,
@@ -449,16 +432,11 @@ class BacktestDataHealthCheck(BaseHealthCheck):
             symbols = row[2]
             minutes = row[3]
 
-            # We expect metrics on the majority of bars
-            metric_ratio = (metric_rows / total_rows) if total_rows else 0
-            is_complete = total_rows > 10000 and minutes >= 300 and metric_ratio >= 0.9
-
             coverage[target_date.isoformat()] = {
                 "has_data": total_rows > 0,
-                "is_complete": is_complete,
                 "total_rows": total_rows,
                 "metric_rows": metric_rows,
-                "metric_ratio": metric_ratio,
+                "metric_ratio": (metric_rows / total_rows) if total_rows else 0,
                 "symbols": symbols,
                 "minutes": minutes,
                 "expected_minutes": 391,
@@ -578,14 +556,16 @@ class BacktestDataHealthCheck(BaseHealthCheck):
                 # Find dates that need lookup population
                 missing_lookup_dates = []
                 for date_str, info in lookup_coverage.items():
-                    if not info["is_complete"]:
+                    if not info.get("has_data"):
                         target_date = datetime.fromisoformat(date_str).date()
                         missing_lookup_dates.append(target_date)
                 
                 # Find dates that need metrics population
                 missing_metrics_dates = []
                 for date_str, info in metrics_coverage.items():
-                    if not info["is_complete"]:
+                    has_data = info.get("has_data")
+                    metric_ratio = info.get("metric_ratio", 0)
+                    if not has_data or metric_ratio < 0.9:
                         target_date = datetime.fromisoformat(date_str).date()
                         missing_metrics_dates.append(target_date)
                 
@@ -616,15 +596,15 @@ class BacktestDataHealthCheck(BaseHealthCheck):
                 yesterday_metrics = metrics_coverage.get(yesterday.isoformat() if yesterday else "", {})
                 
                 # Overall health: both lookup and metrics should be complete for yesterday
-                lookup_healthy = yesterday_lookup.get("is_complete", False) if yesterday else False
-                metrics_healthy = yesterday_metrics.get("is_complete", False) if yesterday else False
+                lookup_healthy = yesterday_lookup.get("has_data", False) if yesterday else False
+                metrics_healthy = (yesterday_metrics.get("has_data", False) and yesterday_metrics.get("metric_ratio", 0) >= 0.9) if yesterday else False
                 is_healthy = lookup_healthy and metrics_healthy
                 
                 # Prepare message
                 if is_healthy:
-                    lookup_complete = sum(1 for info in lookup_coverage.values() if info.get("is_complete", False))
-                    metrics_complete = sum(1 for info in metrics_coverage.values() if info.get("is_complete", False))
-                    message = f"Backtest data healthy: {lookup_complete}/{len(recent_dates)} lookup days, {metrics_complete}/{len(recent_dates)} metrics days complete"
+                    lookup_complete = sum(1 for info in lookup_coverage.values() if info.get("has_data", False))
+                    metrics_complete = sum(1 for info in metrics_coverage.values() if info.get("has_data", False) and info.get("metric_ratio", 0) >= 0.9)
+                    message = f"Backtest data healthy: {lookup_complete}/{len(recent_dates)} lookup days, {metrics_complete}/{len(recent_dates)} metrics days sufficiently populated"
                 else:
                     issues = []
                     if missing_lookup_dates:

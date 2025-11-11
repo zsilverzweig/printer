@@ -35,8 +35,6 @@ def test_symbol_date_validation_creation():
     validation = SymbolDateValidation(
         symbol="TSLA",
         date=date(2025, 11, 1),
-        is_complete=True,
-        bar_count=390,
         first_bar_time=datetime(2025, 11, 1, 9, 30, tzinfo=timezone.utc),
         last_bar_time=datetime(2025, 11, 1, 16, 0, tzinfo=timezone.utc),
         validated_at=datetime.now(timezone.utc),
@@ -44,24 +42,5 @@ def test_symbol_date_validation_creation():
     )
     
     assert validation.symbol == "TSLA"
-    assert validation.is_complete is True
+
     assert validation.bar_count == 390
-
-
-def test_symbol_date_validation_incomplete():
-    """Test validation record for incomplete data."""
-    validation = SymbolDateValidation(
-        symbol="NVDA",
-        date=date(2025, 11, 1),
-        is_complete=False,
-        bar_count=200,
-        first_bar_time=datetime(2025, 11, 1, 9, 30, tzinfo=timezone.utc),
-        last_bar_time=datetime(2025, 11, 1, 13, 0, tzinfo=timezone.utc),
-        validated_at=datetime.now(timezone.utc),
-        notes="Data collection interrupted"
-    )
-
-    assert validation.is_complete is False
-    assert validation.bar_count == 200
-    assert validation.notes == "Data collection interrupted"
-

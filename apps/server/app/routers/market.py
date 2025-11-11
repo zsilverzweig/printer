@@ -244,7 +244,6 @@ async def get_symbol_completeness(
             text("""
                 SELECT 
                     date,
-                    is_complete,
                     bar_count,
                     validated_at
                 FROM symbol_date_validation
@@ -257,23 +256,18 @@ async def get_symbol_completeness(
         
         records = []
         for row in result:
-            is_complete = row[1]
             records.append({
                 "date": row[0].isoformat(),
-                "is_complete": is_complete,
                 "bar_count": row[2],
                 "validated_at": row[3].isoformat() if row[3] else None
             })
 
         attempted_days = len(records)
-        complete_days = sum(1 for record in records if (record["bar_count"] or 0) > 0)
 
         return {
             "symbol": symbol.upper(),
             "days_checked": days,
             "total_records": attempted_days,
-            "complete_days": complete_days,
-            "completion_rate": (complete_days / attempted_days * 100) if attempted_days else 0,
             "records": records
         }
 

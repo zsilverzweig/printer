@@ -79,7 +79,6 @@ class GapDetectorService:
     
     Scans the symbol_date_validation table and identifies:
     1. Symbols with missing validation records for recent dates
-    2. Symbols with incomplete data (is_complete = FALSE)
     3. Date ranges with no data at all
     """
     
@@ -114,10 +113,6 @@ class GapDetectorService:
                 gaps.extend(missing_symbols_gaps)
                 
                 # Check 1: Find incomplete validations
-                # SKIP incomplete validations - if we've loaded data and it's incomplete,
-                # that's all Polygon has for that symbol/date. No point retrying.
-                # incomplete_gaps = await self._find_incomplete_validations(session)
-                # gaps.extend(incomplete_gaps)
                 
                 # Check 2: Find symbols with missing validation records
                 missing_gaps = await self._find_missing_validations(session)
@@ -148,45 +143,6 @@ class GapDetectorService:
             self.logger.error(f"Gap detection failed: {e}", exc_info=True)
             return []
     
-    async def _find_incomplete_validations(self, session: AsyncSession) -> List[DataGap]:
-        """Find symbols with incomplete data (is_complete = FALSE)."""
-        cutoff_date = datetime.now(timezone.utc).date() - timedelta(days=self.lookback_days)
-        
-        try:
-            result = await session.execute(
-                text("""
-                    SELECT sdv.symbol, sdv.date, sdv.bar_count
-                    FROM symbol_date_validation sdv
-                    INNER JOIN ticker_details td ON sdv.symbol = td.symbol
-                    WHERE sdv.date >= :cutoff_date
-                      AND sdv.is_complete = FALSE
-                      AND td.type IN ('CS', 'ETF')
-                      AND td.active = true
-                    ORDER BY sdv.date DESC, sdv.symbol
-                """),
-                {"cutoff_date": cutoff_date}
-            )
-            
-            gaps = []
-            for row in result:
-                symbol = row[0]
-                gap_date = row[1]
-                bar_count = row[2] or 0
-
-                gaps.append(DataGap(
-                    symbol=symbol,
-                    date=gap_date,
-                    gap_type='incomplete_day',
-                    bar_count=bar_count,
-                    priority=1  # Treat any incomplete load as high priority
-                ))
-            
-            self.logger.debug(f"Found {len(gaps)} incomplete validations")
-            return gaps
-            
-        except Exception as e:
-            self.logger.error(f"Error finding incomplete validations: {e}")
-            return []
     
     async def _find_missing_symbols(self, session: AsyncSession) -> List[DataGap]:
         """
@@ -371,6 +327,7 @@ class GapDetectorService:
             current_date = cutoff_date
             today = datetime.now(timezone.utc).date()
             
+            # TODO This is wrong, we need the weekends too!
             while current_date < today:
                 if not _is_weekend(current_date) and current_date not in validated_dates:  # Skip weekends
                     # Any day with no validation records - high priority
