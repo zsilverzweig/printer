@@ -3222,6 +3222,13 @@ async def reset_fund(fund_id: str) -> dict:
             result = await session.execute(strategy_events_stmt)
             event_ids = [row[0] for row in result.all()]
             
+            # Fetch order ids up-front so we can target dependent rows even if they
+            # don't carry the expected fund_id (defensive against historical data issues)
+            order_ids_result = await session.scalars(
+                select(Order.id).where(Order.fund_id == fund_id)
+            )
+            order_ids = order_ids_result.all()
+            
             # Delete child records (StrategyEngineEvent)
             await session.execute(
                 delete(StrategyEngineEvent).where(StrategyEngineEvent.fund_id == fund_id)
@@ -3237,6 +3244,10 @@ async def reset_fund(fund_id: str) -> dict:
             await session.execute(
                 delete(Transaction).where(Transaction.fund_id == fund_id)
             )
+            if order_ids:
+                await session.execute(
+                    delete(Transaction).where(Transaction.order_id.in_(order_ids))
+                )
             
             # 3. Delete trades (they reference orders via entry_order_id/exit_order_id)
             await session.execute(

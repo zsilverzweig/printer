@@ -137,19 +137,6 @@ export default function ScreenerPage() {
     }
   }, [selectedScreener, isNewScreener]);
 
-  // Track if we're loading a screener to avoid immediate auto-run
-  const isLoadingScreenerRef = React.useRef(false);
-
-  React.useEffect(() => {
-    isLoadingScreenerRef.current = true;
-    const timer = setTimeout(() => {
-      isLoadingScreenerRef.current = false;
-    }, 1000);
-    return () => clearTimeout(timer);
-  }, [selectedScreenerId]);
-
-  // Removed debounce-driven auto-run. Runs are triggered onBlur/change from controls.
-
   // Compute display data
   const displayData: StockData[] = React.useMemo(() => {
     if (mode === "historical") {
@@ -311,20 +298,6 @@ export default function ScreenerPage() {
       setRunningScreener(false);
     }
   };
-
-  // Ensure results update shortly after screener selection
-  React.useEffect(() => {
-    if (!selectedScreenerId) return;
-    if (mode !== "live") return;
-    const hasFilters = currentFilters && Object.keys(currentFilters).length > 0;
-    if (!hasFilters) return;
-    const t = setTimeout(() => {
-      // fire a run to reflect the newly selected screener
-      void handleRun();
-    }, 700);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedScreenerId, mode, JSON.stringify(currentFilters)]);
 
   // Handle save filters
   const handleSaveFilters = async () => {

@@ -77,7 +77,7 @@ export function ScreenerControls({
 
   return (
     <div className="space-y-3">
-      {/* Row 1: Mode + Date/Time + Run (Historical only) */}
+      {/* Row 1: Mode + Run (Historical adds date/time + copy) */}
       <div className="flex items-center gap-3 flex-wrap">
         <div className="flex items-center gap-2">
           <Label htmlFor="mode-toggle" className="text-xs cursor-pointer">
@@ -100,26 +100,15 @@ export function ScreenerControls({
         </div>
 
         {mode === "historical" && (
-          <>
-            <div className="flex items-center gap-2">
-              <DateTimePicker
-                date={timestamp}
-                onDateChange={onTimestampChange}
-                placeholder="Pick date and time"
-                disabled={loading}
-                className="w-[280px]"
-                showTime={true}
-              />
-            </div>
-            <Button
-              onClick={onRun}
-              size="sm"
+          <div className="flex items-center gap-3 flex-wrap">
+            <DateTimePicker
+              date={timestamp}
+              onDateChange={onTimestampChange}
+              placeholder="Pick date and time"
               disabled={loading}
-              className="h-8"
-            >
-              <Play className="h-3 w-3 mr-1" />
-              Run Historical
-            </Button>
+              className="w-[280px]"
+              showTime={true}
+            />
             {onCopyHistoricalLink ? (
               <Button
                 onClick={onCopyHistoricalLink}
@@ -132,8 +121,17 @@ export function ScreenerControls({
                 Copy Link
               </Button>
             ) : null}
-          </>
+          </div>
         )}
+        <Button
+          onClick={onRun}
+          size="sm"
+          disabled={loading || (mode === "historical" && !timestamp)}
+          className="h-8"
+        >
+          <Play className="h-3 w-3 mr-1" />
+          {mode === "historical" ? "Run Historical" : "Run"}
+        </Button>
       </div>
 
       {/* Row 2: Basic Filters */}
@@ -152,9 +150,6 @@ export function ScreenerControls({
                 parseFloat(e.target.value) || undefined
               )
             }
-            onBlur={() => {
-              if (mode === "live" && !loading) onRun();
-            }}
             className="w-20 h-7 text-xs"
             disabled={loading}
           />
@@ -170,9 +165,6 @@ export function ScreenerControls({
                 parseFloat(e.target.value) || undefined
               )
             }
-            onBlur={() => {
-              if (mode === "live" && !loading) onRun();
-            }}
             className="w-20 h-7 text-xs"
             disabled={loading}
           />
@@ -196,9 +188,6 @@ export function ScreenerControls({
                 e.target.value ? parseInt(e.target.value) * 1000000 : undefined
               )
             }
-            onBlur={() => {
-              if (mode === "live" && !loading) onRun();
-            }}
             className="w-24 h-7 text-xs"
             disabled={loading}
             title="Minimum market cap in millions (e.g., 1000 for $1B)"
@@ -219,9 +208,6 @@ export function ScreenerControls({
                 e.target.value ? parseInt(e.target.value) * 1000000 : undefined
               )
             }
-            onBlur={() => {
-              if (mode === "live" && !loading) onRun();
-            }}
             className="w-24 h-7 text-xs"
             disabled={loading}
             title="Maximum market cap in millions (e.g., 100000 for $100B)"
@@ -245,9 +231,6 @@ export function ScreenerControls({
                 e.target.value ? parseInt(e.target.value) * 1000000 : undefined
               )
             }
-            onBlur={() => {
-              if (mode === "live" && !loading) onRun();
-            }}
             className="w-24 h-7 text-xs"
             disabled={loading}
             title="Minimum public float in millions (e.g., 1000 for $1B)"
@@ -266,9 +249,6 @@ export function ScreenerControls({
                 e.target.value ? parseInt(e.target.value) * 1000000 : undefined
               )
             }
-            onBlur={() => {
-              if (mode === "live" && !loading) onRun();
-            }}
             className="w-24 h-7 text-xs"
             disabled={loading}
             title="Maximum public float in millions (e.g., 100000 for $100B)"
@@ -290,9 +270,6 @@ export function ScreenerControls({
                 parseFloat(e.target.value) || undefined
               )
             }
-            onBlur={() => {
-              if (mode === "live" && !loading) onRun();
-            }}
             className="w-28 h-7 text-xs"
             disabled={loading}
           />
@@ -315,9 +292,6 @@ export function ScreenerControls({
                 Number.isNaN(next) ? undefined : next
               );
             }}
-            onBlur={() => {
-              if (mode === "live" && !loading) onRun();
-            }}
             className="w-20 h-7 text-xs"
             disabled={loading}
             title="Minimum relative volume (RV14) - e.g., 1.5 means 1.5x average volume"
@@ -336,9 +310,6 @@ export function ScreenerControls({
                 "max_relative_volume",
                 Number.isNaN(next) ? undefined : next
               );
-            }}
-            onBlur={() => {
-              if (mode === "live" && !loading) onRun();
             }}
             className="w-20 h-7 text-xs"
             disabled={loading}
@@ -364,9 +335,6 @@ export function ScreenerControls({
                 Number.isNaN(next) ? undefined : next
               );
             }}
-            onBlur={() => {
-              if (mode === "live" && !loading) onRun();
-            }}
             className="w-20 h-7 text-xs"
             disabled={loading}
             title="Minimum relative volume compared to the same time last week"
@@ -388,9 +356,6 @@ export function ScreenerControls({
                 parseFloat(e.target.value) || undefined
               )
             }
-            onBlur={() => {
-              if (mode === "live" && !loading) onRun();
-            }}
             className="w-20 h-7 text-xs"
             disabled={loading}
           />
@@ -406,9 +371,6 @@ export function ScreenerControls({
                 parseFloat(e.target.value) || undefined
               )
             }
-            onBlur={() => {
-              if (mode === "live" && !loading) onRun();
-            }}
             className="w-20 h-7 text-xs"
             disabled={loading}
           />
@@ -424,7 +386,6 @@ export function ScreenerControls({
             value={filters.order_by || "rv14"}
             onValueChange={(value) => {
               handleFilterUpdate("order_by", value);
-              if (mode === "live" && !loading) onRun();
             }}
             disabled={loading}
           >
@@ -482,7 +443,6 @@ export function ScreenerControls({
                             "asset_types",
                             newTypes.length > 0 ? newTypes : undefined
                           );
-                          if (mode === "live" && !loading) onRun();
                         }
                       }}
                     >
@@ -518,9 +478,6 @@ export function ScreenerControls({
             onChange={(e) =>
               handleFilterUpdate("limit", parseInt(e.target.value) || undefined)
             }
-            onBlur={() => {
-              if (mode === "live" && !loading) onRun();
-            }}
             className="w-20 h-7 text-xs"
             disabled={loading}
           />
