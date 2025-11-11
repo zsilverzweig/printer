@@ -17,6 +17,9 @@ from app.services.trading.transaction_service import create_transaction_from_fil
 from app.services.trading.position_tracker import get_position_quantity_from_transactions
 from app.services.events.event_service import event_service
 from app.services.analytics.trade_builder import TradeBuilder
+from app.services.strategies.ticker_state_service import get_ticker_state_service
+from app.services.core.time_context import get_current_time
+from app.types import TickerStateTransitionCode
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +38,9 @@ class TradeEventHandler:
     Single handler for all Alpaca trade_updates WebSocket events.
     Drives the entire order → transaction → position → trade flow.
     """
+    
+    def __init__(self) -> None:
+        self.ticker_state_service = get_ticker_state_service()
     
     async def handle_trade_update(self, event_data: dict) -> None:
         """
@@ -444,6 +450,7 @@ class TradeEventHandler:
             
             old_status = order.status
             order.status = new_status
+            expired_trade_id = order.trade_id if order.side == "buy" else None
             
             # Parse canceled_at/expired_at/failed_at if available
             canceled_at_str = order_data.get("canceled_at") or order_data.get("expired_at") or order_data.get("failed_at")
@@ -453,6 +460,12 @@ class TradeEventHandler:
                     order.filled_at = canceled_at  # Reuse filled_at for tracking
                 except Exception:
                     pass
+            
+            if expired_trade_id and event_type in ["canceled", "expired", "rejected"]:
+                trade = await session.get(Trade, expired_trade_id)
+                if trade:
+                    trade.status = "expired"
+                    trade.updated_at = get_current_time()
             
             await session.commit()
             
@@ -476,6 +489,22 @@ class TradeEventHandler:
                     "status": new_status,
                 }
             )
+        
+        if expired_trade_id and event_type in ["canceled", "expired", "rejected"]:
+            try:
+                await self.ticker_state_service.transition_ticker(
+                    fund_id=order.fund_id,
+                    ticker=order.symbol,
+                    to_state="screened",
+                    transition_code=TickerStateTransitionCode.ORDER_CANCELED_STALE.value,
+                    description=f"Order {event_type}: reset lifecycle",
+                    clear_entry_level=True,
+                    clear_trade_id=True
+                )
+            except Exception as state_error:
+                logger.warning(
+                    f"Failed to reset ticker {order.symbol} after {event_type} event: {state_error}"
+                )
     
     async def _update_trade_record(
         self,
@@ -547,6 +576,21 @@ class TradeEventHandler:
                     if trade.status == "pending":
                         trade.status = "open"
                         logger.debug(f"✅ Trade {order.trade_id[:8]}... opened: {order.symbol} {total_qty} @ ${avg_price:.2f}")
+                        try:
+                            await self.ticker_state_service.transition_ticker(
+                                fund_id=trade.fund_id,
+                                ticker=trade.symbol,
+                                to_state="filled",
+                                transition_code=TickerStateTransitionCode.ENTRY_ORDER_FILLED.value,
+                                description=(
+                                    f"Entry order filled: {total_qty:.2f} shares @ ${avg_price:.2f}"
+                                ),
+                                trade_id=trade.id
+                            )
+                        except Exception as state_error:
+                            logger.warning(
+                                f"Failed to transition ticker {trade.symbol} to filled: {state_error}"
+                            )
                 
             elif order.side == "sell" and trade.status == "open":
                 # Check if position is closed

@@ -38,6 +38,8 @@ from app.services.trading.constants import FLOAT_COMPARISON_EPSILON
 from app.services.trading.alpaca_service import AlpacaService
 from app.services.trading.order_lifecycle import OrderLifecycleManager
 from app.services.trading.reconciliation_service import get_reconciliation_service
+from app.services.strategies.ticker_state_service import get_ticker_state_service
+from app.types import TickerStateTransitionCode
 
 logger = logging.getLogger(__name__)
 
@@ -319,6 +321,7 @@ def serialize_trade(trade: Trade) -> dict:
         "exit_price": trade.exit_price,
         "entry_quantity": trade.entry_quantity,
         "exit_quantity": trade.exit_quantity,
+        "order_price_at_submission": trade.order_price_at_submission,
         "realized_pnl": trade.realized_pnl,
         "realized_pnl_percent": trade.realized_pnl_percent,
         "hold_duration_seconds": trade.hold_duration_seconds,
@@ -1326,6 +1329,7 @@ async def place_manual_order(fund_id: str, request: ManualOrderRequest) -> dict:
                     entry_time=submitted_at,
                     entry_price=estimated_price or 0.0,
                     entry_quantity=quantity,
+                    order_price_at_submission=estimated_price or 0.0,
                     strategy_id=fund.strategy_id,
                     screening_criteria_id=fund.screening_criteria_id,
                     status="pending",
@@ -1391,7 +1395,29 @@ async def place_manual_order(fund_id: str, request: ManualOrderRequest) -> dict:
                 symbol=symbol,
             )
         )
-
+    
+    if side == "buy" and order_data and order_data.get("trade_id"):
+        price_snapshot = None
+        if order_data.get("filled_avg_price"):
+            price_snapshot = float(order_data["filled_avg_price"])
+        elif estimated_price:
+            price_snapshot = float(estimated_price)
+        price_suffix = f" @ ${price_snapshot:.2f}" if price_snapshot else ""
+        description = f"Manual order submitted: {quantity:.2f} shares{price_suffix}"
+        try:
+            await get_ticker_state_service().transition_ticker(
+                fund_id=fund_id,
+                ticker=symbol,
+                to_state="ordered",
+                transition_code=TickerStateTransitionCode.ENTRY_ORDER_PLACED.value,
+                description=description,
+                trade_id=order_data["trade_id"]
+            )
+        except Exception as state_error:
+            logger.warning(
+                f"Failed to transition ticker {symbol} to ordered after manual order: {state_error}"
+            )
+    
     return {"order": order_data}
 
 

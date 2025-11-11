@@ -135,7 +135,7 @@ export function OrdersTable({
                   Qty
                 </th>
                 <th className="text-right py-3 px-2 text-sm font-medium text-muted-foreground">
-                  Filled Qty
+                  Filled
                 </th>
                 <th className="text-right py-3 px-2 text-sm font-medium text-muted-foreground">
                   Avg Price

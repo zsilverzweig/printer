@@ -232,10 +232,11 @@ export interface FundTrade {
   exitPrice?: number | null;
   entryQuantity: number;
   exitQuantity?: number | null;
+  orderPriceAtSubmission?: number | null;
   realizedPnl?: number | null;
   realizedPnlPercent?: number | null;
   holdDurationSeconds?: number | null;
-  status: string; // 'open', 'closed', 'partial'
+  status: string; // 'pending', 'open', 'partial', 'closed', 'expired'
   strategyId?: string | null;
   screeningCriteriaId?: string | null;
   aiConfidence?: number | null;

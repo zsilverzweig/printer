@@ -32,6 +32,8 @@ from app.services.strategies.position_sizer import PositionSizer
 from app.services.strategies.strategy_service import StrategyService
 from app.services.analytics.trade_builder import TradeBuilder
 from app.lib.strategy_logger import StrategyLogger
+from app.services.strategies.ticker_state_service import get_ticker_state_service
+from app.types import TickerStateTransitionCode
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +76,7 @@ class OrderExecutor:
         self.strategy_logger = strategy_logger
         self.order_lifecycle = order_lifecycle
         self.risk_manager = risk_manager
+        self.ticker_state_service = get_ticker_state_service()
     
     async def execute_buy_order(
         self,
@@ -132,6 +135,7 @@ class OrderExecutor:
             actual_cost = quantity * market_data.price
             order_type = signal.order_type
             limit_price = signal.entry_price if order_type == "limit" else None
+            order_price_snapshot = float(market_data.price)
             
             # CRITICAL: Validate AND create order in SINGLE transaction
             order_id = str(uuid.uuid4())
@@ -170,6 +174,7 @@ class OrderExecutor:
                         entry_time=submitted_at,
                         entry_price=market_data.price,  # Will be updated with actual fill price
                         entry_quantity=quantity,  # Will be updated with actual fill quantity
+                        order_price_at_submission=order_price_snapshot,
                         strategy_id=self.fund.strategy_id,
                         screening_criteria_id=self.fund.screening_criteria_id,
                         status="pending",  # Will change to "open" when filled
@@ -269,6 +274,23 @@ class OrderExecutor:
                             f"Manual cleanup required. Cancel error: {cancel_error}"
                         )
                     return False
+                
+                # Transition ticker lifecycle to ordered
+                try:
+                    await self.ticker_state_service.transition_ticker(
+                        fund_id=self.fund_id,
+                        ticker=symbol,
+                        to_state="ordered",
+                        transition_code=TickerStateTransitionCode.ENTRY_ORDER_PLACED.value,
+                        description=(
+                            f"Order submitted: {quantity:.2f} shares @ ${order_price_snapshot:.2f}"
+                        ),
+                        trade_id=trade_id
+                    )
+                except Exception as state_error:
+                    logger.warning(
+                        f"Failed to transition ticker {symbol} to ordered state: {state_error}"
+                    )
                 
             except Exception as e:
                 logger.error(f"❌ Order creation failed for {symbol}: {e}")
@@ -642,7 +664,34 @@ class OrderExecutor:
                             order.status = "canceled"
                             order.error_message = f"Canceled: stale order (age: {order_age_seconds:.0f}s)"
                             session.add(order)
+                            
+                            expired_trade_id = order.trade_id
+                            if expired_trade_id:
+                                trade = await session.get(Trade, expired_trade_id)
+                                if trade:
+                                    trade.status = "expired"
+                                    trade.updated_at = get_current_time()
+                                    session.add(trade)
+                            
                             await session.commit()
+                        
+                        if order.trade_id:
+                            try:
+                                await self.ticker_state_service.transition_ticker(
+                                    fund_id=self.fund_id,
+                                    ticker=order.symbol,
+                                    to_state="screened",
+                                    transition_code=TickerStateTransitionCode.ORDER_CANCELED_STALE.value,
+                                    description=(
+                                        f"Order expired after {order_age_seconds:.0f}s without fill"
+                                    ),
+                                    clear_entry_level=True,
+                                    clear_trade_id=True
+                                )
+                            except Exception as state_error:
+                                logger.warning(
+                                    f"Failed to reset ticker {order.symbol} after stale cancellation: {state_error}"
+                                )
                         
                     except Exception as e:
                         logger.error(f"Error canceling stale order {order.id}: {e}", exc_info=True)

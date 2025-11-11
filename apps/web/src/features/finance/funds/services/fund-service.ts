@@ -120,7 +120,7 @@ export const fundService = {
    */
   async getFundTrades(
     fundId: string,
-    status?: "open" | "closed"
+    status?: "open" | "closed" | "pending" | "expired"
   ): Promise<FundTrade[]> {
     const params = new URLSearchParams();
     if (status) {
@@ -152,6 +152,12 @@ export const fundService = {
       exitQuantity:
         trade.exit_quantity ?? trade.exitQuantity
           ? Number(trade.exit_quantity ?? trade.exitQuantity)
+          : null,
+      orderPriceAtSubmission:
+        trade.order_price_at_submission ?? trade.orderPriceAtSubmission
+          ? Number(
+              trade.order_price_at_submission ?? trade.orderPriceAtSubmission
+            )
           : null,
       realizedPnl:
         trade.realized_pnl ?? trade.realizedPnl

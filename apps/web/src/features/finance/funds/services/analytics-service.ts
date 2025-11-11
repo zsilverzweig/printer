@@ -17,10 +17,11 @@ export interface TradeRecord {
   exit_price: number | null;
   entry_quantity: number;
   exit_quantity: number | null;
+  order_price_at_submission: number | null;
   realized_pnl: number | null;
   realized_pnl_percent: number | null;
   hold_duration_seconds: number | null;
-  status: "open" | "closed" | "partial" | "pending";
+  status: "open" | "closed" | "partial" | "pending" | "expired";
   strategy_id: string | null;
   screening_criteria_id: string | null;
   ai_confidence: number | null;

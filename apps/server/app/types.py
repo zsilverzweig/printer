@@ -96,9 +96,13 @@ class TickerStateTransitionCode(str, Enum):
     SETUP_FAILED_RV = "setup_failed_rv"
     SETUP_FAILED_OTHER = "setup_failed_other"
     
-    # Entered state
+    # Setup state
     ENTRY_LEVEL_CREATED = "entry_level_created"
     ENTRY_LEVEL_UPDATED = "entry_level_updated"
+    
+    # Ordered state
+    ENTRY_ORDER_PLACED = "entry_order_placed"
+    ORDER_CANCELED_STALE = "order_canceled_stale"
     
     # Filled state
     ENTRY_ORDER_FILLED = "entry_order_filled"

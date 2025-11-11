@@ -42,7 +42,7 @@ export type {
 export type TickerState =
   | "screened"
   | "setup"
-  | "entered"
+  | "ordered"
   | "filled"
   | "exited"
   | "removed";

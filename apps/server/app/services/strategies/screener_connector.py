@@ -290,11 +290,11 @@ class ScreenerConnector:
                             entry_level
                         )
                         
-                        # Transition ticker to 'entered' state
+                        # Record entry level creation while keeping ticker in setup state
                         await self.ticker_state_service.transition_ticker(
                             fund_id=self.fund_id,
                             ticker=ticker,
-                            to_state="entered",
+                            to_state="setup",
                             transition_code=TickerStateTransitionCode.ENTRY_LEVEL_CREATED.value,
                             description=f"Entry level created: ${entry_level.entry_price:.2f} (stop: ${entry_level.stop_loss:.2f})",
                             entry_level_id=state_id

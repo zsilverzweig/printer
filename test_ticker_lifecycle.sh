@@ -63,9 +63,9 @@ get_sample_tickers "screened" 5
 echo "3. Sample Setup Tickers"
 get_sample_tickers "setup" 5
 
-if [ -n "$(curl -s "${API_BASE}/funds/${FUND_ID}/ticker-states?state=entered" | jq -r '.[0].ticker // empty')" ]; then
-    echo "4. Sample Entered Tickers"
-    get_sample_tickers "entered" 5
+if [ -n "$(curl -s "${API_BASE}/funds/${FUND_ID}/ticker-states?state=ordered" | jq -r '.[0].ticker // empty')" ]; then
+    echo "4. Sample Ordered Tickers"
+    get_sample_tickers "ordered" 5
 fi
 
 if [ -n "$(curl -s "${API_BASE}/funds/${FUND_ID}/ticker-states?state=filled" | jq -r '.[0].ticker // empty')" ]; then

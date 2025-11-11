@@ -2,6 +2,10 @@
 
 import { Edit2, Save, Trash2, X } from "lucide-react";
 
+import type { ScreeningCriteria } from "../hooks/use-screeners";
+
+import { ScreenerControls } from "./screener-controls";
+
 import { Button } from "@/lib/components/ui/button";
 import { Input } from "@/lib/components/ui/input";
 import {
@@ -11,9 +15,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/lib/components/ui/select";
-
-import type { ScreeningCriteria } from "../hooks/use-screeners";
-import { ScreenerControls } from "./screener-controls";
 
 interface ScreenerHeaderProps {
   screeners: ScreeningCriteria[];

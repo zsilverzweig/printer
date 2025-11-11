@@ -2,19 +2,18 @@
 Ticker State Service - Ticker lifecycle state management.
 
 Tracks ticker states through the strategy execution pipeline:
-screened -> setup -> entered -> filled -> exited
+screened -> setup -> ordered -> filled -> exited
 """
 
 import uuid
 import logging
 from typing import List, Optional, Dict, Any
-from datetime import datetime, timezone
-
-from sqlalchemy import select, and_, or_
+from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.strategies import TickerState
 from app.services.core.database import get_async_session
+from app.services.core.time_context import get_current_time
 from app.types import TickerStateTransitionCode
 
 logger = logging.getLogger(__name__)
@@ -76,7 +75,9 @@ class TickerStateService:
         transition_code: str,
         description: str,
         entry_level_id: Optional[str] = None,
-        trade_id: Optional[str] = None
+        trade_id: Optional[str] = None,
+        clear_entry_level: bool = False,
+        clear_trade_id: bool = False
     ) -> TickerState:
         """
         Transition a ticker to a new state with reason.
@@ -84,11 +85,13 @@ class TickerStateService:
         Args:
             fund_id: Fund ID
             ticker: Ticker symbol
-            to_state: Target state ('screened', 'setup', 'entered', 'filled', 'exited', 'removed')
+            to_state: Target state ('screened', 'setup', 'ordered', 'filled', 'exited', 'removed')
             transition_code: Structured transition code
             description: Human-readable description
-            entry_level_id: Optional entry level ID (for 'entered' state)
-            trade_id: Optional trade ID (for 'filled' or 'exited' state)
+            entry_level_id: Optional entry level identifier while setup is active
+            trade_id: Optional trade ID (for 'ordered', 'filled' or 'exited' state)
+            clear_entry_level: Explicitly clear entry level reference
+            clear_trade_id: Explicitly clear trade reference
             
         Returns:
             Updated TickerState
@@ -121,12 +124,16 @@ class TickerStateService:
             else:
                 from_state = state.current_state
                 state.current_state = to_state
-                state.updated_at = datetime.now(timezone.utc)
+                state.updated_at = get_current_time()
                 
                 # Update linked IDs if provided
-                if entry_level_id is not None:
+                if clear_entry_level:
+                    state.entry_level_id = None
+                elif entry_level_id is not None:
                     state.entry_level_id = entry_level_id
-                if trade_id is not None:
+                if clear_trade_id:
+                    state.trade_id = None
+                elif trade_id is not None:
                     state.trade_id = trade_id
             
             # Add transition record
@@ -135,7 +142,7 @@ class TickerStateService:
                 "to_state": to_state,
                 "transition_code": transition_code,
                 "description": description,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": get_current_time().isoformat(),
             }
             
             # Ensure state_transitions is a list
@@ -152,7 +159,7 @@ class TickerStateService:
             await session.refresh(state)
             
             # Only log important transitions at INFO level, routine ones at DEBUG
-            if to_state in ["entered", "filled", "exited"]:
+            if to_state in ["ordered", "filled", "exited"]:
                 logger.info(
                     f"[TICKER_STATE] Transition: {fund_id}/{ticker} "
                     f"{from_state} -> {to_state} ({transition_code}) - {description}"
@@ -182,7 +189,7 @@ class TickerStateService:
             current_tickers: List of tickers currently passing screener
         """
         current_ticker_set = {t.upper() for t in current_tickers}
-        now = datetime.now(timezone.utc)
+        now = get_current_time()
         
         async with get_async_session() as session:
             # Get all existing ticker states for this fund

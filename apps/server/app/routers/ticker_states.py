@@ -21,7 +21,7 @@ router = APIRouter()
 @router.get("/funds/{fund_id}/ticker-states")
 async def get_ticker_states(
     fund_id: str,
-    state: Optional[str] = Query(None, description="Filter by state (screened, setup, entered, filled, exited, removed)")
+    state: Optional[str] = Query(None, description="Filter by state (screened, setup, ordered, filled, exited, removed)")
 ) -> List[dict]:
     """
     Get all ticker states for a fund, optionally filtered by state.

@@ -33,6 +33,7 @@ class TradeResponse(BaseModel):
     exit_price: Optional[float]
     entry_quantity: float
     exit_quantity: Optional[float]
+    order_price_at_submission: Optional[float]
     realized_pnl: Optional[float]
     realized_pnl_percent: Optional[float]
     hold_duration_seconds: Optional[int]
@@ -100,6 +101,7 @@ async def list_trades(
                         exit_price=t.exit_price,
                         entry_quantity=t.entry_quantity,
                         exit_quantity=t.exit_quantity,
+                        order_price_at_submission=t.order_price_at_submission,
                         realized_pnl=t.realized_pnl,
                         realized_pnl_percent=t.realized_pnl_percent,
                         hold_duration_seconds=t.hold_duration_seconds,
@@ -146,6 +148,7 @@ async def get_trade(trade_id: str):
                 "exit_price": trade.exit_price,
                 "entry_quantity": trade.entry_quantity,
                 "exit_quantity": trade.exit_quantity,
+                "order_price_at_submission": trade.order_price_at_submission,
                 "realized_pnl": trade.realized_pnl,
                 "realized_pnl_percent": trade.realized_pnl_percent,
                 "hold_duration_seconds": trade.hold_duration_seconds,

@@ -2,7 +2,7 @@
 Full lifecycle integration tests for ticker state progression.
 
 These tests verify that tickers progress through the complete lifecycle:
-screened → setup → entered → filled → exited
+screened → setup → ordered → filled → exited
 
 Expected to fail initially and reveal issues in the lifecycle engine.
 """
@@ -82,15 +82,15 @@ async def test_ticker_progresses_from_screened_to_setup(
 
 
 @pytest.mark.asyncio
-async def test_ticker_progresses_from_setup_to_entered(
+async def test_ticker_progresses_from_setup_to_ordered(
     async_client, async_session, fund_factory
 ):
     """
-    Test that tickers transition from 'setup' to 'entered' state.
+    Test that tickers transition from 'setup' to 'ordered' state.
     
     This test verifies:
     1. Tickers in 'setup' state get entry levels created
-    2. Tickers transition to 'entered' state with entry_level_id
+    2. Tickers transition to 'ordered' state with entry_level_id
     3. Entry level is persisted correctly
     """
     # Create a test fund with Monkey Darts strategy
@@ -112,37 +112,37 @@ async def test_ticker_progresses_from_setup_to_entered(
     # Wait a bit for entry analysis to run
     await asyncio.sleep(10)
     
-    # Check for tickers that have moved to 'entered'
-    entered_states = await ticker_state_service.get_fund_tickers_by_state(fund_id, "entered")
+    # Check for tickers that have moved to 'ordered'
+    ordered_states = await ticker_state_service.get_fund_tickers_by_state(fund_id, "ordered")
     
     # This will likely fail - entry analysis may not be running
-    assert len(entered_states) > 0, (
-        f"Expected at least one ticker in 'entered' state, but found {len(entered_states)}. "
+    assert len(ordered_states) > 0, (
+        f"Expected at least one ticker in 'ordered' state, but found {len(ordered_states)}. "
         f"Setup tickers available: {len(setup_states)}"
     )
     
-    # Verify entered tickers have entry_level_id
-    for state in entered_states:
+    # Verify ordered tickers have entry_level_id
+    for state in ordered_states:
         assert state.entry_level_id is not None, (
-            f"Ticker {state.ticker} in 'entered' state but has no entry_level_id"
+            f"Ticker {state.ticker} in 'ordered' state but has no entry_level_id"
         )
         
-        # Verify transition to 'entered' exists
-        entered_transitions = [
+        # Verify transition to 'ordered' exists
+        ordered_transitions = [
             t for t in state.state_transitions
-            if t.get("to_state") == "entered"
+            if t.get("to_state") == "ordered"
         ]
-        assert len(entered_transitions) > 0, (
-            f"Ticker {state.ticker} is in 'entered' state but has no transition to 'entered'"
+        assert len(ordered_transitions) > 0, (
+            f"Ticker {state.ticker} is in 'ordered' state but has no transition to 'ordered'"
         )
 
 
 @pytest.mark.asyncio
-async def test_ticker_progresses_from_entered_to_filled(
+async def test_ticker_progresses_from_ordered_to_filled(
     async_client, async_session, fund_factory
 ):
     """
-    Test that tickers transition from 'entered' to 'filled' state.
+    Test that tickers transition from 'ordered' to 'filled' state.
     
     This test verifies:
     1. Entry levels trigger order placement
@@ -159,11 +159,11 @@ async def test_ticker_progresses_from_entered_to_filled(
     fund_id = test_fund.id
     ticker_state_service = get_ticker_state_service()
     
-    # Get tickers in entered state
-    entered_states = await ticker_state_service.get_fund_tickers_by_state(fund_id, "entered")
+    # Get tickers in ordered state
+    ordered_states = await ticker_state_service.get_fund_tickers_by_state(fund_id, "ordered")
     
-    if len(entered_states) == 0:
-        pytest.skip("No tickers in 'entered' state to test fill progression")
+    if len(ordered_states) == 0:
+        pytest.skip("No tickers in 'ordered' state to test fill progression")
     
     # Wait for orders to be placed and filled
     await asyncio.sleep(15)
@@ -174,7 +174,7 @@ async def test_ticker_progresses_from_entered_to_filled(
     # This will likely fail - order execution may not be working
     assert len(filled_states) > 0, (
         f"Expected at least one ticker in 'filled' state, but found {len(filled_states)}. "
-        f"Entered tickers available: {len(entered_states)}"
+        f"Ordered tickers available: {len(ordered_states)}"
     )
     
     # Verify filled tickers have trade_id
@@ -253,7 +253,7 @@ async def test_complete_lifecycle_for_single_ticker(
     Test that a single ticker progresses through the complete lifecycle.
     
     This is the ultimate test - verifies one ticker goes through all states:
-    screened → setup → entered → filled → exited
+    screened → setup → ordered → filled → exited
     """
     # Create a test fund with Monkey Darts strategy
     test_fund = fund_factory(
@@ -320,7 +320,7 @@ async def test_state_transitions_are_not_lost_on_screener_sync(
     async_client, async_session, fund_factory
 ):
     """
-    Test that advanced states (setup, entered, filled) are preserved when screener syncs.
+    Test that advanced states (setup, ordered, filled) are preserved when screener syncs.
     
     This verifies the fix: tickers in advanced states should not be reset to 'screened'.
     """
@@ -336,12 +336,12 @@ async def test_state_transitions_are_not_lost_on_screener_sync(
     
     # Get tickers in advanced states
     setup_states = await ticker_state_service.get_fund_tickers_by_state(fund_id, "setup")
-    entered_states = await ticker_state_service.get_fund_tickers_by_state(fund_id, "entered")
+    ordered_states = await ticker_state_service.get_fund_tickers_by_state(fund_id, "ordered")
     filled_states = await ticker_state_service.get_fund_tickers_by_state(fund_id, "filled")
     
     advanced_tickers = {
         s.ticker: s.current_state 
-        for s in setup_states + entered_states + filled_states
+        for s in setup_states + ordered_states + filled_states
     }
     
     if len(advanced_tickers) == 0:
@@ -378,7 +378,7 @@ async def test_entry_levels_are_created_for_setup_tickers(
     async_client, async_session, fund_factory
 ):
     """
-    Test that entry levels are created when tickers transition to 'entered'.
+    Test that entry levels are created when tickers transition to 'ordered'.
     
     This verifies the entry analysis phase is working.
     """
@@ -392,20 +392,20 @@ async def test_entry_levels_are_created_for_setup_tickers(
     fund_id = test_fund.id
     ticker_state_service = get_ticker_state_service()
     
-    # Get tickers in entered state
-    entered_states = await ticker_state_service.get_fund_tickers_by_state(fund_id, "entered")
+    # Get tickers in ordered state
+    ordered_states = await ticker_state_service.get_fund_tickers_by_state(fund_id, "ordered")
     
-    if len(entered_states) == 0:
-        pytest.skip("No tickers in 'entered' state to verify entry levels")
+    if len(ordered_states) == 0:
+        pytest.skip("No tickers in 'ordered' state to verify entry levels")
     
     # Verify entry levels exist in database
     from app.models.monitoring_state import StrategyMonitoringState
     from app.services.core.database import get_async_session
     
     async with get_async_session() as session:
-        for state in entered_states[:5]:  # Check first 5
+        for state in ordered_states[:5]:  # Check first 5
             assert state.entry_level_id is not None, (
-                f"Ticker {state.ticker} in 'entered' state but entry_level_id is None"
+                f"Ticker {state.ticker} in 'ordered' state but entry_level_id is None"
             )
             
             # Query the entry level

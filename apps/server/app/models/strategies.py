@@ -269,6 +269,7 @@ class Trade(Base):
     entry_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     entry_price: Mapped[float] = mapped_column(Float, nullable=False)  # Average entry price
     entry_quantity: Mapped[float] = mapped_column(Float, nullable=False)
+    order_price_at_submission: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     
     # Exit information (nullable for open trades)
     exit_order_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("orders.id"), nullable=True)
@@ -297,7 +298,7 @@ class Trade(Base):
     
     # Status
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="open", index=True)
-    # Valid statuses: 'open', 'closed', 'partial'
+    # Valid statuses: 'pending', 'open', 'partial', 'closed', 'expired'
     
     # Additional context
     trade_metadata: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
@@ -494,7 +495,7 @@ class TickerState(Base):
     """
     Track ticker lifecycle state through the strategy execution pipeline.
     
-    States: screened -> setup -> entered -> filled -> exited
+    States: screened -> setup -> ordered -> filled -> exited
     Also tracks removed tickers that drop out of screener.
     """
     __tablename__ = "ticker_states"
@@ -502,7 +503,7 @@ class TickerState(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     fund_id: Mapped[str] = mapped_column(String(36), ForeignKey("funds.id", ondelete="CASCADE"), nullable=False, index=True)
     ticker: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
-    current_state: Mapped[str] = mapped_column(String(20), nullable=False, index=True)  # 'screened', 'setup', 'entered', 'filled', 'exited', 'removed'
+    current_state: Mapped[str] = mapped_column(String(20), nullable=False, index=True)  # 'screened', 'setup', 'ordered', 'filled', 'exited', 'removed'
     
     # State transition history (array of transition records)
     state_transitions: Mapped[list] = mapped_column(JSON, nullable=False, default=list)

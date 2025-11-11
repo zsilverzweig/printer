@@ -129,6 +129,8 @@ export function FundTrades({ fundId }: FundTradesProps) {
         return "bg-amber-100 text-amber-700 border-amber-200";
       case "partial":
         return "bg-purple-100 text-purple-700 border-purple-200";
+      case "expired":
+        return "bg-stone-100 text-stone-700 border-stone-200";
       default:
         return "bg-muted text-muted-foreground border-transparent";
     }

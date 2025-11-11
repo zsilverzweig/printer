@@ -42,7 +42,7 @@ interface TickerLifecycleViewProps {
 const stateColors: Record<TickerState, string> = {
   screened: "bg-blue-100 text-blue-800 border-blue-200",
   setup: "bg-yellow-100 text-yellow-800 border-yellow-200",
-  entered: "bg-purple-100 text-purple-800 border-purple-200",
+  ordered: "bg-purple-100 text-purple-800 border-purple-200",
   filled: "bg-green-100 text-green-800 border-green-200",
   exited: "bg-gray-100 text-gray-800 border-gray-200",
   removed: "bg-red-100 text-red-800 border-red-200",
@@ -51,7 +51,7 @@ const stateColors: Record<TickerState, string> = {
 const stateOrder: TickerState[] = [
   "screened",
   "setup",
-  "entered",
+  "ordered",
   "filled",
   "exited",
   "removed",

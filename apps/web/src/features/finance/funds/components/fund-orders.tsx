@@ -246,7 +246,7 @@ export function FundOrders({ fundId }: FundOrdersProps) {
       },
       {
         accessorKey: "filled_at",
-        header: "Filled",
+        header: "Last Activity",
         cell: ({ row }) => (
           <div className="text-sm text-muted-foreground">
             {row.original.filled_at

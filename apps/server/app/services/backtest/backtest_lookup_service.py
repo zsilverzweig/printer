@@ -106,16 +106,6 @@ async def populate_lookup_for_date(target_date: date_type, timescale: str = '1mi
                 "cannot populate backtest lookup without validated data."
             )
 
-        incomplete_symbols = [
-            symbol for symbol, bar_count in validation_rows if (bar_count or 0) < expected_minutes
-        ]
-        if incomplete_symbols:
-            raise ValueError(
-                "Incomplete validation coverage; missing full intraday bars for: "
-                + ", ".join(sorted(incomplete_symbols[:10]))
-                + (", ..." if len(incomplete_symbols) > 10 else "")
-            )
-
         logger.info(
             "Validation confirmed for %s symbols for %s (%s)",
             len(validation_rows),

@@ -1,6 +1,6 @@
 "use client";
 
-import { Edit2, Loader2, Play, Plus, Trash2 } from "lucide-react";
+import { Edit2, History, Loader2, Play, Plus, Trash2 } from "lucide-react";
 import React from "react";
 
 import {
@@ -15,6 +15,14 @@ import {
 } from "@/lib/components/ui/alert-dialog";
 import { Button } from "@/lib/components/ui/button";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/lib/components/ui/dialog";
+import {
   Table,
   TableBody,
   TableCell,
@@ -22,6 +30,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/lib/components/ui/table";
+import { DateTimePicker } from "@/lib/components/ui/date-time-picker";
 
 import { useScreeners } from "../hooks/use-screeners";
 import type { ScreeningCriteria, ScreenerRunResult } from "../hooks/use-screeners";
@@ -54,6 +63,12 @@ export function ScreenerIndex({
     React.useState<ScreeningCriteria | null>(null);
   const [editName, setEditName] = React.useState("");
   const [editDescription, setEditDescription] = React.useState("");
+  const [historicalDialogOpen, setHistoricalDialogOpen] = React.useState(false);
+  const [historicalScreener, setHistoricalScreener] =
+    React.useState<ScreeningCriteria | null>(null);
+  const [historicalTimestamp, setHistoricalTimestamp] =
+    React.useState<Date | undefined>(undefined);
+  const [historicalRunning, setHistoricalRunning] = React.useState(false);
 
   const handleRunScreener = async (screener: ScreeningCriteria) => {
     setRunningScreenerIds((prev) => new Set(prev).add(screener.id));
@@ -147,6 +162,57 @@ export function ScreenerIndex({
         delete next[deletingScreener.id];
         return next;
       });
+    }
+  };
+
+  const handleOpenHistoricalDialog = (screener: ScreeningCriteria) => {
+    setHistoricalScreener(screener);
+    setHistoricalTimestamp(new Date());
+    setHistoricalDialogOpen(true);
+  };
+
+  const handleHistoricalRun = async () => {
+    if (!historicalScreener || !historicalTimestamp) {
+      return;
+    }
+
+    const screenerId = historicalScreener.id;
+    setHistoricalRunning(true);
+    setRunningScreenerIds((prev) => new Set(prev).add(screenerId));
+    try {
+      const result = await runScreenerWithCriteria(
+        historicalScreener.criteria,
+        historicalTimestamp
+      );
+      setScreenerRunResults((prev) => ({
+        ...prev,
+        [screenerId]: result,
+      }));
+      setHistoricalDialogOpen(false);
+      setHistoricalScreener(null);
+      setHistoricalTimestamp(undefined);
+    } catch (error) {
+      console.error("Error running historical screener:", error);
+      setScreenerRunResults((prev) => ({
+        ...prev,
+        [screenerId]: null,
+      }));
+    } finally {
+      setRunningScreenerIds((prev) => {
+        const next = new Set(prev);
+        next.delete(screenerId);
+        return next;
+      });
+      setHistoricalRunning(false);
+    }
+  };
+
+  const handleHistoricalDialogChange = (open: boolean) => {
+    setHistoricalDialogOpen(open);
+    if (!open) {
+      setHistoricalScreener(null);
+      setHistoricalTimestamp(undefined);
+      setHistoricalRunning(false);
     }
   };
 
@@ -283,6 +349,15 @@ export function ScreenerIndex({
                             )}
                           </Button>
                           <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleOpenHistoricalDialog(screener)}
+                            disabled={isRunning}
+                          >
+                            <History className="h-3 w-3 mr-1" />
+                            Run Historical
+                          </Button>
+                          <Button
                             variant="ghost"
                             size="sm"
                             onClick={() => handleEdit(screener)}
@@ -338,6 +413,54 @@ export function ScreenerIndex({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={historicalDialogOpen} onOpenChange={handleHistoricalDialogChange}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Run Historical Screener</DialogTitle>
+            <DialogDescription>
+              {historicalScreener
+                ? `Select a timestamp to run "${historicalScreener.name}" against historical data.`
+                : "Select a timestamp to run the screener against historical data."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <DateTimePicker
+              date={historicalTimestamp}
+              onDateChange={setHistoricalTimestamp}
+              placeholder="Pick date and time"
+              className="w-full"
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => handleHistoricalDialogChange(false)}
+              disabled={historicalRunning}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleHistoricalRun}
+              disabled={
+                historicalRunning || !historicalScreener || !historicalTimestamp
+              }
+            >
+              {historicalRunning ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Running...
+                </>
+              ) : (
+                <>
+                  <History className="h-4 w-4 mr-2" />
+                  Run Historical
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
