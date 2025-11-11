@@ -11,7 +11,6 @@ import logging
 from typing import Dict, Any, Optional
 from datetime import datetime
 
-from app.services.core.time_context import get_current_time
 from app.services.trading.alpaca_service import AlpacaService
 from app.services.trading.trading_reconciliation_service import TradingReconciliationService
 from app.services.trading.position_tracker import get_position_quantity_from_transactions
@@ -355,52 +354,20 @@ class ReconciliationService:
                         f"{result.get('reason', 'unknown')}"
                     )
                     
-                    # CORNER CASE: If Alpaca shows position is closed (qty=0) but DB shows open,
-                    # and we can't find fills to reconcile, trust Alpaca and force-close the position
-                    if expected_qty == 0.0 and actual_qty != 0.0 and result.get("reason") == "no_fills_found":
-                        logger.warning(
-                            f"⚠️  CORNER CASE: Alpaca shows {symbol} closed but DB shows open. "
-                            f"Force-closing position to match Alpaca (closing {actual_qty} shares)."
-                        )
-                        
-                        await event_service.log_strategy_engine_event(
-                            fund_id=fund_id,
-                            event_category="position_sync",
-                            symbol=symbol,
-                            severity="warning",
-                            message=f"Force-closing orphaned position for {symbol} (Alpaca shows closed, no fills found)",
-                            event_data={
-                                "order_id": order_id,
-                                "db_quantity": float(actual_qty),
-                                "alpaca_quantity": float(expected_qty),
-                                "action": "force_close",
-                                "reason": "alpaca_shows_closed_no_activities_found",
-                            }
-                        )
-                        
-                        # Import here to avoid circular dependency
-                        from app.services.trading.transaction_service import create_transaction
-                        
-                        # Create a synthetic closing transaction to zero out the position
-                        # Use a nominal price since we're just reconciling the position
-                        # Generate a short order_id (max 36 chars for DB constraint)
-                        # Format: "recon_SYMBOL_YYYYMMDDHHMMSS" (e.g., "recon_DDD_20251104172920")
-                        now = get_current_time()
-                        short_timestamp = now.strftime("%Y%m%d%H%M%S")  # 14 chars
-                        synthetic_order_id = f"recon_{symbol}_{short_timestamp}"  # Max ~25 chars
-                        
-                        await create_transaction(
-                            session=session,
-                            fund_id=fund_id,
-                            symbol=symbol,
-                            transaction_type="sell",
-                            quantity=abs(actual_qty),
-                            price=1.0,  # Nominal price - position is already closed in Alpaca
-                            order_id=synthetic_order_id,
-                            notes=f"Force-close reconciliation: Alpaca closed, DB had {actual_qty} shares"
-                        )
-                        
-                        logger.info(f"✅ Force-closed {symbol} position in DB to match Alpaca")
+                    await event_service.log_strategy_engine_event(
+                        fund_id=fund_id,
+                        event_category="position_sync",
+                        symbol=symbol,
+                        severity="warning",
+                        message=f"Auto-correction unsuccessful for {symbol}; manual intervention required",
+                        event_data={
+                            "order_id": order_id,
+                            "db_quantity": float(actual_qty),
+                            "alpaca_quantity": float(expected_qty),
+                            "discrepancy": float(expected_qty - actual_qty),
+                            "reason": result.get("reason"),
+                        }
+                    )
                 
             except Exception as e:
                 logger.error(f"Failed to auto-correct {symbol}: {e}", exc_info=True)

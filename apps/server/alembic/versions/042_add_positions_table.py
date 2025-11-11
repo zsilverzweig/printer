@@ -47,3 +47,4 @@ def downgrade() -> None:
     op.drop_index('ix_positions_fund_id', 'positions')
     op.drop_table('positions')
 
+

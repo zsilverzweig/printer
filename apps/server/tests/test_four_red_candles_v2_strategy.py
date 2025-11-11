@@ -168,3 +168,4 @@ class TestFourRedCandlesV2Strategy:
         assert update.current_stop == pytest.approx(expected_stop)
         assert update.scale_out_percent is None
 
+

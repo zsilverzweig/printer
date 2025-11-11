@@ -274,10 +274,26 @@ class BacktestCoordinator:
                 timestamp=datetime.now(timezone.utc)
             )
             
-            # Step 1: Ensure data availability
+            # Step 1: Clean up lingering pending orders from previous runs
+            stale_order_count = await self._purge_stale_backtest_orders(fund_id, backtest_id)
+            if stale_order_count:
+                logger.info(
+                    f"[BT:{backtest_id[:8]}] 🧹 Cleared {stale_order_count} stale pending "
+                    f"order(s) before starting backtest"
+                )
+                await log_backtest_event(
+                    fund_id,
+                    "pending_orders_cleared",
+                    details={
+                        "cleared_count": stale_order_count,
+                        "context": "pre_backtest_start",
+                    },
+                )
+
+            # Step 2: Ensure data availability
             await self._ensure_data_available(fund, backtest_date, backtest_id)
             
-            # Step 2: Run trading day
+            # Step 3: Run trading day
             loop_metrics = await self._run_trading_day(
                 backtest_id,
                 fund,
@@ -286,7 +302,7 @@ class BacktestCoordinator:
                 duration_minutes=effective_duration,
             )
             
-            # Step 3: Finalize results
+            # Step 4: Finalize results
             await self._finalize_backtest(backtest_id, loop_metrics)
             
             logger.info(f"✅ [BT:{backtest_id[:8]}] Backtest completed successfully")
@@ -523,6 +539,47 @@ class BacktestCoordinator:
         
         logger.info(f"✅ Data check complete for {backtest_date}")
     
+    async def _purge_stale_backtest_orders(
+        self,
+        fund_id: str,
+        current_backtest_id: str,
+    ) -> int:
+        """
+        Cancel lingering pending orders from previous backtest runs.
+
+        Ensures each backtest starts with a clean slate so pending exposure from
+        earlier runs cannot block new orders.
+        """
+        async with get_async_session() as session:
+            stmt = select(Order).where(
+                Order.fund_id == fund_id,
+                Order.status == "pending",
+                (Order.backtest_id.is_(None)) | (Order.backtest_id != current_backtest_id),
+            )
+            result = await session.execute(stmt)
+            stale_orders = result.scalars().all()
+
+            if not stale_orders:
+                return 0
+
+            now = get_current_time()
+            cleared = 0
+
+            for order in stale_orders:
+                order.status = "canceled"
+                order.error_message = "Auto-canceled before backtest start: stale pending order"
+                order.updated_at = now
+                cleared += 1
+
+                if order.trade_id:
+                    trade = await session.get(Trade, order.trade_id)
+                    if trade and trade.status not in ("closed", "canceled", "failed", "expired"):
+                        trade.status = "expired"
+                        trade.updated_at = now
+
+            await session.commit()
+            return cleared
+
     async def _run_trading_day(
         self,
         backtest_id: str,

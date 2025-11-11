@@ -10,6 +10,8 @@ import uuid
 from datetime import datetime
 from typing import Dict, Any, Optional
 
+from sqlalchemy import select
+
 from app.models.strategies import Order
 from app.services.trading.alpaca_service import AlpacaService
 from app.services.core.time_context import get_current_time, get_backtest_id
@@ -176,18 +178,32 @@ class AlpacaBacktestWrapper:
         """
         async with get_async_session() as session:
             order = await session.get(Order, order_id)
-            
+
+            if not order:
+                result = await session.execute(
+                    select(Order).where(Order.alpaca_order_id == order_id)
+                )
+                order = result.scalar_one_or_none()
+
             if not order:
                 raise ValueError(f"Order {order_id} not found")
-            
-            if order.status in ('filled', 'canceled', 'failed'):
-                logger.warning(f"Cannot cancel order {order_id} with status {order.status}")
+
+            if order.status in ("filled", "canceled", "failed"):
+                logger.warning(
+                    f"Cannot cancel order {order.id} (alpaca_id={order.alpaca_order_id}) "
+                    f"with status {order.status}"
+                )
                 return
-            
-            order.status = 'canceled'
+
+            order.status = "canceled"
+            order.error_message = "Canceled by backtest wrapper"
+            order.updated_at = get_current_time()
             await session.commit()
-            
-            logger.info(f"[BACKTEST] Cancelled order {order_id}")
+
+            logger.info(
+                f"[BACKTEST] Cancelled order {order.id} "
+                f"(alpaca_id={order.alpaca_order_id})"
+            )
     
     async def get_positions(self) -> list:
         """
