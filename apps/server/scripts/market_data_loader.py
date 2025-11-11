@@ -12,8 +12,8 @@ Loads:
 import asyncio
 import sys
 import os
-from datetime import datetime, timedelta, timezone
-from typing import List, Optional
+from datetime import date, datetime, timedelta, timezone
+from typing import Dict, List, Optional, Sequence, Tuple
 
 # Add parent directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -40,6 +40,136 @@ from market_data_loader_core import (
 
 from app.services.core.database import get_async_session, init_db
 from app.services.screener.screener_snapshot import fetch_snapshot_all
+from app.services.market.market_data_service import get_market_data_service
+
+
+def _recent_trading_days(count: int = 5) -> List[date]:
+    """Return the most recent trading days (skip weekends), newest first."""
+    days: List[date] = []
+    current = datetime.now(timezone.utc).date()
+    while len(days) < count:
+        if current.weekday() < 5:
+            days.append(current)
+        current -= timedelta(days=1)
+    return days
+
+
+async def _fetch_validation_summary(
+    dates: Sequence[date],
+    timescales: Sequence[str]
+) -> Dict[Tuple[date, str], Dict[str, int]]:
+    """Aggregate validation coverage for the requested dates/timescales."""
+    if not dates or not timescales:
+        return {}
+
+    summary: Dict[Tuple[date, str], Dict[str, int]] = {}
+    start_date = min(dates)
+    end_date = max(dates)
+
+    async with get_async_session() as session:
+        result = await session.execute(
+            text(
+                """
+                SELECT
+                    date,
+                    timescale,
+                    COUNT(*) AS validation_rows,
+                    SUM(CASE WHEN is_complete THEN 1 ELSE 0 END) AS complete_rows
+                FROM symbol_date_validation
+                WHERE date >= :start_date
+                  AND date <= :end_date
+                  AND timescale = ANY(:timescales)
+                GROUP BY date, timescale
+                """
+            ),
+            {
+                "start_date": start_date,
+                "end_date": end_date,
+                "timescales": list(timescales),
+            },
+        )
+
+        for row in result:
+            mapping = row._mapping
+            summary[(mapping["date"], mapping["timescale"])] = {
+                "validation_rows": int(mapping["validation_rows"] or 0),
+                "complete_rows": int(mapping["complete_rows"] or 0),
+            }
+
+    return summary
+
+
+def _format_table(rows: List[List[str]], headers: List[str]) -> str:
+    """Render rows as a simple ASCII table."""
+    widths = [len(header) for header in headers]
+    for row in rows:
+        for idx, value in enumerate(row):
+            widths[idx] = max(widths[idx], len(value))
+
+    header_line = " | ".join(header.ljust(widths[idx]) for idx, header in enumerate(headers))
+    separator = "-+-".join("-" * widths[idx] for idx in range(len(headers)))
+    body_lines = [
+        " | ".join(value.ljust(widths[idx]) for idx, value in enumerate(row)) for row in rows
+    ]
+
+    table = [header_line, separator]
+    table.extend(body_lines)
+    return "\n".join(table)
+
+
+async def _log_market_data_diagnostics(context: str, lookback_days: int = 5) -> None:
+    """Log market data vs validation coverage for recent days."""
+    try:
+        timescales = ["1day", "1hour", "15min", "5min", "1min"]
+        recent_days = _recent_trading_days(lookback_days)
+        service = get_market_data_service()
+        coverage = await service.get_coverage_summary(recent_days, timescales)
+        validation = await _fetch_validation_summary(recent_days, timescales)
+
+        rows: List[List[str]] = []
+        headers = [
+            "Date",
+            "Timescale",
+            "Bars",
+            "Symbols",
+            "First Bar",
+            "Last Bar",
+            "Validation Rows",
+            "Complete Rows",
+        ]
+
+        def fmt_ts(ts_value: Optional[datetime]) -> str:
+            if not ts_value:
+                return "--"
+            return ts_value.astimezone(timezone.utc).strftime("%H:%M")
+
+        for day in recent_days:
+            day_iso = day.isoformat()
+            for timescale in timescales:
+                coverage_entry = coverage.get(day_iso, {}).get(timescale, {})
+                validation_entry = validation.get((day, timescale), {})
+
+                rows.append(
+                    [
+                        day_iso,
+                        timescale,
+                        str(coverage_entry.get("bar_count", 0)),
+                        str(coverage_entry.get("symbol_count", 0)),
+                        fmt_ts(coverage_entry.get("first_bar")),
+                        fmt_ts(coverage_entry.get("last_bar")),
+                        str(validation_entry.get("validation_rows", 0)),
+                        str(validation_entry.get("complete_rows", 0)),
+                    ]
+                )
+
+        table = _format_table(rows, headers) if rows else "No coverage data found."
+        logger.info(
+            "Market data coverage diagnostics (%s):\n%s",
+            context,
+            table,
+        )
+    except Exception as exc:
+        logger.error("Failed to log market data diagnostics (%s): %s", context, exc, exc_info=True)
 
 
 async def load_date_range_data(
@@ -172,6 +302,8 @@ async def load_yesterday_data(init_db_flag: bool = True, api_key: Optional[str] 
     if init_db_flag:
         await init_db()
     
+    await _log_market_data_diagnostics(context="load_yesterday_data")
+
     # Initialize Polygon client with proper connection pool configuration
     if api_key is None:
         api_key = os.getenv("POLYGON_API_KEY")
@@ -307,6 +439,8 @@ async def load_comprehensive_data(init_db_flag: bool = True, api_key: Optional[s
     if init_db_flag:
         await init_db()
     
+    await _log_market_data_diagnostics(context="load_comprehensive_data")
+
     # Initialize Polygon client
     if api_key is None:
         api_key = os.getenv("POLYGON_API_KEY")

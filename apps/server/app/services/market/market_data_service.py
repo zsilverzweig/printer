@@ -7,8 +7,8 @@ and other services. Database-first approach with intelligent API fallback and ca
 
 import asyncio
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import date, datetime, time, timedelta, timezone
+from typing import Any, Dict, List, Optional, Sequence
 from decimal import Decimal
 from sqlalchemy import select, text, and_, bindparam, String
 from sqlalchemy.dialects.postgresql import insert, ARRAY as postgresql_ARRAY
@@ -580,6 +580,95 @@ class MarketDataService:
                 bars_by_symbol.setdefault(symbol, []).append(bar_data)
             
             return bars_by_symbol
+
+    async def get_coverage_summary(
+        self,
+        dates: Sequence[date],
+        timescales: Optional[Sequence[str]] = None
+    ) -> Dict[str, Dict[str, Dict[str, Any]]]:
+        """
+        Summarize stored market data coverage for the requested dates/timescales.
+
+        Args:
+            dates: Sequence of trading dates to inspect.
+            timescales: Optional list of timescales. Defaults to all known timescales.
+
+        Returns:
+            Nested dict keyed by ISO date -> timescale -> coverage metrics.
+        """
+        if not dates:
+            return {}
+
+        # Normalize and deduplicate inputs
+        unique_dates = sorted({d for d in dates})
+        if not unique_dates:
+            return {}
+
+        if timescales is None:
+            requested_timescales = ["1min", "5min", "15min", "1hour", "1day"]
+        else:
+            requested_timescales = []
+            for ts in timescales:
+                if ts:
+                    normalized = self._normalize_timeframe(ts)
+                    if normalized not in requested_timescales:
+                        requested_timescales.append(normalized)
+
+        if not requested_timescales:
+            return {}
+
+        start_date = unique_dates[0]
+        end_date = unique_dates[-1]
+
+        start_ts = datetime.combine(start_date, time.min, tzinfo=timezone.utc)
+        end_ts_exclusive = datetime.combine(end_date + timedelta(days=1), time.min, tzinfo=timezone.utc)
+
+        summary: Dict[str, Dict[str, Dict[str, Any]]] = {}
+
+        try:
+            async with get_async_session() as session:
+                result = await session.execute(
+                    text(
+                        """
+                        SELECT
+                            DATE(time) AS day,
+                            timescale,
+                            COUNT(*) AS bar_count,
+                            COUNT(DISTINCT symbol) AS symbol_count,
+                            MIN(time) AS first_bar,
+                            MAX(time) AS last_bar
+                        FROM market_data
+                        WHERE timescale = ANY(:timescales)
+                          AND time >= :start_ts
+                          AND time < :end_ts
+                        GROUP BY day, timescale
+                        """
+                    ),
+                    {
+                        "timescales": requested_timescales,
+                        "start_ts": start_ts,
+                        "end_ts": end_ts_exclusive,
+                    },
+                )
+
+                for row in result:
+                    mapping = row._mapping
+                    day: date = mapping["day"]
+                    if day not in unique_dates:
+                        continue
+                    timescale = mapping["timescale"]
+
+                    summary.setdefault(day.isoformat(), {})[timescale] = {
+                        "bar_count": int(mapping["bar_count"] or 0),
+                        "symbol_count": int(mapping["symbol_count"] or 0),
+                        "first_bar": mapping["first_bar"],
+                        "last_bar": mapping["last_bar"],
+                    }
+
+        except Exception as exc:
+            logger.error("Failed to compute coverage summary: %s", exc, exc_info=True)
+
+        return summary
     
     async def _fetch_from_api_and_cache(
         self,
