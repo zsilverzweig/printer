@@ -193,7 +193,6 @@ async def detect_market_data_gaps(
             for day in recent_days:
                 for timescale in timescales:
                     missing_symbols: List[str] = []
-                    incomplete_symbols: List[str] = []
 
                     missing_result = await session.execute(
                         text(
@@ -238,7 +237,6 @@ async def detect_market_data_gaps(
                             "timescale": timescale,
                             "missing_validation_count": total_missing,
                             "missing_validation_symbols": missing_symbols[: max_symbols or None],
-                            "incomplete_symbols": incomplete_symbols[: max_symbols or None],
                             "symbols_to_load": symbols_to_load,
                             "coverage": coverage.get(day.isoformat(), {}).get(timescale, {}),
                             "validation": validation.get((day, timescale), {}),
@@ -277,15 +275,13 @@ async def _log_market_data_diagnostics(context: str, lookback_days: int = 5) -> 
         if gaps:
             for gap in gaps:
                 sample_missing = ", ".join(gap.get("missing_validation_symbols", [])[:5])
-                sample_incomplete = ", ".join(gap.get("incomplete_symbols", [])[:5])
+                
                 logger.info(
-                    "Gap detected: %s %s | missing=%s incomplete=%s | sample_missing=[%s] sample_incomplete=[%s]",
+                    "Gap detected: %s %s | missing=%s | sample_missing=[%s]",
                     gap["date"].isoformat(),
                     gap["timescale"],
                     gap.get("missing_validation_count", 0),
-                    gap.get("incomplete_count", 0),
                     sample_missing,
-                    sample_incomplete,
                 )
         else:
             logger.info("No outstanding gaps detected for context %s.", context)
@@ -537,20 +533,17 @@ async def load_comprehensive_data(init_db_flag: bool = True, api_key: Optional[s
 
     # Phase 1: Load yesterday's daily data first
     yesterday = today - timedelta(days=1)
-    while yesterday.weekday() >= 5:  # Skip weekends
-        yesterday -= timedelta(days=1)
     
     await load_date_range_data(
         client, symbols, yesterday, yesterday,
         timescales=daily_timescales
     )
     
-    # Phase 2: Load today's daily data (if weekday)
-    if today.weekday() < 5:
-        await load_date_range_data(
-            client, symbols, today, today,
-            timescales=daily_timescales
-        )
+    # Phase 2: Load today's daily data
+    await load_date_range_data(
+        client, symbols, today, today,
+        timescales=daily_timescales
+    )
     
     # Phase 3: Load remaining intraday data for yesterday
     await load_date_range_data(
@@ -558,12 +551,11 @@ async def load_comprehensive_data(init_db_flag: bool = True, api_key: Optional[s
         timescales=intraday_timescales
     )
 
-    # Phase 4: Load today's intraday data (if weekday)
-    if today.weekday() < 5:
-        await load_date_range_data(
-            client, symbols, today, today,
-            timescales=intraday_timescales
-        )
+    # Phase 4: Load today's intraday data
+    await load_date_range_data(
+        client, symbols, today, today,
+        timescales=intraday_timescales
+    )
 
     # Phase 5: Load 7 days of hourly bars
     start_date = today - timedelta(days=7)
@@ -581,14 +573,10 @@ async def load_comprehensive_data(init_db_flag: bool = True, api_key: Optional[s
 
     diagnostics = await _log_market_data_diagnostics(context="load_comprehensive_data")
     targeted_timescales: Set[str] = {"1day", "1hour", "15min", "5min", "1min"}
-    lookback_window: Set[date] = {
-        today - timedelta(days=offset) for offset in range(0, 7)
-    }
-    allowed_dates = {d for d in lookback_window if d.weekday() < 5}
     additional_batches = await _backfill_gaps_with_client(
         client=client,
         gaps=diagnostics.get("gaps", []),
-        allowed_dates=allowed_dates,
+        allowed_dates=None,
         allowed_timescales=targeted_timescales,
         max_symbols_per_batch=250,
     )

@@ -47,7 +47,7 @@
 - **File**: `apps/server/scripts/audit_data_quality.py`
 - Query database to report:
   - Coverage by symbol/date/timescale
-  - Gaps in data (missing bars, incomplete days)
+  - Gaps in data (missing bars)
   - Session type distribution (regular vs pre/after hours)
   - Validation status summary
   - Technical indicators coverage

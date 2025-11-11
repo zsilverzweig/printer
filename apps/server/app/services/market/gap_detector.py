@@ -112,13 +112,12 @@ class GapDetectorService:
                 missing_symbols_gaps = await self._find_missing_symbols(session)
                 gaps.extend(missing_symbols_gaps)
                 
-                # Check 1: Find incomplete validations
                 
-                # Check 2: Find symbols with missing validation records
+                # Check 1: Find symbols with missing validation records
                 missing_gaps = await self._find_missing_validations(session)
                 gaps.extend(missing_gaps)
                 
-                # Check 3: Find date ranges with no data
+                # Check 2: Find date ranges with no data
                 empty_gaps = await self._find_empty_dates(session)
                 gaps.extend(empty_gaps)
             

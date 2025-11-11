@@ -132,7 +132,7 @@ Screener Service (rv14 calculation)
 
 2. **Gap Detector** (on startup + via health monitor)
 
-   - Scans for missing/incomplete data
+   - Scans for missing data
    - Prioritizes gaps for backfill
 
 3. **Smart Backfill** (continuous)
@@ -183,6 +183,5 @@ Screener Service (rv14 calculation)
 ## Migration Notes
 
 - Screener now requires at least 14 days of complete data per symbol
-- Throws errors if data incomplete (no silent fallback)
 - rv30 and rv60 removed from output (only rv14)
 - Price history tracker still uses in-memory state (can migrate later)

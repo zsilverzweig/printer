@@ -14,13 +14,11 @@ def test_data_gap_creation():
     gap = DataGap(
         symbol="AAPL",
         date=date(2025, 11, 1),
-        gap_type="incomplete_day",
         bar_count=200,
         priority=1
     )
     
     assert gap.symbol == "AAPL"
-    assert gap.gap_type == "incomplete_day"
     assert gap.priority == 1
     assert gap.bar_count == 200
 
