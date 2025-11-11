@@ -369,6 +369,117 @@ class MarketDataService:
         # This avoids hundreds of round-trips during historical screeners/backtests.
         return await self._get_latest_prices_chunk(symbols, timeframe, at_timestamp)
     
+    async def get_intraday_snapshot_batch(
+        self,
+        symbols: List[str],
+        timeframe: str = "1min",
+        at_timestamp: Optional[datetime] = None,
+    ) -> Dict[str, Dict[str, float]]:
+        """
+        Fetch intraday price + cumulative volume snapshots for symbols.
+        
+        Returns the latest close price and today's accumulated volume (up to the
+        provided timestamp) for each symbol.
+        """
+        if not symbols:
+            return {}
+        
+        snapshots: Dict[str, Dict[str, float]] = {}
+        remaining_symbols = list(symbols)
+        
+        timeframe = self._normalize_timeframe(timeframe)
+        
+        # Prefer precomputed lookup table when running historical/backtest queries
+        if at_timestamp:
+            ctx = get_backtest_context()
+            if ctx:
+                try:
+                    lookup_snapshots = await self._get_snapshots_from_lookup_table(
+                        remaining_symbols,
+                        at_timestamp,
+                    )
+                    snapshots.update(lookup_snapshots)
+                    remaining_symbols = [s for s in remaining_symbols if s not in snapshots]
+                    if not remaining_symbols:
+                        # Ensure today_volume defaults when missing
+                        for symbol in symbols:
+                            entry = snapshots.setdefault(symbol, {})
+                            entry.setdefault("today_volume", 0.0)
+                        return snapshots
+                except Exception as exc:
+                    logger.warning(
+                        "Lookup table snapshots failed, falling back to direct queries: %s",
+                        exc,
+                    )
+        
+        price_map: Dict[str, float] = {}
+        volume_map: Dict[str, float] = {}
+        
+        if remaining_symbols:
+            if at_timestamp:
+                price_map = await self._get_latest_prices_chunk(
+                    remaining_symbols,
+                    timeframe,
+                    at_timestamp,
+                )
+                volume_map = await self._get_intraday_volume_batch(
+                    remaining_symbols,
+                    timeframe,
+                    at_timestamp,
+                )
+            else:
+                async with get_async_session() as session:
+                    result = await session.execute(
+                        text("""
+                            SELECT DISTINCT ON (symbol)
+                                symbol,
+                                price AS current_price,
+                                day_volume
+                            FROM market_latest_trades
+                            WHERE symbol = ANY(:symbols)
+                            ORDER BY symbol, timestamp DESC
+                        """),
+                        {"symbols": remaining_symbols},
+                    )
+                    rows = result.fetchall()
+                
+                for symbol, current_price, day_volume in rows:
+                    if current_price is not None:
+                        price_map[symbol] = _safe_float(current_price)
+                    if day_volume is not None:
+                        volume_map[symbol] = _safe_float(day_volume, 0.0)
+                
+                missing_volume_symbols = [
+                    s for s in remaining_symbols if s not in volume_map
+                ]
+                if missing_volume_symbols:
+                    try:
+                        now_ts = get_current_time()
+                        if now_ts.tzinfo is None:
+                            now_ts = now_ts.replace(tzinfo=timezone.utc)
+                        fallback_volume_map = await self._get_intraday_volume_batch(
+                            missing_volume_symbols,
+                            timeframe,
+                            now_ts,
+                        )
+                        volume_map.update(fallback_volume_map)
+                    except Exception as exc:
+                        logger.warning(
+                            "Failed to backfill live intraday volumes: %s",
+                            exc,
+                        )
+        
+        # Merge maps into snapshot output
+        for symbol in symbols:
+            entry = snapshots.setdefault(symbol, {})
+            if symbol in price_map and price_map[symbol] is not None:
+                entry["price"] = price_map[symbol]
+            if symbol in volume_map and volume_map[symbol] is not None:
+                entry["today_volume"] = volume_map[symbol]
+            entry.setdefault("today_volume", 0.0)
+        
+        return snapshots
+    
     async def _get_prices_from_lookup_table(
         self,
         symbols: List[str],
@@ -404,6 +515,83 @@ class MarketDataService:
                     price_map[row[0]] = float(row[1])
             
             return price_map
+    
+    async def _get_snapshots_from_lookup_table(
+        self,
+        symbols: List[str],
+        at_timestamp: datetime,
+    ) -> Dict[str, Dict[str, float]]:
+        """Fetch price + today_volume snapshots from the lookup table."""
+        async with get_async_session() as session:
+            result = await session.execute(
+                text("""
+                    SELECT symbol, close, today_volume
+                    FROM market_data_backtest_lookup
+                    WHERE symbol = ANY(:symbols)
+                      AND timescale = '1min'
+                      AND lookup_time = :lookup_time
+                """),
+                {"symbols": symbols, "lookup_time": at_timestamp},
+            )
+            rows = result.fetchall()
+        
+        snapshot_map: Dict[str, Dict[str, float]] = {}
+        for symbol, close, today_volume in rows:
+            price_value = _safe_float(close)
+            today_volume_value = _safe_float(today_volume, 0.0)
+            snapshot_map[symbol] = {
+                "price": price_value,
+                "today_volume": today_volume_value if today_volume_value is not None else 0.0,
+            }
+        return snapshot_map
+    
+    async def _get_intraday_volume_batch(
+        self,
+        symbols: List[str],
+        timeframe: str,
+        at_timestamp: datetime,
+    ) -> Dict[str, float]:
+        """Sum intraday volume up to a timestamp for each symbol."""
+        if not symbols:
+            return {}
+        
+        if at_timestamp.tzinfo is None:
+            at_timestamp = at_timestamp.replace(tzinfo=timezone.utc)
+        
+        day_start = datetime.combine(
+            at_timestamp.date(),
+            time.min,
+            tzinfo=timezone.utc,
+        )
+        
+        async with get_async_session() as session:
+            result = await session.execute(
+                text("""
+                    SELECT symbol, COALESCE(SUM(volume), 0) AS today_volume
+                    FROM market_data
+                    WHERE symbol = ANY(:symbols)
+                      AND timescale = :timescale
+                      AND time >= :day_start
+                      AND time <= :timestamp
+                    GROUP BY symbol
+                """),
+                {
+                    "symbols": symbols,
+                    "timescale": timeframe,
+                    "day_start": day_start,
+                    "timestamp": at_timestamp,
+                },
+            )
+            rows = result.fetchall()
+        
+        volume_map: Dict[str, float] = {}
+        for symbol, today_volume in rows:
+            volume_map[symbol] = _safe_float(today_volume, 0.0) or 0.0
+        
+        for symbol in symbols:
+            volume_map.setdefault(symbol, 0.0)
+        
+        return volume_map
     
     async def _get_latest_prices_chunk(
         self,

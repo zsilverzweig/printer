@@ -266,60 +266,41 @@ async def fetch_screener_data_unified(
                     logger.warning(f"[UNIFIED] No symbols remain after market cap filtering")
                     return []
             
-            # STEP 2: Get current price data (mode-specific, also ONE query)
+            # STEP 2: Get current intraday price + volume snapshots
             start_time = get_current_time()
             today_volume_map: Dict[str, float] = {}
+            price_data: Dict[str, Optional[float]] = {}
+            symbols_list = list(daily_data.keys())
 
-            if mode == "historical":
-                # Historical: Get 5min bars at timestamp via MarketDataService
+            if symbols_list:
                 from app.services.market.market_data_service import get_market_data_service
+
                 market_service = get_market_data_service()
-                
-                symbols_list = list(daily_data.keys())
-                
-                logger.info(f"[UNIFIED] Fetching 5min data for {len(symbols_list)} symbols via MarketDataService...")
-                
-                # Use MarketDataService batch query
-                price_data = await market_service.get_latest_prices_batch(
+                snapshots = await market_service.get_intraday_snapshot_batch(
                     symbols=symbols_list,
                     timeframe="1min",
-                    at_timestamp=target_timestamp
+                    at_timestamp=target_timestamp if mode == "historical" else None,
                 )
-                
+
+                for symbol, snapshot in snapshots.items():
+                    price = snapshot.get("price")
+                    today_volume = snapshot.get("today_volume")
+
+                    if price is not None:
+                        price_data[symbol] = price
+                    if today_volume is not None:
+                        today_volume_map[symbol] = float(today_volume)
+
                 price_time = (get_current_time() - start_time).total_seconds()
-                logger.info(f"[UNIFIED] Got {len(price_data)} symbols with 5min data ({price_time:.2f}s)")
-            else:
-                # Live: Get latest trades
-                result = await session.execute(
-                    text("""
-                        SELECT DISTINCT ON (symbol)
-                            symbol,
-                            price as current_price,
-                            day_volume
-                        FROM market_latest_trades
-                        ORDER BY symbol, timestamp DESC
-                    """)
-                )
-                
-                price_data = {}
-                price_data_rows = result.fetchall()
-                for row in price_data_rows:
-                    price_data[row[0]] = float(row[1]) if row[1] else None
-                    if row[2] is not None:
-                        today_volume_map[row[0]] = float(row[2])
-                
-                price_time = (get_current_time() - start_time).total_seconds()
-                logger.debug(
-                    "[UNIFIED] Got %s symbols with live trades (%0.2fs); %s symbols include day_volume",
-                    len(price_data_rows),
-                    price_time,
-                    sum(1 for row in price_data_rows if row[2] is not None),
-                )
                 logger.info(
-                    "[UNIFIED] After price step: %s symbols, %s with day_volume",
-                    len(price_data),
+                    "[UNIFIED] Got %s symbols with %s intraday snapshots (%0.2fs); %s include today_volume",
+                    len([s for s in snapshots.values() if s.get("price") is not None]),
+                    mode,
+                    price_time,
                     len(today_volume_map),
                 )
+            else:
+                price_time = 0.0
             
             symbols_list = list(daily_data.keys())
             logger.info("[UNIFIED] Symbols after daily/price merge: %s", len(symbols_list))
