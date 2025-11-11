@@ -374,22 +374,12 @@ async def load_date_range_data(
         end_date: End date (inclusive)
         timescales: List of timescales to load (e.g., ['1hour', '5min'])
     """
-    # Generate date range (skip weekends)
+    # Generate date range (include weekends for comprehensive coverage)
     dates = []
     current = start_date
     while current <= end_date:
-        if current.weekday() < 5:  # Monday=0, Friday=4
-            dates.append(current)
+        dates.append(current)
         current += timedelta(days=1)
-    
-    if not dates:
-        logger.info(
-            "✅ No trading days between %s and %s (all weekends) for timescales %s; skipping.",
-            start_date,
-            end_date,
-            timescales,
-        )
-        return
     
     # Process each timescale
     for timescale in timescales:
