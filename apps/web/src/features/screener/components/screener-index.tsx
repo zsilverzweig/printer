@@ -3,6 +3,14 @@
 import { Edit2, History, Loader2, Play, Plus, Trash2 } from "lucide-react";
 import React from "react";
 
+import type {
+  ScreenerRunResult,
+  ScreeningCriteria,
+} from "../hooks/use-screeners";
+import { useScreeners } from "../hooks/use-screeners";
+
+import { ScreenerEditDialog } from "./screener-edit-dialog";
+
 import {
   AlertDialog,
   AlertDialogAction,
@@ -14,6 +22,7 @@ import {
   AlertDialogTitle,
 } from "@/lib/components/ui/alert-dialog";
 import { Button } from "@/lib/components/ui/button";
+import { DateTimePicker } from "@/lib/components/ui/date-time-picker";
 import {
   Dialog,
   DialogContent,
@@ -30,11 +39,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/lib/components/ui/table";
-import { DateTimePicker } from "@/lib/components/ui/date-time-picker";
-
-import { useScreeners } from "../hooks/use-screeners";
-import type { ScreeningCriteria, ScreenerRunResult } from "../hooks/use-screeners";
-import { ScreenerEditDialog } from "./screener-edit-dialog";
 
 interface ScreenerIndexProps {
   screeners: ScreeningCriteria[];
@@ -66,31 +70,55 @@ export function ScreenerIndex({
   const [historicalDialogOpen, setHistoricalDialogOpen] = React.useState(false);
   const [historicalScreener, setHistoricalScreener] =
     React.useState<ScreeningCriteria | null>(null);
-  const [historicalTimestamp, setHistoricalTimestamp] =
-    React.useState<Date | undefined>(undefined);
+  const [historicalTimestamp, setHistoricalTimestamp] = React.useState<
+    Date | undefined
+  >(undefined);
   const [historicalRunning, setHistoricalRunning] = React.useState(false);
+  const [runAllHistoricalTimestamp, setRunAllHistoricalTimestamp] =
+    React.useState<Date | undefined>(new Date());
+  const [runAllHistoricalRunning, setRunAllHistoricalRunning] =
+    React.useState(false);
 
-  const handleRunScreener = async (screener: ScreeningCriteria) => {
-    setRunningScreenerIds((prev) => new Set(prev).add(screener.id));
-    try {
-      const result = await runScreenerWithCriteria(screener.criteria);
-      setScreenerRunResults((prev) => ({
-        ...prev,
-        [screener.id]: result,
-      }));
-    } catch (error) {
-      console.error("Error running screener:", error);
-      setScreenerRunResults((prev) => ({
-        ...prev,
-        [screener.id]: null,
-      }));
-    } finally {
+  const runScreenerTracked = React.useCallback(
+    async (
+      screener: ScreeningCriteria,
+      runner: () => Promise<ScreenerRunResult | null>
+    ) => {
+      const screenerId = screener.id;
       setRunningScreenerIds((prev) => {
         const next = new Set(prev);
-        next.delete(screener.id);
+        next.add(screenerId);
         return next;
       });
-    }
+      try {
+        const result = await runner();
+        setScreenerRunResults((prev) => ({
+          ...prev,
+          [screenerId]: result,
+        }));
+        return result;
+      } catch (error) {
+        console.error("Error running screener:", error);
+        setScreenerRunResults((prev) => ({
+          ...prev,
+          [screenerId]: null,
+        }));
+        return null;
+      } finally {
+        setRunningScreenerIds((prev) => {
+          const next = new Set(prev);
+          next.delete(screenerId);
+          return next;
+        });
+      }
+    },
+    [setRunningScreenerIds, setScreenerRunResults]
+  );
+
+  const handleRunScreener = async (screener: ScreeningCriteria) => {
+    await runScreenerTracked(screener, () =>
+      runScreenerWithCriteria(screener.criteria)
+    );
   };
 
   const handleRunAll = async () => {
@@ -178,31 +206,19 @@ export function ScreenerIndex({
 
     const screenerId = historicalScreener.id;
     setHistoricalRunning(true);
-    setRunningScreenerIds((prev) => new Set(prev).add(screenerId));
     try {
-      const result = await runScreenerWithCriteria(
-        historicalScreener.criteria,
-        historicalTimestamp
+      await runScreenerTracked(historicalScreener, () =>
+        runScreenerWithCriteria(
+          historicalScreener.criteria,
+          historicalTimestamp
+        )
       );
-      setScreenerRunResults((prev) => ({
-        ...prev,
-        [screenerId]: result,
-      }));
       setHistoricalDialogOpen(false);
       setHistoricalScreener(null);
       setHistoricalTimestamp(undefined);
     } catch (error) {
       console.error("Error running historical screener:", error);
-      setScreenerRunResults((prev) => ({
-        ...prev,
-        [screenerId]: null,
-      }));
     } finally {
-      setRunningScreenerIds((prev) => {
-        const next = new Set(prev);
-        next.delete(screenerId);
-        return next;
-      });
       setHistoricalRunning(false);
     }
   };
@@ -213,6 +229,25 @@ export function ScreenerIndex({
       setHistoricalScreener(null);
       setHistoricalTimestamp(undefined);
       setHistoricalRunning(false);
+    }
+  };
+
+  const handleRunAllHistorical = async () => {
+    if (!runAllHistoricalTimestamp) {
+      return;
+    }
+
+    setRunAllHistoricalRunning(true);
+    try {
+      for (const screener of screeners) {
+        await runScreenerTracked(screener, () =>
+          runScreenerWithCriteria(screener.criteria, runAllHistoricalTimestamp)
+        );
+      }
+    } catch (error) {
+      console.error("Error running historical screeners:", error);
+    } finally {
+      setRunAllHistoricalRunning(false);
     }
   };
 
@@ -235,19 +270,57 @@ export function ScreenerIndex({
               configured
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap justify-end">
             <Button onClick={handleCreate} variant="default">
               <Plus className="h-4 w-4 mr-2" />
               Create Screener
             </Button>
             <Button
               onClick={handleRunAll}
-              disabled={screeners.length === 0 || runningScreenerIds.size > 0}
+              disabled={
+                screeners.length === 0 ||
+                runningScreenerIds.size > 0 ||
+                runAllHistoricalRunning
+              }
               variant="outline"
             >
               <Play className="h-4 w-4 mr-2" />
               Run All
             </Button>
+            <div className="flex items-center gap-2">
+              <DateTimePicker
+                date={runAllHistoricalTimestamp}
+                onDateChange={setRunAllHistoricalTimestamp}
+                placeholder="Pick date & time"
+                showTime
+                disabled={
+                  runAllHistoricalRunning || runningScreenerIds.size > 0
+                }
+                className="w-[220px]"
+              />
+              <Button
+                onClick={handleRunAllHistorical}
+                disabled={
+                  screeners.length === 0 ||
+                  !runAllHistoricalTimestamp ||
+                  runAllHistoricalRunning ||
+                  runningScreenerIds.size > 0
+                }
+                variant="outline"
+              >
+                {runAllHistoricalRunning ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Running Historical…
+                  </>
+                ) : (
+                  <>
+                    <History className="h-4 w-4 mr-2" />
+                    Run All Historical
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -414,7 +487,10 @@ export function ScreenerIndex({
         </AlertDialogContent>
       </AlertDialog>
 
-      <Dialog open={historicalDialogOpen} onOpenChange={handleHistoricalDialogChange}>
+      <Dialog
+        open={historicalDialogOpen}
+        onOpenChange={handleHistoricalDialogChange}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Run Historical Screener</DialogTitle>

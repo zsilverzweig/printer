@@ -103,8 +103,6 @@ class ScreenerCompute:
             )
             previous_count = count
 
-        add_step("Total symbols fetched", total_snapshots)
-
         def _to_float(value: Any) -> Optional[float]:
             try:
                 if value is None:
@@ -146,8 +144,6 @@ class ScreenerCompute:
             )
 
         debug_counts["filtered_by_exchange"] = filtered_by_exchange
-        add_step("After exchange eligibility", len(exchange_eligible))
-
         # Phase 2: enforce availability of prior-day OHLC data from market_data
         missing_prior_day = 0
         prior_day_ready: List[Dict[str, Any]] = []
@@ -181,8 +177,6 @@ class ScreenerCompute:
             prior_day_ready.append(entry)
 
         debug_counts["missing_prior_day"] = missing_prior_day
-        add_step("After prior-day data", len(prior_day_ready))
-
         # Phase 3: apply database filter (market cap / float) only once
         rows: List[dict] = []
         processed_count = 0
@@ -240,7 +234,7 @@ class ScreenerCompute:
         else:
             debug_counts["database_filtered_removed"] = 0
 
-        add_step("After fundamentals (market cap / float)", len(prior_day_ready))
+        add_step("Meeting fundamental criteria", len(prior_day_ready))
 
         working_entries = prior_day_ready
 
