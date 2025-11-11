@@ -11,7 +11,7 @@ import {
   Table as TableIcon,
   Zap,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/lib/components/ui/alert";
 import { Button } from "@/lib/components/ui/button";
@@ -22,6 +22,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/lib/components/ui/card";
+import { Label } from "@/lib/components/ui/label";
 import { Input } from "@/lib/components/ui/input";
 import {
   Tabs,
@@ -30,7 +31,64 @@ import {
   TabsTrigger,
 } from "@/lib/components/ui/tabs";
 import { Textarea } from "@/lib/components/ui/textarea";
+import { ScrollArea } from "@/lib/components/ui/scroll-area";
 import { useUrlTabs } from "@/lib/hooks/use-url-tabs";
+
+const SQL_KEYWORDS = [
+  "SELECT",
+  "FROM",
+  "WHERE",
+  "JOIN",
+  "LEFT",
+  "RIGHT",
+  "INNER",
+  "OUTER",
+  "ON",
+  "AND",
+  "OR",
+  "ORDER",
+  "BY",
+  "GROUP",
+  "HAVING",
+  "LIMIT",
+  "OFFSET",
+  "AS",
+  "DISTINCT",
+  "COUNT",
+  "SUM",
+  "AVG",
+  "MAX",
+  "MIN",
+  "IN",
+  "NOT",
+  "NULL",
+  "IS",
+  "LIKE",
+  "BETWEEN",
+  "INSERT",
+  "UPDATE",
+  "DELETE",
+  "CREATE",
+  "DROP",
+  "ALTER",
+  "TABLE",
+  "INDEX",
+  "VIEW",
+  "ASC",
+  "DESC",
+  "CASE",
+  "WHEN",
+  "THEN",
+  "ELSE",
+  "END",
+  "UNION",
+  "ALL",
+  "EXISTS",
+  "WITH",
+  "DATE",
+  "TIME",
+  "TIMESTAMP",
+];
 
 interface TableInfo {
   name: string;
@@ -82,6 +140,15 @@ interface QueryStatistics {
     size: string;
     size_bytes: number;
   }>;
+}
+
+interface SavedQuery {
+  id: number;
+  name: string;
+  sql_query: string;
+  description?: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 interface PerformanceMetrics {
@@ -150,11 +217,401 @@ export default function DatabaseAdminPage() {
   const [performanceMetrics, setPerformanceMetrics] =
     useState<PerformanceMetrics | null>(null);
   const [loadingPerformance, setLoadingPerformance] = useState(false);
+  const [savedQueries, setSavedQueries] = useState<SavedQuery[]>([]);
+  const [loadingSavedQueries, setLoadingSavedQueries] = useState(false);
+  const [savedQueryForm, setSavedQueryForm] = useState({
+    name: "",
+    description: "",
+  });
+  const [selectedSavedQueryId, setSelectedSavedQueryId] =
+    useState<number | null>(null);
+  const [savedQueryError, setSavedQueryError] = useState<string | null>(null);
+  const [savedQuerySubmitting, setSavedQuerySubmitting] = useState(false);
+  const [deletingQueryId, setDeletingQueryId] = useState<number | null>(null);
+  const [previousSqlContext, setPreviousSqlContext] =
+    useState<string | null>(null);
+  const [sqlSuggestions, setSqlSuggestions] = useState<string[]>([]);
+  const [showSqlSuggestions, setShowSqlSuggestions] = useState(false);
+  const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(0);
+  const [sqlSuggestionRange, setSqlSuggestionRange] =
+    useState<{ start: number; end: number } | null>(null);
+  const sqlTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  const schemaSuggestionTokens = useMemo(() => {
+    const tokens = new Set<string>();
+
+    tables.forEach((table) => {
+      tokens.add(table.name);
+      table.columns.forEach((column) => {
+        tokens.add(column.name);
+        tokens.add(`${table.name}.${column.name}`);
+      });
+    });
+
+    return Array.from(tokens);
+  }, [tables]);
+
+  const autocompleteTokens = useMemo(() => {
+    const tokens = new Set<string>(SQL_KEYWORDS);
+    schemaSuggestionTokens.forEach((token) => tokens.add(token));
+    return Array.from(tokens);
+  }, [schemaSuggestionTokens]);
+
+  const clearSqlSuggestions = useCallback(() => {
+    setSqlSuggestions([]);
+    setShowSqlSuggestions(false);
+    setSqlSuggestionRange(null);
+    setActiveSuggestionIndex(0);
+  }, []);
+
+  const updateSqlSuggestions = useCallback(
+    (value: string, cursorPosition?: number | null) => {
+      const text = value ?? "";
+      if (!text) {
+        clearSqlSuggestions();
+        return;
+      }
+
+      const cursor = cursorPosition ?? text.length;
+      const textBeforeCursor = text.slice(0, cursor);
+      const match = textBeforeCursor.match(/([a-zA-Z_][\w]*)$/);
+
+      if (!match) {
+        clearSqlSuggestions();
+        return;
+      }
+
+      const prefix = match[1];
+      if (!prefix) {
+        clearSqlSuggestions();
+        return;
+      }
+
+      const prefixLower = prefix.toLowerCase();
+      const matches = autocompleteTokens
+        .filter((token) => {
+          const normalized = token.toLowerCase();
+          return (
+            normalized.startsWith(prefixLower) && normalized !== prefixLower
+          );
+        })
+        .slice(0, 8);
+
+      if (matches.length === 0) {
+        clearSqlSuggestions();
+        return;
+      }
+
+      setSqlSuggestions(matches);
+      setShowSqlSuggestions(true);
+      setActiveSuggestionIndex(0);
+      setSqlSuggestionRange({
+        start: cursor - prefix.length,
+        end: cursor,
+      });
+    },
+    [autocompleteTokens, clearSqlSuggestions]
+  );
+
+  const applySqlSuggestion = useCallback(
+    (suggestion: string) => {
+      const range = sqlSuggestionRange;
+      if (!range) {
+        return;
+      }
+
+      setSqlQuery((prev) => {
+        const before = prev.slice(0, range.start);
+        const after = prev.slice(range.end);
+        const newText = `${before}${suggestion}${after}`;
+        const cursorPosition = range.start + suggestion.length;
+
+        requestAnimationFrame(() => {
+          if (sqlTextareaRef.current) {
+            sqlTextareaRef.current.selectionStart = cursorPosition;
+            sqlTextareaRef.current.selectionEnd = cursorPosition;
+          }
+          updateSqlSuggestions(newText, cursorPosition);
+        });
+
+        return newText;
+      });
+
+      clearSqlSuggestions();
+    },
+    [sqlSuggestionRange, clearSqlSuggestions, updateSqlSuggestions]
+  );
+
+  const handleSqlChange = useCallback(
+    (event: React.ChangeEvent<HTMLTextAreaElement>) => {
+      const { value, selectionStart } = event.target;
+      setSqlQuery(value);
+      updateSqlSuggestions(value, selectionStart);
+    },
+    [updateSqlSuggestions]
+  );
+
+  const handleSqlKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (!showSqlSuggestions || sqlSuggestions.length === 0) {
+        return;
+      }
+
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setActiveSuggestionIndex((prev) =>
+          prev + 1 >= sqlSuggestions.length ? 0 : prev + 1
+        );
+      } else if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setActiveSuggestionIndex((prev) =>
+          prev - 1 < 0 ? sqlSuggestions.length - 1 : prev - 1
+        );
+      } else if (event.key === "Tab" || event.key === "Enter") {
+        event.preventDefault();
+        applySqlSuggestion(sqlSuggestions[activeSuggestionIndex]);
+      } else if (event.key === "Escape") {
+        event.preventDefault();
+        clearSqlSuggestions();
+      }
+    },
+    [
+      activeSuggestionIndex,
+      applySqlSuggestion,
+      clearSqlSuggestions,
+      showSqlSuggestions,
+      sqlSuggestions,
+    ]
+  );
+
+  const handleSqlCursorChange = useCallback(
+    (event: React.SyntheticEvent<HTMLTextAreaElement>) => {
+      const target = event.currentTarget;
+      updateSqlSuggestions(target.value, target.selectionStart);
+    },
+    [updateSqlSuggestions]
+  );
+
+  const handleSqlBlur = useCallback(() => {
+    clearSqlSuggestions();
+  }, [clearSqlSuggestions]);
+
+  const fetchSavedQueries = useCallback(async () => {
+    try {
+      setLoadingSavedQueries(true);
+      const response = await fetch(
+        "http://localhost:8000/api/db-admin/saved-queries"
+      );
+
+      if (!response.ok) {
+        throw new Error("Failed to load saved queries");
+      }
+
+      const data: SavedQuery[] = await response.json();
+      setSavedQueries(data);
+    } catch (error) {
+      console.error("Failed to load saved queries:", error);
+      setSavedQueries([]);
+    } finally {
+      setLoadingSavedQueries(false);
+    }
+  }, []);
+
+  const handleSelectSavedQuery = useCallback(
+    (query: SavedQuery) => {
+      setSelectedSavedQueryId(query.id);
+      setSavedQueryForm({
+        name: query.name,
+        description: query.description ?? "",
+      });
+      setSavedQueryError(null);
+      clearSqlSuggestions();
+      setSqlQuery(query.sql_query);
+      requestAnimationFrame(() => {
+        if (sqlTextareaRef.current) {
+          const position = query.sql_query.length;
+          sqlTextareaRef.current.selectionStart = position;
+          sqlTextareaRef.current.selectionEnd = position;
+        }
+        updateSqlSuggestions(query.sql_query, query.sql_query.length);
+      });
+    },
+    [clearSqlSuggestions, updateSqlSuggestions]
+  );
+
+  const clearSavedQuerySelection = useCallback(() => {
+    setSelectedSavedQueryId(null);
+    setSavedQueryForm({ name: "", description: "" });
+    setSavedQueryError(null);
+  }, []);
+
+  const handleSaveCurrentQuery = useCallback(async () => {
+    const trimmedName = savedQueryForm.name.trim();
+    const trimmedQuery = sqlQuery.trim();
+
+    if (!trimmedName || !trimmedQuery) {
+      setSavedQueryError("Provide both a name and SQL before saving.");
+      return;
+    }
+
+    const descriptionValue = savedQueryForm.description.trim();
+
+    setSavedQueryError(null);
+    setSavedQuerySubmitting(true);
+
+    try {
+      const response = await fetch(
+        "http://localhost:8000/api/db-admin/saved-queries",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: trimmedName,
+            sql_query: trimmedQuery,
+            description: descriptionValue ? descriptionValue : null,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => null);
+        throw new Error(errorBody?.detail || "Failed to save query");
+      }
+
+      const created: SavedQuery = await response.json();
+      setSavedQueries((prev) => {
+        const remaining = prev.filter((item) => item.id !== created.id);
+        return [created, ...remaining];
+      });
+      setSelectedSavedQueryId(created.id);
+      setSavedQueryForm({
+        name: created.name,
+        description: created.description ?? "",
+      });
+    } catch (error) {
+      console.error("Failed to save query:", error);
+      setSavedQueryError(
+        error instanceof Error ? error.message : "Failed to save query"
+      );
+    } finally {
+      setSavedQuerySubmitting(false);
+    }
+  }, [savedQueryForm, sqlQuery]);
+
+  const handleUpdateSavedQuery = useCallback(async () => {
+    if (!selectedSavedQueryId) {
+      setSavedQueryError("Select a saved query to update.");
+      return;
+    }
+
+    const trimmedName = savedQueryForm.name.trim();
+    const trimmedQuery = sqlQuery.trim();
+
+    if (!trimmedName || !trimmedQuery) {
+      setSavedQueryError("Provide both a name and SQL before updating.");
+      return;
+    }
+
+    const descriptionValue = savedQueryForm.description.trim();
+
+    setSavedQueryError(null);
+    setSavedQuerySubmitting(true);
+
+    try {
+      const response = await fetch(
+        `http://localhost:8000/api/db-admin/saved-queries/${selectedSavedQueryId}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: trimmedName,
+            sql_query: trimmedQuery,
+            description: descriptionValue ? descriptionValue : null,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => null);
+        throw new Error(errorBody?.detail || "Failed to update query");
+      }
+
+      const updated: SavedQuery = await response.json();
+      setSavedQueries((prev) => {
+        const remaining = prev.filter((item) => item.id !== updated.id);
+        return [updated, ...remaining];
+      });
+      setSavedQueryForm({
+        name: updated.name,
+        description: updated.description ?? "",
+      });
+    } catch (error) {
+      console.error("Failed to update query:", error);
+      setSavedQueryError(
+        error instanceof Error ? error.message : "Failed to update query"
+      );
+    } finally {
+      setSavedQuerySubmitting(false);
+    }
+  }, [savedQueryForm, selectedSavedQueryId, sqlQuery]);
+
+  const handleDeleteSavedQuery = useCallback(
+    async (queryId: number) => {
+      setSavedQueryError(null);
+      setDeletingQueryId(queryId);
+
+      try {
+        const response = await fetch(
+          `http://localhost:8000/api/db-admin/saved-queries/${queryId}`,
+          {
+            method: "DELETE",
+          }
+        );
+
+        if (!response.ok) {
+          const errorBody = await response.json().catch(() => null);
+          throw new Error(errorBody?.detail || "Failed to delete query");
+        }
+
+        setSavedQueries((prev) =>
+          prev.filter((savedQuery) => savedQuery.id !== queryId)
+        );
+
+        if (selectedSavedQueryId === queryId) {
+          clearSavedQuerySelection();
+        }
+      } catch (error) {
+        console.error("Failed to delete query:", error);
+        setSavedQueryError(
+          error instanceof Error ? error.message : "Failed to delete query"
+        );
+      } finally {
+        setDeletingQueryId(null);
+      }
+    },
+    [clearSavedQuerySelection, selectedSavedQueryId]
+  );
+
+  const clearPreviousSqlContext = useCallback(() => {
+    setPreviousSqlContext(null);
+  }, []);
+
+  const formatTimestamp = useCallback((value: string) => {
+    try {
+      return new Date(value).toLocaleString();
+    } catch (error) {
+      return value;
+    }
+  }, []);
 
   // Fetch database schema on mount
   useEffect(() => {
     fetchSchema();
   }, []);
+
+  useEffect(() => {
+    fetchSavedQueries();
+  }, [fetchSavedQueries]);
 
   // Fetch performance metrics when on performance tab
   useEffect(() => {
@@ -194,7 +651,8 @@ export default function DatabaseAdminPage() {
   };
 
   const executeSqlQuery = async () => {
-    if (!sqlQuery.trim()) return;
+    const trimmedQuery = sqlQuery.trim();
+    if (!trimmedQuery) return;
 
     try {
       setExecutingSql(true);
@@ -206,17 +664,23 @@ export default function DatabaseAdminPage() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ query: sqlQuery }),
+        body: JSON.stringify({ query: trimmedQuery }),
       });
 
       const data = await response.json();
       const endTime = performance.now();
       const executionTime = Math.round(endTime - startTime);
 
-      setQueryResult({
+      const nextResult = {
         ...data,
         execution_time_ms: data.execution_time_ms || executionTime,
-      });
+      } as QueryResult;
+
+      if (data.success) {
+        setPreviousSqlContext(trimmedQuery);
+      }
+
+      setQueryResult(nextResult);
     } catch (error) {
       setQueryResult({
         success: false,
@@ -228,13 +692,22 @@ export default function DatabaseAdminPage() {
   };
 
   const executeNaturalLanguageQuery = async () => {
-    if (!naturalLanguageQuery.trim()) return;
+    const trimmedNaturalLanguage = naturalLanguageQuery.trim();
+    if (!trimmedNaturalLanguage) return;
 
     try {
       setExecutingNl(true);
       setNlQueryResult(null);
 
       const startTime = performance.now();
+      const payload: Record<string, unknown> = {
+        natural_language: trimmedNaturalLanguage,
+      };
+
+      if (previousSqlContext) {
+        payload.previous_sql_query = previousSqlContext;
+      }
+
       const response = await fetch(
         "http://localhost:8000/api/db-admin/nl-query",
         {
@@ -242,7 +715,7 @@ export default function DatabaseAdminPage() {
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ natural_language: naturalLanguageQuery }),
+          body: JSON.stringify(payload),
         }
       );
 
@@ -250,10 +723,29 @@ export default function DatabaseAdminPage() {
       const endTime = performance.now();
       const executionTime = Math.round(endTime - startTime);
 
-      setNlQueryResult({
+      const nextResult = {
         ...data,
         execution_time_ms: data.execution_time_ms || executionTime,
-      });
+      } as QueryResult;
+
+      if (data.success && typeof data.sql_query === "string") {
+        const normalizedSql = data.sql_query.trim();
+        if (normalizedSql) {
+          setPreviousSqlContext(normalizedSql);
+          clearSqlSuggestions();
+          setSqlQuery(normalizedSql);
+          requestAnimationFrame(() => {
+            if (sqlTextareaRef.current) {
+              const position = normalizedSql.length;
+              sqlTextareaRef.current.selectionStart = position;
+              sqlTextareaRef.current.selectionEnd = position;
+            }
+            updateSqlSuggestions(normalizedSql, normalizedSql.length);
+          });
+        }
+      }
+
+      setNlQueryResult(nextResult);
     } catch (error) {
       setNlQueryResult({
         success: false,
@@ -291,61 +783,7 @@ export default function DatabaseAdminPage() {
     let formatted = formatSqlWithIndentation(sql);
 
     // SQL syntax highlighting with colors
-    const keywords = [
-      "SELECT",
-      "FROM",
-      "WHERE",
-      "JOIN",
-      "LEFT",
-      "RIGHT",
-      "INNER",
-      "OUTER",
-      "ON",
-      "AND",
-      "OR",
-      "ORDER",
-      "BY",
-      "GROUP",
-      "HAVING",
-      "LIMIT",
-      "OFFSET",
-      "AS",
-      "DISTINCT",
-      "COUNT",
-      "SUM",
-      "AVG",
-      "MAX",
-      "MIN",
-      "IN",
-      "NOT",
-      "NULL",
-      "IS",
-      "LIKE",
-      "BETWEEN",
-      "INSERT",
-      "UPDATE",
-      "DELETE",
-      "CREATE",
-      "DROP",
-      "ALTER",
-      "TABLE",
-      "INDEX",
-      "VIEW",
-      "ASC",
-      "DESC",
-      "CASE",
-      "WHEN",
-      "THEN",
-      "ELSE",
-      "END",
-      "UNION",
-      "ALL",
-      "EXISTS",
-      "WITH",
-      "DATE",
-      "TIME",
-      "TIMESTAMP",
-    ];
+    const keywords = SQL_KEYWORDS;
 
     // Use placeholders to protect strings
     const stringPlaceholders: string[] = [];
@@ -449,6 +887,12 @@ export default function DatabaseAdminPage() {
     );
   };
 
+  const hasSqlQuery = sqlQuery.trim().length > 0;
+  const hasSavedQuerySelection = selectedSavedQueryId !== null;
+  const hasPreviousSqlContext = Boolean(
+    previousSqlContext && previousSqlContext.trim()
+  );
+
   return (
     <div className="container mx-auto p-6 space-y-6">
       <div className="flex items-center gap-3">
@@ -529,28 +973,73 @@ export default function DatabaseAdminPage() {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <Textarea
+                    ref={sqlTextareaRef}
                     placeholder="SELECT * FROM table_name LIMIT 10"
                     value={sqlQuery}
-                    onChange={(e) => setSqlQuery(e.target.value)}
+                    onChange={handleSqlChange}
+                    onKeyDown={handleSqlKeyDown}
+                    onKeyUp={handleSqlCursorChange}
+                    onClick={handleSqlCursorChange}
+                    onBlur={handleSqlBlur}
+                    spellCheck={false}
                     className="font-mono text-sm min-h-32"
                   />
-                  <Button
-                    onClick={executeSqlQuery}
-                    disabled={executingSql || !sqlQuery.trim()}
-                    className="w-full"
-                  >
-                    {executingSql ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Executing...
-                      </>
-                    ) : (
-                      <>
-                        <Play className="mr-2 h-4 w-4" />
-                        Execute Query
-                      </>
-                    )}
-                  </Button>
+                  {showSqlSuggestions && sqlSuggestions.length > 0 && (
+                    <div className="border border-border rounded-md bg-background shadow-md text-sm font-mono overflow-hidden">
+                      {sqlSuggestions.map((suggestion, index) => (
+                        <button
+                          key={`${suggestion}-${index}`}
+                          type="button"
+                          className={`flex w-full items-center justify-between px-3 py-1 text-left hover:bg-muted ${
+                            index === activeSuggestionIndex ? "bg-muted" : ""
+                          }`}
+                          onMouseDown={(event) => {
+                            event.preventDefault();
+                            applySqlSuggestion(suggestion);
+                          }}
+                          onMouseEnter={() => setActiveSuggestionIndex(index)}
+                        >
+                          <span>{suggestion}</span>
+                          <span className="text-[10px] uppercase text-muted-foreground">
+                            Tab
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <Button
+                      onClick={executeSqlQuery}
+                      disabled={executingSql || !hasSqlQuery}
+                      className="w-full"
+                    >
+                      {executingSql ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Executing...
+                        </>
+                      ) : (
+                        <>
+                          <Play className="mr-2 h-4 w-4" />
+                          Execute Query
+                        </>
+                      )}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={!hasSqlQuery}
+                      onClick={() => {
+                        const trimmed = sqlQuery.trim();
+                        if (trimmed) {
+                          setPreviousSqlContext(trimmed);
+                        }
+                      }}
+                      className="w-full"
+                    >
+                      {hasPreviousSqlContext ? "Update" : "Set"} NL Context
+                    </Button>
+                  </div>
 
                   {/* SQL Query Results */}
                   {queryResult && (
@@ -589,6 +1078,202 @@ export default function DatabaseAdminPage() {
                   )}
                 </CardContent>
               </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Saved Queries</CardTitle>
+                  <CardDescription>
+                    Store and reuse the SQL statements you reach for the most.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {savedQueryError && (
+                    <Alert variant="destructive">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertTitle>Saved Query Error</AlertTitle>
+                      <AlertDescription>{savedQueryError}</AlertDescription>
+                    </Alert>
+                  )}
+
+                  <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="saved-query-name">Query name</Label>
+                        <Input
+                          id="saved-query-name"
+                          value={savedQueryForm.name}
+                          onChange={(event) =>
+                            setSavedQueryForm((prev) => ({
+                              ...prev,
+                              name: event.target.value,
+                            }))
+                          }
+                          placeholder="Portfolio summary"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="saved-query-description">
+                          Description (optional)
+                        </Label>
+                        <Input
+                          id="saved-query-description"
+                          value={savedQueryForm.description}
+                          onChange={(event) =>
+                            setSavedQueryForm((prev) => ({
+                              ...prev,
+                              description: event.target.value,
+                            }))
+                          }
+                          placeholder="Aggregates balances by fund"
+                        />
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          onClick={handleSaveCurrentQuery}
+                          disabled={savedQuerySubmitting}
+                        >
+                          {savedQuerySubmitting ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Saving...
+                            </>
+                          ) : (
+                            <>
+                              <HardDrive className="mr-2 h-4 w-4" />
+                              Save New
+                            </>
+                          )}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={handleUpdateSavedQuery}
+                          disabled={
+                            savedQuerySubmitting || !hasSavedQuerySelection
+                          }
+                        >
+                          Update Selected
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          onClick={clearSavedQuerySelection}
+                          disabled={
+                            savedQuerySubmitting || !hasSavedQuerySelection
+                          }
+                        >
+                          Clear Selection
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h3 className="text-sm font-medium text-muted-foreground">
+                            Saved queries ({savedQueries.length})
+                          </h3>
+                        </div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={fetchSavedQueries}
+                          disabled={loadingSavedQueries}
+                        >
+                          {loadingSavedQueries ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Activity className="h-4 w-4" />
+                          )}
+                          <span className="sr-only">Refresh saved queries</span>
+                        </Button>
+                      </div>
+                      <ScrollArea className="h-64 border rounded-md">
+                        <div className="space-y-2 p-2 pr-4">
+                          {loadingSavedQueries ? (
+                            <p className="px-2 py-4 text-sm text-muted-foreground">
+                              Loading saved queries...
+                            </p>
+                          ) : savedQueries.length === 0 ? (
+                            <p className="px-2 py-4 text-sm text-muted-foreground">
+                              No saved queries yet. Save your current SQL to get
+                              started.
+                            </p>
+                          ) : (
+                            savedQueries.map((savedQuery) => {
+                              const isSelected =
+                                savedQuery.id === selectedSavedQueryId;
+
+                              return (
+                                <div
+                                  key={savedQuery.id}
+                                  className={`rounded-md border p-3 transition-colors ${
+                                    isSelected
+                                      ? "border-primary bg-primary/5"
+                                      : "border-border"
+                                  }`}
+                                >
+                                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                                    <div className="space-y-1">
+                                      <p className="font-medium leading-tight">
+                                        {savedQuery.name}
+                                      </p>
+                                      {savedQuery.description && (
+                                        <p className="text-xs text-muted-foreground">
+                                          {savedQuery.description}
+                                        </p>
+                                      )}
+                                      <p className="text-[10px] uppercase text-muted-foreground">
+                                        Updated {formatTimestamp(savedQuery.updated_at)}
+                                      </p>
+                                    </div>
+                                    <div className="flex flex-col gap-1 md:items-end">
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="secondary"
+                                        onClick={() => handleSelectSavedQuery(savedQuery)}
+                                      >
+                                        Load into Editor
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => setPreviousSqlContext(savedQuery.sql_query)}
+                                      >
+                                        Use as NL Context
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="ghost"
+                                        onClick={() => handleDeleteSavedQuery(savedQuery.id)}
+                                        disabled={deletingQueryId === savedQuery.id}
+                                      >
+                                        {deletingQueryId === savedQuery.id ? (
+                                          <Loader2 className="h-4 w-4 animate-spin" />
+                                        ) : (
+                                          "Delete"
+                                        )}
+                                      </Button>
+                                    </div>
+                                  </div>
+                                  <pre className="mt-2 max-h-24 overflow-hidden whitespace-pre-wrap break-words text-xs font-mono text-muted-foreground">
+                                    {savedQuery.sql_query}
+                                  </pre>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      </ScrollArea>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
             </TabsContent>
 
             {/* Natural Language Query Tab */}
@@ -602,6 +1287,56 @@ export default function DatabaseAdminPage() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
+                  {hasPreviousSqlContext && previousSqlContext && (
+                    <Alert>
+                      <Database className="h-4 w-4" />
+                      <AlertTitle>Using previous SQL context</AlertTitle>
+                      <AlertDescription className="space-y-2">
+                        <p className="text-sm text-muted-foreground">
+                          We will include the prior SQL when interpreting your
+                          next request.
+                        </p>
+                        <pre
+                          className="max-h-48 overflow-auto rounded-md bg-slate-900 p-3 text-xs font-mono text-slate-100"
+                          dangerouslySetInnerHTML={{
+                            __html: formatSqlWithColors(previousSqlContext),
+                          }}
+                        />
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setSqlQuery(previousSqlContext);
+                              clearSqlSuggestions();
+                              requestAnimationFrame(() => {
+                                if (sqlTextareaRef.current) {
+                                  const position = previousSqlContext.length;
+                                  sqlTextareaRef.current.selectionStart = position;
+                                  sqlTextareaRef.current.selectionEnd = position;
+                                }
+                                updateSqlSuggestions(
+                                  previousSqlContext,
+                                  previousSqlContext.length
+                                );
+                              });
+                            }}
+                          >
+                            Load into SQL editor
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={clearPreviousSqlContext}
+                          >
+                            Clear context
+                          </Button>
+                        </div>
+                      </AlertDescription>
+                    </Alert>
+                  )}
                   <Input
                     placeholder="Show me all funds with their current balances"
                     value={naturalLanguageQuery}

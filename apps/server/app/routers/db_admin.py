@@ -1,14 +1,9 @@
-"""
-Database Admin API endpoints for querying and exploring the database.
+"""Database Admin API endpoints for querying and exploring the database."""
 
-Provides REST endpoints for:
-- Executing raw SQL queries
-- Fetching database schema and table information
-- Converting natural language to SQL using AI
-"""
-
+import asyncio
 import logging
-from typing import Dict, Any, List
+from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
@@ -38,7 +33,9 @@ class SQLQueryResponse(BaseModel):
 
 class NaturalLanguageQueryRequest(BaseModel):
     """Request model for natural language to SQL conversion."""
+
     natural_language: str
+    previous_sql_query: Optional[str] = None
 
 
 class NaturalLanguageQueryResponse(BaseModel):
@@ -80,6 +77,76 @@ class PerformanceMetrics(BaseModel):
     active_queries: List[Dict[str, Any]]
     database_size: Dict[str, Any]
     query_statistics: QueryStatistics | None = None
+
+
+class SavedQuery(BaseModel):
+    """Persisted SQL query used for quick access."""
+
+    id: int
+    name: str
+    sql_query: str
+    description: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class SavedQueryCreateRequest(BaseModel):
+    """Request payload for creating a saved query."""
+
+    name: str
+    sql_query: str
+    description: Optional[str] = None
+
+
+class SavedQueryUpdateRequest(BaseModel):
+    """Request payload for updating a saved query."""
+
+    name: Optional[str] = None
+    sql_query: Optional[str] = None
+    description: Optional[str] = None
+
+
+class SavedQueryDeleteResponse(BaseModel):
+    """Response payload for delete operations."""
+
+    success: bool
+
+
+_saved_queries_table_initialized = False
+_saved_queries_table_lock = asyncio.Lock()
+
+
+async def ensure_saved_queries_table() -> None:
+    """Create the saved queries table if it does not already exist."""
+
+    global _saved_queries_table_initialized
+
+    if _saved_queries_table_initialized:
+        return
+
+    async with _saved_queries_table_lock:
+        if _saved_queries_table_initialized:
+            return
+
+        engine = get_async_engine()
+
+        async with engine.begin() as conn:
+            await conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS db_saved_queries (
+                        id SERIAL PRIMARY KEY,
+                        name TEXT NOT NULL UNIQUE,
+                        sql_query TEXT NOT NULL,
+                        description TEXT,
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                    )
+                    """
+                )
+            )
+
+        _saved_queries_table_initialized = True
 
 
 @router.post("/query", response_model=SQLQueryResponse)
@@ -144,6 +211,133 @@ async def execute_sql_query(request: SQLQueryRequest) -> SQLQueryResponse:
             success=False,
             error=f"Unexpected error: {str(e)}"
         )
+
+
+@router.get("/saved-queries", response_model=List[SavedQuery])
+async def list_saved_queries() -> List[SavedQuery]:
+    """Return all saved SQL queries ordered by most recently updated."""
+
+    await ensure_saved_queries_table()
+
+    async with get_async_session() as session:
+        result = await session.execute(
+            text(
+                """
+                SELECT id, name, sql_query, description, created_at, updated_at
+                FROM db_saved_queries
+                ORDER BY updated_at DESC, id DESC
+                """
+            )
+        )
+
+        rows = result.fetchall()
+        return [SavedQuery(**dict(row._mapping)) for row in rows]
+
+
+@router.post("/saved-queries", response_model=SavedQuery, status_code=status.HTTP_201_CREATED)
+async def create_saved_query(request: SavedQueryCreateRequest) -> SavedQuery:
+    """Persist a new saved SQL query for quick reuse."""
+
+    await ensure_saved_queries_table()
+
+    async with get_async_session() as session:
+        try:
+            result = await session.execute(
+                text(
+                    """
+                    INSERT INTO db_saved_queries (name, sql_query, description)
+                    VALUES (:name, :sql_query, :description)
+                    RETURNING id, name, sql_query, description, created_at, updated_at
+                    """
+                ),
+                {
+                    "name": request.name,
+                    "sql_query": request.sql_query,
+                    "description": request.description,
+                },
+            )
+            row = result.fetchone()
+            await session.commit()
+        except SQLAlchemyError as exc:
+            await session.rollback()
+            logger.error("Failed to create saved query: %s", exc)
+            detail = "Unable to save query"
+            if "duplicate" in str(exc).lower():
+                detail = "A saved query with this name already exists"
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail) from exc
+
+    if not row:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create saved query")
+
+    return SavedQuery(**dict(row._mapping))
+
+
+@router.put("/saved-queries/{query_id}", response_model=SavedQuery)
+async def update_saved_query(
+    query_id: int, request: SavedQueryUpdateRequest
+) -> SavedQuery:
+    """Update an existing saved SQL query."""
+
+    await ensure_saved_queries_table()
+
+    if not any([request.name, request.sql_query, request.description is not None]):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields provided to update")
+
+    updates = []
+    params: Dict[str, Any] = {"query_id": query_id}
+
+    if request.name is not None:
+        updates.append("name = :name")
+        params["name"] = request.name
+
+    if request.sql_query is not None:
+        updates.append("sql_query = :sql_query")
+        params["sql_query"] = request.sql_query
+
+    if request.description is not None:
+        updates.append("description = :description")
+        params["description"] = request.description
+
+    updates.append("updated_at = NOW()")
+
+    update_sql = "UPDATE db_saved_queries SET " + ", ".join(updates) + " WHERE id = :query_id RETURNING id, name, sql_query, description, created_at, updated_at"
+
+    async with get_async_session() as session:
+        try:
+            result = await session.execute(text(update_sql), params)
+            row = result.fetchone()
+            if not row:
+                await session.rollback()
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Saved query not found")
+            await session.commit()
+        except SQLAlchemyError as exc:
+            await session.rollback()
+            logger.error("Failed to update saved query %s: %s", query_id, exc)
+            detail = "Unable to update query"
+            if "duplicate" in str(exc).lower():
+                detail = "A saved query with this name already exists"
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail) from exc
+
+    return SavedQuery(**dict(row._mapping))
+
+
+@router.delete("/saved-queries/{query_id}", response_model=SavedQueryDeleteResponse)
+async def delete_saved_query(query_id: int) -> SavedQueryDeleteResponse:
+    """Delete a saved SQL query."""
+
+    await ensure_saved_queries_table()
+
+    async with get_async_session() as session:
+        result = await session.execute(
+            text("DELETE FROM db_saved_queries WHERE id = :query_id"),
+            {"query_id": query_id},
+        )
+        await session.commit()
+
+    if result.rowcount == 0:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Saved query not found")
+
+    return SavedQueryDeleteResponse(success=True)
 
 
 @router.get("/schema", response_model=SchemaResponse)
@@ -524,7 +718,8 @@ async def execute_natural_language_query(
         logger.info(f"Converting natural language to SQL: {request.natural_language}")
         sql_result = await db_query_service.natural_language_to_sql(
             request.natural_language,
-            schema_response.tables
+            schema_response.tables,
+            previous_sql_query=request.previous_sql_query,
         )
         
         if not sql_result["success"]:
