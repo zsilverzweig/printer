@@ -49,6 +49,7 @@ class SymbolPositions:
     total_cost_basis: float
     total_market_value: float | None
     total_unrealized_pl: float | None
+    total_unrealized_pl_percent: float | None
     funds: List[FundPositionRow]
 
 
@@ -132,15 +133,27 @@ async def get_grouped_open_positions() -> List[Dict[str, Any]]:
     for symbol in sorted(grouped.keys()):
         latest_price = latest_prices.get(symbol)
         fund_rows = grouped[symbol]
+        fund_rows_sorted = sorted(
+            fund_rows,
+            key=lambda row: (
+                (row.fund_name or "").lower(),
+                row.fund_id,
+            ),
+        )
 
         total_quantity = sum(row.quantity for row in fund_rows)
         total_cost_basis = sum(row.cost_basis for row in fund_rows)
 
         total_market_value = None
         total_unrealized_pl = None
+        total_unrealized_pl_percent = None
         if latest_price is not None:
             total_market_value = latest_price * total_quantity
             total_unrealized_pl = total_market_value - total_cost_basis
+            if total_cost_basis:
+                total_unrealized_pl_percent = (
+                    total_unrealized_pl / total_cost_basis
+                ) * 100
 
         overview.append(
             asdict(
@@ -151,7 +164,8 @@ async def get_grouped_open_positions() -> List[Dict[str, Any]]:
                     total_cost_basis=total_cost_basis,
                     total_market_value=total_market_value,
                     total_unrealized_pl=total_unrealized_pl,
-                    funds=[row for row in fund_rows],
+                    total_unrealized_pl_percent=total_unrealized_pl_percent,
+                    funds=[row for row in fund_rows_sorted],
                 )
             )
         )

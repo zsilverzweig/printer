@@ -35,8 +35,9 @@ When working on backend features:
 
 1. ✅ **ALWAYS** test endpoints with `curl` after making changes
 2. ✅ **ALWAYS** verify the response matches expectations
-3. ✅ **ALWAYS** check server logs for errors: `nx docker:logs:server printer --follow`
-4. ✅ **ALWAYS** verify database state with direct queries when relevant
+3. ✅ **ALWAYS** check server logs for errors (capture targeted snapshots rather than following the stream)
+4. ❌ **NEVER** tail logs as a strategy—our logs are too verbose for `--follow` to be useful
+5. ✅ **ALWAYS** verify database state with direct queries when relevant
 
 Example testing workflow:
 
@@ -46,8 +47,8 @@ curl -X POST "http://localhost:8000/api/screening-criteria/run?timestamp=2025-10
   -H "Content-Type: application/json" \
   -d '{"min_price": 5, "max_price": 100, "limit": 5}' | jq '.'
 
-# Watch server logs in another terminal
-nx docker:logs:server printer --follow
+# Fetch recent server logs (avoid --follow)
+nx docker:logs:server printer
 
 # Check database if needed
 docker exec printer-db psql -U postgres -d printer_events -c "SELECT COUNT(*) FROM market_data WHERE timescale = '5min';"

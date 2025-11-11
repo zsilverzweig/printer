@@ -102,5 +102,6 @@ export interface FundPositionsGroup {
   totalCostBasis: number;
   totalMarketValue: number | null;
   totalUnrealizedPl: number | null;
+  totalUnrealizedPlPercent: number | null;
   funds: FundPositionsFund[];
 }

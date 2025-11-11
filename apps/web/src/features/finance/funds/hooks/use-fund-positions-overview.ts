@@ -18,7 +18,7 @@ export function useFundPositionsOverview(active: boolean) {
     try {
       setLoading(true);
       setError(null);
-      const data = await fundService.getFundPositionsOverview();
+      const data = await fundService.getPositions();
       setPositions(data);
     } catch (err) {
       setError(

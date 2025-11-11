@@ -110,6 +110,7 @@ type RawFundPositionsGroup = {
   total_cost_basis?: number | string;
   total_market_value?: number | string | null;
   total_unrealized_pl?: number | string | null;
+  total_unrealized_pl_percent?: number | string | null;
   funds?: RawFundPositionsFund[];
 };
 
@@ -125,6 +126,9 @@ function parseFundPositionsGroup(
     totalCostBasis: toNumber(data.total_cost_basis),
     totalMarketValue: toNullableNumber(data.total_market_value),
     totalUnrealizedPl: toNullableNumber(data.total_unrealized_pl),
+    totalUnrealizedPlPercent: toNullableNumber(
+      data.total_unrealized_pl_percent
+    ),
     funds: funds.map((fund: RawFundPositionsFund) => ({
       fundId:
         typeof fund.fund_id === "string"
@@ -149,6 +153,18 @@ function parseFundPositionsGroup(
       updatedAt: fund.updated_at ?? null,
     })),
   };
+}
+
+async function fetchGroupedFundPositions(): Promise<FundPositionsGroup[]> {
+  const response = await fetch(`${API_BASE}/api/funds/positions`);
+
+  if (!response.ok) {
+    throw new Error("Failed to fetch fund positions overview");
+  }
+
+  const data = await response.json();
+  const positions = Array.isArray(data.positions) ? data.positions : [];
+  return positions.map(parseFundPositionsGroup);
 }
 
 export const fundService = {
@@ -183,15 +199,24 @@ export const fundService = {
    * Get grouped positions across all funds
    */
   async getFundPositionsOverview(): Promise<FundPositionsGroup[]> {
-    const response = await fetch(`${API_BASE}/api/funds/positions`);
+    return fetchGroupedFundPositions();
+  },
 
-    if (!response.ok) {
-      throw new Error("Failed to fetch fund positions overview");
-    }
+  /**
+   * Get grouped positions ready for the Positions tab UI.
+   * Ensures symbols and fund rows are sorted for deterministic rendering.
+   */
+  async getPositions(): Promise<FundPositionsGroup[]> {
+    const positions = await fetchGroupedFundPositions();
 
-    const data = await response.json();
-    const positions = Array.isArray(data.positions) ? data.positions : [];
-    return positions.map(parseFundPositionsGroup);
+    return [...positions]
+      .sort((a, b) => a.symbol.localeCompare(b.symbol))
+      .map((group) => ({
+        ...group,
+        funds: [...group.funds].sort((a, b) =>
+          a.fundName.localeCompare(b.fundName)
+        ),
+      }));
   },
 
   /**

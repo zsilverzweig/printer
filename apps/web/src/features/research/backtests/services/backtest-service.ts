@@ -16,11 +16,17 @@ import type {
   MultiStrategyBacktestRequest,
   MultiStrategyBacktestResponse,
   RunBacktestRequest,
-  ScreenerBacktestRunRequest,
   ScreenerBacktestResponse,
+  ScreenerBacktestRunRequest,
 } from "../types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+function resolveBacktestWebSocketUrl(backtestId: string): string {
+  const wsUrl = new URL(`/api/backtests/ws/${backtestId}`, API_BASE);
+  wsUrl.protocol = wsUrl.protocol === "https:" ? "wss:" : "ws:";
+  return wsUrl.toString();
+}
 
 /**
  * Parse date strings and convert snake_case to camelCase from API responses
@@ -91,7 +97,7 @@ function parseScreenerBacktest(data: any): ScreenerBacktestResponse {
   };
 }
 
-function parseBacktestEvent(data: any): BacktestEvent {
+export function parseBacktestEvent(data: any): BacktestEvent {
   return {
     id: data.id,
     backtestId: data.backtest_id ?? data.backtestId,
@@ -131,9 +137,7 @@ function parseBacktestMetrics(data: any): BacktestMetrics {
     durationMinutes:
       numberOrUndefined(data.duration_minutes ?? data.durationMinutes) ?? null,
     totalTrades: numberOrUndefined(data.total_trades ?? data.totalTrades),
-    winningTrades: numberOrUndefined(
-      data.winning_trades ?? data.winningTrades
-    ),
+    winningTrades: numberOrUndefined(data.winning_trades ?? data.winningTrades),
     losingTrades: numberOrUndefined(data.losing_trades ?? data.losingTrades),
     totalOrders: numberOrUndefined(data.total_orders ?? data.totalOrders),
     filledOrders: numberOrUndefined(data.filled_orders ?? data.filledOrders),
@@ -156,8 +160,8 @@ export const backtestService = {
   async listBacktests(
     fundId?: string,
     status?: string,
-    limit: number = 50,
-    offset: number = 0
+    limit = 50,
+    offset = 0
   ): Promise<BacktestListResponse> {
     const params = new URLSearchParams({
       limit: limit.toString(),
@@ -189,8 +193,12 @@ export const backtestService = {
   /**
    * Get aggregate metrics for a backtest
    */
-  async getBacktestMetrics(backtestId: string): Promise<BacktestMetricsResponse> {
-    const response = await fetch(`${API_BASE}/api/backtests/${backtestId}/metrics`);
+  async getBacktestMetrics(
+    backtestId: string
+  ): Promise<BacktestMetricsResponse> {
+    const response = await fetch(
+      `${API_BASE}/api/backtests/${backtestId}/metrics`
+    );
     if (!response.ok) {
       throw new Error("Failed to fetch backtest metrics");
     }
@@ -205,7 +213,10 @@ export const backtestService = {
   /**
    * Fetch persisted backtest events for initial hydration
    */
-  async getBacktestEvents(backtestId: string, limit: number = 1000): Promise<BacktestEventsResponse> {
+  async getBacktestEvents(
+    backtestId: string,
+    limit = 1000
+  ): Promise<BacktestEventsResponse> {
     const response = await fetch(
       `${API_BASE}/api/backtests/${backtestId}/events?limit=${limit}`
     );
@@ -228,10 +239,7 @@ export const backtestService = {
     onEvent: (event: BacktestEvent) => void,
     onError?: (error: Event) => void
   ): () => void {
-    const wsUrl = new URL(`/api/backtests/ws/${backtestId}`, API_BASE);
-    wsUrl.protocol = wsUrl.protocol.replace("http", "ws");
-
-    const socket = new WebSocket(wsUrl.toString());
+    const socket = new WebSocket(resolveBacktestWebSocketUrl(backtestId));
 
     socket.onmessage = (event) => {
       try {
@@ -306,7 +314,7 @@ export const backtestService = {
    */
   async getBacktestOrders(
     backtestId: string,
-    limit: number = 100
+    limit = 100
   ): Promise<BacktestOrdersResponse> {
     const response = await fetch(
       `${API_BASE}/api/backtests/${backtestId}/orders?limit=${limit}`
@@ -340,7 +348,7 @@ export const backtestService = {
    */
   async getBacktestTrades(
     backtestId: string,
-    limit: number = 100
+    limit = 100
   ): Promise<BacktestTradesResponse> {
     const response = await fetch(
       `${API_BASE}/api/backtests/${backtestId}/trades?limit=${limit}`
@@ -439,3 +447,5 @@ export const backtestService = {
     return parseScreenerBacktest(data);
   },
 };
+
+export const getBacktestWebSocketUrl = resolveBacktestWebSocketUrl;

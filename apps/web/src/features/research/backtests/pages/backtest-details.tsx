@@ -1,9 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
+import { useRouter } from "next/navigation";
+import { useCallback, useMemo, useState } from "react";
 
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2, RefreshCw, RotateCcw } from "lucide-react";
+
+import { useBacktestDetails } from "../hooks/use-backtest-details";
+import { backtestService } from "../services/backtest-service";
+import type { BacktestEvent } from "../types";
 
 import { Badge } from "@/lib/components/ui/badge";
 import {
@@ -12,18 +17,23 @@ import {
   CardHeader,
   CardTitle,
 } from "@/lib/components/ui/card";
+import { Button } from "@/lib/components/ui/button";
+import { Progress } from "@/lib/components/ui/progress";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/lib/components/ui/table";
 import {
   Tabs,
   TabsContent,
   TabsList,
   TabsTrigger,
 } from "@/lib/components/ui/tabs";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/lib/components/ui/table";
-import { Progress } from "@/lib/components/ui/progress";
 import { cn } from "@/lib/utils/utils";
-
-import { useBacktestDetails } from "../hooks/use-backtest-details";
-import type { BacktestEvent } from "../types";
 
 function formatCurrency(value: number | undefined | null): string {
   if (value === undefined || value === null) return "—";
@@ -37,6 +47,11 @@ function formatPercent(value: number | undefined | null): string {
   if (value === undefined || value === null) return "—";
   const sign = value >= 0 ? "+" : "";
   return `${sign}${value.toFixed(2)}%`;
+}
+
+function formatCount(value: number | undefined | null): string {
+  if (value === undefined || value === null || Number.isNaN(value)) return "—";
+  return value.toLocaleString("en-US");
 }
 
 function formatDateTime(dateString: string | undefined | null): string {
@@ -111,6 +126,7 @@ interface BacktestDetailsPageProps {
 }
 
 export function BacktestDetailsPage({ backtestId }: BacktestDetailsPageProps) {
+  const router = useRouter();
   const {
     backtest,
     events,
@@ -121,7 +137,10 @@ export function BacktestDetailsPage({ backtestId }: BacktestDetailsPageProps) {
     progressPercent,
     progressStats,
     metrics,
+    refresh,
   } = useBacktestDetails(backtestId);
+  const [isRestarting, setIsRestarting] = useState(false);
+  const [restartError, setRestartError] = useState<string | null>(null);
 
   const orderedEvents = useMemo(
     () =>
@@ -133,6 +152,99 @@ export function BacktestDetailsPage({ backtestId }: BacktestDetailsPageProps) {
       }),
     [events]
   );
+
+  const lifecycleStats = useMemo(
+    () => [
+      {
+        key: "screened",
+        label: "Screened",
+        value: progressStats ? progressStats.rawTickerCount : null,
+        description: "Candidates currently passing the screener",
+      },
+      {
+        key: "setup",
+        label: "Setup",
+        value: progressStats ? progressStats.tickersAfterSetup : null,
+        description: "Tickers that cleared setup checks",
+      },
+      {
+        key: "ordered",
+        label: "Ordered",
+        value: progressStats ? progressStats.pendingOrders : null,
+        description: "Open orders waiting to fill",
+      },
+      {
+        key: "filled",
+        label: "Filled / Active",
+        value: progressStats ? progressStats.activePositions : null,
+        description: "Active positions being managed",
+      },
+    ],
+    [progressStats]
+  );
+
+  const canRestart = backtest?.status !== "running";
+
+  const handleRefresh = useCallback(() => {
+    void refresh();
+  }, [refresh]);
+
+  const handleRestart = useCallback(async () => {
+    if (!backtest) return;
+    if (!canRestart) {
+      setRestartError("Backtest is still running. Please wait for it to complete before restarting.");
+      return;
+    }
+
+    setIsRestarting(true);
+    setRestartError(null);
+
+    try {
+      const payload: {
+        fundId: string;
+        date: string;
+        monitoring_interval_minutes?: number;
+        duration_minutes?: number;
+      } = {
+        fundId: backtest.fundId,
+        date: backtest.date,
+      };
+
+      if (
+        typeof metrics?.monitoringIntervalMinutes === "number" &&
+        Number.isFinite(metrics.monitoringIntervalMinutes)
+      ) {
+        payload.monitoring_interval_minutes = Number(metrics.monitoringIntervalMinutes);
+      }
+      if (
+        typeof metrics?.durationMinutes === "number" &&
+        Number.isFinite(metrics.durationMinutes)
+      ) {
+        payload.duration_minutes = metrics.durationMinutes;
+      }
+
+      const restarted = await backtestService.runBacktest({
+        fundId: payload.fundId,
+        date: payload.date,
+        monitoringIntervalMinutes: payload.monitoring_interval_minutes,
+        durationMinutes: payload.duration_minutes,
+      });
+
+      router.push(`/backtests/${restarted.id}`);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Failed to restart backtest";
+      setRestartError(message);
+    } finally {
+      setIsRestarting(false);
+    }
+  }, [backtest, canRestart, metrics, router]);
+
+  const hasLifecycleSnapshot = lifecycleStats.some(
+    (stat) => stat.value !== null && stat.value !== undefined
+  );
+  const primaryLifecycleStat = lifecycleStats[0];
+  const secondaryLifecycleStats = lifecycleStats.slice(1);
 
   if (loading) {
     return (
@@ -205,82 +317,161 @@ export function BacktestDetailsPage({ backtestId }: BacktestDetailsPageProps) {
         Back to Backtests
       </Link>
 
-      <div className="grid gap-6 lg:grid-cols-[2fr,1fr]">
-        <Card>
-          <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <CardTitle className="text-xl">
-                {backtest.fundName ?? backtest.fundId}
-              </CardTitle>
-              <p className="text-muted-foreground text-sm">
+      <Card>
+        <CardHeader className="space-y-3">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="space-y-1">
+              <div className="flex flex-wrap items-center gap-3">
+                <CardTitle className="text-xl">
+                  {backtest.fundName ?? backtest.fundId}
+                </CardTitle>
+                <Badge
+                  variant={
+                    backtest.status === "completed"
+                      ? "default"
+                      : backtest.status === "failed"
+                      ? "destructive"
+                      : "secondary"
+                  }
+                >
+                  {backtest.status}
+                </Badge>
+              </div>
+              <p className="text-sm text-muted-foreground">
                 {backtest.date} · Strategy {backtest.strategyId ?? "N/A"}
               </p>
             </div>
-            <Badge
-              variant={
-                backtest.status === "completed"
-                  ? "default"
-                  : backtest.status === "failed"
-                  ? "destructive"
-                  : "secondary"
-              }
-            >
-              {backtest.status}
-            </Badge>
-          </CardHeader>
-          <CardContent className="grid gap-4 md:grid-cols-3">
-            <div>
-              <p className="text-xs text-muted-foreground uppercase">
-                Starting Balance
-              </p>
-              <p className="text-lg font-semibold">
-                {formatCurrency(backtest.startingBalance)}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground uppercase">
-                Ending Balance
-              </p>
-              <p className="text-lg font-semibold">
-                {formatCurrency(backtest.endingBalance)}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground uppercase">P&amp;L</p>
-              <p
-                className={cn("text-lg font-semibold", {
-                  "text-green-600": isPositive,
-                  "text-red-600": !isPositive,
-                })}
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleRefresh}
+                disabled={loading || isRestarting}
               >
-                {formatCurrency(backtest.totalPnl)} (
-                {formatPercent(backtest.totalPnlPercent)})
-              </p>
+                <RefreshCw className="mr-2 h-4 w-4" />
+                Refresh Data
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => void handleRestart()}
+                disabled={isRestarting || !canRestart}
+              >
+                {isRestarting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Restarting...
+                  </>
+                ) : (
+                  <>
+                    <RotateCcw className="mr-2 h-4 w-4" />
+                    Restart Backtest
+                  </>
+                )}
+              </Button>
             </div>
-            <div>
-              <p className="text-xs text-muted-foreground uppercase">
-                Total Trades
+          </div>
+          {restartError ? (
+            <p className="text-sm text-destructive">{restartError}</p>
+          ) : null}
+          {!canRestart && backtest.status === "running" ? (
+            <p className="text-xs text-muted-foreground">
+              The backtest is currently running. Restart becomes available once it completes.
+            </p>
+          ) : null}
+        </CardHeader>
+        <CardContent className="grid gap-4 md:grid-cols-3">
+          <div>
+            <p className="text-xs text-muted-foreground uppercase">
+              Starting Balance
+            </p>
+            <p className="text-lg font-semibold">
+              {formatCurrency(backtest.startingBalance)}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground uppercase">
+              Ending Balance
+            </p>
+            <p className="text-lg font-semibold">
+              {formatCurrency(backtest.endingBalance)}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground uppercase">P&amp;L</p>
+            <p
+              className={cn("text-lg font-semibold", {
+                "text-green-600": isPositive,
+                "text-red-600": !isPositive,
+              })}
+            >
+              {formatCurrency(backtest.totalPnl)} (
+              {formatPercent(backtest.totalPnlPercent)})
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground uppercase">Total Trades</p>
+            <p className="text-lg font-semibold">{backtest.totalTrades}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground uppercase">Win Rate</p>
+            <p className="text-lg font-semibold">
+              {Number.isFinite(winRate) ? `${winRate.toFixed(1)}%` : "—"}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground uppercase">Duration</p>
+            <p className="text-sm">
+              Started: {formatDateTime(backtest.startedAt)}
+              <br />
+              Completed: {formatDateTime(backtest.completedAt)}
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-6 lg:grid-cols-[2fr,1fr]">
+        <Card>
+          <CardHeader>
+            <CardTitle>Ticker Lifecycle</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Latest snapshot of candidates moving through the lifecycle.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {hasLifecycleSnapshot && primaryLifecycleStat ? (
+              <>
+                <div className="rounded-lg border bg-muted/40 px-4 py-3">
+                  <p className="text-xs uppercase text-muted-foreground">
+                    Candidates Passing Screener
+                  </p>
+                  <p className="text-2xl font-semibold">
+                    {formatCount(primaryLifecycleStat.value)}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    Based on the most recent iteration event.
+                  </p>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {secondaryLifecycleStats.map((stat) => (
+                    <div key={stat.key} className="rounded-lg border p-3">
+                      <p className="text-xs uppercase text-muted-foreground">
+                        {stat.label}
+                      </p>
+                      <p className="text-xl font-semibold">
+                        {formatCount(stat.value)}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        {stat.description}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Lifecycle stats will appear once the backtest emits iteration updates.
               </p>
-              <p className="text-lg font-semibold">{backtest.totalTrades}</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground uppercase">
-                Win Rate
-              </p>
-              <p className="text-lg font-semibold">
-                {Number.isFinite(winRate) ? `${winRate.toFixed(1)}%` : "—"}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground uppercase">
-                Duration
-              </p>
-              <p className="text-sm">
-                Started: {formatDateTime(backtest.startedAt)}
-                <br />
-                Completed: {formatDateTime(backtest.completedAt)}
-              </p>
-            </div>
+            )}
           </CardContent>
         </Card>
 
@@ -295,7 +486,7 @@ export function BacktestDetailsPage({ backtestId }: BacktestDetailsPageProps) {
             </div>
             <Progress value={progressPercent} max={100} />
             {progressStats ? (
-              <dl className="grid grid-cols-2 gap-2 text-sm">
+              <dl className="grid grid-cols-2 gap-3 text-sm">
                 <div>
                   <dt className="text-muted-foreground">Minute</dt>
                   <dd className="font-medium">{progressStats.minuteIndex}</dd>
@@ -304,34 +495,6 @@ export function BacktestDetailsPage({ backtestId }: BacktestDetailsPageProps) {
                   <dt className="text-muted-foreground">Simulated Time</dt>
                   <dd className="font-medium">
                     {formatDateTime(progressStats.simulatedTime ?? null)}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-muted-foreground">Active Positions</dt>
-                  <dd className="font-medium">
-                    {progressStats.activePositions}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-muted-foreground">Pending Orders</dt>
-                  <dd className="font-medium">
-                    {progressStats.pendingOrders}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-muted-foreground">Fills This Minute</dt>
-                  <dd className="font-medium">{progressStats.filledOrders}</dd>
-                </div>
-                <div>
-                  <dt className="text-muted-foreground">Raw Tickers</dt>
-                  <dd className="font-medium">
-                    {progressStats.rawTickerCount}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-muted-foreground">After Setup</dt>
-                  <dd className="font-medium">
-                    {progressStats.tickersAfterSetup}
                   </dd>
                 </div>
                 <div>
@@ -570,7 +733,9 @@ export function BacktestDetailsPage({ backtestId }: BacktestDetailsPageProps) {
                             {formatPercent(trade.realizedPnlPercent)}
                           </div>
                         </TableCell>
-                        <TableCell className="capitalize">{trade.status}</TableCell>
+                        <TableCell className="capitalize">
+                          {trade.status}
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -594,12 +759,16 @@ export function BacktestDetailsPage({ backtestId }: BacktestDetailsPageProps) {
                     {orders.map((order) => (
                       <TableRow key={order.id}>
                         <TableCell>{order.symbol}</TableCell>
-                        <TableCell className="uppercase">{order.side}</TableCell>
+                        <TableCell className="uppercase">
+                          {order.side}
+                        </TableCell>
                         <TableCell>{order.quantity}</TableCell>
                         <TableCell className="capitalize">
                           {order.status}
                         </TableCell>
-                        <TableCell>{formatDateTime(order.submittedAt)}</TableCell>
+                        <TableCell>
+                          {formatDateTime(order.submittedAt)}
+                        </TableCell>
                         <TableCell>{formatDateTime(order.filledAt)}</TableCell>
                       </TableRow>
                     ))}
@@ -613,5 +782,3 @@ export function BacktestDetailsPage({ backtestId }: BacktestDetailsPageProps) {
     </div>
   );
 }
-
-

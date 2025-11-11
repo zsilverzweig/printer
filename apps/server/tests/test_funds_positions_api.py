@@ -15,6 +15,51 @@ import pytest
 import uuid
 from datetime import datetime
 from unittest.mock import patch, Mock, AsyncMock
+def test_list_all_fund_positions_returns_grouped_data():
+    """Endpoint returns grouped positions payload."""
+    sample_payload = [
+        {
+            "symbol": "AAPL",
+            "latest_price": 120.0,
+            "total_quantity": 8.0,
+            "total_cost_basis": 860.0,
+            "total_market_value": 960.0,
+            "total_unrealized_pl": 100.0,
+            "total_unrealized_pl_percent": 11.6279,
+            "funds": [
+                {
+                    "fund_id": "fund-a",
+                    "fund_name": "Alpha Fund",
+                    "fund_mode": "sim",
+                    "fund_status": "active",
+                    "icon": None,
+                    "icon_color": None,
+                    "ticker": None,
+                    "quantity": 5.0,
+                    "avg_entry_price": 100.0,
+                    "cost_basis": 500.0,
+                    "updated_at": "2024-11-10T15:30:00Z",
+                    "market_value": 600.0,
+                    "unrealized_pl": 100.0,
+                    "unrealized_pl_percent": 20.0,
+                }
+            ],
+        }
+    ]
+
+    client = TestClient(app)
+
+    with patch(
+        "app.routers.funds.get_grouped_open_positions",
+        AsyncMock(return_value=sample_payload),
+    ) as mock_get_positions:
+        response = client.get("/api/funds/positions")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json() == {"positions": sample_payload}
+    mock_get_positions.assert_awaited_once()
+
+
 
 from fastapi.testclient import TestClient
 from fastapi import status

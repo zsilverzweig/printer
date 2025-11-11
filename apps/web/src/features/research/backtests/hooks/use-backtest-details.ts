@@ -1,8 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { backtestService } from "../services/backtest-service";
+import { useWebSocket } from "@/lib/hooks/use-websocket";
+
+import {
+  backtestService,
+  getBacktestWebSocketUrl,
+  parseBacktestEvent,
+} from "../services/backtest-service";
 import type {
   Backtest,
   BacktestEvent,
@@ -112,7 +118,13 @@ export function useBacktestDetails(backtestId: string): UseBacktestDetailsResult
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  const websocketCleanupRef = useRef<(() => void) | null>(null);
+  const backtestWsUrl = useMemo(
+    () => getBacktestWebSocketUrl(backtestId),
+    [backtestId]
+  );
+
+  const { lastMessage: wsMessage, error: wsError } =
+    useWebSocket<Record<string, unknown>>(backtestWsUrl, { autoReconnect: true });
 
   const loadInitialData = useCallback(async () => {
     setLoading(true);
@@ -150,51 +162,46 @@ export function useBacktestDetails(backtestId: string): UseBacktestDetailsResult
   }, [loadInitialData]);
 
   useEffect(() => {
-    if (websocketCleanupRef.current) {
-      websocketCleanupRef.current();
-      websocketCleanupRef.current = null;
+    if (!wsMessage) {
+      return;
     }
 
-    websocketCleanupRef.current = backtestService.openBacktestWebSocket(
-      backtestId,
-      (event) => {
-        setEvents((prev) => {
-          const existingIndex = prev.findIndex((item) => item.id === event.id);
-          if (existingIndex !== -1) {
-            const copy = [...prev];
-            copy[existingIndex] = event;
-            return copy;
-          }
-          return [...prev, event].sort((a, b) => a.sequence - b.sequence);
-        });
-
-        if (event.eventType === "complete" || event.eventType === "error") {
-          setBacktest((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  status: event.eventType === "complete" ? "completed" : "failed",
-                  completedAt:
-                    event.details?.completed_at ??
-                    event.details?.completedAt ??
-                    prev.completedAt,
-                }
-              : prev
-          );
+    try {
+      const event = parseBacktestEvent(wsMessage);
+      setEvents((prev) => {
+        const existingIndex = prev.findIndex((item) => item.id === event.id);
+        if (existingIndex !== -1) {
+          const copy = [...prev];
+          copy[existingIndex] = event;
+          return copy;
         }
-      },
-      (wsError) => {
-        console.warn("Backtest websocket error:", wsError);
-      }
-    );
+        return [...prev, event].sort((a, b) => a.sequence - b.sequence);
+      });
 
-    return () => {
-      if (websocketCleanupRef.current) {
-        websocketCleanupRef.current();
-        websocketCleanupRef.current = null;
+      if (event.eventType === "complete" || event.eventType === "error") {
+        setBacktest((prev) =>
+          prev
+            ? {
+                ...prev,
+                status: event.eventType === "complete" ? "completed" : "failed",
+                completedAt:
+                  event.details?.completed_at ??
+                  event.details?.completedAt ??
+                  prev.completedAt,
+              }
+            : prev
+        );
       }
-    };
-  }, [backtestId]);
+    } catch (err) {
+      console.error("Failed to parse backtest event:", err);
+    }
+  }, [wsMessage]);
+
+  useEffect(() => {
+    if (wsError) {
+      console.warn("Backtest websocket error:", wsError);
+    }
+  }, [wsError]);
 
   const latestIterationEvent = useMemo(() => {
     const ordered = [...events].sort((a, b) => a.sequence - b.sequence);

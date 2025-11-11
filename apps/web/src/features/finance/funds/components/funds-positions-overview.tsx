@@ -172,9 +172,111 @@ export function FundsPositionsOverview({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {positions.map((group) => (
-                <TableSection key={group.symbol} group={group} />
-              ))}
+              {positions.map((group) => {
+                if (!group.funds.length) {
+                  return (
+                    <TableRow key={`${group.symbol}-empty`}>
+                      <TableCell className="font-semibold text-base">
+                        {group.symbol}
+                      </TableCell>
+                      <TableCell
+                        colSpan={4}
+                        className="text-center text-muted-foreground"
+                      >
+                        No active fund positions
+                      </TableCell>
+                    </TableRow>
+                  );
+                }
+
+                return group.funds.map((fund, index) => {
+                  const isFirstRow = index === 0;
+                  const netClass =
+                    (group.totalUnrealizedPl ?? 0) >= 0
+                      ? "text-green-600"
+                      : "text-red-600";
+                  const fundNetClass =
+                    (fund.unrealizedPl ?? 0) >= 0
+                      ? "text-green-600"
+                      : "text-red-600";
+
+                  return (
+                    <TableRow key={`${group.symbol}-${fund.fundId}`}>
+                      {isFirstRow && (
+                        <TableCell
+                          rowSpan={group.funds.length}
+                          className="align-top"
+                        >
+                          <div className="font-semibold text-base">
+                            {group.symbol}
+                          </div>
+                          <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+                            {group.latestPrice !== null && (
+                              <div>
+                                Last price:{" "}
+                                <span className="text-foreground">
+                                  {formatCurrency(group.latestPrice)}
+                                </span>
+                              </div>
+                            )}
+                            <div>
+                              Total quantity:{" "}
+                              <span className="text-foreground font-medium">
+                                {formatNumber(group.totalQuantity)}
+                              </span>
+                            </div>
+                            <div>
+                              Net open P/L:{" "}
+                              <span className={`${netClass} font-medium`}>
+                                {formatCurrency(group.totalUnrealizedPl)}
+                                {group.totalUnrealizedPlPercent !== null && (
+                                  <span className="ml-1 text-xs text-muted-foreground">
+                                    (
+                                    {formatNumber(group.totalUnrealizedPlPercent)}
+                                    %)
+                                  </span>
+                                )}
+                              </span>
+                            </div>
+                          </div>
+                        </TableCell>
+                      )}
+                      <TableCell className="space-y-1">
+                        <div className="font-medium">{fund.fundName}</div>
+                        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                          <Badge variant="secondary">
+                            {fund.fundMode.toUpperCase()}
+                          </Badge>
+                          <span>Status: {fund.fundStatus}</span>
+                          {fund.ticker && <span>Ticker: {fund.ticker}</span>}
+                          {fund.updatedAt && (
+                            <span>
+                              Updated:{" "}
+                              {new Date(fund.updatedAt).toLocaleString()}
+                            </span>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {formatNumber(fund.quantity)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {formatCurrency(fund.costBasis)}
+                      </TableCell>
+                      <TableCell className={`text-right ${fundNetClass}`}>
+                        {formatCurrency(fund.unrealizedPl)}
+                        {fund.unrealizedPlPercent !== null && (
+                          <span className="ml-2 text-xs text-muted-foreground">
+                            (
+                            {formatNumber(fund.unrealizedPlPercent)}
+                            %)
+                          </span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                });
+              })}
             </TableBody>
           </Table>
         </div>
@@ -182,96 +284,4 @@ export function FundsPositionsOverview({
     </Card>
   );
 }
-
-interface TableSectionProps {
-  group: ReturnType<typeof useFundPositionsOverview>["positions"][number];
-}
-
-function TableSection({ group }: TableSectionProps) {
-  const latestPriceLabel =
-    group.latestPrice !== null
-      ? `${formatCurrency(group.latestPrice)}`
-      : "Price unavailable";
-
-  const summaryQuantity = formatNumber(group.totalQuantity);
-  const summaryUnrealized = formatCurrency(group.totalUnrealizedPl);
-
-  return (
-    <>
-      <TableRow className="bg-muted/50">
-        <TableCell colSpan={5} className="text-sm">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-3">
-              <span className="font-semibold text-base">{group.symbol}</span>
-              <Badge variant="outline">{latestPriceLabel}</Badge>
-            </div>
-            <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
-              <span>
-                Total quantity:{" "}
-                <span className="font-medium text-foreground">
-                  {summaryQuantity}
-                </span>
-              </span>
-              <span>
-                Net P/L:{" "}
-                <span
-                  className={
-                    (group.totalUnrealizedPl ?? 0) >= 0
-                      ? "text-green-600"
-                      : "text-red-600"
-                  }
-                >
-                  {summaryUnrealized}
-                </span>
-              </span>
-            </div>
-          </div>
-        </TableCell>
-      </TableRow>
-      {group.funds.map((fund) => (
-        <TableRow key={`${group.symbol}-${fund.fundId}`}>
-          <TableCell className="text-muted-foreground">↳</TableCell>
-          <TableCell className="space-y-1">
-            <div className="font-medium">{fund.fundName}</div>
-            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-              <Badge variant="secondary">{fund.fundMode.toUpperCase()}</Badge>
-              <span>Status: {fund.fundStatus}</span>
-              {fund.ticker && (
-                <span className="inline-flex items-center gap-1">
-                  <span className="text-muted-foreground">Ticker:</span>
-                  <span>{fund.ticker}</span>
-                </span>
-              )}
-              {fund.updatedAt && (
-                <span className="inline-flex items-center gap-1">
-                  <span className="text-muted-foreground">Updated:</span>
-                  <span>{new Date(fund.updatedAt).toLocaleString()}</span>
-                </span>
-              )}
-            </div>
-          </TableCell>
-          <TableCell className="text-right">
-            {formatNumber(fund.quantity)}
-          </TableCell>
-          <TableCell className="text-right">
-            {formatCurrency(fund.costBasis)}
-          </TableCell>
-          <TableCell
-            className={`text-right ${
-              (fund.unrealizedPl ?? 0) >= 0 ? "text-green-600" : "text-red-600"
-            }`}
-          >
-            {formatCurrency(fund.unrealizedPl)}
-            {fund.unrealizedPlPercent !== null && (
-              <span className="ml-2 text-xs text-muted-foreground">
-                ({formatNumber(fund.unrealizedPlPercent)}%)
-              </span>
-            )}
-          </TableCell>
-        </TableRow>
-      ))}
-    </>
-  );
-}
-
 

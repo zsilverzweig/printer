@@ -208,6 +208,38 @@ class TransactionResponse(BaseModel):
         from_attributes = True
 
 
+class FundPositionDetailResponse(BaseModel):
+    fund_id: str
+    fund_name: str
+    fund_mode: str
+    fund_status: str
+    icon: Optional[str]
+    icon_color: Optional[str]
+    ticker: Optional[str]
+    quantity: float
+    avg_entry_price: float
+    cost_basis: float
+    updated_at: Optional[str]
+    market_value: Optional[float]
+    unrealized_pl: Optional[float]
+    unrealized_pl_percent: Optional[float]
+
+
+class SymbolPositionsResponse(BaseModel):
+    symbol: str
+    latest_price: Optional[float]
+    total_quantity: float
+    total_cost_basis: float
+    total_market_value: Optional[float]
+    total_unrealized_pl: Optional[float]
+    total_unrealized_pl_percent: Optional[float]
+    funds: List[FundPositionDetailResponse]
+
+
+class GroupedFundPositionsResponse(BaseModel):
+    positions: List[SymbolPositionsResponse]
+
+
 class ManualOrderRequest(BaseModel):
     symbol: str
     side: str
@@ -784,8 +816,11 @@ async def list_funds(include_archived: bool = False) -> List[dict]:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/funds/positions")
-async def list_all_fund_positions() -> dict:
+@router.get(
+    "/funds/positions",
+    response_model=GroupedFundPositionsResponse,
+)
+async def list_all_fund_positions() -> GroupedFundPositionsResponse:
     """
     Retrieve open positions grouped by symbol across all funds.
     """
