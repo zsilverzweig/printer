@@ -13,6 +13,7 @@ import asyncio
 import sys
 import os
 from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 # Add parent directory to path
@@ -39,14 +40,26 @@ from market_data_loader_core import (
 )
 
 from app.services.core.database import get_async_session, init_db
+from app.services.core.time_context import get_current_time
 from app.services.screener.screener_snapshot import fetch_snapshot_all
 from app.services.market.market_data_service import get_market_data_service
+
+
+_EASTERN_TIMEZONE = ZoneInfo("America/New_York")
+
+
+def _get_et_today() -> date:
+    """Return the current trading date in Eastern Time."""
+    current_time = get_current_time()
+    if current_time.tzinfo is None:
+        current_time = current_time.replace(tzinfo=timezone.utc)
+    return current_time.astimezone(_EASTERN_TIMEZONE).date()
 
 
 def _recent_trading_days(count: int = 5) -> List[date]:
     """Return the most recent trading days (skip weekends), newest first."""
     days: List[date] = []
-    current = datetime.now(timezone.utc).date()
+    current = _get_et_today()
     while len(days) < count:
         if current.weekday() < 5:
             days.append(current)
@@ -521,7 +534,7 @@ async def load_yesterday_data(init_db_flag: bool = True, api_key: Optional[str] 
     client = create_polygon_client(api_key)
     
     # Get yesterday (skip weekends)
-    today = datetime.now(timezone.utc).date()
+    today = _get_et_today()
     yesterday = today - timedelta(days=1)
     while yesterday.weekday() >= 5:  # Skip weekends
         yesterday -= timedelta(days=1)
@@ -681,7 +694,7 @@ async def load_comprehensive_data(init_db_flag: bool = True, api_key: Optional[s
     snapshot_data = fetch_snapshot_all(api_key)
     symbols = [ticker["ticker"] for ticker in snapshot_data if "ticker" in ticker]
     
-    today = datetime.now(timezone.utc).date()
+    today = _get_et_today()
     
     # Define timescale groups so we can prioritize daily bars first
     daily_timescales = ['1day']

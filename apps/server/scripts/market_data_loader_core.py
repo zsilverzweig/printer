@@ -49,6 +49,7 @@ PoolManager.connection_from_host = _connection_from_host_with_pool
 
 from app.models.market_data import MarketData, SymbolDateValidation
 from app.services.core.database import get_async_session
+from app.services.core.time_context import get_current_time
 from app.services.market.metrics_calculator import METRIC_FIELDS, MetricsCalculator, is_metrics_timescale
 
 # Optimize logging: default to INFO for visibility, allow override via env
@@ -325,6 +326,11 @@ async def create_validation(symbol: str, date: datetime.date, timescale: str, ba
     last_bar = max(b.time for b in date_bars) if date_bars else None
     
     async with get_async_session() as session:
+        validated_at = get_current_time()
+        if validated_at.tzinfo is None:
+            validated_at = validated_at.replace(tzinfo=timezone.utc)
+        validated_at = validated_at.astimezone(timezone.utc)
+
         stmt = insert(SymbolDateValidation).values({
             "symbol": symbol.upper(),
             "date": date,
@@ -333,7 +339,7 @@ async def create_validation(symbol: str, date: datetime.date, timescale: str, ba
             "bar_count": bar_count,
             "first_bar_time": first_bar,
             "last_bar_time": last_bar,
-            "validated_at": datetime.now(timezone.utc)
+            "validated_at": validated_at
         })
         stmt = stmt.on_conflict_do_update(
             index_elements=["symbol", "date", "timescale"],

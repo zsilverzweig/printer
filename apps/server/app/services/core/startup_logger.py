@@ -78,22 +78,36 @@ class StartupLogger:
         return colors.get(status, Colors.RESET)
     
     def print_banner(self) -> None:
-        """Print ASCII art banner for PRINTER."""
-        banner = """
-╔═══════════════════════════════════════════════════════════════╗
-║                                                               ║
-║     ██████╗ ██████╗ ██╗███╗   ██╗████████╗███████╗██████╗    ║
-║     ██╔══██╗██╔══██╗██║████╗  ██║╚══██╔══╝██╔════╝██╔══██╗   ║
-║     ██████╔╝██████╔╝██║██╔██╗ ██║   ██║   █████╗  ██████╔╝   ║
-║     ██╔═══╝ ██╔══██╗██║██║╚██╗██║   ██║   ██╔══╝  ██╔══██╗   ║
-║     ██║     ██║  ██║██║██║ ╚████║   ██║   ███████╗██║  ██║   ║
-║     ╚═╝     ╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝   ╚═╝   ╚══════╝╚═╝  ╚═╝   ║
-║                                                               ║
-║          AI-Powered Investment Research Engine                ║
-║                                                               ║
-╚═══════════════════════════════════════════════════════════════╝
-        """
-        print(self._colorize(banner.strip(), Colors.CYAN), file=self.stream, flush=True)
+        """Print an evenly spaced ASCII art banner for PRINTER."""
+        art_lines = [
+            "██████╗ ██████╗ ██╗███╗   ██╗████████╗███████╗██████╗ ",
+            "██╔══██╗██╔══██╗██║████╗  ██║╚══██╔══╝██╔════╝██╔══██╗",
+            "██████╔╝██████╔╝██║██╔██╗ ██║   ██║   █████╗  ██████╔╝",
+            "██╔═══╝ ██╔══██╗██║██║╚██╗██║   ██║   ██╔══╝  ██╔══██╗",
+            "██║     ██║  ██║██║██║ ╚████║   ██║   ███████╗██║  ██║",
+            "╚═╝     ╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝   ╚═╝   ╚══════╝╚═╝  ╚═╝",
+        ]
+        tagline = "AI-Powered Investment Research Engine"
+        padding = 4
+        max_content_width = max(len(line) for line in (*art_lines, tagline))
+        inner_width = max_content_width + padding * 2
+        horizontal = "═" * inner_width
+
+        def wrap_line(content: str) -> str:
+            return f"║{content.center(inner_width)}║"
+
+        banner_lines = [
+            f"╔{horizontal}╗",
+            wrap_line(""),
+            *(wrap_line(line) for line in art_lines),
+            wrap_line(""),
+            wrap_line(tagline),
+            wrap_line(""),
+            f"╚{horizontal}╝",
+        ]
+
+        banner = "\n".join(banner_lines)
+        print(self._colorize(banner, Colors.CYAN), file=self.stream, flush=True)
         print("", file=self.stream, flush=True)
     
     def start_phase(self, phase_name: str) -> None:
