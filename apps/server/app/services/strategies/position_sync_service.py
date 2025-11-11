@@ -120,19 +120,19 @@ class PositionSyncService:
                     f"P&L: ${alpaca_pos['unrealized_pl']:.2f}"
                 )
             
-            # Check for positions closed in Alpaca but still in our transaction ledger
-            alpaca_symbols = {pos["symbol"] for pos in alpaca_positions}
-            closed_in_alpaca = fund_symbols - alpaca_symbols
-            
-            if closed_in_alpaca:
-                logger.warning(
-                    f"⚠️  Found {len(closed_in_alpaca)} position(s) closed in Alpaca but still in transaction ledger: "
-                    f"{closed_in_alpaca}"
-                )
-                
-                # Trigger reconciliation for each closed position
-                for symbol in closed_in_alpaca:
-                    await self._reconcile_closed_position(fund_id, fund_name, symbol)
+            # NOTE: Temporarily disabling closed position reconciliation check
+            # alpaca_symbols = {pos["symbol"] for pos in alpaca_positions}
+            # closed_in_alpaca = fund_symbols - alpaca_symbols
+            #
+            # if closed_in_alpaca:
+            #     logger.warning(
+            #         f"⚠️  Found {len(closed_in_alpaca)} position(s) closed in Alpaca but still in transaction ledger: "
+            #         f"{closed_in_alpaca}"
+            #     )
+            #
+            #     # Trigger reconciliation for each closed position
+            #     for symbol in closed_in_alpaca:
+            #         await self._reconcile_closed_position(fund_id, fund_name, symbol)
             
             if position_cache:
                 logger.info(

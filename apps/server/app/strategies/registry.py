@@ -176,6 +176,12 @@ def _auto_register_strategies() -> None:
         register_strategy(FourRedCandlesStrategy)
     except ImportError as e:
         logger.warning(f"Failed to import FourRedCandlesStrategy: {e}")
+
+    try:
+        from app.strategies.four_red_candles_v2 import FourRedCandlesV2Strategy
+        register_strategy(FourRedCandlesV2Strategy)
+    except ImportError as e:
+        logger.warning(f"Failed to import FourRedCandlesV2Strategy: {e}")
     
     # Old strategies archived - uncomment when needed
     # try:

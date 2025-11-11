@@ -10,6 +10,7 @@ from typing import Any, Dict, Optional
 
 from app.models.backtests import BacktestEvent
 from app.services.core.database import get_async_session
+from app.services.backtest.progress_broker import backtest_progress_broker
 from app.services.core.time_context import (
     get_backtest_id,
     get_backtest_context,
@@ -25,7 +26,7 @@ async def log_event(
     *,
     sequence: Optional[int] = None,
     message: Optional[str] = None,
-    metadata: Optional[Dict[str, Any]] = None,
+    details: Optional[Dict[str, Any]] = None,
     simulated_time: Optional[datetime] = None,
 ) -> None:
     """
@@ -49,13 +50,27 @@ async def log_event(
         simulated_time=simulated_time,
         sequence=sequence,
         message=message,
-        metadata=metadata or {},
+        details=details or {},
     )
 
     async with get_async_session() as session:
         session.add(event)
         try:
             await session.commit()
+            await session.refresh(event)
+
+            payload = {
+                "id": event.id,
+                "backtest_id": event.backtest_id,
+                "fund_id": event.fund_id,
+                "event_type": event.event_type,
+                "simulated_time": event.simulated_time.isoformat() if event.simulated_time else None,
+                "sequence": event.sequence,
+                "message": event.message,
+                "details": event.details or {},
+                "created_at": event.created_at.isoformat() if event.created_at else None,
+            }
+            await backtest_progress_broker.publish(backtest_id, payload)
         except Exception:
             logger.exception("Failed to record backtest event '%s'", event_type)
 

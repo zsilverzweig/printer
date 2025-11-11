@@ -35,6 +35,7 @@ from app.services.backtest.backtest_lookup_service import check_lookup_coverage,
 from app.services.strategies.strategy_factory import create_strategy_engine
 from app.services.trading.alpaca_backtest_wrapper import AlpacaBacktestWrapper
 from app.services.events.event_service import event_service
+from app.services.backtest.backtest_event_logger import log_event as log_backtest_event
 
 logger = logging.getLogger(__name__)
 
@@ -145,6 +146,8 @@ class BacktestCoordinator:
         self,
         fund_id: str,
         backtest_date: date,
+        monitoring_interval_minutes: Optional[int] = None,
+        duration_minutes: Optional[int] = None,
     ) -> str:
         """
         Run backtest for a single trading day.
@@ -193,6 +196,47 @@ class BacktestCoordinator:
                     if screening_criteria:
                         screening_criteria_name = screening_criteria.name
                 
+                strategy_config = fund.strategy_config or {}
+                backtest_settings = {}
+                if isinstance(strategy_config, dict):
+                    backtest_settings = (
+                        strategy_config.get("backtest")
+                        or strategy_config.get("backtest_settings")
+                        or {}
+                    )
+
+                effective_monitoring_interval = (
+                    monitoring_interval_minutes
+                    or backtest_settings.get("monitoring_interval_minutes")
+                    or backtest_settings.get("monitoringIntervalMinutes")
+                    or 5
+                )
+                try:
+                    effective_monitoring_interval = int(effective_monitoring_interval)
+                except (ValueError, TypeError):
+                    effective_monitoring_interval = 5
+                effective_monitoring_interval = max(1, min(30, effective_monitoring_interval))
+
+                configured_duration = (
+                    duration_minutes
+                    or backtest_settings.get("duration_minutes")
+                    or backtest_settings.get("durationMinutes")
+                    or backtest_settings.get("max_minutes")
+                )
+                effective_duration = None
+                if configured_duration is not None:
+                    try:
+                        effective_duration = int(configured_duration)
+                        effective_duration = max(10, min(391, effective_duration))
+                    except (ValueError, TypeError):
+                        effective_duration = None
+
+                metadata_payload = {
+                    "monitoring_interval_minutes": effective_monitoring_interval,
+                }
+                if effective_duration is not None:
+                    metadata_payload["duration_minutes"] = effective_duration
+
                 # Create backtest record with snapshot of fund/screener names
                 backtest = Backtest(
                     id=backtest_id,
@@ -205,7 +249,8 @@ class BacktestCoordinator:
                     screening_criteria_id=fund.screening_criteria_id,
                     screening_criteria_name=screening_criteria_name,  # Snapshot screener name
                     starting_balance=fund.balance,
-                    started_at=get_current_time()
+                    started_at=get_current_time(),
+                    backtest_metadata=metadata_payload,
                 )
                 session.add(backtest)
                 await session.commit()
@@ -233,10 +278,16 @@ class BacktestCoordinator:
             await self._ensure_data_available(fund, backtest_date, backtest_id)
             
             # Step 2: Run trading day
-            await self._run_trading_day(backtest_id, fund, backtest_date)
+            loop_metrics = await self._run_trading_day(
+                backtest_id,
+                fund,
+                backtest_date,
+                monitoring_interval_minutes=effective_monitoring_interval,
+                duration_minutes=effective_duration,
+            )
             
             # Step 3: Finalize results
-            await self._finalize_backtest(backtest_id)
+            await self._finalize_backtest(backtest_id, loop_metrics)
             
             logger.info(f"✅ [BT:{backtest_id[:8]}] Backtest completed successfully")
             return backtest_id
@@ -446,13 +497,12 @@ class BacktestCoordinator:
                 # Populate the lookup table for this date
                 result = await populate_lookup_for_date(backtest_date, timescale='1min')
                 logger.info(f"✅ Lookup table populated: {result['total_rows']:,} rows for {result['symbols']} symbols")
-                await event_service.log_backtest_event(
-                    backtest_id=backtest_id,
-                    fund_id=fund.id,
-                    event_type="lookup_populated",
+                await log_backtest_event(
+                    fund.id,
+                    "lookup_populated",
                     simulated_time=datetime.combine(backtest_date, dt_time(9, 30)).replace(tzinfo=timezone.utc),
                     message=f"Populated lookup for {backtest_date}",
-                    metadata={
+                    details={
                         "total_rows": result.get("total_rows"),
                         "symbols": result.get("symbols"),
                         "size": result.get("size"),
@@ -463,13 +513,12 @@ class BacktestCoordinator:
                 raise ValueError(f"Failed to populate lookup data for {backtest_date}: {str(e)}")
         else:
             logger.info(f"✅ Lookup data exists: {coverage['total_rows']:,} rows, {coverage['symbols']} symbols, {coverage['minutes']} minutes")
-            await event_service.log_backtest_event(
-                backtest_id=backtest_id,
-                fund_id=fund.id,
-                event_type="lookup_verified",
+            await log_backtest_event(
+                fund.id,
+                "lookup_verified",
                 simulated_time=datetime.combine(backtest_date, dt_time(9, 30)).replace(tzinfo=timezone.utc),
                 message=f"Lookup coverage verified for {backtest_date}",
-                metadata=coverage,
+                details=coverage,
             )
         
         logger.info(f"✅ Data check complete for {backtest_date}")
@@ -478,7 +527,10 @@ class BacktestCoordinator:
         self,
         backtest_id: str,
         fund: Fund,
-        backtest_date: date
+        backtest_date: date,
+        *,
+        monitoring_interval_minutes: int,
+        duration_minutes: Optional[int] = None,
     ) -> None:
         """
         Run the trading day minute-by-minute.
@@ -500,6 +552,10 @@ class BacktestCoordinator:
             backtest_date,
             dt_time(16, 0)
         ).replace(tzinfo=timezone.utc)
+        if duration_minutes:
+            override_end = start_time + timedelta(minutes=duration_minutes)
+            if override_end < end_time:
+                end_time = override_end
         
         # Initialize backtest context
         set_backtest_context(backtest_id, start_time)
@@ -554,17 +610,17 @@ class BacktestCoordinator:
             
             loop_wall_start = time.perf_counter()
             iteration_sequence = 0
-            await event_service.log_backtest_event(
-                backtest_id=backtest_id,
-                fund_id=fund.id,
-                event_type="start",
-                simulated_time=start_time,
+            await log_backtest_event(
+                fund.id,
+                "loop_start",
                 sequence=iteration_sequence,
+                simulated_time=start_time,
                 message="Backtest trading loop started",
-                metadata={
+                details={
                     "start_time": start_time.isoformat(),
                     "end_time": end_time.isoformat(),
-                    "monitoring_interval_minutes": MONITORING_INTERVAL_MINUTES,
+                    "monitoring_interval_minutes": monitoring_interval_minutes,
+                    "duration_minutes": duration_minutes,
                 },
             )
             
@@ -574,7 +630,7 @@ class BacktestCoordinator:
                 fund,
                 start_time,
                 end_time,
-                MONITORING_INTERVAL_MINUTES=5
+                monitoring_interval_minutes=monitoring_interval_minutes
             )
             total_tickers_in_cache = sum(len(tickers) for tickers in screener_cache.values())
             logger.info(
@@ -593,16 +649,20 @@ class BacktestCoordinator:
             iteration_count = 0
             
             # Run strategy monitoring every N minutes (not every minute - too expensive)
-            MONITORING_INTERVAL_MINUTES = 5
+            monitoring_interval = max(1, monitoring_interval_minutes)
             
             while current_time <= end_time:
                 iteration_sequence += 1
                 iteration_wall_start = time.perf_counter()
                 tickers_analyzed = 0
+                tickers_after_setup = 0
                 filled_count = 0
+                filled_order_ids: List[str] = []
                 pending_orders_snapshot_count = 0
                 iteration_metadata: Dict[str, Any] = {}
                 active_positions: Optional[Dict[str, Any]] = None
+                can_trade = True
+                restriction_reason = None
 
                 # Update backtest time context
                 update_backtest_time(current_time)
@@ -613,7 +673,7 @@ class BacktestCoordinator:
                     logger.info(f"[BT:{backtest_id[:8]}] ⏰ {current_time.strftime('%H:%M')} | {minute_count}/391 min ({progress_pct:.1f}%)")
                 
                 # Run strategy monitoring iteration every N minutes
-                if minute_count % MONITORING_INTERVAL_MINUTES == 0:
+                if minute_count % monitoring_interval == 0:
                     try:
                         iteration_count += 1
                         logger.info(f"[BT:{backtest_id[:8]}] 🔄 Iter {iteration_count} @ {current_time.strftime('%H:%M')} | {minute_count}/391 ({minute_count/391*100:.1f}%)")
@@ -693,6 +753,7 @@ class BacktestCoordinator:
                             # Run setup phase when required
                             if tickers and execution_strategy.requires_setup:
                                 tickers = await strategy_engine.screener_connector.run_setup_phase(tickers)
+                            tickers_after_setup = len(tickers)
                             
                             # Refresh fund balance before risk checks
                             await strategy_engine.refresh_fund_balance()
@@ -763,6 +824,19 @@ class BacktestCoordinator:
                                     severity="info",
                                     timestamp=current_time
                                 )
+                            filled_order_ids = [order.id for order in filled_orders]
+
+                            await log_backtest_event(
+                                fund.id,
+                                "orders_filled",
+                                sequence=iteration_sequence,
+                                simulated_time=current_time,
+                details={
+                                    "minute_index": minute_count,
+                                    "filled_count": filled_count,
+                                    "order_ids": filled_order_ids,
+                                },
+                            )
                         
                         # Update position cache after fills
                         await self._sync_positions_from_transactions(
@@ -777,7 +851,7 @@ class BacktestCoordinator:
                     active_positions = await strategy_engine.get_active_positions()
                 active_positions_count = len(active_positions or {})
 
-                if minute_count % MONITORING_INTERVAL_MINUTES != 0:
+                if minute_count % monitoring_interval != 0:
                     snapshot_orders = await strategy_engine.get_pending_orders()
                     pending_orders_snapshot_count = len(snapshot_orders)
 
@@ -800,23 +874,28 @@ class BacktestCoordinator:
                 iteration_metadata.update(
                     {
                         "minute_index": minute_count,
+                        "iteration_count": iteration_count,
                         "tickers_analyzed": tickers_analyzed,
+                        "tickers_after_setup": tickers_after_setup,
                         "active_positions": active_positions_count,
                         "pending_orders": pending_orders_snapshot_count,
                         "filled_orders": filled_count,
+                        "filled_order_ids": filled_order_ids,
+                        "can_trade": can_trade,
+                        "restriction_reason": restriction_reason,
+                        "monitoring_interval_minutes": monitoring_interval,
                         "iteration_ms": round(iteration_duration_ms, 3),
                         "elapsed_ms": round(elapsed_wall_ms, 3),
                     }
                 )
 
-                await event_service.log_backtest_event(
-                    backtest_id=backtest_id,
-                    fund_id=fund.id,
-                    event_type="iteration",
-                    simulated_time=current_time,
+                await log_backtest_event(
+                    fund.id,
+                    "iteration",
                     sequence=iteration_sequence,
+                    simulated_time=current_time,
                     message=f"Iteration {iteration_sequence} at {current_time.strftime('%H:%M')}",
-                    metadata=iteration_metadata,
+            details=iteration_metadata,
                 )
                 
                 # Advance to next minute
@@ -824,33 +903,44 @@ class BacktestCoordinator:
                 minute_count += 1
             
             logger.info(f"✅ Trading day complete: {minute_count} minutes simulated, {iteration_count} strategy iterations")
-            await event_service.log_backtest_event(
-                backtest_id=backtest_id,
-                fund_id=fund.id,
-                event_type="complete",
-                simulated_time=end_time,
+            loop_elapsed_ms = round((time.perf_counter() - loop_wall_start) * 1000, 3)
+            loop_metrics = {
+                "total_minutes": minute_count,
+                "strategy_iterations": iteration_count,
+                "monitoring_interval_minutes": monitoring_interval,
+                "elapsed_ms": loop_elapsed_ms,
+            }
+            if duration_minutes is not None:
+                loop_metrics["duration_minutes"] = duration_minutes
+
+            await log_backtest_event(
+                fund.id,
+                "loop_complete",
                 sequence=iteration_sequence + 1,
+                simulated_time=end_time,
                 message="Backtest trading loop completed",
-                metadata={
-                    "total_minutes": minute_count,
-                    "strategy_iterations": iteration_count,
-                    "elapsed_ms": round((time.perf_counter() - loop_wall_start) * 1000, 3),
-                },
+            details=loop_metrics,
             )
+
+            return loop_metrics
             
         except Exception as e:
             logger.error(f"Error running strategy engine: {e}", exc_info=True)
             failure_sim_time = current_time if "current_time" in locals() else None
-            await event_service.log_backtest_event(
-                backtest_id=backtest_id,
-                fund_id=fund.id,
-                event_type="error",
-                simulated_time=failure_sim_time,
+            minute_index = minute_count if "minute_count" in locals() else None
+            iteration_total = iteration_count if "iteration_count" in locals() else None
+            monitoring_interval_value = monitoring_interval if "monitoring_interval" in locals() else monitoring_interval_minutes
+            await log_backtest_event(
+                fund.id,
+                "loop_error",
                 sequence=iteration_sequence + 1,
+                simulated_time=failure_sim_time,
                 message=f"Backtest trading loop failed: {e}",
-                metadata={
-                    "minute_index": minute_count,
-                    "strategy_iterations": iteration_count,
+            details={
+                    "minute_index": minute_index,
+                    "strategy_iterations": iteration_total,
+                    "monitoring_interval_minutes": monitoring_interval_value,
+                    "duration_minutes": duration_minutes,
                 },
             )
             raise
@@ -860,7 +950,7 @@ class BacktestCoordinator:
         fund: Fund,
         start_time: datetime,
         end_time: datetime,
-        MONITORING_INTERVAL_MINUTES: int
+        monitoring_interval_minutes: int
     ) -> Dict[str, List[str]]:
         """
         Pre-compute screener results for all timestamps in the trading day.
@@ -891,9 +981,9 @@ class BacktestCoordinator:
         timestamps = []
         current = start_time
         while current <= end_time:
-            if (current - start_time).total_seconds() / 60 % MONITORING_INTERVAL_MINUTES == 0:
+            if (current - start_time).total_seconds() / 60 % monitoring_interval_minutes == 0:
                 timestamps.append(current)
-            current += timedelta(minutes=MONITORING_INTERVAL_MINUTES)
+            current += timedelta(minutes=monitoring_interval_minutes)
         
         logger.info(f"Pre-computing screener for {len(timestamps)} timestamps...")
         
@@ -1031,7 +1121,11 @@ class BacktestCoordinator:
         
         return bars
     
-    async def _finalize_backtest(self, backtest_id: str) -> None:
+    async def _finalize_backtest(
+        self,
+        backtest_id: str,
+        loop_metrics: Optional[Dict[str, Any]] = None
+    ) -> None:
         """
         Finalize backtest results.
         
@@ -1090,6 +1184,40 @@ class BacktestCoordinator:
             
             # Update fund balance to reflect backtest result
             fund.balance = backtest.ending_balance
+
+            win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
+            fill_rate = (filled_orders / total_orders * 100) if total_orders > 0 else 0
+
+            metrics_payload: Dict[str, Any] = dict(loop_metrics or {})
+            metrics_payload.update(
+                {
+                    "total_trades": total_trades,
+                    "winning_trades": winning_trades,
+                    "losing_trades": losing_trades,
+                    "total_orders": total_orders,
+                    "filled_orders": filled_orders,
+                    "cancelled_orders": cancelled_orders,
+                    "total_pnl": total_pnl,
+                    "total_pnl_percent": total_pnl_percent,
+                    "win_rate": win_rate,
+                    "fill_rate": fill_rate,
+                }
+            )
+            if (
+                metrics_payload.get("elapsed_ms") is not None
+                and metrics_payload.get("strategy_iterations")
+            ):
+                try:
+                    elapsed_ms = float(metrics_payload["elapsed_ms"])
+                    iterations = int(metrics_payload["strategy_iterations"])
+                    if iterations > 0:
+                        metrics_payload["avg_iteration_ms"] = round(elapsed_ms / iterations, 3)
+                except (ValueError, TypeError):
+                    metrics_payload["avg_iteration_ms"] = None
+
+            metadata = backtest.backtest_metadata or {}
+            metadata["metrics"] = metrics_payload
+            backtest.backtest_metadata = metadata
             await session.commit()
             
             # Log backtest completion event
@@ -1114,9 +1242,6 @@ class BacktestCoordinator:
             )
             
             # Calculate metrics for display
-            win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
-            fill_rate = (filled_orders / total_orders * 100) if total_orders > 0 else 0
-            
             # Beautiful summary logging
             logger.info("=" * 80)
             logger.info(f"🎉 BACKTEST COMPLETE: {fund.name} - {backtest.date.strftime('%Y-%m-%d')}")

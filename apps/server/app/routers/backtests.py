@@ -37,7 +37,7 @@ def _serialize_backtest_event(event: BacktestEvent) -> Dict[str, Any]:
         "simulated_time": event.simulated_time.isoformat() if event.simulated_time else None,
         "sequence": event.sequence,
         "message": event.message,
-        "metadata": event.metadata or {},
+        "details": event.details or {},
         "created_at": event.created_at.isoformat() if event.created_at else None,
     }
 
@@ -58,6 +58,12 @@ async def _load_backtest_events(backtest_id: str) -> List[Dict[str, Any]]:
 class RunBacktestRequest(BaseModel):
     fund_id: str
     date: str  # YYYY-MM-DD format
+    monitoring_interval_minutes: Optional[int] = Field(
+        default=None, ge=1, le=30
+    )
+    duration_minutes: Optional[int] = Field(
+        default=None, ge=10, le=391
+    )
 
 
 class StrategyScreenerCombo(BaseModel):
@@ -266,7 +272,12 @@ async def run_backtest(request: RunBacktestRequest):
         
         # Run backtest
         coordinator = BacktestCoordinator()
-        backtest_id = await coordinator.run_backtest(request.fund_id, backtest_date)
+        backtest_id = await coordinator.run_backtest(
+            request.fund_id,
+            backtest_date,
+            monitoring_interval_minutes=request.monitoring_interval_minutes,
+            duration_minutes=request.duration_minutes,
+        )
         
         # Get backtest record
         async with get_async_session() as session:
@@ -443,6 +454,25 @@ async def get_backtest_trades(backtest_id: str, limit: int = 100):
             "backtest_id": backtest_id,
             "trades": [_serialize_trade(trade) for trade in trades],
             "total": len(trades)
+        }
+
+
+@router.get("/{backtest_id}/metrics")
+async def get_backtest_metrics(backtest_id: str):
+    """
+    Return aggregated metrics for a backtest.
+    """
+    async with get_async_session() as session:
+        backtest = await session.get(Backtest, backtest_id)
+        if not backtest:
+            raise HTTPException(status_code=404, detail=f"Backtest {backtest_id} not found")
+
+        metadata = backtest.backtest_metadata or {}
+        metrics = metadata.get("metrics") or {}
+
+        return {
+            "backtest_id": backtest_id,
+            "metrics": metrics,
         }
 
 

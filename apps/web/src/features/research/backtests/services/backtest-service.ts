@@ -9,6 +9,8 @@ import type {
   BacktestEvent,
   BacktestEventsResponse,
   BacktestListResponse,
+  BacktestMetrics,
+  BacktestMetricsResponse,
   BacktestOrdersResponse,
   BacktestTradesResponse,
   MultiStrategyBacktestRequest,
@@ -98,8 +100,52 @@ function parseBacktestEvent(data: any): BacktestEvent {
     simulatedTime: data.simulated_time ?? data.simulatedTime ?? null,
     sequence: Number(data.sequence ?? 0),
     message: data.message ?? null,
-    metadata: typeof data.metadata === "object" && data.metadata !== null ? data.metadata : {},
+    details:
+      typeof data.details === "object" && data.details !== null
+        ? data.details
+        : typeof data.metadata === "object" && data.metadata !== null
+        ? data.metadata
+        : {},
     createdAt: data.created_at ?? data.createdAt,
+  };
+}
+
+function parseBacktestMetrics(data: any): BacktestMetrics {
+  const numberOrUndefined = (value: any): number | undefined => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  };
+
+  return {
+    totalMinutes: numberOrUndefined(data.total_minutes ?? data.totalMinutes),
+    strategyIterations: numberOrUndefined(
+      data.strategy_iterations ?? data.strategyIterations
+    ),
+    elapsedMs: numberOrUndefined(data.elapsed_ms ?? data.elapsedMs),
+    avgIterationMs: numberOrUndefined(
+      data.avg_iteration_ms ?? data.avgIterationMs
+    ),
+    monitoringIntervalMinutes: numberOrUndefined(
+      data.monitoring_interval_minutes ?? data.monitoringIntervalMinutes
+    ),
+    durationMinutes:
+      numberOrUndefined(data.duration_minutes ?? data.durationMinutes) ?? null,
+    totalTrades: numberOrUndefined(data.total_trades ?? data.totalTrades),
+    winningTrades: numberOrUndefined(
+      data.winning_trades ?? data.winningTrades
+    ),
+    losingTrades: numberOrUndefined(data.losing_trades ?? data.losingTrades),
+    totalOrders: numberOrUndefined(data.total_orders ?? data.totalOrders),
+    filledOrders: numberOrUndefined(data.filled_orders ?? data.filledOrders),
+    cancelledOrders: numberOrUndefined(
+      data.cancelled_orders ?? data.cancelledOrders
+    ),
+    totalPnl: numberOrUndefined(data.total_pnl ?? data.totalPnl),
+    totalPnlPercent: numberOrUndefined(
+      data.total_pnl_percent ?? data.totalPnlPercent
+    ),
+    winRate: numberOrUndefined(data.win_rate ?? data.winRate),
+    fillRate: numberOrUndefined(data.fill_rate ?? data.fillRate),
   };
 }
 
@@ -137,6 +183,22 @@ export const backtestService = {
       total: data.total ?? data.backtests.length,
       limit: data.limit ?? limit,
       offset: data.offset ?? offset,
+    };
+  },
+
+  /**
+   * Get aggregate metrics for a backtest
+   */
+  async getBacktestMetrics(backtestId: string): Promise<BacktestMetricsResponse> {
+    const response = await fetch(`${API_BASE}/api/backtests/${backtestId}/metrics`);
+    if (!response.ok) {
+      throw new Error("Failed to fetch backtest metrics");
+    }
+    const data = await response.json();
+    const metrics = parseBacktestMetrics(data.metrics ?? {});
+    return {
+      backtestId: data.backtest_id ?? data.backtestId ?? backtestId,
+      metrics,
     };
   },
 
@@ -209,15 +271,25 @@ export const backtestService = {
    * Run a new backtest
    */
   async runBacktest(request: RunBacktestRequest): Promise<Backtest> {
+    const payload: Record<string, unknown> = {
+      fund_id: request.fundId,
+      date: request.date,
+    };
+
+    if (typeof request.monitoringIntervalMinutes === "number") {
+      payload.monitoring_interval_minutes = request.monitoringIntervalMinutes;
+    }
+
+    if (typeof request.durationMinutes === "number") {
+      payload.duration_minutes = request.durationMinutes;
+    }
+
     const response = await fetch(`${API_BASE}/api/backtests/run`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        fund_id: request.fundId,
-        date: request.date,
-      }),
+      body: JSON.stringify(payload),
     });
 
     if (!response.ok) {

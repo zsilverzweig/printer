@@ -106,7 +106,7 @@ class StrategyService:
         await log_backtest_event(
             fund_id,
             "entry_level_created",
-            metadata={
+            details={
                 "symbol": symbol,
                 "state_id": state_id,
                 "entry_price": level.entry_price,
@@ -186,7 +186,7 @@ class StrategyService:
         await log_backtest_event(
             fund_id,
             "management_state_updated",
-            metadata={
+            details={
                 "symbol": symbol,
                 "state_id": state_id,
                 "current_stop": stop_update.current_stop,
@@ -317,6 +317,21 @@ class StrategyService:
                 state.mark_triggered(trigger_price)
                 await session.commit()
                 logger.debug(f"Marked state {state_id} as triggered @ ${trigger_price:.2f}")
+                event_type = (
+                    "entry_level_triggered"
+                    if state.state_type == "entry_level"
+                    else "exit_level_triggered"
+                )
+                await log_backtest_event(
+                    state.fund_id,
+                    event_type,
+                    details={
+                        "state_id": state_id,
+                        "symbol": state.symbol,
+                        "trigger_price": trigger_price,
+                        "state_type": state.state_type,
+                    },
+                )
     
     async def deactivate_level(
         self,
@@ -336,6 +351,16 @@ class StrategyService:
                 state.deactivate(reason)
                 await session.commit()
                 logger.debug(f"Deactivated state {state_id}: {reason}")
+                await log_backtest_event(
+                    state.fund_id,
+                    "state_deactivated",
+                    details={
+                        "state_id": state_id,
+                        "symbol": state.symbol,
+                        "reason": reason,
+                        "state_type": state.state_type,
+                    },
+                )
     
     async def deactivate_symbol_levels(
         self,

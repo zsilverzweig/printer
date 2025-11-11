@@ -6,6 +6,7 @@
 
 "use client";
 
+import { useRouter } from "next/navigation";
 import { Layers, Play, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -34,6 +35,7 @@ import { RunBacktestDialog } from "./run-backtest-dialog";
 import { ScreenerBacktestTab } from "./screener-backtest-tab";
 
 export function BacktestManagement() {
+  const router = useRouter();
   const [showRunDialog, setShowRunDialog] = useState(false);
   const [selectedBacktest, setSelectedBacktest] = useState<Backtest | null>(
     null
@@ -56,9 +58,10 @@ export function BacktestManagement() {
 
   const handleRunBacktest = async (request: RunBacktestRequest) => {
     try {
-      await runBacktest(request);
+      const newBacktest = await runBacktest(request);
       toastSuccess("Backtest started successfully");
       setShowRunDialog(false);
+      router.push(`/backtests/${encodeURIComponent(newBacktest.id)}`);
       // Refresh after a short delay to see the new backtest
       setTimeout(() => {
         refresh();

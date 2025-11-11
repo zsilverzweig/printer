@@ -12,6 +12,7 @@ from datetime import datetime
 from typing import Optional
 
 from app.services.core.time_context import get_current_time, get_backtest_id
+from app.services.backtest.backtest_event_logger import log_event as log_backtest_event
 
 from sqlalchemy import select
 
@@ -334,6 +335,19 @@ class OrderExecutor:
             )
             self.strategy_logger.log(symbol, f"Initial stop set: ${signal.stop_loss:.2f}")
             
+            await log_backtest_event(
+                self.fund_id,
+                "order_submitted",
+                details={
+                    "order_id": order_id,
+                    "symbol": symbol,
+                    "side": "buy",
+                    "quantity": quantity,
+                    "order_type": order_type,
+                    "alpaca_order_id": alpaca_order["id"],
+                },
+            )
+
             # Broadcast trading event
             return True
         
@@ -590,6 +604,21 @@ class OrderExecutor:
                     position.symbol,
                     "position_closed"
                 )
+            
+            await log_backtest_event(
+                self.fund_id,
+                "order_submitted",
+                details={
+                    "order_id": order_id,
+                    "symbol": position.symbol,
+                    "side": "sell",
+                    "quantity": sell_quantity,
+                    "order_type": "market",
+                    "alpaca_order_id": alpaca_order["id"],
+                    "realized_pnl_estimate": realized_pnl,
+                    "exit_reason": signal.exit_reason,
+                },
+            )
             
             return True
         

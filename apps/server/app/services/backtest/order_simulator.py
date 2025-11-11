@@ -17,6 +17,7 @@ from app.models.strategies import Order, Transaction, Fund
 from app.models.market_data import MarketData
 from app.services.core.database import get_async_session
 from app.services.core.time_context import get_backtest_id
+from app.services.backtest.backtest_event_logger import log_event as log_backtest_event
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +100,21 @@ class OrderSimulator:
         
         # Add transaction to session
         session.add(transaction)
+        
+        await log_backtest_event(
+            order.fund_id,
+            "order_filled",
+            details={
+                "order_id": order.id,
+                "symbol": order.symbol,
+                "side": order.side,
+                "quantity": order.quantity,
+                "fill_price": fill_price,
+                "fill_time": fill_time.isoformat() if isinstance(fill_time, datetime) else None,
+                "transaction_id": transaction.id,
+            },
+            simulated_time=fill_time,
+        )
         
         return transaction
     

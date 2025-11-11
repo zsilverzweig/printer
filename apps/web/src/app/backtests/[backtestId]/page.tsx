@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 
-import { BacktestDetailsPage } from "@/features/research/backtests";
+import { BacktestDetailsPage } from "@/features/research/backtests/pages/backtest-details";
 
 interface BacktestDetailsRouteProps {
   params: {

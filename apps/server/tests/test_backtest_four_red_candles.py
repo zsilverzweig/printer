@@ -189,7 +189,12 @@ async def test_backtest_four_red_candles(monkeypatch, test_engine):
     coordinator = BacktestCoordinator()
     backtest_date = date(2024, 1, 2)
 
-    backtest_id = await coordinator.run_backtest("fund-test", backtest_date)
+    backtest_id = await coordinator.run_backtest(
+        "fund-test",
+        backtest_date,
+        monitoring_interval_minutes=1,
+        duration_minutes=10,
+    )
 
     async with session_factory() as session:
         backtest = await session.get(Backtest, backtest_id)

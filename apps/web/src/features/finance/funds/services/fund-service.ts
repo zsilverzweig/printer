@@ -14,11 +14,14 @@ import type {
   UpdateFundInput,
 } from "@printer/shared";
 
+import type { FundPositionsGroup } from "../types";
+
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 /**
  * Parse date strings and convert snake_case to camelCase from API responses
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function parseFundDates(data: any): Fund {
   return {
     ...data,
@@ -65,6 +68,89 @@ export interface ManualOrderInput {
   estimatedPrice?: number | null;
 }
 
+function toNumber(value: unknown, fallback = 0): number {
+  if (value === null || value === undefined) {
+    return fallback;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function toNullableNumber(value: unknown): number | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+type RawFundPositionsFund = {
+  fund_id: string;
+  fund_name: string;
+  fund_mode: string;
+  fund_status: string;
+  icon?: string | null;
+  icon_color?: string | null;
+  ticker?: string | null;
+  quantity: number | string;
+  avg_entry_price: number | string;
+  cost_basis: number | string;
+  market_value?: number | string | null;
+  unrealized_pl?: number | string | null;
+  unrealized_pl_percent?: number | string | null;
+  updated_at?: string | null;
+};
+
+type RawFundPositionsGroup = {
+  symbol: string;
+  latest_price?: number | string | null;
+  total_quantity?: number | string;
+  total_cost_basis?: number | string;
+  total_market_value?: number | string | null;
+  total_unrealized_pl?: number | string | null;
+  funds?: RawFundPositionsFund[];
+};
+
+function parseFundPositionsGroup(
+  data: RawFundPositionsGroup
+): FundPositionsGroup {
+  const funds = Array.isArray(data.funds) ? data.funds : [];
+
+  return {
+    symbol: data.symbol,
+    latestPrice: toNullableNumber(data.latest_price),
+    totalQuantity: toNumber(data.total_quantity),
+    totalCostBasis: toNumber(data.total_cost_basis),
+    totalMarketValue: toNullableNumber(data.total_market_value),
+    totalUnrealizedPl: toNullableNumber(data.total_unrealized_pl),
+    funds: funds.map((fund: RawFundPositionsFund) => ({
+      fundId:
+        typeof fund.fund_id === "string"
+          ? fund.fund_id
+          : String(fund.fund_id ?? ""),
+      fundName:
+        typeof fund.fund_name === "string"
+          ? fund.fund_name
+          : String(fund.fund_name ?? "Unknown fund"),
+      fundMode: typeof fund.fund_mode === "string" ? fund.fund_mode : "sim",
+      fundStatus:
+        typeof fund.fund_status === "string" ? fund.fund_status : "paused",
+      icon: fund.icon ?? null,
+      iconColor: fund.icon_color ?? null,
+      ticker: fund.ticker ?? null,
+      quantity: toNumber(fund.quantity),
+      avgEntryPrice: toNumber(fund.avg_entry_price),
+      costBasis: toNumber(fund.cost_basis),
+      marketValue: toNullableNumber(fund.market_value),
+      unrealizedPl: toNullableNumber(fund.unrealized_pl),
+      unrealizedPlPercent: toNullableNumber(fund.unrealized_pl_percent),
+      updatedAt: fund.updated_at ?? null,
+    })),
+  };
+}
+
 export const fundService = {
   /**
    * Get all funds
@@ -94,6 +180,21 @@ export const fundService = {
   },
 
   /**
+   * Get grouped positions across all funds
+   */
+  async getFundPositionsOverview(): Promise<FundPositionsGroup[]> {
+    const response = await fetch(`${API_BASE}/api/funds/positions`);
+
+    if (!response.ok) {
+      throw new Error("Failed to fetch fund positions overview");
+    }
+
+    const data = await response.json();
+    const positions = Array.isArray(data.positions) ? data.positions : [];
+    return positions.map(parseFundPositionsGroup);
+  },
+
+  /**
    * Get transactions for a fund
    */
   async getFundTransactions(fundId: string): Promise<FundTransaction[]> {
@@ -106,15 +207,18 @@ export const fundService = {
     }
 
     const data = await response.json();
-    return data.map((txn: any) => ({
-      id: txn.id,
-      symbol: txn.symbol,
-      side: txn.side,
-      quantity: Number(txn.quantity),
-      price: Number(txn.price),
-      totalValue: Number(txn.total_value ?? txn.totalValue),
-      timestamp: txn.timestamp,
-    }));
+    return data.map(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (txn: any) => ({
+        id: txn.id,
+        symbol: txn.symbol,
+        side: txn.side,
+        quantity: Number(txn.quantity),
+        price: Number(txn.price),
+        totalValue: Number(txn.total_value ?? txn.totalValue),
+        timestamp: txn.timestamp,
+      })
+    );
   },
 
   /**
@@ -139,51 +243,54 @@ export const fundService = {
     }
 
     const data = await response.json();
-    return data.map((trade: any) => ({
-      id: trade.id,
-      fundId: trade.fund_id ?? trade.fundId,
-      symbol: trade.symbol,
-      entryTime: trade.entry_time ?? trade.entryTime,
-      exitTime: trade.exit_time ?? trade.exitTime,
-      entryPrice: Number(trade.entry_price ?? trade.entryPrice),
-      exitPrice:
-        trade.exit_price ?? trade.exitPrice
-          ? Number(trade.exit_price ?? trade.exitPrice)
-          : null,
-      entryQuantity: Number(trade.entry_quantity ?? trade.entryQuantity),
-      exitQuantity:
-        trade.exit_quantity ?? trade.exitQuantity
-          ? Number(trade.exit_quantity ?? trade.exitQuantity)
-          : null,
-      orderPriceAtSubmission:
-        trade.order_price_at_submission ?? trade.orderPriceAtSubmission
-          ? Number(
-              trade.order_price_at_submission ?? trade.orderPriceAtSubmission
-            )
-          : null,
-      realizedPnl:
-        trade.realized_pnl ?? trade.realizedPnl
-          ? Number(trade.realized_pnl ?? trade.realizedPnl)
-          : null,
-      realizedPnlPercent:
-        trade.realized_pnl_percent ?? trade.realizedPnlPercent
-          ? Number(trade.realized_pnl_percent ?? trade.realizedPnlPercent)
-          : null,
-      holdDurationSeconds:
-        trade.hold_duration_seconds ?? trade.holdDurationSeconds,
-      status: trade.status,
-      strategyId: trade.strategy_id ?? trade.strategyId,
-      screeningCriteriaId:
-        trade.screening_criteria_id ?? trade.screeningCriteriaId,
-      aiConfidence: trade.ai_confidence ?? trade.aiConfidence,
-      commissionFees: Number(
-        trade.commission_fees ?? trade.commissionFees ?? 0
-      ),
-      maxAdverseExcursion:
-        trade.max_adverse_excursion ?? trade.maxAdverseExcursion,
-      maxFavorableExcursion:
-        trade.max_favorable_excursion ?? trade.maxFavorableExcursion,
-    }));
+    return data.map(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (trade: any) => ({
+        id: trade.id,
+        fundId: trade.fund_id ?? trade.fundId,
+        symbol: trade.symbol,
+        entryTime: trade.entry_time ?? trade.entryTime,
+        exitTime: trade.exit_time ?? trade.exitTime,
+        entryPrice: Number(trade.entry_price ?? trade.entryPrice),
+        exitPrice:
+          trade.exit_price ?? trade.exitPrice
+            ? Number(trade.exit_price ?? trade.exitPrice)
+            : null,
+        entryQuantity: Number(trade.entry_quantity ?? trade.entryQuantity),
+        exitQuantity:
+          trade.exit_quantity ?? trade.exitQuantity
+            ? Number(trade.exit_quantity ?? trade.exitQuantity)
+            : null,
+        orderPriceAtSubmission:
+          trade.order_price_at_submission ?? trade.orderPriceAtSubmission
+            ? Number(
+                trade.order_price_at_submission ?? trade.orderPriceAtSubmission
+              )
+            : null,
+        realizedPnl:
+          trade.realized_pnl ?? trade.realizedPnl
+            ? Number(trade.realized_pnl ?? trade.realizedPnl)
+            : null,
+        realizedPnlPercent:
+          trade.realized_pnl_percent ?? trade.realizedPnlPercent
+            ? Number(trade.realized_pnl_percent ?? trade.realizedPnlPercent)
+            : null,
+        holdDurationSeconds:
+          trade.hold_duration_seconds ?? trade.holdDurationSeconds,
+        status: trade.status,
+        strategyId: trade.strategy_id ?? trade.strategyId,
+        screeningCriteriaId:
+          trade.screening_criteria_id ?? trade.screeningCriteriaId,
+        aiConfidence: trade.ai_confidence ?? trade.aiConfidence,
+        commissionFees: Number(
+          trade.commission_fees ?? trade.commissionFees ?? 0
+        ),
+        maxAdverseExcursion:
+          trade.max_adverse_excursion ?? trade.maxAdverseExcursion,
+        maxFavorableExcursion:
+          trade.max_favorable_excursion ?? trade.maxFavorableExcursion,
+      })
+    );
   },
 
   /**
@@ -446,7 +553,7 @@ export const fundService = {
   /**
    * Get list of running funds
    */
-  async getRunningFunds(): Promise<any[]> {
+  async getRunningFunds(): Promise<Record<string, unknown>[]> {
     const response = await fetch(`${API_BASE}/api/funds/running/list`);
 
     if (!response.ok) {

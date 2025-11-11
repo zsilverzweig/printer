@@ -116,7 +116,7 @@ class EventService:
         *,
         simulated_time: Optional[datetime] = None,
         message: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        details: Optional[Dict[str, Any]] = None,
         sequence: Optional[int] = None,
     ) -> Optional[str]:
         """
@@ -132,7 +132,7 @@ class EventService:
                 event_type=event_type,
                 simulated_time=simulated_time,
                 message=message,
-                metadata=metadata or {},
+                details=details or {},
                 sequence=sequence or 0,
             )
 
@@ -149,7 +149,7 @@ class EventService:
                 "simulated_time": event.simulated_time.isoformat() if event.simulated_time else None,
                 "sequence": event.sequence,
                 "message": event.message,
-                "metadata": event.metadata or {},
+                "details": event.details or {},
                 "created_at": event.created_at.isoformat() if event.created_at else None,
             }
 

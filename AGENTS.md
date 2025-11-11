@@ -8,6 +8,13 @@
 
 Follow Single Responsibility Principles
 
+### SQLAlchemy Declarative Gotchas
+
+- ❌ **NEVER** declare mapped attributes using SQLAlchemy reserved names like `metadata`, `registry`, or `metadata_obj`.
+- ✅ Prefer renaming columns (for example, use `details` instead of `metadata` for JSON blobs) to avoid reserved-name collisions. Only fall back to alias patterns if renaming is impossible.
+- ✅ Before running migrations, quickly scan new/modified models for reserved identifiers and run `pytest apps/server/tests/models` (or the narrowest relevant suite) to catch mapper errors early.
+- ✅ When an existing migration fails during development, fix the model first, then regenerate or amend the migration rather than piling on overrides.
+
 When working in IDE modes, never commit files unless explicitly directed to.
 
 Assume that there is a pattern already in place to solve problems, don't create a new one. If you can't find a pattern, ask the user for more guidance.

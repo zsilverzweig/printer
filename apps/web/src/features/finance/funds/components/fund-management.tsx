@@ -31,6 +31,7 @@ import { CreateFundDialog } from "./create-fund-dialog";
 import { DefaultRiskManagement } from "./default-risk-management";
 import { FundPerformanceOverview } from "./fund-performance-overview";
 import { FundsTable, buildLifecycleSummaries } from "./funds-table";
+import { FundsPositionsOverview } from "./funds-positions-overview";
 
 export function FundManagement() {
   const { funds, loading, error, createFund, refresh } = useFunds();
@@ -99,10 +100,11 @@ export function FundManagement() {
         onValueChange={setActiveTab}
         className="space-y-6"
       >
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="performance">Performance</TabsTrigger>
           <TabsTrigger value="configuration">Configuration</TabsTrigger>
+          <TabsTrigger value="positions">Positions</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-6">
@@ -188,6 +190,10 @@ export function FundManagement() {
 
         <TabsContent value="configuration" className="space-y-6">
           <DefaultRiskManagement />
+        </TabsContent>
+
+        <TabsContent value="positions" className="space-y-6">
+          <FundsPositionsOverview isActive={activeTab === "positions"} />
         </TabsContent>
       </Tabs>
 

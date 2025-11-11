@@ -6,6 +6,7 @@ import { backtestService } from "../services/backtest-service";
 import type {
   Backtest,
   BacktestEvent,
+  BacktestMetrics,
   BacktestOrder,
   BacktestTrade,
 } from "../types";
@@ -13,10 +14,15 @@ import type {
 interface BacktestProgressStats {
   minuteIndex: number;
   elapsedMs: number;
+  iterationMs: number;
   simulatedTime?: string | null;
   activePositions: number;
   pendingOrders: number;
   filledOrders: number;
+  rawTickerCount: number;
+  tickersAfterSetup: number;
+  canTrade: boolean;
+  restrictionReason?: string | null;
 }
 
 interface UseBacktestDetailsResult {
@@ -28,6 +34,7 @@ interface UseBacktestDetailsResult {
   error: string | null;
   progressPercent: number;
   progressStats: BacktestProgressStats | null;
+  metrics: BacktestMetrics | null;
   refresh: () => Promise<void>;
 }
 
@@ -38,13 +45,16 @@ function coerceNumber(value: unknown, defaultValue = 0): number {
 
 function extractProgress(event: BacktestEvent | undefined): BacktestProgressStats | null {
   if (!event) return null;
-  const metadata = event.metadata ?? {};
+  const metadata = event.details ?? {};
   const minuteIndex =
     coerceNumber((metadata as Record<string, unknown>).minute_index) ||
     coerceNumber((metadata as Record<string, unknown>).minuteIndex);
   const elapsedMs =
     coerceNumber((metadata as Record<string, unknown>).elapsed_ms) ||
     coerceNumber((metadata as Record<string, unknown>).elapsedMs);
+  const iterationMs =
+    coerceNumber((metadata as Record<string, unknown>).iteration_ms) ||
+    coerceNumber((metadata as Record<string, unknown>).iterationMs);
   const activePositions =
     coerceNumber((metadata as Record<string, unknown>).active_positions) ||
     coerceNumber((metadata as Record<string, unknown>).activePositions);
@@ -54,14 +64,42 @@ function extractProgress(event: BacktestEvent | undefined): BacktestProgressStat
   const filledOrders =
     coerceNumber((metadata as Record<string, unknown>).filled_orders) ||
     coerceNumber((metadata as Record<string, unknown>).filledOrders);
+  const rawTickerCount =
+    coerceNumber((metadata as Record<string, unknown>).raw_ticker_count) ||
+    coerceNumber((metadata as Record<string, unknown>).rawTickerCount);
+  const tickersAfterSetup =
+    coerceNumber((metadata as Record<string, unknown>).tickers_after_setup) ||
+    coerceNumber((metadata as Record<string, unknown>).tickersAfterSetup);
+
+  const canTradeRaw =
+    (metadata as Record<string, unknown>).can_trade ??
+    (metadata as Record<string, unknown>).canTrade;
+  const restrictionReason =
+    ((metadata as Record<string, unknown>).restriction_reason ??
+      (metadata as Record<string, unknown>).restrictionReason) as
+      | string
+      | null
+      | undefined;
+
+  const canTrade =
+    typeof canTradeRaw === "boolean"
+      ? canTradeRaw
+      : typeof canTradeRaw === "string"
+      ? canTradeRaw.toLowerCase() !== "false"
+      : true;
 
   return {
     minuteIndex,
     elapsedMs,
+    iterationMs,
     simulatedTime: event.simulatedTime,
     activePositions,
     pendingOrders,
     filledOrders,
+    rawTickerCount,
+    tickersAfterSetup,
+    canTrade,
+    restrictionReason: restrictionReason ?? null,
   };
 }
 
@@ -70,6 +108,7 @@ export function useBacktestDetails(backtestId: string): UseBacktestDetailsResult
   const [events, setEvents] = useState<BacktestEvent[]>([]);
   const [orders, setOrders] = useState<BacktestOrder[]>([]);
   const [trades, setTrades] = useState<BacktestTrade[]>([]);
+  const [metrics, setMetrics] = useState<BacktestMetrics | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -80,20 +119,23 @@ export function useBacktestDetails(backtestId: string): UseBacktestDetailsResult
     setError(null);
 
     try {
-      const [backtestData, eventsData, ordersData, tradesData] = await Promise.all([
+      const [backtestData, eventsData, ordersData, tradesData, metricsData] = await Promise.all([
         backtestService.getBacktest(backtestId),
         backtestService.getBacktestEvents(backtestId),
         backtestService.getBacktestOrders(backtestId),
         backtestService.getBacktestTrades(backtestId),
+        backtestService.getBacktestMetrics(backtestId),
       ]);
 
       setBacktest(backtestData);
       setEvents(eventsData.events);
       setOrders(ordersData.orders);
       setTrades(tradesData.trades);
+      setMetrics(metricsData.metrics);
     } catch (err) {
       console.error("Failed to load backtest details:", err);
       setError(err instanceof Error ? err.message : "Unexpected error");
+      setMetrics(null);
     } finally {
       setLoading(false);
     }
@@ -133,8 +175,8 @@ export function useBacktestDetails(backtestId: string): UseBacktestDetailsResult
                   ...prev,
                   status: event.eventType === "complete" ? "completed" : "failed",
                   completedAt:
-                    event.metadata?.completed_at ??
-                    event.metadata?.completedAt ??
+                    event.details?.completed_at ??
+                    event.details?.completedAt ??
                     prev.completedAt,
                 }
               : prev
@@ -184,6 +226,7 @@ export function useBacktestDetails(backtestId: string): UseBacktestDetailsResult
     error,
     progressPercent,
     progressStats,
+    metrics,
     refresh,
   };
 }

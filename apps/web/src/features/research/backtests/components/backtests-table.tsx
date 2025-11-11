@@ -6,6 +6,7 @@
 
 "use client";
 
+import { useRouter } from "next/navigation";
 import {
   ColumnDef,
   ColumnFiltersState,
@@ -129,6 +130,7 @@ export function BacktestsTable({
   onRefresh,
   loading = false,
 }: BacktestsTableProps) {
+  const router = useRouter();
   const [sorting, setSorting] = useState<SortingState>([
     { id: "date", desc: true },
   ]);
@@ -521,7 +523,10 @@ export function BacktestsTable({
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => onViewDetails(row.original)}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onViewDetails(row.original);
+                }}
               >
                 <Eye className="h-4 w-4" />
               </Button>
@@ -721,7 +726,12 @@ export function BacktestsTable({
                 <TableRow
                   key={row.id}
                   data-state={row.getIsSelected() && "selected"}
-                  className="hover:bg-muted/50"
+                  className="hover:bg-muted/50 cursor-pointer"
+                  onClick={() =>
+                    router.push(
+                      `/backtests/${encodeURIComponent(row.original.id)}`
+                    )
+                  }
                 >
                   {row.getVisibleCells().map((cell) => (
                     <TableCell key={cell.id}>

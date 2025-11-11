@@ -25,10 +25,6 @@ import { cn } from "@/lib/utils/utils";
 import { useBacktestDetails } from "../hooks/use-backtest-details";
 import type { BacktestEvent } from "../types";
 
-interface BacktestDetailsPageProps {
-  backtestId: string;
-}
-
 function formatCurrency(value: number | undefined | null): string {
   if (value === undefined || value === null) return "—";
   return `$${value.toLocaleString("en-US", {
@@ -60,25 +56,58 @@ function formatDateTime(dateString: string | undefined | null): string {
   }
 }
 
-function summarizeEventMetadata(event: BacktestEvent): string {
-  if (!event.metadata) return "";
-  const { minute_index, active_positions, pending_orders, filled_orders } =
-    event.metadata as Record<string, unknown>;
+function summarizeEventDetails(event: BacktestEvent): string {
+  if (!event.details) return "";
+  const metadata = event.details as Record<string, unknown>;
+  const minuteIndex = metadata.minute_index ?? metadata.minuteIndex;
+  const iterationCount =
+    metadata.iteration_count ?? metadata.iterationCount ?? null;
+  const activePositions = metadata.active_positions ?? metadata.activePositions;
+  const pendingOrders = metadata.pending_orders ?? metadata.pendingOrders;
+  const filledOrders = metadata.filled_orders ?? metadata.filledOrders;
+  const iterationMs = metadata.iteration_ms ?? metadata.iterationMs;
+  const rawTickerCount = metadata.raw_ticker_count ?? metadata.rawTickerCount;
+  const tickersAfterSetup =
+    metadata.tickers_after_setup ?? metadata.tickersAfterSetup;
+  const canTrade = metadata.can_trade ?? metadata.canTrade;
+  const restrictionReason =
+    metadata.restriction_reason ?? metadata.restrictionReason;
 
   const parts: string[] = [];
-  if (minute_index !== undefined) {
-    parts.push(`minute ${minute_index}`);
+  if (minuteIndex !== undefined) {
+    parts.push(`minute ${minuteIndex}`);
   }
-  if (active_positions !== undefined) {
-    parts.push(`positions ${active_positions}`);
+  if (iterationCount !== null && iterationCount !== undefined) {
+    parts.push(`iteration ${iterationCount}`);
   }
-  if (pending_orders !== undefined) {
-    parts.push(`pending ${pending_orders}`);
+  if (activePositions !== undefined) {
+    parts.push(`positions ${activePositions}`);
   }
-  if (filled_orders !== undefined) {
-    parts.push(`fills ${filled_orders}`);
+  if (pendingOrders !== undefined) {
+    parts.push(`pending ${pendingOrders}`);
+  }
+  if (filledOrders !== undefined) {
+    parts.push(`fills ${filledOrders}`);
+  }
+  if (rawTickerCount !== undefined) {
+    parts.push(`tickers ${rawTickerCount}`);
+  }
+  if (tickersAfterSetup !== undefined) {
+    parts.push(`after setup ${tickersAfterSetup}`);
+  }
+  if (iterationMs !== undefined) {
+    parts.push(`iter ${Number(iterationMs).toFixed(1)}ms`);
+  }
+  if (typeof canTrade === "boolean" && !canTrade) {
+    parts.push(
+      `trade blocked${restrictionReason ? ` (${restrictionReason})` : ""}`
+    );
   }
   return parts.join(" • ");
+}
+
+interface BacktestDetailsPageProps {
+  backtestId: string;
 }
 
 export function BacktestDetailsPage({ backtestId }: BacktestDetailsPageProps) {
@@ -91,6 +120,7 @@ export function BacktestDetailsPage({ backtestId }: BacktestDetailsPageProps) {
     error,
     progressPercent,
     progressStats,
+    metrics,
   } = useBacktestDetails(backtestId);
 
   const orderedEvents = useMemo(
@@ -293,10 +323,44 @@ export function BacktestDetailsPage({ backtestId }: BacktestDetailsPageProps) {
                   <dd className="font-medium">{progressStats.filledOrders}</dd>
                 </div>
                 <div>
+                  <dt className="text-muted-foreground">Raw Tickers</dt>
+                  <dd className="font-medium">
+                    {progressStats.rawTickerCount}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">After Setup</dt>
+                  <dd className="font-medium">
+                    {progressStats.tickersAfterSetup}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">Iteration (ms)</dt>
+                  <dd className="font-medium">
+                    {progressStats.iterationMs.toLocaleString()}
+                  </dd>
+                </div>
+                <div>
                   <dt className="text-muted-foreground">Elapsed (ms)</dt>
                   <dd className="font-medium">
                     {progressStats.elapsedMs.toLocaleString()}
                   </dd>
+                </div>
+                <div className="col-span-2">
+                  <dt className="text-muted-foreground">Trading Status</dt>
+                  <dd
+                    className={cn("font-medium", {
+                      "text-green-600": progressStats.canTrade,
+                      "text-red-600": !progressStats.canTrade,
+                    })}
+                  >
+                    {progressStats.canTrade ? "Allowed" : "Blocked"}
+                  </dd>
+                  {!progressStats.canTrade && progressStats.restrictionReason ? (
+                    <p className="text-xs text-muted-foreground">
+                      {progressStats.restrictionReason}
+                    </p>
+                  ) : null}
                 </div>
               </dl>
             ) : (
@@ -326,20 +390,24 @@ export function BacktestDetailsPage({ backtestId }: BacktestDetailsPageProps) {
                     className="rounded-lg border bg-card px-4 py-3 text-sm"
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
+                      <div className="flex min-w-0 items-center gap-2">
                         <Badge
                           variant={
                             event.eventType === "error"
                               ? "destructive"
                               : event.eventType === "iteration"
                               ? "secondary"
+                              : event.eventType === "orders_filled"
+                              ? "default"
                               : "outline"
                           }
                         >
                           {event.eventType}
                         </Badge>
                         {event.message ? (
-                          <span className="font-medium">{event.message}</span>
+                          <span className="font-medium truncate">
+                            {event.message}
+                          </span>
                         ) : null}
                       </div>
                       <span className="text-xs text-muted-foreground">
@@ -347,7 +415,7 @@ export function BacktestDetailsPage({ backtestId }: BacktestDetailsPageProps) {
                       </span>
                     </div>
                     <div className="mt-2 text-muted-foreground">
-                      {summarizeEventMetadata(event)}
+                      {summarizeEventDetails(event)}
                     </div>
                   </li>
                 ))}
@@ -381,6 +449,56 @@ export function BacktestDetailsPage({ backtestId }: BacktestDetailsPageProps) {
               <span className="text-muted-foreground">Losing Trades</span>
               <span className="font-medium">{backtest.losingTrades}</span>
             </div>
+            {metrics ? (
+              <>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Runtime (s)</span>
+                  <span className="font-medium">
+                    {metrics.elapsedMs !== undefined
+                      ? (Number(metrics.elapsedMs) / 1000).toFixed(2)
+                      : "—"}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">
+                    Avg Iteration (ms)
+                  </span>
+                  <span className="font-medium">
+                    {metrics.avgIterationMs !== undefined
+                      ? metrics.avgIterationMs.toLocaleString()
+                      : "—"}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Fill Rate</span>
+                  <span className="font-medium">
+                    {metrics.fillRate !== undefined
+                      ? `${metrics.fillRate.toFixed(1)}%`
+                      : "—"}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">
+                    Monitoring Interval
+                  </span>
+                  <span className="font-medium">
+                    {metrics.monitoringIntervalMinutes !== undefined
+                      ? `${metrics.monitoringIntervalMinutes} min`
+                      : "—"}
+                  </span>
+                </div>
+                {metrics.durationMinutes ? (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">
+                      Simulated Duration
+                    </span>
+                    <span className="font-medium">
+                      {metrics.durationMinutes} min
+                    </span>
+                  </div>
+                ) : null}
+              </>
+            ) : null}
             {backtest.errorMessage ? (
               <div className="rounded-md bg-destructive/10 p-3 text-destructive">
                 <p className="font-semibold text-sm">Error</p>

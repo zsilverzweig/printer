@@ -77,3 +77,30 @@ export interface FundLifecycleSummary {
     timezone?: string;
   };
 }
+
+export interface FundPositionsFund {
+  fundId: string;
+  fundName: string;
+  fundMode: string;
+  fundStatus: string;
+  icon?: string | null;
+  iconColor?: string | null;
+  ticker?: string | null;
+  quantity: number;
+  avgEntryPrice: number;
+  costBasis: number;
+  marketValue: number | null;
+  unrealizedPl: number | null;
+  unrealizedPlPercent: number | null;
+  updatedAt: string | null;
+}
+
+export interface FundPositionsGroup {
+  symbol: string;
+  latestPrice: number | null;
+  totalQuantity: number;
+  totalCostBasis: number;
+  totalMarketValue: number | null;
+  totalUnrealizedPl: number | null;
+  funds: FundPositionsFund[];
+}

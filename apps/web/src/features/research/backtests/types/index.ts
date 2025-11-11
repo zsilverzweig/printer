@@ -43,6 +43,32 @@ export interface Backtest {
 export interface RunBacktestRequest {
   fundId: string;
   date: string; // YYYY-MM-DD format
+  monitoringIntervalMinutes?: number;
+  durationMinutes?: number;
+}
+
+export interface BacktestMetrics {
+  totalMinutes?: number;
+  strategyIterations?: number;
+  elapsedMs?: number;
+  avgIterationMs?: number;
+  monitoringIntervalMinutes?: number;
+  durationMinutes?: number | null;
+  totalTrades?: number;
+  winningTrades?: number;
+  losingTrades?: number;
+  totalOrders?: number;
+  filledOrders?: number;
+  cancelledOrders?: number;
+  totalPnl?: number;
+  totalPnlPercent?: number;
+  winRate?: number;
+  fillRate?: number;
+}
+
+export interface BacktestMetricsResponse {
+  backtestId: string;
+  metrics: BacktestMetrics;
 }
 
 export interface BacktestOrder {
@@ -98,7 +124,7 @@ export interface BacktestEvent {
   simulatedTime?: string | null;
   sequence: number;
   message?: string | null;
-  metadata: Record<string, unknown>;
+  details: Record<string, unknown>;
   createdAt: string;
 }
 
