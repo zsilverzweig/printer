@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TypedDict, Optional, List, Dict, Any
+from typing import TypedDict, Optional, List
 from enum import Enum
 from pydantic import BaseModel
 
@@ -75,9 +75,6 @@ class ScreenerCriteria(BaseModel):
     min_relative_volume_last_week: Optional[float] = None
     order_by: Optional[str] = None
     limit: Optional[int] = None
-
-    # Technical analysis filters
-    technical_filters: Optional[Dict[str, Any]] = None
 
 
 class TickerStateTransitionCode(str, Enum):

@@ -45,7 +45,6 @@ class ScreenerHistorical:
         min_relative_volume_last_week: Optional[float] = None,
         order_by: str = "rv14",
         limit: int = 200,
-        technical_filters: Optional[Dict[str, Any]] = None,
         asset_types: Optional[List[str]] = None,
         market_cap_min: Optional[int] = None,
         market_cap_max: Optional[int] = None,
@@ -66,7 +65,6 @@ class ScreenerHistorical:
             min_relative_volume_last_week: Minimum relative volume vs last week filter
             order_by: Field to sort by (rv14, avg_volume, change_close)
             limit: Maximum number of results to return
-            technical_filters: Optional dict of technical analysis filters
             asset_types: Optional list of asset types to include
             market_cap_min: Minimum market cap filter (in dollars)
             market_cap_max: Maximum market cap filter (in dollars)
@@ -390,25 +388,6 @@ class ScreenerHistorical:
                 + change_max_filtered_count
             )
 
-            rows_before_technical = len(rows)
-            technical_filtered_count = 0
-            if technical_filters:
-                self.logger.info(
-                    "[HISTORICAL SCREENER] Applying technical filters to %s symbols…",
-                    len(rows),
-                )
-                for row in rows:
-                    symbol = row["ticker"]
-                    historical_bars = await self._get_bars_for_technical_analysis(symbol, timestamp)
-                    row["_historical_bars"] = historical_bars
-                rows = await self.compute._apply_technical_filters(
-                    rows, technical_filters, is_historical=True
-                )
-                technical_filtered_count = max(rows_before_technical - len(rows), 0)
-                for row in rows:
-                    row.pop("_historical_bars", None)
-            add_step("After technical filters", len(rows))
-
             sort_key = {
                 "rv14": lambda x: x.get("rv14") or 0.0,
                 "rv_lw": lambda x: x.get("rv_lw") or 0.0,
@@ -433,7 +412,6 @@ class ScreenerHistorical:
                     "asset_type_filtered": asset_type_filtered_count,
                     "change_min_filtered": change_min_filtered_count,
                     "change_max_filtered": change_max_filtered_count,
-                    "technical_filtered": technical_filtered_count,
                     "limit_removed": limit_removed,
                 }
             )
@@ -446,7 +424,7 @@ class ScreenerHistorical:
                 final_count,
                 total_time,
                 processed_count,
-                filtered_count + technical_filtered_count,
+                filtered_count,
                 limit_removed,
             )
 
@@ -465,14 +443,4 @@ class ScreenerHistorical:
                 exc_info=True,
             )
             return []
-    
-    async def _get_bars_for_technical_analysis(
-        self,
-        symbol: str,
-        timestamp: datetime,
-        lookback_bars: int = 30
-    ) -> List[Dict[str, Any]]:
-        """Get historical bars for technical analysis."""
-        from app.lib.market_queries import get_historical_bars
-        return await get_historical_bars(symbol, "5m", timestamp, lookback_bars)
     

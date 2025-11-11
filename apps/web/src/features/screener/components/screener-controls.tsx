@@ -53,22 +53,6 @@ export function ScreenerControls({
     onFilterChange({ [key]: value });
   };
 
-  const handleTechnicalFilterUpdate = (
-    key: string,
-    value: boolean | number | undefined
-  ) => {
-    const technical_filters = {
-      ...(filters.technical_filters || {}),
-      [key]: value === undefined ? undefined : value,
-    };
-    const cleaned = Object.fromEntries(
-      Object.entries(technical_filters).filter(([_, v]) => v !== undefined)
-    );
-    onFilterChange({
-      technical_filters: Object.keys(cleaned).length > 0 ? cleaned : undefined,
-    });
-  };
-
   return (
     <div className="space-y-3">
       {/* Row 1: Mode + Date/Time + Run (Historical only) */}
@@ -509,87 +493,6 @@ export function ScreenerControls({
         </div>
       </div>
 
-      {/* Row 3: Technical Filters - Always Visible */}
-      <div className="flex flex-wrap gap-3 p-3 bg-muted/20 rounded-lg text-xs border">
-        <Label className="text-xs font-semibold w-full mb-1">
-          Technical Filters:
-        </Label>
-        <div className="flex items-center gap-1">
-          <Switch
-            checked={filters.technical_filters?.near_resistance || false}
-            onCheckedChange={(checked) =>
-              handleTechnicalFilterUpdate(
-                "near_resistance",
-                checked || undefined
-              )
-            }
-            disabled={loading}
-          />
-          <Label className="text-xs cursor-pointer">Near Resistance</Label>
-        </div>
-        <div className="flex items-center gap-1">
-          <Switch
-            checked={filters.technical_filters?.near_support || false}
-            onCheckedChange={(checked) =>
-              handleTechnicalFilterUpdate("near_support", checked || undefined)
-            }
-            disabled={loading}
-          />
-          <Label className="text-xs cursor-pointer">Near Support</Label>
-        </div>
-        <div className="flex items-center gap-1">
-          <Switch
-            checked={filters.technical_filters?.has_equal_highs || false}
-            onCheckedChange={(checked) =>
-              handleTechnicalFilterUpdate(
-                "has_equal_highs",
-                checked || undefined
-              )
-            }
-            disabled={loading}
-          />
-          <Label className="text-xs cursor-pointer">Equal Highs</Label>
-        </div>
-        <div className="flex items-center gap-1">
-          <Switch
-            checked={filters.technical_filters?.has_equal_lows || false}
-            onCheckedChange={(checked) =>
-              handleTechnicalFilterUpdate(
-                "has_equal_lows",
-                checked || undefined
-              )
-            }
-            disabled={loading}
-          />
-          <Label className="text-xs cursor-pointer">Equal Lows</Label>
-        </div>
-        <div className="flex items-center gap-1">
-          <Switch
-            checked={filters.technical_filters?.above_90day_high || false}
-            onCheckedChange={(checked) =>
-              handleTechnicalFilterUpdate(
-                "above_90day_high",
-                checked || undefined
-              )
-            }
-            disabled={loading}
-          />
-          <Label className="text-xs cursor-pointer">Above 90d High</Label>
-        </div>
-        <div className="flex items-center gap-1">
-          <Switch
-            checked={filters.technical_filters?.below_90day_low || false}
-            onCheckedChange={(checked) =>
-              handleTechnicalFilterUpdate(
-                "below_90day_low",
-                checked || undefined
-              )
-            }
-            disabled={loading}
-          />
-          <Label className="text-xs cursor-pointer">Below 90d Low</Label>
-        </div>
-      </div>
     </div>
   );
 }

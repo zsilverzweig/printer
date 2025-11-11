@@ -111,16 +111,6 @@ export interface ScreeningCriteriaParams {
   order_by?: string; // Sort field: "rv14" | "rv_lw" | "today_vol" | "avg_volume"
   limit?: number; // Max results to return
 
-  // Technical analysis filters
-  technical_filters?: {
-    near_resistance?: boolean;
-    near_support?: boolean;
-    has_equal_highs?: boolean;
-    has_equal_lows?: boolean;
-    above_90day_high?: boolean;
-    below_90day_low?: boolean;
-    relative_volume_min?: number;
-  };
 }
 
 /**

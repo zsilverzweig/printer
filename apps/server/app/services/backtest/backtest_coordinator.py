@@ -613,7 +613,6 @@ class BacktestCoordinator:
                                             min_relative_volume_last_week=criteria_dict.get('min_relative_volume_last_week'),
                                             order_by=criteria_dict.get('order_by', 'rv14'),
                                             limit=criteria_dict.get('limit', 10),
-                                            technical_filters=criteria_dict.get('technical_filters'),
                                             asset_types=criteria_dict.get('asset_types'),
                                             market_cap_min=criteria_dict.get('market_cap_min'),
                                             market_cap_max=criteria_dict.get('market_cap_max')
@@ -855,7 +854,6 @@ class BacktestCoordinator:
                     min_relative_volume_last_week=criteria_dict.get('min_relative_volume_last_week'),
                     order_by=criteria_dict.get('order_by', 'rv14'),
                     limit=criteria_dict.get('limit', 10),
-                    technical_filters=criteria_dict.get('technical_filters'),
                     asset_types=criteria_dict.get('asset_types'),
                     market_cap_min=criteria_dict.get('market_cap_min'),
                     market_cap_max=criteria_dict.get('market_cap_max')

@@ -148,8 +148,6 @@ async def run_screener_with_inline_criteria(
     logger.info(f"[ENDPOINT] POST /screening-criteria/run called - timestamp={timestamp}, criteria={criteria.model_dump(exclude_none=True)}")
     
     try:
-        technical_filters = criteria.technical_filters
-        
         # Extract parameters
         min_price = criteria.min_price
         max_price = criteria.max_price
@@ -216,7 +214,6 @@ async def run_screener_with_inline_criteria(
                     min_relative_volume_last_week=min_relative_volume_last_week,
                     order_by=order_by,
                     limit=limit,
-                    technical_filters=technical_filters,
                     asset_types=asset_types,
                     market_cap_min=market_cap_min,
                     market_cap_max=market_cap_max,
@@ -247,7 +244,6 @@ async def run_screener_with_inline_criteria(
                     min_relative_volume_last_week=min_relative_volume_last_week,
                     order_by=order_by,
                     limit=limit,
-                    technical_filters=technical_filters,
                     asset_types=asset_types,
                     market_cap_min=market_cap_min,
                     market_cap_max=market_cap_max,
@@ -281,7 +277,6 @@ async def run_screener_with_inline_criteria(
                 min_relative_volume_last_week=min_relative_volume_last_week,
                 order_by=order_by,
                 limit=limit,
-                technical_filters=technical_filters,
                 asset_types=asset_types,
                 market_cap_min=market_cap_min,
                 market_cap_max=market_cap_max,
@@ -355,7 +350,6 @@ async def run_screener_with_criteria(
                 )
         
         params = ScreenerCriteria(**(criteria.criteria or {}))
-        technical_filters = params.technical_filters
         
         # Extract parameters - use None to skip filters (more permissive)
         min_price = params.min_price
@@ -408,7 +402,6 @@ async def run_screener_with_criteria(
                     min_relative_volume_last_week=min_relative_volume_last_week,
                     order_by=order_by,
                     limit=limit,
-                    technical_filters=technical_filters,
                     asset_types=asset_types,
                     market_cap_min=market_cap_min,
                     market_cap_max=market_cap_max,
@@ -431,7 +424,6 @@ async def run_screener_with_criteria(
                     min_relative_volume_last_week=min_relative_volume_last_week,
                     order_by=order_by,
                     limit=limit,
-                    technical_filters=technical_filters,
                     asset_types=asset_types,
                     market_cap_min=market_cap_min,
                     market_cap_max=market_cap_max,
@@ -461,7 +453,6 @@ async def run_screener_with_criteria(
                 min_relative_volume_last_week=min_relative_volume_last_week,
                 order_by=order_by,
                 limit=limit,
-                technical_filters=technical_filters,
                 asset_types=asset_types,
                 market_cap_min=market_cap_min,
                 market_cap_max=market_cap_max,

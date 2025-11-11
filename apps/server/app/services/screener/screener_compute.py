@@ -45,7 +45,6 @@ class ScreenerCompute:
         min_relative_volume_last_week: Optional[float] = None,
         order_by: str = "rv14",
         limit: int = 200,
-        technical_filters: Optional[Dict[str, Any]] = None,
         asset_types: Optional[List[str]] = None,
         market_cap_min: Optional[int] = None,
         market_cap_max: Optional[int] = None,
@@ -66,7 +65,6 @@ class ScreenerCompute:
             min_relative_volume_last_week: Minimum relative volume vs last week filter
             order_by: Field to sort by (rv14 or avg_volume)
             limit: Maximum number of results to return
-            technical_filters: Optional dict of technical analysis filters
             asset_types: Optional list of asset types to include (e.g., ["CS", "ETF"])
             market_cap_min: Minimum market cap filter (in dollars)
             market_cap_max: Maximum market cap filter (in dollars)
@@ -420,18 +418,6 @@ class ScreenerCompute:
             }
         )
 
-        rows_before_technical = len(rows)
-        if technical_filters:
-            rows = await self._apply_technical_filters(rows, technical_filters, is_historical=False)
-            technical_filtered_count = max(rows_before_technical - len(rows), 0)
-        else:
-            technical_filtered_count = 0
-
-        filtered_count += technical_filtered_count
-        debug_counts["technical_filtered"] = technical_filtered_count
-
-        add_step("After technical filters", len(rows))
-
         if limit is not None:
             limited_rows = rows[:limit]
         else:
@@ -458,93 +444,3 @@ class ScreenerCompute:
 
         return limited_rows
     
-    async def _apply_technical_filters(
-        self,
-        rows: List[dict],
-        technical_filters: Dict[str, Any],
-        is_historical: bool = False
-    ) -> List[dict]:
-        """Apply technical analysis filters to screener results.
-        
-        Args:
-            rows: List of screener result dicts
-            technical_filters: Dict of technical filter criteria
-            is_historical: Whether we're in historical mode (affects bar retrieval)
-            
-        Returns:
-            Filtered list of rows
-        """
-        from app.lib.technical_analysis import (
-            find_swing_points,
-            find_equal_levels,
-            find_support_resistance,
-            is_price_near_level,
-        )
-        
-        filtered_rows = []
-        
-        for row in rows:
-            symbol = row["ticker"]
-            current_price = row["price"]
-            
-            # Get bars for technical analysis
-            if is_historical:
-                bars = row.get("_historical_bars", [])
-            else:
-                # For live mode, would need to track recent bars
-                # For now, skip technical filters in live mode
-                bars = []
-            
-            passed = True
-            
-            # Near resistance filter
-            if technical_filters.get("near_resistance") and bars:
-                swing_points = find_swing_points(bars)
-                resistance_levels = find_support_resistance(swing_points, is_support=False)
-                if not any(is_price_near_level(current_price, level, tolerance_pct=2.0) 
-                          for level in resistance_levels):
-                    passed = False
-            
-            # Near support filter
-            if technical_filters.get("near_support") and bars:
-                swing_points = find_swing_points(bars)
-                support_levels = find_support_resistance(swing_points, is_support=True)
-                if not any(is_price_near_level(current_price, level, tolerance_pct=2.0) 
-                          for level in support_levels):
-                    passed = False
-            
-            # Equal highs filter
-            if technical_filters.get("has_equal_highs") and bars:
-                swing_points = find_swing_points(bars)
-                equal_levels = find_equal_levels(swing_points, is_support=False, tolerance_pct=1.0)
-                if not equal_levels:
-                    passed = False
-            
-            # Equal lows filter
-            if technical_filters.get("has_equal_lows") and bars:
-                swing_points = find_swing_points(bars)
-                equal_levels = find_equal_levels(swing_points, is_support=True, tolerance_pct=1.0)
-                if not equal_levels:
-                    passed = False
-            
-            # Above 90-day high filter
-            if technical_filters.get("above_90day_high"):
-                if row.get("ninety_day_high") and current_price <= row["ninety_day_high"]:
-                    passed = False
-            
-            # Below 90-day low filter
-            if technical_filters.get("below_90day_low"):
-                if row.get("ninety_day_low") and current_price >= row["ninety_day_low"]:
-                    passed = False
-            
-            # Relative volume filter
-            if technical_filters.get("relative_volume_min"):
-                min_rv = technical_filters["relative_volume_min"]
-                if row.get("rv14", 0) < min_rv:
-                    passed = False
-            
-            if passed:
-                filtered_rows.append(row)
-        
-        return filtered_rows
-
