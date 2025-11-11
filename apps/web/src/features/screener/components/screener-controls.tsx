@@ -18,7 +18,7 @@ import {
 } from "@/lib/components/ui/select";
 import { Switch } from "@/lib/components/ui/switch";
 import { cn } from "@/lib/utils/utils";
-import { Check, ChevronDown, Play } from "lucide-react";
+import { Check, ChevronDown, Copy, Play } from "lucide-react";
 import type { ScreeningCriteria } from "../hooks/use-screeners";
 
 interface ScreenerControlsProps {
@@ -31,6 +31,8 @@ interface ScreenerControlsProps {
   onFilterChange: (filters: Partial<ScreeningCriteria["criteria"]>) => void;
   onRun: () => void;
   loading?: boolean;
+  onCopyHistoricalLink?: () => void;
+  canCopyHistoricalLink?: boolean;
 }
 
 export function ScreenerControls({
@@ -43,6 +45,8 @@ export function ScreenerControls({
   onFilterChange,
   onRun,
   loading = false,
+  onCopyHistoricalLink,
+  canCopyHistoricalLink = false,
 }: ScreenerControlsProps) {
   const handleFilterUpdate = (key: string, value: any) => {
     console.log("[ScreenerControls] Filter update:", {
@@ -114,6 +118,18 @@ export function ScreenerControls({
               <Play className="h-3 w-3 mr-1" />
               Run Historical
             </Button>
+            {onCopyHistoricalLink ? (
+              <Button
+                onClick={onCopyHistoricalLink}
+                size="sm"
+                variant="outline"
+                disabled={loading || !canCopyHistoricalLink}
+                className="h-8"
+              >
+                <Copy className="h-3 w-3 mr-1" />
+                Copy Link
+              </Button>
+            ) : null}
           </>
         )}
       </div>

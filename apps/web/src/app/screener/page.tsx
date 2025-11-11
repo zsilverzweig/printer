@@ -18,8 +18,15 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/lib/components/ui/tabs";
+import { toastError, toastSuccess } from "@/lib/utils/toast";
 import { useScreenerData } from "@/lib/hooks/use-screener-data";
 import { useUrlTabs } from "@/lib/hooks/use-url-tabs";
+
+const API_BASE =
+  process.env.NEXT_PUBLIC_WS_URL?.replace("ws://", "http://").replace(
+    "wss://",
+    "https://"
+  ) || "http://localhost:8000";
 
 export default function ScreenerPage() {
   const router = useRouter();
@@ -338,6 +345,44 @@ export default function ScreenerPage() {
     }
   };
 
+  const handleCopyHistoricalLink = React.useCallback(async () => {
+    if (mode !== "historical") {
+      toastError("Copy link available in historical mode only");
+      return;
+    }
+
+    if (!historicalTimestamp) {
+      toastError("Select a timestamp first", {
+        description: "Pick a historical timestamp to generate the link.",
+      });
+      return;
+    }
+
+    try {
+      const filtersWithLimit = {
+        ...currentFilters,
+        limit: currentFilters.limit ?? 200,
+      };
+
+      const url = new URL(`${API_BASE}/api/screening-criteria/run`);
+      url.searchParams.set("timestamp", historicalTimestamp.toISOString());
+
+      const payload = JSON.stringify(filtersWithLimit);
+      const escapedPayload = payload.replace(/'/g, "'\\''");
+
+      const curlCommand = `curl -X POST "${url.toString()}" -H "Content-Type: application/json" -d '${escapedPayload}'`;
+
+      await navigator.clipboard.writeText(curlCommand);
+      toastSuccess("Historical screener link copied", {
+        description: "Paste into a terminal and run curl to reproduce results.",
+      });
+    } catch (error) {
+      const description =
+        error instanceof Error ? error.message : "Unknown clipboard error";
+      toastError("Failed to copy link", { description });
+    }
+  }, [mode, historicalTimestamp, currentFilters]);
+
   return (
     <div className="container mx-auto p-6">
       <div className="mb-6">
@@ -393,6 +438,8 @@ export default function ScreenerPage() {
               setCurrentFilters({ ...currentFilters, ...updates });
             }}
             onRun={handleRun}
+            onCopyHistoricalLink={handleCopyHistoricalLink}
+            canCopyHistoricalLink={mode === "historical" && !!historicalTimestamp}
           />
 
           <ScreenerTable

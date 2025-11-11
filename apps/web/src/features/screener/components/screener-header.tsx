@@ -43,6 +43,8 @@ interface ScreenerHeaderProps {
   onTimestampChange: (date: Date | undefined) => void;
   onFilterChange: (updates: Partial<ScreeningCriteria["criteria"]>) => void;
   onRun: () => void;
+  onCopyHistoricalLink?: () => void;
+  canCopyHistoricalLink?: boolean;
 }
 
 export function ScreenerHeader({
@@ -73,6 +75,8 @@ export function ScreenerHeader({
   onTimestampChange,
   onFilterChange,
   onRun,
+  onCopyHistoricalLink,
+  canCopyHistoricalLink,
 }: ScreenerHeaderProps) {
   return (
     <div className="space-y-4">
@@ -225,6 +229,8 @@ export function ScreenerHeader({
           onFilterChange={onFilterChange}
           onRun={onRun}
           loading={runningScreener}
+          onCopyHistoricalLink={onCopyHistoricalLink}
+          canCopyHistoricalLink={canCopyHistoricalLink}
         />
       </div>
     </div>
