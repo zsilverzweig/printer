@@ -13,13 +13,13 @@ from collections import defaultdict
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Body
 from pydantic import BaseModel
 
 from app.services.core.time_context import get_current_time
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.strategies import Fund, ScreeningCriteria, Order, Transaction, Transfer, Trade, DefaultRiskSettings, TickerState, Position
@@ -150,6 +150,7 @@ class FundResponse(BaseModel):
     trading_start_time: Optional[str]
     trading_end_time: Optional[str]
     timezone: Optional[str]
+    ticker_state_summary: Dict[str, int]
     
     created_at: str
     updated_at: str
@@ -222,7 +223,10 @@ class LiquidatePositionRequest(BaseModel):
 
 
 # Helper functions to serialize models to dicts
-def serialize_fund(fund: Fund) -> dict:
+def serialize_fund(
+    fund: Fund,
+    ticker_summary: Optional[Dict[str, int]] = None,
+) -> dict:
     """Convert a Fund model instance to a response dict."""
     return {
         "id": fund.id,
@@ -248,6 +252,7 @@ def serialize_fund(fund: Fund) -> dict:
         "trading_start_time": fund.trading_start_time,
         "trading_end_time": fund.trading_end_time,
         "timezone": fund.timezone,
+        "ticker_state_summary": ticker_summary or {},
         # AI cost tracking
         "total_ai_cost": getattr(fund, "total_ai_cost", 0.0),
         "ai_cost_mtd": getattr(fund, "ai_cost_mtd", 0.0),
@@ -748,7 +753,30 @@ async def list_funds(include_archived: bool = False) -> List[dict]:
             
             result = await session.execute(stmt)
             funds = result.scalars().all()
-            return [serialize_fund(fund) for fund in funds]
+            
+            fund_ids = [fund.id for fund in funds]
+            ticker_summary_by_fund: Dict[str, Dict[str, int]] = {}
+            
+            if fund_ids:
+                summary_stmt = (
+                    select(
+                        TickerState.fund_id,
+                        TickerState.current_state,
+                        func.count().label("count"),
+                    )
+                    .where(TickerState.fund_id.in_(fund_ids))
+                    .group_by(TickerState.fund_id, TickerState.current_state)
+                )
+                summary_result = await session.execute(summary_stmt)
+                for fund_id, state, count in summary_result:
+                    if fund_id not in ticker_summary_by_fund:
+                        ticker_summary_by_fund[fund_id] = {}
+                    ticker_summary_by_fund[fund_id][state] = count
+            
+            return [
+                serialize_fund(fund, ticker_summary_by_fund.get(fund.id, {}))
+                for fund in funds
+            ]
             
     except Exception as e:
         logger.error(f"Error listing funds: {e}", exc_info=True)
@@ -763,7 +791,20 @@ async def get_fund(fund_id: str) -> dict:
             fund = await session.get(Fund, fund_id)
             if not fund:
                 raise HTTPException(status_code=404, detail="Fund not found")
-            return serialize_fund(fund)
+            
+            summary_stmt = (
+                select(
+                    TickerState.current_state,
+                    func.count().label("count"),
+                )
+                .where(TickerState.fund_id == fund_id)
+                .group_by(TickerState.current_state)
+            )
+            summary_result = await session.execute(summary_stmt)
+            ticker_summary = {
+                state: count for state, count in summary_result.all()
+            }
+            return serialize_fund(fund, ticker_summary)
             
     except HTTPException:
         raise

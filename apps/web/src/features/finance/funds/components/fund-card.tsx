@@ -7,6 +7,9 @@
 import { TrendingDown, TrendingUp } from "lucide-react";
 import Link from "next/link";
 
+import { useFundRealtime } from "../hooks/use-fund-realtime";
+import { Fund } from "../types";
+
 import { Badge } from "@/lib/components/ui/badge";
 import {
   Card,
@@ -15,9 +18,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/lib/components/ui/card";
-
-import { useFundRealtime } from "../hooks/use-fund-realtime";
-import { Fund } from "../types";
 
 interface FundCardProps {
   fund: Fund;
@@ -40,6 +40,31 @@ export function FundCard({ fund }: FundCardProps) {
   const dayChange = performance?.dayChange ?? 0;
   const dayChangePercent = performance?.dayChangePercent ?? 0;
   const isPositive = dayChange >= 0;
+  const tradingWindow =
+    fund.tradingStartTime && fund.tradingEndTime
+      ? `${fund.tradingStartTime} – ${fund.tradingEndTime}${
+          fund.timezone ? ` ${fund.timezone}` : ""
+        }`
+      : "Not configured";
+  const lifecycleSummary = fund.tickerLifecycleSummary ?? {};
+  const lifecycleStateOrder = [
+    "screened",
+    "setup",
+    "ordered",
+    "filled",
+    "exited",
+    "removed",
+  ];
+  const lifecycleItems = lifecycleStateOrder
+    .map((state) => ({
+      state,
+      count: lifecycleSummary[state] ?? 0,
+    }))
+    .filter((item) => item.count > 0);
+  const totalTracked = Object.values(lifecycleSummary).reduce(
+    (acc, count) => acc + (typeof count === "number" ? count : 0),
+    0
+  );
 
   return (
     <Link href={`/funds/${fund.id}`}>
@@ -116,6 +141,44 @@ export function FundCard({ fund }: FundCardProps) {
                 </div>
               </div>
             )}
+
+            {/* Trading hours */}
+            <div className="pt-4 border-t">
+              <p className="text-sm text-muted-foreground">Trading Hours</p>
+              <p className="text-sm font-medium mt-1">{tradingWindow}</p>
+            </div>
+
+            {/* Lifecycle summary */}
+            <div className="pt-4 border-t">
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-muted-foreground">
+                  Lifecycle Tracking
+                </p>
+                <span className="text-xs text-muted-foreground">
+                  {totalTracked} tracked
+                </span>
+              </div>
+              {lifecycleItems.length === 0 ? (
+                <p className="text-xs text-muted-foreground mt-2">
+                  No tickers currently tracked.
+                </p>
+              ) : (
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {lifecycleItems.map(({ state, count }) => (
+                    <Badge
+                      key={state}
+                      variant="outline"
+                      className="text-xs capitalize"
+                    >
+                      {state}
+                      <span className="ml-1 text-muted-foreground">
+                        {count}
+                      </span>
+                    </Badge>
+                  ))}
+                </div>
+              )}
+            </div>
 
             {/* Created Date */}
             <div className="text-xs text-muted-foreground">

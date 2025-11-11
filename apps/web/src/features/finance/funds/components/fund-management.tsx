@@ -30,7 +30,7 @@ import { AlpacaBalanceSummary } from "./alpaca-balance-summary";
 import { CreateFundDialog } from "./create-fund-dialog";
 import { DefaultRiskManagement } from "./default-risk-management";
 import { FundPerformanceOverview } from "./fund-performance-overview";
-import { FundsTable } from "./funds-table";
+import { FundsTable, buildLifecycleSummaries } from "./funds-table";
 
 export function FundManagement() {
   const { funds, loading, error, createFund, refresh } = useFunds();
@@ -172,7 +172,11 @@ export function FundManagement() {
           </div>
 
           {/* Fund Table */}
-          <FundsTable funds={funds} onRefresh={refresh} />
+          <FundsTable
+            funds={funds}
+            onRefresh={refresh}
+            lifecycleSummaries={buildLifecycleSummaries(funds)}
+          />
         </TabsContent>
 
         <TabsContent value="performance" className="space-y-6">

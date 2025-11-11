@@ -49,7 +49,39 @@ class GPTHelper:
     
     def _get_json_schema(self, response_model: Type[BaseModel]) -> Dict[str, Any]:
         """Generate JSON schema from Pydantic model for Structured Outputs."""
-        return response_model.model_json_schema()
+        schema = response_model.model_json_schema()
+        self._enforce_no_additional_properties(schema)
+        return schema
+
+    def _enforce_no_additional_properties(self, schema: Dict[str, Any]) -> None:
+        """
+        Recursively enforce additionalProperties=False on all object schemas.
+        
+        The Chat Completions Structured Outputs API requires additionalProperties
+        to be explicitly set to false on every object definition.
+        """
+        if not isinstance(schema, dict):
+            return
+        
+        schema_type = schema.get("type")
+        if schema_type == "object":
+            schema.setdefault("additionalProperties", False)
+            for property_schema in schema.get("properties", {}).values():
+                self._enforce_no_additional_properties(property_schema)
+        
+        if "items" in schema:
+            self._enforce_no_additional_properties(schema["items"])
+        
+        # Handle combined schemas (anyOf, allOf, oneOf)
+        for key in ("anyOf", "allOf", "oneOf"):
+            if key in schema and isinstance(schema[key], list):
+                for subschema in schema[key]:
+                    self._enforce_no_additional_properties(subschema)
+        
+        # Recurse into definitions
+        if "$defs" in schema and isinstance(schema["$defs"], dict):
+            for subschema in schema["$defs"].values():
+                self._enforce_no_additional_properties(subschema)
     
     async def get_structured_response(
         self,

@@ -67,3 +67,13 @@ export interface TickerStateRecord {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface FundLifecycleSummary {
+  totalTracked: number;
+  perState: Record<string, number>;
+  tradingWindow?: {
+    start: string;
+    end: string;
+    timezone?: string;
+  };
+}

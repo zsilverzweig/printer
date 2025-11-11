@@ -10,6 +10,10 @@ import { Play, Square, Trash2, TrendingDown, TrendingUp } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
+import { useFundRealtime } from "../hooks/use-fund-realtime";
+import { fundService } from "../services/fund-service";
+import { Fund, FundLifecycleSummary } from "../types";
+
 import { Badge } from "@/lib/components/ui/badge";
 import { Button } from "@/lib/components/ui/button";
 import { Checkbox } from "@/lib/components/ui/checkbox";
@@ -30,13 +34,10 @@ import {
 } from "@/lib/components/ui/table";
 import { toastError, toastSuccess } from "@/lib/utils/toast";
 
-import { useFundRealtime } from "../hooks/use-fund-realtime";
-import { fundService } from "../services/fund-service";
-import { Fund } from "../types";
-
 interface FundsTableProps {
   funds: Fund[];
   onRefresh?: () => void;
+  lifecycleSummaries?: Record<string, FundLifecycleSummary>;
 }
 
 interface FundRowProps {
@@ -44,9 +45,40 @@ interface FundRowProps {
   onStartStop: (fundId: string, isTrading: boolean) => Promise<void>;
   selected: boolean;
   onSelect: (fundId: string, selected: boolean) => void;
+  lifecycleSummary?: FundLifecycleSummary;
 }
 
-function FundRow({ fund, onStartStop, selected, onSelect }: FundRowProps) {
+export function buildLifecycleSummaries(
+  funds: Fund[]
+): Record<string, FundLifecycleSummary> {
+  const summaries: Record<string, FundLifecycleSummary> = {};
+  for (const fund of funds) {
+    summaries[fund.id] = {
+      totalTracked: Object.values(fund.tickerLifecycleSummary ?? {}).reduce(
+        (acc, count) => acc + (typeof count === "number" ? count : 0),
+        0
+      ),
+      perState: fund.tickerLifecycleSummary ?? {},
+      tradingWindow:
+        fund.tradingStartTime && fund.tradingEndTime
+          ? {
+              start: fund.tradingStartTime,
+              end: fund.tradingEndTime,
+              timezone: fund.timezone ?? undefined,
+            }
+          : undefined,
+    };
+  }
+  return summaries;
+}
+
+function FundRow({
+  fund,
+  onStartStop,
+  selected,
+  onSelect,
+  lifecycleSummary,
+}: FundRowProps) {
   const [actionLoading, setActionLoading] = useState(false);
   const modeColor = fund.mode === "sim" ? "bg-blue-500" : "bg-green-500";
   const modeLabel = fund.mode === "sim" ? "SIM" : "REAL";
@@ -69,6 +101,31 @@ function FundRow({ fund, onStartStop, selected, onSelect }: FundRowProps) {
   const isPositive = dayChange >= 0;
   // Use fund.status from database (active/paused) instead of WebSocket trading status
   const isActive = fund.status === "active";
+  const tradingWindow = lifecycleSummary?.tradingWindow
+    ? `${lifecycleSummary.tradingWindow.start} – ${
+        lifecycleSummary.tradingWindow.end
+      }${
+        lifecycleSummary.tradingWindow.timezone
+          ? ` ${lifecycleSummary.tradingWindow.timezone}`
+          : ""
+      }`
+    : "Not configured";
+  const lifecycleOrder = [
+    "screened",
+    "setup",
+    "ordered",
+    "filled",
+    "exited",
+    "removed",
+  ];
+  const lifecycleItems = lifecycleSummary
+    ? lifecycleOrder
+        .map((state) => ({
+          state,
+          count: lifecycleSummary.perState?.[state] ?? 0,
+        }))
+        .filter((item) => item.count > 0)
+    : [];
 
   const handleStartStop = async (e: React.MouseEvent) => {
     e.preventDefault();
@@ -172,6 +229,40 @@ function FundRow({ fund, onStartStop, selected, onSelect }: FundRowProps) {
           </div>
         )}
       </TableCell>
+      <TableCell className="align-top">
+        <div className="space-y-2">
+          <div className="text-xs text-muted-foreground uppercase tracking-wide">
+            Trading Hours
+          </div>
+          <div className="text-sm font-medium">{tradingWindow}</div>
+          {lifecycleSummary && lifecycleSummary.totalTracked > 0 && (
+            <div className="text-xs text-muted-foreground">
+              Total tracked: {lifecycleSummary.totalTracked}
+            </div>
+          )}
+          <div className="text-xs text-muted-foreground uppercase tracking-wide">
+            Lifecycle States
+          </div>
+          {lifecycleSummary && lifecycleSummary.totalTracked > 0 ? (
+            <div className="flex flex-wrap gap-1.5">
+              {lifecycleItems.map(({ state, count }) => (
+                <Badge
+                  key={state}
+                  variant="outline"
+                  className="text-xs capitalize"
+                >
+                  {state}
+                  <span className="ml-1 text-muted-foreground">{count}</span>
+                </Badge>
+              ))}
+            </div>
+          ) : (
+            <div className="text-xs text-muted-foreground">
+              No tickers tracked
+            </div>
+          )}
+        </div>
+      </TableCell>
       <TableCell className="text-center">
         <span
           className={`font-semibold ${
@@ -208,7 +299,11 @@ function FundRow({ fund, onStartStop, selected, onSelect }: FundRowProps) {
   );
 }
 
-export function FundsTable({ funds, onRefresh }: FundsTableProps) {
+export function FundsTable({
+  funds,
+  onRefresh,
+  lifecycleSummaries,
+}: FundsTableProps) {
   const [bulkActionLoading, setBulkActionLoading] = useState(false);
   const [selectedFundIds, setSelectedFundIds] = useState<Set<string>>(
     new Set()
@@ -217,6 +312,11 @@ export function FundsTable({ funds, onRefresh }: FundsTableProps) {
     "all"
   );
   const [deleteLoading, setDeleteLoading] = useState(false);
+
+  const computedLifecycleSummaries = useMemo(
+    () => lifecycleSummaries ?? buildLifecycleSummaries(funds),
+    [funds, lifecycleSummaries]
+  );
 
   // Filter funds based on type
   const filteredFunds = useMemo(() => {
@@ -492,6 +592,7 @@ export function FundsTable({ funds, onRefresh }: FundsTableProps) {
                 Assets Under Management
               </TableHead>
               <TableHead className="text-right w-[15%]">Today</TableHead>
+              <TableHead className="w-[20%]">Lifecycle</TableHead>
               <TableHead className="text-center w-[10%]">Status</TableHead>
               <TableHead className="text-center w-[10%]">Actions</TableHead>
             </TableRow>
@@ -500,7 +601,7 @@ export function FundsTable({ funds, onRefresh }: FundsTableProps) {
             {filteredFunds.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={6}
+                  colSpan={7}
                   className="text-center py-8 text-muted-foreground"
                 >
                   No funds match the selected filter.
@@ -514,6 +615,7 @@ export function FundsTable({ funds, onRefresh }: FundsTableProps) {
                   onStartStop={handleStartStop}
                   selected={selectedFundIds.has(fund.id)}
                   onSelect={handleSelectFund}
+                  lifecycleSummary={computedLifecycleSummaries[fund.id]}
                 />
               ))
             )}

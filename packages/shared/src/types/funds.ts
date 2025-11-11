@@ -60,6 +60,7 @@ export interface Fund {
   tradingStartTime?: string; // e.g., "09:30" (market open)
   tradingEndTime?: string; // e.g., "16:00" (market close)
   timezone?: string; // e.g., "America/New_York" (default: ET)
+  tickerLifecycleSummary?: Record<string, number>;
 
   // AI cost tracking
   totalAiCost?: number; // Total AI costs incurred by this fund

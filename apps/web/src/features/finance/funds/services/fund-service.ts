@@ -42,6 +42,8 @@ function parseFundDates(data: any): Fund {
     tradingStartTime: data.trading_start_time ?? data.tradingStartTime,
     tradingEndTime: data.trading_end_time ?? data.tradingEndTime,
     timezone: data.timezone,
+    tickerLifecycleSummary:
+      data.ticker_state_summary ?? data.tickerLifecycleSummary ?? {},
     // AI cost tracking
     totalAiCost: data.total_ai_cost ?? data.totalAiCost ?? 0,
     aiCostMtd: data.ai_cost_mtd ?? data.aiCostMtd ?? 0,
@@ -519,9 +521,7 @@ export const fundService = {
               }
             : undefined,
         body:
-          Object.keys(payload).length > 0
-            ? JSON.stringify(payload)
-            : undefined,
+          Object.keys(payload).length > 0 ? JSON.stringify(payload) : undefined,
       }
     );
 

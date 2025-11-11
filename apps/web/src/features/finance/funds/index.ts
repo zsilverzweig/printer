@@ -11,7 +11,6 @@ export * from "./types";
 export { AlpacaAccountsCard } from "./components/alpaca-accounts-card";
 export { AlpacaBalanceSummary } from "./components/alpaca-balance-summary";
 export { CreateFundDialog } from "./components/create-fund-dialog";
-export { FundCard } from "./components/fund-card";
 export { FundDetailView } from "./components/fund-detail-view";
 export { FundLedger } from "./components/fund-ledger";
 export { FundList } from "./components/fund-list";
