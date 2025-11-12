@@ -440,11 +440,7 @@ class StartupOrchestrator:
         coverage = await check_lookup_coverage(target_date)
         populated = False
 
-        expected_minutes = coverage.get("expected_minutes", 391)
-        minutes = coverage.get("minutes", 0)
-        has_today_volume = coverage.get("has_today_volume", False)
-
-        needs_population = not coverage.get("has_data") or minutes < expected_minutes
+        needs_population = not coverage.get("has_data")
 
         if needs_population:
             self.logger.log_service(
@@ -455,14 +451,6 @@ class StartupOrchestrator:
             await populate_lookup_for_date(target_date, timescale="1min")
             coverage = await check_lookup_coverage(target_date)
             populated = True
-
-        missing_today_volume = coverage.get("missing_today_volume", 0)
-        if missing_today_volume:
-            self.logger.log_service(
-                "Backtest Lookup",
-                Status.WARN,
-                f"{missing_today_volume} lookup rows still missing today_volume after startup check; scheduled background fill.",
-            )
 
         self.last_lookup_date = target_date
 

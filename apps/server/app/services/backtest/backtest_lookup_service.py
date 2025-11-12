@@ -18,10 +18,6 @@ from app.services.core.database import get_async_session
 
 logger = logging.getLogger(__name__)
 
-EXPECTED_MINUTES_BY_TIMESCALE: Dict[str, int] = {
-    "1min": 391,
-}
-
 
 async def check_lookup_coverage(target_date: date_type) -> Dict:
     """
@@ -31,7 +27,7 @@ async def check_lookup_coverage(target_date: date_type) -> Dict:
         target_date: Date to check
         
     Returns:
-        Dict with has_data, total_rows, symbols, minutes, expected_minutes
+        Dict with has_data, total_rows, symbols, minutes
     """
     start_dt = datetime.combine(target_date, datetime.min.time()).replace(hour=9, minute=30, tzinfo=timezone.utc)
     end_dt = datetime.combine(target_date, datetime.min.time()).replace(hour=16, minute=0, tzinfo=timezone.utc)
@@ -41,8 +37,7 @@ async def check_lookup_coverage(target_date: date_type) -> Dict:
             SELECT 
                 COUNT(*) AS total_rows,
                 COUNT(DISTINCT symbol) AS symbols,
-                COUNT(DISTINCT lookup_time) AS minutes,
-                COUNT(*) FILTER (WHERE today_volume IS NOT NULL) AS rows_with_today_volume
+                COUNT(DISTINCT lookup_time) AS minutes
             FROM market_data_backtest_lookup
             WHERE lookup_time >= :start_dt
               AND lookup_time <= :end_dt
@@ -51,16 +46,11 @@ async def check_lookup_coverage(target_date: date_type) -> Dict:
         
         row = result.first()
         total_rows = row[0] or 0
-        rows_with_today_volume = row[3] or 0
         return {
             "has_data": total_rows > 0,
             "total_rows": total_rows,
             "symbols": row[1] or 0,
             "minutes": row[2] or 0,
-            "expected_minutes": EXPECTED_MINUTES_BY_TIMESCALE.get("1min", 391),
-            "rows_with_today_volume": rows_with_today_volume,
-            "missing_today_volume": max(total_rows - rows_with_today_volume, 0),
-            "has_today_volume": total_rows > 0 and rows_with_today_volume == total_rows,
         }
 
 
@@ -81,35 +71,24 @@ async def populate_lookup_for_date(
     """
     logger.info(f"📊 Populating backtest lookup for {target_date} ({timescale})")
     
-    expected_minutes = EXPECTED_MINUTES_BY_TIMESCALE.get(timescale.lower())
-    if expected_minutes is None:
+    # Validate timescale is supported
+    if timescale.lower() != '1min':
         raise ValueError(f"Unsupported timescale '{timescale}' for backtest lookup population")
 
     coverage = await check_lookup_coverage(target_date)
-    minutes = coverage.get("minutes", 0)
-    has_today_volume = coverage.get("has_today_volume", False)
 
-    if minutes >= expected_minutes:
-        if has_today_volume:
-            logger.info(
-                "Lookup already complete for %s (%s); skipping population.",
-                target_date,
-                timescale,
-            )
-        else:
-            logger.info(
-                "Lookup minute coverage complete for %s (%s) but today_volume missing (%s rows); skipping population in favor of volume fill.",
-                target_date,
-                timescale,
-                coverage.get("missing_today_volume", 0),
-            )
+    if coverage.get("has_data", False):
+        logger.info(
+            "Lookup already populated for %s (%s); skipping population.",
+            target_date,
+            timescale,
+        )
         return {
             "total_rows": coverage.get("total_rows", 0),
             "symbols": coverage.get("symbols", 0),
-            "minute_count": minutes,
-            "expected_minutes": expected_minutes,
+            "minute_count": coverage.get("minutes", 0),
             "skipped": True,
-            "reason": "lookup_complete" if has_today_volume else "volume_only",
+            "reason": "lookup_exists",
         }
 
     # Trading hours: 9:30 AM to 4:00 PM UTC
@@ -167,10 +146,9 @@ async def populate_lookup_for_date(
             if minute_count % 60 == 0:
                 logger.info(f"  Processing {current.strftime('%H:%M')}...")
             logger.debug(
-                "  ↳ Begin minute %s (%d/%d)",
+                "  ↳ Begin minute %s (minute %d)",
                 current.strftime("%H:%M"),
                 minute_count + 1,
-                expected_minutes,
             )
             
             # Insert rows for this minute
@@ -236,13 +214,11 @@ async def populate_lookup_for_date(
                 "lookup_time": current,
                 "start_date": target_date,
                 "target_date": target_date,
-                "expected_minutes": expected_minutes,
             })
             logger.debug(
-                "  ↳ Completed minute %s (%d/%d)",
+                "  ↳ Completed minute %s (minute %d)",
                 current.strftime("%H:%M"),
                 minute_count + 1,
-                expected_minutes,
             )
             
             # Commit every 10 minutes
