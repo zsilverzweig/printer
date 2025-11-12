@@ -816,6 +816,127 @@ async def list_funds(include_archived: bool = False) -> List[dict]:
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class DefaultRiskSettingsInput(BaseModel):
+    """Input model for updating default risk settings."""
+
+    max_loss_percent: Optional[float] = None
+    max_loss_dollars: Optional[float] = None
+    max_giveback_percent: Optional[float] = None
+    max_order_age_seconds: Optional[int] = None
+    size_per_trade: Optional[float] = None
+    min_bet_percent: Optional[float] = None
+    max_bet_percent: Optional[float] = None
+    max_total_exposure: Optional[float] = None
+
+
+class DefaultRiskSettingsResponse(BaseModel):
+    """Response model for default risk settings."""
+
+    max_loss_percent: Optional[float]
+    max_loss_dollars: Optional[float]
+    max_giveback_percent: Optional[float]
+    max_order_age_seconds: int
+    size_per_trade: float
+    min_bet_percent: Optional[float]
+    max_bet_percent: Optional[float]
+    max_total_exposure: Optional[float]
+    updated_at: str
+
+    class Config:
+        from_attributes = True
+
+
+@router.get("/funds/default-risk-settings", response_model=DefaultRiskSettingsResponse)
+async def get_default_risk_settings():
+    """Get default risk management settings."""
+    try:
+        async with get_async_session() as session:
+            stmt = select(DefaultRiskSettings).where(DefaultRiskSettings.id == "default")
+            result = await session.execute(stmt)
+            settings = result.scalar_one_or_none()
+
+            if not settings:
+                # Create default record if it doesn't exist
+                settings = DefaultRiskSettings(
+                    id="default",
+                    max_order_age_seconds=60,
+                    size_per_trade=1000.0,
+                )
+                session.add(settings)
+                await session.commit()
+                await session.refresh(settings)
+
+            updated_at = settings.updated_at or get_current_time()
+
+            return DefaultRiskSettingsResponse(
+                max_loss_percent=settings.max_loss_percent,
+                max_loss_dollars=settings.max_loss_dollars,
+                max_giveback_percent=settings.max_giveback_percent,
+                max_order_age_seconds=settings.max_order_age_seconds,
+                size_per_trade=settings.size_per_trade,
+                min_bet_percent=settings.min_bet_percent,
+                max_bet_percent=settings.max_bet_percent,
+                max_total_exposure=settings.max_total_exposure,
+                updated_at=updated_at.isoformat(),
+            )
+    except Exception as e:
+        logger.error(f"Error getting default risk settings: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/funds/default-risk-settings", response_model=DefaultRiskSettingsResponse)
+async def update_default_risk_settings(input: DefaultRiskSettingsInput):
+    """Update default risk management settings."""
+    try:
+        async with get_async_session() as session:
+            stmt = select(DefaultRiskSettings).where(DefaultRiskSettings.id == "default")
+            result = await session.execute(stmt)
+            settings = result.scalar_one_or_none()
+
+            if not settings:
+                # Create default record if it doesn't exist
+                settings = DefaultRiskSettings(id="default")
+                session.add(settings)
+
+            # Update only provided fields
+            if input.max_loss_percent is not None:
+                settings.max_loss_percent = input.max_loss_percent
+            if input.max_loss_dollars is not None:
+                settings.max_loss_dollars = input.max_loss_dollars
+            if input.max_giveback_percent is not None:
+                settings.max_giveback_percent = input.max_giveback_percent
+            if input.max_order_age_seconds is not None:
+                settings.max_order_age_seconds = input.max_order_age_seconds
+            if input.size_per_trade is not None:
+                settings.size_per_trade = input.size_per_trade
+            if input.min_bet_percent is not None:
+                settings.min_bet_percent = input.min_bet_percent
+            if input.max_bet_percent is not None:
+                settings.max_bet_percent = input.max_bet_percent
+            if input.max_total_exposure is not None:
+                settings.max_total_exposure = input.max_total_exposure
+
+            settings.updated_at = get_current_time()
+
+            await session.commit()
+            await session.refresh(settings)
+
+            return DefaultRiskSettingsResponse(
+                max_loss_percent=settings.max_loss_percent,
+                max_loss_dollars=settings.max_loss_dollars,
+                max_giveback_percent=settings.max_giveback_percent,
+                max_order_age_seconds=settings.max_order_age_seconds,
+                size_per_trade=settings.size_per_trade,
+                min_bet_percent=settings.min_bet_percent,
+                max_bet_percent=settings.max_bet_percent,
+                max_total_exposure=settings.max_total_exposure,
+                updated_at=settings.updated_at.isoformat(),
+            )
+    except Exception as e:
+        logger.error(f"Error updating default risk settings: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get(
     "/funds/positions",
     response_model=GroupedFundPositionsResponse,
@@ -3562,122 +3683,5 @@ async def delete_fund(fund_id: str) -> dict:
         raise
     except Exception as e:
         logger.error(f"Error deleting fund {fund_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-class DefaultRiskSettingsInput(BaseModel):
-    """Input model for updating default risk settings."""
-    max_loss_percent: Optional[float] = None
-    max_loss_dollars: Optional[float] = None
-    max_giveback_percent: Optional[float] = None
-    max_order_age_seconds: Optional[int] = None
-    size_per_trade: Optional[float] = None
-    min_bet_percent: Optional[float] = None
-    max_bet_percent: Optional[float] = None
-    max_total_exposure: Optional[float] = None
-
-
-class DefaultRiskSettingsResponse(BaseModel):
-    """Response model for default risk settings."""
-    max_loss_percent: Optional[float]
-    max_loss_dollars: Optional[float]
-    max_giveback_percent: Optional[float]
-    max_order_age_seconds: int
-    size_per_trade: float
-    min_bet_percent: Optional[float]
-    max_bet_percent: Optional[float]
-    max_total_exposure: Optional[float]
-    updated_at: str
-
-    class Config:
-        from_attributes = True
-
-
-@router.get("/funds/default-risk-settings", response_model=DefaultRiskSettingsResponse)
-async def get_default_risk_settings():
-    """Get default risk management settings."""
-    try:
-        async with get_async_session() as session:
-            stmt = select(DefaultRiskSettings).where(DefaultRiskSettings.id == 'default')
-            result = await session.execute(stmt)
-            settings = result.scalar_one_or_none()
-            
-            if not settings:
-                # Create default record if it doesn't exist
-                settings = DefaultRiskSettings(
-                    id='default',
-                    max_order_age_seconds=60,
-                    size_per_trade=1000.0
-                )
-                session.add(settings)
-                await session.commit()
-                await session.refresh(settings)
-            
-            return DefaultRiskSettingsResponse(
-                max_loss_percent=settings.max_loss_percent,
-                max_loss_dollars=settings.max_loss_dollars,
-                max_giveback_percent=settings.max_giveback_percent,
-                max_order_age_seconds=settings.max_order_age_seconds,
-                size_per_trade=settings.size_per_trade,
-                min_bet_percent=settings.min_bet_percent,
-                max_bet_percent=settings.max_bet_percent,
-                max_total_exposure=settings.max_total_exposure,
-                updated_at=settings.updated_at.isoformat() if settings.updated_at else datetime.now(timezone.utc).isoformat()
-            )
-    except Exception as e:
-        logger.error(f"Error getting default risk settings: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.put("/funds/default-risk-settings", response_model=DefaultRiskSettingsResponse)
-async def update_default_risk_settings(input: DefaultRiskSettingsInput):
-    """Update default risk management settings."""
-    try:
-        async with get_async_session() as session:
-            stmt = select(DefaultRiskSettings).where(DefaultRiskSettings.id == 'default')
-            result = await session.execute(stmt)
-            settings = result.scalar_one_or_none()
-            
-            if not settings:
-                # Create default record if it doesn't exist
-                settings = DefaultRiskSettings(id='default')
-                session.add(settings)
-            
-            # Update only provided fields
-            if input.max_loss_percent is not None:
-                settings.max_loss_percent = input.max_loss_percent
-            if input.max_loss_dollars is not None:
-                settings.max_loss_dollars = input.max_loss_dollars
-            if input.max_giveback_percent is not None:
-                settings.max_giveback_percent = input.max_giveback_percent
-            if input.max_order_age_seconds is not None:
-                settings.max_order_age_seconds = input.max_order_age_seconds
-            if input.size_per_trade is not None:
-                settings.size_per_trade = input.size_per_trade
-            if input.min_bet_percent is not None:
-                settings.min_bet_percent = input.min_bet_percent
-            if input.max_bet_percent is not None:
-                settings.max_bet_percent = input.max_bet_percent
-            if input.max_total_exposure is not None:
-                settings.max_total_exposure = input.max_total_exposure
-            
-            settings.updated_at = datetime.now(timezone.utc)
-            
-            await session.commit()
-            await session.refresh(settings)
-            
-            return DefaultRiskSettingsResponse(
-                max_loss_percent=settings.max_loss_percent,
-                max_loss_dollars=settings.max_loss_dollars,
-                max_giveback_percent=settings.max_giveback_percent,
-                max_order_age_seconds=settings.max_order_age_seconds,
-                size_per_trade=settings.size_per_trade,
-                min_bet_percent=settings.min_bet_percent,
-                max_bet_percent=settings.max_bet_percent,
-                max_total_exposure=settings.max_total_exposure,
-                updated_at=settings.updated_at.isoformat()
-            )
-    except Exception as e:
-        logger.error(f"Error updating default risk settings: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
