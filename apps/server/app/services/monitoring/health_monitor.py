@@ -10,26 +10,18 @@ import logging
 import os
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta, timezone, date
-
-from app.services.core.time_context import get_current_time
+from functools import partial
 from typing import Dict, List, Optional
 
-from sqlalchemy import select, text
+from sqlalchemy import select, text, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.market_data import SymbolDateValidation, MarketData, MarketDataBacktestLookup
+from app.services.backtest.today_volume_fill import fill_missing_today_volume
 from app.services.core.database import get_async_session
+from app.services.core.time_context import get_current_time
 
 logger = logging.getLogger("app.health_monitor")
-
-PRIMARY_METRIC_COLUMNS = [
-    "ema_12",
-    "ema_26",
-    "macd_line",
-    "macd_signal",
-    "rsi_14",
-]
-
 
 class HealthCheckResult:
     """Result of a health check."""
@@ -348,14 +340,19 @@ class BacktestDataHealthCheck(BaseHealthCheck):
         self._last_metrics_task: Optional[asyncio.Task] = None
         self._population_progress: Dict = {}
         self._metrics_progress: Dict = {}
+        self._volume_fill_in_progress: bool = False
+        self._last_volume_fill_task: Optional[asyncio.Task] = None
     
     def _get_previous_trading_days(self, count: int = 7) -> List[date]:
         """Get the last N trading days (excluding weekends, but not holidays)."""
-        today = datetime.now(timezone.utc).date()
-        days = []
-        current = today - timedelta(days=1)
+        today = get_current_time()
+        if today.tzinfo is None:
+            today = today.replace(tzinfo=timezone.utc)
+        today_date = today.date()
+        days: List[date] = []
+        current = today_date - timedelta(days=1)
         
-        while len(days) < count and current >= today - timedelta(days=30):
+        while len(days) < count and current >= today_date - timedelta(days=30):
             # Skip weekends
             if current.weekday() < 5:  # 0-4 = Monday-Friday
                 days.append(current)
@@ -403,50 +400,47 @@ class BacktestDataHealthCheck(BaseHealthCheck):
         return coverage
     
     async def _check_metrics_coverage_for_dates(self, dates: List[date], session: AsyncSession) -> Dict:
-        """Check stored metrics coverage for a list of dates."""
-        coverage = {}
-
-        metric_condition = " AND ".join(f"{column} IS NOT NULL" for column in PRIMARY_METRIC_COLUMNS)
-
-        for target_date in dates:
-            start_dt = datetime.combine(target_date, datetime.min.time()).replace(
-                hour=9, minute=30, tzinfo=timezone.utc
-            )
-            end_dt = datetime.combine(target_date, datetime.min.time()).replace(
-                hour=16, minute=0, tzinfo=timezone.utc
-            )
-
-            stmt = text(
-                f"""
-                SELECT 
-                    COUNT(*) as total_rows,
-                    COUNT(*) FILTER (WHERE {metric_condition}) as metric_rows,
-                    COUNT(DISTINCT symbol) as symbols,
-                    COUNT(DISTINCT time) as minutes
-                FROM market_data
-                WHERE time >= :start_dt
-                  AND time <= :end_dt
-                  AND timescale = '1min';
-            """
-            )
-
-            result = await session.execute(stmt, {"start_dt": start_dt, "end_dt": end_dt})
-            row = result.first()
-            total_rows = row[0]
-            metric_rows = row[1]
-            symbols = row[2]
-            minutes = row[3]
-
-            coverage[target_date.isoformat()] = {
-                "has_data": total_rows > 0,
-                "total_rows": total_rows,
-                "metric_rows": metric_rows,
-                "metric_ratio": (metric_rows / total_rows) if total_rows else 0,
-                "symbols": symbols,
-                "minutes": minutes,
-                "expected_minutes": 391,
+        """Check stored metrics coverage for a list of dates based on validation flags."""
+        coverage: Dict[str, Dict] = {
+            target_date.isoformat(): {
+                "has_validation": False,
+                "validation_rows": 0,
+                "metrics_completed_rows": 0,
+                "metrics_ratio": 0.0,
             }
-
+            for target_date in dates
+        }
+        
+        if not dates:
+            return coverage
+        
+        stmt = (
+            select(
+                SymbolDateValidation.date,
+                func.count().label("validation_rows"),
+                func.count().filter(SymbolDateValidation.background_metrics_calculated.is_(True)).label("metrics_rows"),
+            )
+            .where(
+                SymbolDateValidation.date.in_(dates),
+                SymbolDateValidation.timescale == "1day",
+            )
+            .group_by(SymbolDateValidation.date)
+        )
+        
+        result = await session.execute(stmt)
+        
+        for row in result:
+            date_value = row.date
+            validation_rows = row.validation_rows or 0
+            metrics_rows = row.metrics_rows or 0
+            key = date_value.isoformat()
+            coverage[key] = {
+                "has_validation": validation_rows > 0,
+                "validation_rows": validation_rows,
+                "metrics_completed_rows": metrics_rows,
+                "metrics_ratio": (metrics_rows / validation_rows) if validation_rows else 0.0,
+            }
+        
         return coverage
     
     async def _populate_missing_dates(self, dates: List[date]) -> None:
@@ -508,46 +502,93 @@ class BacktestDataHealthCheck(BaseHealthCheck):
             # Import BackgroundMetricsLoader here to avoid circular imports
             from app.services.market.background_metrics_loader import BackgroundMetricsLoader
 
-            # Create loader instance
-            loader = BackgroundMetricsLoader()
-
+            # Track progress for all requested dates up front
+            timestamp = get_current_time().isoformat()
             for target_date in dates:
                 key = f"{target_date.isoformat()}_daily"
                 self._metrics_progress[key] = {
                     "status": "populating",
-                    "started_at": get_current_time().isoformat(),
+                    "started_at": timestamp,
                 }
 
-                try:
-                    # Process all missing daily metrics for this date
-                    stats = await loader.process_daily_data()
+            # Create loader instance and process once (service scans outstanding work per validation records)
+            loader = BackgroundMetricsLoader()
 
-                    self._metrics_progress[key] = {
-                        "status": "completed",
-                        "started_at": self._metrics_progress[key].get("started_at"),
-                        "completed_at": get_current_time().isoformat(),
-                        "result": {
-                            "symbols_scanned": stats.symbols_scanned,
-                            "bars_processed": stats.bars_processed,
-                            "metrics_calculated": stats.metrics_calculated,
-                            "database_updates": stats.database_updates,
-                            "errors": stats.errors,
-                        },
-                    }
-                    self.logger.info(
-                        f"✅ Daily metrics populated for {target_date}: {stats.symbols_scanned} symbols, {stats.bars_processed} bars"
-                    )
-
-                except Exception as e:
-                    self.logger.error(f"❌ Failed to populate daily metrics for {target_date}: {e}", exc_info=True)
+            try:
+                stats = await loader.process_daily_data()
+            except Exception as exc:
+                self.logger.error(
+                    "❌ BackgroundMetricsLoader failed while populating metrics: %s",
+                    exc,
+                    exc_info=True,
+                )
+                for target_date in dates:
+                    key = f"{target_date.isoformat()}_daily"
                     self._metrics_progress[key] = {
                         "status": "failed",
-                        "started_at": self._metrics_progress.get(key, {}).get("started_at"),
-                        "error": str(e),
+                        "started_at": timestamp,
+                        "completed_at": get_current_time().isoformat(),
+                        "error": str(exc),
                     }
+                raise
+
+            for target_date in dates:
+                key = f"{target_date.isoformat()}_daily"
+                self._metrics_progress[key] = {
+                    "status": "completed",
+                    "started_at": timestamp,
+                    "completed_at": get_current_time().isoformat(),
+                    "result": {
+                        "symbols_scanned": stats.symbols_scanned,
+                        "bars_processed": stats.bars_processed,
+                        "metrics_calculated": stats.metrics_calculated,
+                        "database_updates": stats.database_updates,
+                        "errors": stats.errors,
+                    },
+                }
+
+            self.logger.info(
+                "✅ Daily metrics populated via BackgroundMetricsLoader: %d symbols scanned, %d bars processed",
+                stats.symbols_scanned,
+                stats.bars_processed,
+            )
 
         finally:
             self._populating_metrics = False
+
+    def _schedule_today_volume_backfill(self) -> None:
+        """Kick off a background task to fill missing today_volume values."""
+        if self._volume_fill_in_progress:
+            self.logger.debug("Today volume backfill already running, skipping")
+            return
+
+        async def runner() -> None:
+            self._volume_fill_in_progress = True
+            loop = asyncio.get_running_loop()
+            try:
+                result = await loop.run_in_executor(
+                    None,
+                    partial(fill_missing_today_volume, include_today=False),
+                )
+                updated = result.get("updated", 0)
+                skipped = result.get("skipped_no_volume", 0)
+                if updated > 0:
+                    self.logger.info(
+                        "🔄 Filled today_volume for %s lookup rows (skipped %s).",
+                        updated,
+                        skipped,
+                    )
+                else:
+                    self.logger.debug(
+                        "No today_volume rows filled (skipped %s).",
+                        skipped,
+                    )
+            except Exception as exc:
+                self.logger.error("Failed to backfill today_volume: %s", exc, exc_info=True)
+            finally:
+                self._volume_fill_in_progress = False
+
+        self._last_volume_fill_task = asyncio.create_task(runner())
     
     async def check(self) -> HealthCheckResult:
         """Check if backtest lookup data and stored metrics exist, populate if missing."""
@@ -562,34 +603,85 @@ class BacktestDataHealthCheck(BaseHealthCheck):
                 # Check stored metrics coverage
                 metrics_coverage = await self._check_metrics_coverage_for_dates(recent_dates, session)
                 
-                # Find dates that need lookup population
-                missing_lookup_dates = []
+                # Find dates that need lookup population and whether validation exists
+                missing_lookup_dates: List[date] = []
+                blocked_lookup_dates: List[date] = []
                 auto_populate_enabled = os.getenv("BACKTEST_LOOKUP_AUTOPOPULATE_ENABLED", "true").lower() == "true"
-
-                for date_str, info in lookup_coverage.items():
+                
+                missing_today_volume_rows = 0
+                for target_date in recent_dates:
+                    date_str = target_date.isoformat()
+                    info = lookup_coverage.get(date_str, {})
+                    missing_today_volume_rows += info.get("missing_today_volume", 0)
                     if not info.get("has_data") or not info.get("has_today_volume", False):
-                        target_date = datetime.fromisoformat(date_str).date()
                         missing_lookup_dates.append(target_date)
+
+                if missing_today_volume_rows > 0:
+                    self.logger.info(
+                        "Detected %s lookup rows missing today_volume; scheduling backfill.",
+                        missing_today_volume_rows,
+                    )
+                    self._schedule_today_volume_backfill()
+                
+                ready_lookup_dates: List[date] = []
+                if missing_lookup_dates:
+                    validation_stmt = (
+                        select(
+                            SymbolDateValidation.date,
+                            func.count().label("validation_rows"),
+                        )
+                        .where(
+                            SymbolDateValidation.date.in_(missing_lookup_dates),
+                            SymbolDateValidation.timescale == "1min",
+                        )
+                        .group_by(SymbolDateValidation.date)
+                    )
+                    validation_result = await session.execute(validation_stmt)
+                    validation_counts = {
+                        row.date: row.validation_rows or 0 for row in validation_result
+                    }
+                    
+                    for target_date in missing_lookup_dates:
+                        if validation_counts.get(target_date, 0) > 0:
+                            ready_lookup_dates.append(target_date)
+                        else:
+                            blocked_lookup_dates.append(target_date)
+                            iso_key = target_date.isoformat()
+                            self._population_progress[iso_key] = {
+                                "status": "blocked_missing_validation",
+                                "checked_at": get_current_time().isoformat(),
+                            }
                 
                 # Find dates that need metrics population
-                missing_metrics_dates = []
-                for date_str, info in metrics_coverage.items():
-                    has_data = info.get("has_data")
-                    metric_ratio = info.get("metric_ratio", 0)
-                    if not has_data or metric_ratio < 0.9:
-                        target_date = datetime.fromisoformat(date_str).date()
+                missing_metrics_dates: List[date] = []
+                blocked_metrics_dates: List[date] = []
+                for target_date in recent_dates:
+                    date_str = target_date.isoformat()
+                    info = metrics_coverage.get(date_str, {})
+                    has_validation = info.get("has_validation", False)
+                    metrics_ratio = info.get("metrics_ratio", 0.0)
+                    
+                    if not has_validation:
+                        blocked_metrics_dates.append(target_date)
+                    elif metrics_ratio < 1.0:
                         missing_metrics_dates.append(target_date)
                 
                 # Trigger population for missing lookup data (non-blocking)
-                if missing_lookup_dates and auto_populate_enabled and not self._populating:
-                    self.logger.info(f"🔧 Found {len(missing_lookup_dates)} dates needing lookup population: {[d.isoformat() for d in missing_lookup_dates]}")
+                if ready_lookup_dates and auto_populate_enabled and not self._populating:
+                    self.logger.info(f"🔧 Found {len(ready_lookup_dates)} dates needing lookup population: {[d.isoformat() for d in ready_lookup_dates]}")
                     self._last_population_task = asyncio.create_task(
-                        self._populate_missing_dates(missing_lookup_dates)
+                        self._populate_missing_dates(ready_lookup_dates)
                     )
-                elif missing_lookup_dates and not auto_populate_enabled:
+                elif ready_lookup_dates and not auto_populate_enabled:
                     self.logger.info(
                         "Backtest lookup auto-populate disabled via BACKTEST_LOOKUP_AUTOPOPULATE_ENABLED; "
-                        f"skipping dates: {[d.isoformat() for d in missing_lookup_dates]}"
+                        f"skipping dates: {[d.isoformat() for d in ready_lookup_dates]}"
+                    )
+                
+                if blocked_lookup_dates:
+                    self.logger.info(
+                        "⏳ Lookup population deferred until validation present for dates: %s",
+                        [d.isoformat() for d in blocked_lookup_dates],
                     )
                 
                 background_metrics_enabled = os.getenv("BACKGROUND_METRICS_LOADER_ENABLED", "false").lower() == "true"
@@ -606,6 +698,12 @@ class BacktestDataHealthCheck(BaseHealthCheck):
                         f"skipping auto-population for dates: {[d.isoformat() for d in missing_metrics_dates]}"
                     )
                 
+                if blocked_metrics_dates:
+                    self.logger.info(
+                        "⏳ Metrics backfill deferred until validation present for dates: %s",
+                        [d.isoformat() for d in blocked_metrics_dates],
+                    )
+                
                 # Check yesterday specifically for health status
                 yesterday = recent_dates[0] if recent_dates else None
                 yesterday_lookup = lookup_coverage.get(yesterday.isoformat() if yesterday else "", {})
@@ -613,18 +711,27 @@ class BacktestDataHealthCheck(BaseHealthCheck):
                 
                 # Overall health: both lookup and metrics should be complete for yesterday
                 lookup_healthy = yesterday_lookup.get("has_data", False) if yesterday else False
-                metrics_healthy = (yesterday_metrics.get("has_data", False) and yesterday_metrics.get("metric_ratio", 0) >= 0.9) if yesterday else False
+                metrics_healthy = (
+                    yesterday_metrics.get("has_validation", False)
+                    and yesterday_metrics.get("metrics_ratio", 0) >= 1.0
+                ) if yesterday else False
                 is_healthy = lookup_healthy and metrics_healthy
                 
                 # Prepare message
                 if is_healthy:
                     lookup_complete = sum(1 for info in lookup_coverage.values() if info.get("has_data", False))
-                    metrics_complete = sum(1 for info in metrics_coverage.values() if info.get("has_data", False) and info.get("metric_ratio", 0) >= 0.9)
+                    metrics_complete = sum(
+                        1
+                        for info in metrics_coverage.values()
+                        if info.get("has_validation", False) and info.get("metrics_ratio", 0) >= 1.0
+                    )
                     message = f"Backtest data healthy: {lookup_complete}/{len(recent_dates)} lookup days, {metrics_complete}/{len(recent_dates)} metrics days sufficiently populated"
                 else:
                     issues = []
-                    if missing_lookup_dates:
-                        issues.append(f"{len(missing_lookup_dates)} lookup date(s)")
+                    if ready_lookup_dates or blocked_lookup_dates:
+                        issues.append(
+                            f"{len(ready_lookup_dates) + len(blocked_lookup_dates)} lookup date(s)"
+                        )
                     if missing_metrics_dates:
                         issues.append(f"{len(missing_metrics_dates)} metrics date(s)")
                     if issues:
@@ -639,13 +746,16 @@ class BacktestDataHealthCheck(BaseHealthCheck):
                     details={
                         "lookup_coverage": lookup_coverage,
                         "metrics_coverage": metrics_coverage,
-                        "missing_lookup_dates": [d.isoformat() for d in missing_lookup_dates],
+                        "missing_lookup_dates": [d.isoformat() for d in ready_lookup_dates],
+                        "blocked_lookup_dates": [d.isoformat() for d in blocked_lookup_dates],
                         "missing_metrics_dates": [d.isoformat() for d in missing_metrics_dates],
+                        "blocked_metrics_dates": [d.isoformat() for d in blocked_metrics_dates],
                         "populating_lookup": self._populating,
                         "populating_metrics": self._populating_metrics,
                         "lookup_progress": self._population_progress,
                         "metrics_progress": self._metrics_progress,
-                        "recent_dates_checked": [d.isoformat() for d in recent_dates]
+                        "recent_dates_checked": [d.isoformat() for d in recent_dates],
+                        "missing_today_volume_rows": missing_today_volume_rows,
                     }
                 )
         

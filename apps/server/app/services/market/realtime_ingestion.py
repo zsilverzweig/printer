@@ -641,7 +641,7 @@ class RealtimeIngestionService:
                             "bar_count": stmt.excluded.bar_count,
                             "first_bar_time": stmt.excluded.first_bar_time,
                             "last_bar_time": stmt.excluded.last_bar_time,
-                            "validated_apt": stmt.excluded.validated_at
+                            "validated_at": stmt.excluded.validated_at
                         }
                     )
                     await session.execute(stmt)

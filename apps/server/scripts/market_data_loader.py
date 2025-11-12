@@ -210,7 +210,8 @@ async def _fetch_backtest_lookup_summary(
                     timescale,
                     COUNT(*) AS total_rows,
                     COUNT(DISTINCT symbol) AS symbol_count,
-                    COUNT(DISTINCT lookup_time) AS minute_count
+                    COUNT(DISTINCT lookup_time) AS minute_count,
+                    COUNT(*) FILTER (WHERE today_volume IS NOT NULL) AS today_volume_rows
                 FROM market_data_backtest_lookup
                 WHERE timescale = ANY(:timescales)
                   AND lookup_time >= :start_ts
@@ -233,6 +234,9 @@ async def _fetch_backtest_lookup_summary(
             minute_count = int(mapping["minute_count"] or 0)
             ratio = (minute_count / expected_minutes) if expected_minutes else 0.0
 
+            today_volume_rows = int(mapping["today_volume_rows"] or 0)
+            today_volume_ratio = (today_volume_rows / int(mapping["total_rows"] or 0)) if int(mapping["total_rows"] or 0) else 0.0
+
             summary.setdefault(day.isoformat(), {})[timescale] = {
                 "has_data": minute_count > 0,
                 "total_rows": int(mapping["total_rows"] or 0),
@@ -240,6 +244,8 @@ async def _fetch_backtest_lookup_summary(
                 "minute_count": minute_count,
                 "expected_minutes": expected_minutes,
                 "minute_ratio": ratio,
+                "today_volume_rows": today_volume_rows,
+                "today_volume_ratio": today_volume_ratio,
             }
 
     return summary
@@ -295,6 +301,7 @@ async def detect_market_data_gaps(
             "Complete Rows",
             "Metrics",
             "Backtest Lookup",
+            "Lookup Today Vol",
         ]
 
         def fmt_ts(ts_value: Optional[datetime]) -> str:
@@ -332,6 +339,20 @@ async def detect_market_data_gaps(
             status = "OK" if expected and minutes >= expected else "Partial"
             return f"{status} {ratio * 100:.0f}% ({minutes}/{expected})"
 
+        def fmt_lookup_volume_status(day_key: str, timescale_key: str) -> str:
+            if timescale_key not in EXPECTED_MINUTES_BY_TIMESCALE:
+                return "--"
+            entry = backtest_lookup.get(day_key, {}).get(timescale_key)
+            if not entry:
+                return "No data"
+            total_rows = entry.get("total_rows", 0)
+            today_volume_rows = entry.get("today_volume_rows", 0)
+            if total_rows == 0:
+                return "No data"
+            status = "OK" if today_volume_rows == total_rows else "Partial"
+            ratio = entry.get("today_volume_ratio", 0.0)
+            return f"{status} {ratio * 100:.0f}% ({today_volume_rows}/{total_rows})"
+
         for day in recent_days:
             day_iso = day.isoformat()
             for timescale in timescales:
@@ -350,6 +371,7 @@ async def detect_market_data_gaps(
                         str(validation_entry.get("complete_rows", 0)),
                         fmt_metrics_status(day_iso, timescale),
                         fmt_lookup_status(day_iso, timescale),
+                        fmt_lookup_volume_status(day_iso, timescale),
                     ]
                 )
 

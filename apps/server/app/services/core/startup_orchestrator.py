@@ -221,10 +221,28 @@ class StartupOrchestrator:
             except Exception as e:
                 self.services["Background Metrics Loader"] = Status.FAIL
                 self.logger.log_error("Background Metrics Loader", e)
-                self.warnings.append(f"Background metrics loader: {str(e)}")
-        else:
-            self.services["Background Metrics Loader"] = Status.SKIP
-            self.logger.log_service("Background Metrics Loader", Status.SKIP, "disabled via BACKGROUND_METRICS_LOADER_ENABLED")
+
+        # Print data diagnostics table
+        try:
+            import importlib.util
+
+            script_path = os.path.join(
+                os.path.dirname(__file__), '..', '..', '..', 'scripts', 'market_data_loader.py'
+            )
+            spec = importlib.util.spec_from_file_location("market_data_loader", script_path)
+            market_data_loader_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(market_data_loader_module)
+
+            diagnostics = await market_data_loader_module._log_market_data_diagnostics(
+                context="startup_validation",
+                lookback_days=7
+            )
+
+            self.services["Data Diagnostics"] = Status.OK
+            self.logger.log_service("Data Diagnostics", Status.OK, "table printed above")
+        except Exception as e:
+            self.services["Data Diagnostics"] = Status.FAIL
+            self.logger.log_error("Data Diagnostics", e)
         
         # Note about disabled services (not errors, just informational)
         if os.getenv("MARKET_DATA_BACKFILL_ENABLED", "false").lower() != "true":

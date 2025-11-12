@@ -169,3 +169,4 @@ class TestFourRedCandlesV2Strategy:
         assert update.scale_out_percent is None
 
 
+

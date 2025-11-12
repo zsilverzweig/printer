@@ -8,6 +8,14 @@
 
 Follow Single Responsibility Principles
 
+### Automatic Data Maintenance
+
+- Review `README.md` → “Automatic Data Maintenance” before touching loaders, health checks, or background jobs.
+- Extend the existing loaders instead of creating new entry points; both the health monitor and manual scripts rely on `apps/server/scripts/market_data_loader.py`, `background_metrics_loader.py`, and `backtest_lookup_service.py`.
+- Treat `symbol_date_validation` as the source of truth: metrics must flip `background_metrics_calculated` to `true` after `BackgroundMetricsLoader` runs, and backtest lookup population must only run once `1min` validations exist.
+- Honour the env toggles: enable `BACKGROUND_METRICS_LOADER_ENABLED=true` and `BACKTEST_LOOKUP_AUTOPOPULATE_ENABLED=true` when expecting auto-recovery, and document changes if you alter defaults.
+- When health checks fail, first recover market data, then metrics, then the backtest lookup in that order.
+
 ### SQLAlchemy Declarative Gotchas
 
 - ❌ **NEVER** declare mapped attributes using SQLAlchemy reserved names like `metadata`, `registry`, or `metadata_obj`.

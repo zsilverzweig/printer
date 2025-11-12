@@ -193,7 +193,6 @@ async def populate_lookup_for_date(
                         WHERE md.timescale = :timescale
                           AND md.time <= :lookup_time
                           AND md.time >= :start_date
-                          AND v.bar_count >= :expected_minutes
                     ) ordered_bars
                     ORDER BY symbol, time DESC
                 ) m

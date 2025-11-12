@@ -251,3 +251,4 @@ class FourRedCandlesV2Strategy(ExecutionStrategy):
 
 
 
+
