@@ -19,12 +19,17 @@ from app.strategies.base import (
     ExecutionStrategy,
     MarketDataSnapshot,
     PositionContext,
+    StopUpdate,
 )
 from app.strategies.registry import get_strategy
 from app.services.market.market_data_provider import MarketDataProvider
 from app.services.trading.alpaca_service import AlpacaService
 from app.services.trading.reconciliation_service import get_reconciliation_service
-from app.services.trading.position_tracker import get_position_context
+from app.services.trading.position_tracker import (
+    get_position_context,
+    get_position_quantity_from_transactions,
+)
+from app.services.trading.constants import POSITION_EPSILON
 from app.services.trading.order_lifecycle import OrderLifecycleManager
 from app.services.events.event_broadcasting import (
     broadcast_error,
@@ -39,7 +44,7 @@ from app.services.strategies.order_executor import OrderExecutor
 from app.services.strategies.level_monitor import LevelMonitor
 from app.services.strategies.screener_connector import ScreenerConnector
 from app.lib.strategy_logger import StrategyLogger
-from app.models.strategies import Fund, Order, Transaction, DefaultRiskSettings
+from app.models.strategies import Fund, Order, Transaction, DefaultRiskSettings, Trade
 from app.services.core.database import get_async_session
 from app.types import ScreenerCriteria
 from sqlalchemy import select
@@ -353,6 +358,116 @@ class StrategyEngine:
             )
             result = await session.execute(stmt)
             return result.scalars().all()
+    
+    async def force_close_all_positions(self, reason: str = "end_of_day") -> int:
+        """
+        Force close all open positions for the fund.
+        
+        Used for end-of-day liquidation to ensure no overnight exposure.
+        """
+        try:
+            async with get_async_session() as session:
+                stmt = select(Trade).where(
+                    Trade.fund_id == self.fund_id,
+                    Trade.status.in_(("pending", "open", "partial"))
+                )
+                result = await session.execute(stmt)
+                open_trades = result.scalars().all()
+                
+                trade_payload = []
+                for trade in open_trades:
+                    qty = await get_position_quantity_from_transactions(
+                        session, self.fund_id, trade.symbol
+                    )
+                    trade_payload.append(
+                        {
+                            "id": trade.id,
+                            "symbol": trade.symbol,
+                            "entry_price": trade.entry_price,
+                            "entry_time": trade.entry_time,
+                            "quantity": qty,
+                        }
+                    )
+        except Exception as e:
+            logger.error(f"Error preparing forced liquidation for fund {self.fund_id}: {e}", exc_info=True)
+            return 0
+        
+        if not trade_payload:
+            logger.debug("Forced liquidation requested but no open trades found.")
+            return 0
+        
+        forced_count = 0
+        
+        for trade_data in trade_payload:
+            quantity = trade_data["quantity"]
+            symbol = trade_data["symbol"]
+            
+            if quantity <= POSITION_EPSILON:
+                continue
+            
+            try:
+                market_data = await self.market_data_provider.build_market_data(symbol)
+            except Exception as data_error:
+                logger.error(
+                    f"Failed to load market data for {symbol} during forced liquidation: {data_error}",
+                    exc_info=True
+                )
+                continue
+            
+            entry_price = trade_data["entry_price"] or market_data.price
+            entry_time = trade_data["entry_time"] or market_data.timestamp
+            
+            unrealized = (market_data.price - entry_price) * quantity
+            unrealized_pct = (
+                ((market_data.price - entry_price) / entry_price * 100)
+                if entry_price
+                else 0.0
+            )
+            
+            position = PositionContext(
+                symbol=symbol,
+                entry_price=entry_price,
+                entry_time=entry_time,
+                quantity=quantity,
+                current_price=market_data.price,
+                unrealized_pnl=unrealized,
+                unrealized_pnl_percent=unrealized_pct,
+                strategy_state={},
+            )
+            
+            stop_update = StopUpdate(
+                current_stop=market_data.price,
+                force_exit=True,
+                exit_reason=reason,
+                metadata={"source": "forced_liquidation"},
+            )
+            
+            try:
+                success = await self.order_executor.execute_sell_order(position, stop_update, market_data)
+            except Exception as exec_error:
+                logger.error(
+                    f"Error executing forced liquidation for {symbol}: {exec_error}",
+                    exc_info=True
+                )
+                success = False
+            
+            if success:
+                forced_count += 1
+                self.strategy_logger.log(
+                    symbol,
+                    f"Forced liquidation ({reason}) executed @ ${market_data.price:.2f}"
+                )
+                self._position_cache.pop(symbol, None)
+        
+        if forced_count:
+            self.strategy_logger.fund_message(
+                f"🚨 Forced liquidation executed for {forced_count} position(s) ({reason})",
+                "info"
+            )
+        else:
+            logger.debug("Forced liquidation executed; no positions required closing.")
+        
+        return forced_count
     
     async def _monitoring_loop(self) -> None:
         """Main monitoring loop - orchestrates all monitoring phases."""

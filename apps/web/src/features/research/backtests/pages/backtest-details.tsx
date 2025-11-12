@@ -74,6 +74,102 @@ function formatDateTime(dateString: string | undefined | null): string {
 function summarizeEventDetails(event: BacktestEvent): string {
   if (!event.details) return "";
   const metadata = event.details as Record<string, unknown>;
+  const sampleTickers =
+    (metadata.sample_tickers as string[] | undefined) ??
+    (metadata.sampleTickers as string[] | undefined);
+  const durationMs =
+    (metadata.duration_ms as number | undefined) ??
+    (metadata.durationMs as number | undefined);
+
+  if (event.eventType === "precompute_start") {
+    const total =
+      (metadata.total_iterations as number | undefined) ??
+      (metadata.totalIterations as number | undefined);
+    const interval =
+      (metadata.monitoring_interval_minutes as number | undefined) ??
+      (metadata.monitoringIntervalMinutes as number | undefined);
+    const startParts: string[] = [];
+    if (typeof total === "number" && Number.isFinite(total)) {
+      startParts.push(`${total} checkpoints`);
+    }
+    if (typeof interval === "number" && Number.isFinite(interval)) {
+      startParts.push(`${interval}m interval`);
+    }
+    return startParts.length > 0
+      ? `precomputing screener (${startParts.join(", ")})`
+      : "precomputing screener";
+  }
+
+  if (event.eventType === "precompute_progress") {
+    const step =
+      (metadata.step as number | undefined) ??
+      (metadata.index as number | undefined);
+    const total =
+      (metadata.total as number | undefined) ??
+      (metadata.total_iterations as number | undefined);
+    const tickerCount =
+      (metadata.ticker_count as number | undefined) ??
+      (metadata.tickerCount as number | undefined);
+    const parts: string[] = [];
+    if (
+      typeof step === "number" &&
+      Number.isFinite(step) &&
+      typeof total === "number" &&
+      Number.isFinite(total) &&
+      total > 0
+    ) {
+      parts.push(`checkpoint ${step}/${total}`);
+    } else if (typeof step === "number" && Number.isFinite(step)) {
+      parts.push(`checkpoint ${step}`);
+    }
+    if (typeof tickerCount === "number" && Number.isFinite(tickerCount)) {
+      parts.push(`tickers ${tickerCount}`);
+    }
+    if (typeof durationMs === "number" && Number.isFinite(durationMs)) {
+      parts.push(`${Math.round(durationMs)}ms`);
+    }
+    if (Array.isArray(sampleTickers) && sampleTickers.length > 0) {
+      parts.push(sampleTickers.slice(0, 3).join(", "));
+    }
+    return parts.join(" • ");
+  }
+
+  if (event.eventType === "precompute_complete") {
+    const total =
+      (metadata.total_iterations as number | undefined) ??
+      (metadata.totalIterations as number | undefined);
+    const elapsed =
+      (metadata.elapsed_ms as number | undefined) ??
+      (metadata.elapsedMs as number | undefined);
+    const parts: string[] = [];
+    if (typeof total === "number" && Number.isFinite(total)) {
+      parts.push(`${total} checkpoints`);
+    }
+    if (typeof elapsed === "number" && Number.isFinite(elapsed)) {
+      parts.push(`${(elapsed / 1000).toFixed(1)}s`);
+    }
+    return parts.length > 0
+      ? `precompute complete (${parts.join(", ")})`
+      : "precompute complete";
+  }
+
+  if (event.eventType === "precompute_error") {
+    const step =
+      (metadata.step as number | undefined) ??
+      (metadata.index as number | undefined);
+    const error =
+      (metadata.error as string | undefined) ??
+      (metadata.message as string | undefined);
+    const parts: string[] = [];
+    if (typeof step === "number" && Number.isFinite(step)) {
+      parts.push(`checkpoint ${step}`);
+    }
+    if (error) {
+      parts.push(error);
+    }
+    return parts.join(" • ");
+  }
+
   const minuteIndex = metadata.minute_index ?? metadata.minuteIndex;
   const iterationCount =
     metadata.iteration_count ?? metadata.iterationCount ?? null;

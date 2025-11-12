@@ -7,8 +7,11 @@ making backtest queries instant.
 """
 
 import asyncio
+import argparse
+import logging
+import os
 import sys
-from datetime import date as date_type
+from datetime import date as date_type, datetime
 
 sys.path.insert(0, "/app")
 
@@ -18,11 +21,11 @@ from app.services.backtest.backtest_lookup_service import (
 )
 
 
-async def populate_date(target_date: date_type, timescale: str = "1min") -> None:
+async def populate_date(target_date: date_type, timescale: str = "1min", max_minutes: int | None = None) -> None:
     """Populate lookup table for one date using backtest service helpers."""
     print(f"📊 Populating backtest lookup for {target_date} ({timescale})")
 
-    result = await populate_lookup_for_date(target_date, timescale=timescale)
+    result = await populate_lookup_for_date(target_date, timescale=timescale, max_minutes=max_minutes)
     print(
         f"✅ Populated {result['total_rows']:,} rows for {result['symbols']} symbols "
         f"(table size {result['size']})"
@@ -40,7 +43,42 @@ async def coverage(target_date: date_type) -> None:
     )
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Populate backtest lookup data for a given date")
+    parser.add_argument(
+        "date",
+        type=lambda s: datetime.strptime(s, "%Y-%m-%d").date(),
+        help="Target trading date (YYYY-MM-DD)",
+    )
+    parser.add_argument(
+        "timescale",
+        nargs="?",
+        default="1min",
+        help="Timescale to populate (default: 1min)",
+    )
+    parser.add_argument(
+        "--max-minutes",
+        type=int,
+        default=None,
+        help="Optionally limit the number of minutes processed (for testing)",
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable verbose logging output",
+    )
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
-    target = date_type(2025, 11, 3)
-    asyncio.run(populate_date(target))
-    asyncio.run(coverage(target))
+    args = parse_args()
+
+    if args.debug:
+        os.environ["BACKTEST_LOOKUP_DEBUG"] = "true"
+        logging.basicConfig(level=logging.DEBUG)
+
+    async def _main() -> None:
+        await populate_date(args.date, timescale=args.timescale, max_minutes=args.max_minutes)
+        await coverage(args.date)
+
+    asyncio.run(_main())

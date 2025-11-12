@@ -629,18 +629,19 @@ class RealtimeIngestionService:
                     stmt = insert(SymbolDateValidation).values(
                         symbol=symbol,
                         date=bar_date,
+                        timescale="1min",
                         bar_count=bar_count,
                         first_bar_time=first_bar,
                         last_bar_time=last_bar,
                         validated_at=get_current_time()
                     )
                     stmt = stmt.on_conflict_do_update(
-                        index_elements=["symbol", "date"],
+                        index_elements=["symbol", "date", "timescale"],
                         set_={
                             "bar_count": stmt.excluded.bar_count,
                             "first_bar_time": stmt.excluded.first_bar_time,
                             "last_bar_time": stmt.excluded.last_bar_time,
-                            "validated_at": stmt.excluded.validated_at
+                            "validated_apt": stmt.excluded.validated_at
                         }
                     )
                     await session.execute(stmt)

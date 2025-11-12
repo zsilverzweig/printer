@@ -13,9 +13,14 @@ import logging
 import time
 import uuid
 from datetime import datetime, date, timedelta, timezone, time as dt_time
+from typing import Any, Dict, List, Optional, Tuple
 
 from app.services.core.time_context import get_current_time
-from typing import Dict, List, Optional, Any
+
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:  # pragma: no cover
+    from backports.zoneinfo import ZoneInfo  # type: ignore
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,7 +33,8 @@ from app.services.core.time_context import (
     set_backtest_context,
     update_backtest_time,
     clear_backtest_context,
-    get_backtest_id
+    get_backtest_id,
+    get_backtest_sequence,
 )
 from app.services.backtest.order_simulator import OrderSimulator
 from app.services.backtest.backtest_lookup_service import check_lookup_coverage, populate_lookup_for_date
@@ -137,6 +143,10 @@ class BacktestCoordinator:
     Manages the complete lifecycle of a backtest from data validation
     through execution to results collection.
     """
+    
+    MARKET_TZ = ZoneInfo("America/New_York")
+    MARKET_OPEN = dt_time(hour=9, minute=30)
+    MARKET_CLOSE = dt_time(hour=16, minute=0)
     
     def __init__(self):
         """Initialize coordinator with order simulator."""
@@ -507,32 +517,55 @@ class BacktestCoordinator:
         # Check if lookup table has data for this date
         coverage = await check_lookup_coverage(backtest_date)
         
-        if not coverage["has_data"]:
-            logger.info(f"⚠️  Lookup data not found for {backtest_date}, populating...")
+        session_start_utc, _ = self._get_market_session_bounds(backtest_date)
+        
+        needs_population = not coverage["has_data"] or not coverage.get("has_today_volume", False)
+        if needs_population:
+            if coverage["has_data"]:
+                logger.info(
+                    f"⚠️  Lookup data incomplete for {backtest_date} "
+                    f"(missing_today_volume={coverage.get('missing_today_volume'):,}); repopulating..."
+                )
+            else:
+                logger.info(f"⚠️  Lookup data not found for {backtest_date}, populating...")
             try:
                 # Populate the lookup table for this date
                 result = await populate_lookup_for_date(backtest_date, timescale='1min')
                 logger.info(f"✅ Lookup table populated: {result['total_rows']:,} rows for {result['symbols']} symbols")
+                # Re-check coverage after population
+                coverage = await check_lookup_coverage(backtest_date)
+                if not coverage.get("has_today_volume", False):
+                    raise ValueError(
+                        f"Lookup table still missing today_volume data for {backtest_date} "
+                        f"after population (missing_rows={coverage.get('missing_today_volume')})"
+                    )
                 await log_backtest_event(
                     fund.id,
                     "lookup_populated",
-                    simulated_time=datetime.combine(backtest_date, dt_time(9, 30)).replace(tzinfo=timezone.utc),
+                    simulated_time=session_start_utc,
                     message=f"Populated lookup for {backtest_date}",
                     details={
                         "total_rows": result.get("total_rows"),
                         "symbols": result.get("symbols"),
                         "size": result.get("size"),
+                        "coverage": coverage,
                     },
                 )
             except Exception as e:
                 logger.error(f"❌ Failed to populate lookup table: {e}", exc_info=True)
                 raise ValueError(f"Failed to populate lookup data for {backtest_date}: {str(e)}")
         else:
-            logger.info(f"✅ Lookup data exists: {coverage['total_rows']:,} rows, {coverage['symbols']} symbols, {coverage['minutes']} minutes")
+            logger.info(
+                "✅ Lookup data exists: %s rows, %s symbols, %s minutes, %s rows with today_volume",
+                f"{coverage['total_rows']:,}",
+                coverage["symbols"],
+                coverage["minutes"],
+                coverage.get("rows_with_today_volume"),
+            )
             await log_backtest_event(
                 fund.id,
                 "lookup_verified",
-                simulated_time=datetime.combine(backtest_date, dt_time(9, 30)).replace(tzinfo=timezone.utc),
+                simulated_time=session_start_utc,
                 message=f"Lookup coverage verified for {backtest_date}",
                 details=coverage,
             )
@@ -600,20 +633,22 @@ class BacktestCoordinator:
         logger.info(f"📈 Running trading day: {backtest_date}")
         
         # Define trading hours (9:30 AM to 4:00 PM ET)
-        start_time = datetime.combine(
-            backtest_date,
-            dt_time(9, 30)
-        ).replace(tzinfo=timezone.utc)
-        
-        end_time = datetime.combine(
-            backtest_date,
-            dt_time(16, 0)
-        ).replace(tzinfo=timezone.utc)
+        start_time, end_time = self._get_market_session_bounds(backtest_date)
         if duration_minutes:
             override_end = start_time + timedelta(minutes=duration_minutes)
             if override_end < end_time:
                 end_time = override_end
         
+        monitoring_interval = max(1, monitoring_interval_minutes)
+        liquidation_time = end_time - timedelta(minutes=5)
+        if liquidation_time < start_time:
+            liquidation_time = start_time
+        liquidation_executed = False
+        loop_wall_start = None
+        iteration_sequence = 0
+        minute_count = 0
+        iteration_count = 0
+
         # Initialize backtest context
         set_backtest_context(backtest_id, start_time)
         
@@ -666,7 +701,6 @@ class BacktestCoordinator:
             logger.info(f"⏱️  Backtest time window: {start_time} to {end_time}")
             
             loop_wall_start = time.perf_counter()
-            iteration_sequence = 0
             await log_backtest_event(
                 fund.id,
                 "loop_start",
@@ -695,6 +729,8 @@ class BacktestCoordinator:
                 f"with {total_tickers_in_cache} total ticker entries "
                 f"(avg {total_tickers_in_cache/len(screener_cache) if screener_cache else 0:.1f} tickers per iteration)"
             )
+
+            iteration_sequence = get_backtest_sequence() or iteration_sequence
             
             if not fund.screening_criteria_id:
                 logger.warning(f"[BT:{backtest_id[:8]}] ⚠️  Fund has no screening_criteria_id - strategy will not receive any tickers!")
@@ -702,12 +738,6 @@ class BacktestCoordinator:
                 logger.warning(f"[BT:{backtest_id[:8]}] ⚠️  Screener returned 0 tickers for entire day! Check screener criteria and data availability.")
             
             current_time = start_time
-            minute_count = 0
-            iteration_count = 0
-            
-            # Run strategy monitoring every N minutes (not every minute - too expensive)
-            monitoring_interval = max(1, monitoring_interval_minutes)
-            
             while current_time <= end_time:
                 iteration_sequence += 1
                 iteration_wall_start = time.perf_counter()
@@ -723,6 +753,39 @@ class BacktestCoordinator:
 
                 # Update backtest time context
                 update_backtest_time(current_time)
+                liquidation_window = current_time >= liquidation_time
+                
+                if liquidation_window and not liquidation_executed:
+                    try:
+                        closed_positions = await strategy_engine.force_close_all_positions(
+                            reason="end_of_day"
+                        )
+                    except Exception as liquidation_error:
+                        logger.error(
+                            f"[BT:{backtest_id[:8]}] Error during forced liquidation: {liquidation_error}",
+                            exc_info=True
+                        )
+                        closed_positions = 0
+                    liquidation_executed = True
+                    
+                    await log_backtest_event(
+                        fund.id,
+                        "forced_liquidation",
+                        sequence=iteration_sequence,
+                        simulated_time=current_time,
+                        message="Forced liquidation executed at end of day",
+                        details={
+                            "minute_index": minute_count,
+                            "positions_closed": closed_positions,
+                            "liquidation_time": liquidation_time.isoformat(),
+                        },
+                    )
+                    
+                    if closed_positions:
+                        logger.info(
+                            f"[BT:{backtest_id[:8]}] 🔒 Forced liquidation closed "
+                            f"{closed_positions} position(s) at {current_time.strftime('%H:%M')}"
+                        )
                 
                 # Log progress every 30 minutes  
                 if minute_count % 30 == 0:
@@ -740,54 +803,60 @@ class BacktestCoordinator:
                         screener = get_screener_service()
                         tickers: List[str] = []
                         
-                        # Check cache first (historical data never changes for a given timestamp!)
-                        cache_key = current_time.isoformat()
-                        if cache_key in screener_cache:
-                            tickers = screener_cache[cache_key]
-                            logger.debug(f"📋 Using cached screener results for {current_time.strftime('%H:%M')}: {len(tickers)} tickers")
-                        elif screener and fund.screening_criteria_id:
-                            try:
-                                # Get screening criteria configuration
-                                async with get_async_session() as session:
-                                    from app.models.strategies import ScreeningCriteria
-                                    criteria_obj = await session.get(ScreeningCriteria, fund.screening_criteria_id)
-                                    
-                                    if criteria_obj and criteria_obj.criteria:
-                                        # Run historical screener at current backtest time
-                                        criteria_dict = criteria_obj.criteria
+                        if not liquidation_window:
+                            # Check cache first (historical data never changes for a given timestamp!)
+                            cache_key = current_time.isoformat()
+                            if cache_key in screener_cache:
+                                tickers = screener_cache[cache_key]
+                                logger.debug(f"📋 Using cached screener results for {current_time.strftime('%H:%M')}: {len(tickers)} tickers")
+                            elif screener and fund.screening_criteria_id:
+                                try:
+                                    # Get screening criteria configuration
+                                    async with get_async_session() as session:
+                                        from app.models.strategies import ScreeningCriteria
+                                        criteria_obj = await session.get(ScreeningCriteria, fund.screening_criteria_id)
                                         
-                                        logger.debug(f"🔍 Running historical screener at {current_time}")
-                                        results = await screener.compute_historical(
-                                            timestamp=current_time,
-                                            min_price=criteria_dict.get('min_price', 5),
-                                            max_price=criteria_dict.get('max_price', 100),
-                                            min_volume=criteria_dict.get('min_volume'),
-                                            min_change_percent=criteria_dict.get('min_change_percent'),
-                                            max_change_percent=criteria_dict.get('max_change_percent'),
-                                            min_relative_volume=criteria_dict.get('min_relative_volume', 1.5),
-                                            max_relative_volume=criteria_dict.get('max_relative_volume'),
-                                            min_relative_volume_last_week=criteria_dict.get('min_relative_volume_last_week'),
-                                            order_by=criteria_dict.get('order_by', 'rv14'),
-                                            limit=criteria_dict.get('limit', 10),
-                                            technical_filters=criteria_dict.get('technical_filters'),
-                                            asset_types=criteria_dict.get('asset_types'),
-                                            market_cap_min=criteria_dict.get('market_cap_min'),
-                                            market_cap_max=criteria_dict.get('market_cap_max')
-                                        )
-                                        
-                                        if results:
-                                            tickers = [r.get('ticker') or r.get('symbol') for r in results[:10]]  # Limit to top 10
-                                            logger.info(f"[BT:{backtest_id[:8]}] 📋 Historical screener found {len(tickers)} tickers at {current_time.strftime('%H:%M')}: {tickers}")
-                                            # Cache for future use
-                                            screener_cache[cache_key] = tickers
+                                        if criteria_obj and criteria_obj.criteria:
+                                            # Run historical screener at current backtest time
+                                            criteria_dict = criteria_obj.criteria
+                                            
+                                            logger.debug(f"🔍 Running historical screener at {current_time}")
+                                            results = await screener.compute_historical(
+                                                timestamp=current_time,
+                                                min_price=criteria_dict.get('min_price', 5),
+                                                max_price=criteria_dict.get('max_price', 100),
+                                                min_volume=criteria_dict.get('min_volume'),
+                                                min_change_percent=criteria_dict.get('min_change_percent'),
+                                                max_change_percent=criteria_dict.get('max_change_percent'),
+                                                min_relative_volume=criteria_dict.get('min_relative_volume', 1.5),
+                                                max_relative_volume=criteria_dict.get('max_relative_volume'),
+                                                min_relative_volume_last_week=criteria_dict.get('min_relative_volume_last_week'),
+                                                order_by=criteria_dict.get('order_by', 'rv14'),
+                                                limit=criteria_dict.get('limit', 10),
+                                                technical_filters=criteria_dict.get('technical_filters'),
+                                                asset_types=criteria_dict.get('asset_types'),
+                                                market_cap_min=criteria_dict.get('market_cap_min'),
+                                                market_cap_max=criteria_dict.get('market_cap_max')
+                                            )
+                                            
+                                            if results:
+                                                tickers = [r.get('ticker') or r.get('symbol') for r in results[:10]]  # Limit to top 10
+                                                logger.info(f"[BT:{backtest_id[:8]}] 📋 Historical screener found {len(tickers)} tickers at {current_time.strftime('%H:%M')}: {tickers}")
+                                                # Cache for future use
+                                                screener_cache[cache_key] = tickers
+                                            else:
+                                                logger.info(f"[BT:{backtest_id[:8]}] 📋 Historical screener found no results at {current_time.strftime('%H:%M')}")
+                                                screener_cache[cache_key] = []
+                                            logger.info(f"[BT:{backtest_id[:8]}] 📊 Screener returned {len(tickers)} tickers for iteration {iteration_count}")
                                         else:
-                                            logger.info(f"[BT:{backtest_id[:8]}] 📋 Historical screener found no results at {current_time.strftime('%H:%M')}")
-                                            screener_cache[cache_key] = []
-                                        logger.info(f"[BT:{backtest_id[:8]}] 📊 Screener returned {len(tickers)} tickers for iteration {iteration_count}")
-                                    else:
-                                        logger.warning(f"Screening criteria {fund.screening_criteria_id} not found or empty")
-                            except Exception as e:
-                                logger.warning(f"Could not run historical screener: {e}", exc_info=True)
+                                            logger.warning(f"Screening criteria {fund.screening_criteria_id} not found or empty")
+                                except Exception as e:
+                                    logger.warning(f"Could not run historical screener: {e}", exc_info=True)
+                        else:
+                            logger.debug(
+                                f"[BT:{backtest_id[:8]}] ⏳ Skipping screener fetch after liquidation cutoff "
+                                f"({current_time.strftime('%H:%M')})"
+                            )
                         
                         tickers_analyzed = len(tickers)
                         
@@ -802,13 +871,13 @@ class BacktestCoordinator:
                             )
                             await strategy_engine.order_executor.cancel_stale_orders(max_age, pending_orders)
                             
-                            if not tickers:
+                            if not tickers and not liquidation_window:
                                 logger.warning(
                                     f"[BT:{backtest_id[:8]}] ⚠️  No tickers from screener at {current_time.strftime('%H:%M')}"
                                 )
                             
                             # Run setup phase when required
-                            if tickers and execution_strategy.requires_setup:
+                            if tickers and not liquidation_window and execution_strategy.requires_setup:
                                 tickers = await strategy_engine.screener_connector.run_setup_phase(tickers)
                             tickers_after_setup = len(tickers)
                             
@@ -822,17 +891,27 @@ class BacktestCoordinator:
                                 active_positions,
                                 strategy_engine.fund.balance
                             )
+                            if liquidation_window:
+                                can_trade = False
+                                restriction_reason = "end_of_day_liquidation"
                             
                             # Entry analysis persists levels via StrategyService
-                            await strategy_engine.screener_connector.run_entry_analysis(
-                                tickers,
-                                active_positions,
-                                can_trade,
-                                restriction_reason
-                            )
+                            if not liquidation_window and tickers:
+                                await strategy_engine.screener_connector.run_entry_analysis(
+                                    tickers,
+                                    active_positions,
+                                    can_trade,
+                                    restriction_reason
+                                )
+                                
+                                # Level monitoring mirrors live engine flow
+                                await strategy_engine.level_monitor.check_entry_triggers(strategy_engine.order_executor)
+                            else:
+                                logger.debug(
+                                    f"[BT:{backtest_id[:8]}] Skipping entry analysis after liquidation cutoff "
+                                    f"({current_time.strftime('%H:%M')})"
+                                )
                             
-                            # Level monitoring mirrors live engine flow
-                            await strategy_engine.level_monitor.check_entry_triggers(strategy_engine.order_executor)
                             await strategy_engine.level_monitor.update_position_management(active_positions, strategy_engine.order_executor)
                             await strategy_engine.level_monitor.check_stop_triggers(active_positions, strategy_engine.order_executor)
                         
@@ -940,6 +1019,8 @@ class BacktestCoordinator:
                         "filled_order_ids": filled_order_ids,
                         "can_trade": can_trade,
                         "restriction_reason": restriction_reason,
+                        "liquidation_window": liquidation_window,
+                        "liquidation_executed": liquidation_executed,
                         "monitoring_interval_minutes": monitoring_interval,
                         "iteration_ms": round(iteration_duration_ms, 3),
                         "elapsed_ms": round(elapsed_wall_ms, 3),
@@ -969,6 +1050,20 @@ class BacktestCoordinator:
             }
             if duration_minutes is not None:
                 loop_metrics["duration_minutes"] = duration_minutes
+
+            if not liquidation_executed:
+                try:
+                    remaining_closed = await strategy_engine.force_close_all_positions(reason="end_of_day")
+                    if remaining_closed:
+                        logger.info(
+                            f"[BT:{backtest_id[:8]}] 🔒 Post-loop liquidation closed "
+                            f"{remaining_closed} remaining position(s)."
+                        )
+                except Exception as post_liq_error:
+                    logger.error(
+                        f"[BT:{backtest_id[:8]}] Error during final forced liquidation: {post_liq_error}",
+                        exc_info=True
+                    )
 
             await log_backtest_event(
                 fund.id,
@@ -1020,6 +1115,7 @@ class BacktestCoordinator:
             Dict mapping timestamp ISO string to list of ticker symbols
         """
         from app.services.screener.screener import get_screener_service
+        from app.services.screener.screener_data_unified import HistoricalScreenerCache
         from app.models.strategies import ScreeningCriteria
         
         screener = get_screener_service()
@@ -1044,9 +1140,23 @@ class BacktestCoordinator:
         
         logger.info(f"Pre-computing screener for {len(timestamps)} timestamps...")
         
-        # Pre-compute all screener results
+        total_iterations = len(timestamps)
+        unified_cache = HistoricalScreenerCache()
+        await log_backtest_event(
+            fund.id,
+            "precompute_start",
+            simulated_time=start_time,
+            message="Precomputing screener results for trading day",
+            details={
+                "total_iterations": total_iterations,
+                "monitoring_interval_minutes": monitoring_interval_minutes,
+            },
+        )
+
+        overall_start = time.perf_counter()
         cache = {}
         for idx, timestamp in enumerate(timestamps):
+            iteration_start = time.perf_counter()
             try:
                 results = await screener.compute_historical(
                     timestamp=timestamp,
@@ -1063,19 +1173,64 @@ class BacktestCoordinator:
                     technical_filters=criteria_dict.get('technical_filters'),
                     asset_types=criteria_dict.get('asset_types'),
                     market_cap_min=criteria_dict.get('market_cap_min'),
-                    market_cap_max=criteria_dict.get('market_cap_max')
+                    market_cap_max=criteria_dict.get('market_cap_max'),
+                    cache=unified_cache,
                 )
                 
                 if results:
-                    tickers = [r.get('ticker') or r.get('symbol') for r in results[:10]]
+                    tickers = [
+                        tick
+                        for tick in (
+                            r.get('ticker') or r.get('symbol')
+                            for r in results[:10]
+                        )
+                        if tick
+                    ]
                     cache[timestamp.isoformat()] = tickers
                     logger.info(f"  [{idx+1}/{len(timestamps)}] {timestamp.strftime('%H:%M')}: {len(tickers)} tickers")
                 else:
                     cache[timestamp.isoformat()] = []
+
+                await log_backtest_event(
+                    fund.id,
+                    "precompute_progress",
+                    simulated_time=timestamp,
+                    details={
+                        "step": idx + 1,
+                        "total": total_iterations,
+                        "ticker_count": len(cache.get(timestamp.isoformat(), [])),
+                        "sample_tickers": (cache.get(timestamp.isoformat(), []) or [])[:5],
+                        "timestamp": timestamp.isoformat(),
+                        "duration_ms": round((time.perf_counter() - iteration_start) * 1000, 2),
+                    },
+                )
             
             except Exception as e:
                 logger.warning(f"Error pre-computing screener for {timestamp}: {e}")
                 cache[timestamp.isoformat()] = []
+                await log_backtest_event(
+                    fund.id,
+                    "precompute_error",
+                    simulated_time=timestamp,
+                    details={
+                        "step": idx + 1,
+                        "total": total_iterations,
+                        "timestamp": timestamp.isoformat(),
+                        "error": str(e),
+                    },
+                )
+
+        await log_backtest_event(
+            fund.id,
+            "precompute_complete",
+            simulated_time=end_time,
+            message="Completed screener precomputation",
+            details={
+                "total_iterations": total_iterations,
+                "elapsed_ms": round((time.perf_counter() - overall_start) * 1000, 2),
+                "cached_entries": len(cache),
+            },
+        )
         
         return cache
     
@@ -1357,7 +1512,9 @@ class BacktestCoordinator:
         
         # Track open lots per symbol using FIFO
         open_lots_by_symbol: Dict[str, List[Transaction]] = {}  # symbol -> [buy_txn, ...]
-        trades_to_create = []  # List of (buy_txns, sell_txn, trade_id) tuples
+        trades_created = 0
+        trades_closed = 0
+        trade_builder = TradeBuilder(session)
         
         for txn in transactions:
             symbol = txn.symbol
@@ -1393,91 +1550,163 @@ class BacktestCoordinator:
                         actual_sell_qty = buy_qty_remaining
                         sell_qty_remaining -= actual_sell_qty
                 
-                # Create trade record for this matched trade
+                # Create/close trade record for this matched trade
                 if matched_buy_txns:
-                    trade_id = str(uuid.uuid4())
-                    trades_to_create.append((matched_buy_txns, txn, trade_id))
-        
-        # Create Trade records
-        trade_builder = TradeBuilder(session)
-        trades_created = 0
-        
-        for buy_txns, sell_txn, trade_id in trades_to_create:
-            try:
-                # Calculate entry metrics
-                total_entry_qty = sum(txn.quantity for txn in buy_txns)
-                total_entry_cost = sum(txn.total_value for txn in buy_txns)
-                avg_entry_price = total_entry_cost / total_entry_qty if total_entry_qty > 0 else 0.0
-                entry_time = min(txn.timestamp for txn in buy_txns)
-                entry_order_id = buy_txns[0].order_id
-                
-                # For the sell, we need to match quantity correctly
-                # If we matched multiple buys, we may need to split the sell
-                sell_qty = min(sell_txn.quantity, total_entry_qty)  # Don't sell more than we bought
-                
-                # Calculate exit metrics
-                exit_price = sell_txn.price
-                exit_time = sell_txn.timestamp
-                exit_order_id = sell_txn.order_id
-                exit_proceeds = sell_qty * exit_price
-                
-                # Calculate P&L based on matched quantity
-                matched_entry_cost = (sell_qty / total_entry_qty) * total_entry_cost if total_entry_qty > 0 else 0
-                realized_pnl = exit_proceeds - matched_entry_cost
-                realized_pnl_percent = (realized_pnl / matched_entry_cost * 100) if matched_entry_cost > 0 else 0.0
-                
-                # Calculate hold duration
-                hold_duration = (exit_time - entry_time).total_seconds()
-                
-                # Get strategy info from first buy order
-                first_order = await session.get(Order, entry_order_id)
-                strategy_id = getattr(first_order, 'strategy_id', None) if first_order else None
-                
-                # Create Trade record
-                trade = Trade(
-                    id=trade_id,
-                    fund_id=fund_id,
-                    backtest_id=backtest_id,
-                    symbol=buy_txns[0].symbol,
-                    entry_order_id=entry_order_id,
-                    entry_time=entry_time,
-                    entry_price=avg_entry_price,
-                    entry_quantity=sell_qty,  # Matched quantity
-                    exit_order_id=exit_order_id,
-                    exit_time=exit_time,
-                    exit_price=exit_price,
-                    exit_quantity=sell_qty,
-                    realized_pnl=realized_pnl,
-                    realized_pnl_percent=realized_pnl_percent,
-                    hold_duration_seconds=int(hold_duration),
-                    strategy_id=strategy_id,
-                    status="closed",
-                    trade_metadata={"backtest": True}
-                )
-                
-                session.add(trade)
-                trades_created += 1
-                
-                # Update transactions with trade_id
-                for buy_txn in buy_txns:
-                    if not buy_txn.trade_id:
-                        buy_txn.trade_id = trade_id
-                
-                if not sell_txn.trade_id:
-                    sell_txn.trade_id = trade_id
-                
-                # Update orders with trade_id
-                for order_id in set([txn.order_id for txn in buy_txns] + [sell_txn.order_id]):
-                    order = await session.get(Order, order_id)
-                    if order and not order.trade_id:
-                        order.trade_id = trade_id
-                
-            except Exception as e:
-                logger.error(f"Error creating trade from transactions: {e}", exc_info=True)
-                continue
+                    existing_trade_id = next(
+                        (buy_txn.trade_id for buy_txn in matched_buy_txns if buy_txn.trade_id),
+                        None
+                    )
+                    
+                    if existing_trade_id:
+                        try:
+                            trade = await session.get(Trade, existing_trade_id)
+                            if trade and trade.status != "closed":
+                                total_entry_qty = sum(tx.quantity for tx in matched_buy_txns)
+                                total_entry_cost = sum(tx.total_value for tx in matched_buy_txns)
+                                avg_entry_price = (
+                                    total_entry_cost / total_entry_qty if total_entry_qty > 0 else trade.entry_price
+                                )
+                                entry_times = [
+                                    tx.timestamp for tx in matched_buy_txns if tx.timestamp is not None
+                                ]
+                                
+                                if total_entry_qty > 0:
+                                    trade.entry_quantity = total_entry_qty
+                                    trade.entry_price = avg_entry_price
+                                if entry_times:
+                                    trade.entry_time = min(entry_times)
+                                if not trade.entry_order_id and matched_buy_txns[0].order_id:
+                                    trade.entry_order_id = matched_buy_txns[0].order_id
+                                trade.backtest_id = trade.backtest_id or backtest_id
+                                
+                                for buy_txn in matched_buy_txns:
+                                    buy_txn.trade_id = existing_trade_id
+                                txn.trade_id = existing_trade_id
+                                
+                                order_ids = {
+                                    order_id
+                                    for order_id in [tx.order_id for tx in matched_buy_txns] + [txn.order_id]
+                                    if order_id
+                                }
+                                for order_id in order_ids:
+                                    order = await session.get(Order, order_id)
+                                    if order:
+                                        order.trade_id = existing_trade_id
+                                
+                                await trade_builder.close_trade(
+                                    trade_id=existing_trade_id,
+                                    exit_order_id=txn.order_id,
+                                    exit_transactions=[txn],
+                                )
+                                trades_closed += 1
+                            
+                            elif not trade:
+                                logger.warning(
+                                    f"Referenced trade {existing_trade_id} not found; creating new trade record."
+                                )
+                                existing_trade_id = None
+                        except Exception as close_error:
+                            logger.error(
+                                f"Error closing trade {existing_trade_id} for {symbol}: {close_error}",
+                                exc_info=True
+                            )
+                            existing_trade_id = None
+                    
+                    if not existing_trade_id:
+                        trade_id = str(uuid.uuid4())
+                        try:
+                            total_entry_qty = sum(tx.quantity for tx in matched_buy_txns)
+                            total_entry_cost = sum(tx.total_value for tx in matched_buy_txns)
+                            avg_entry_price = total_entry_cost / total_entry_qty if total_entry_qty > 0 else 0.0
+                            entry_time = min(
+                                (tx.timestamp for tx in matched_buy_txns if tx.timestamp is not None),
+                                default=txn.timestamp
+                            )
+                            entry_order_id = matched_buy_txns[0].order_id if matched_buy_txns else None
+                            
+                            sell_qty = min(txn.quantity, total_entry_qty) if total_entry_qty > 0 else txn.quantity
+                            exit_price = txn.price
+                            exit_time = txn.timestamp
+                            exit_order_id = txn.order_id
+                            exit_proceeds = sell_qty * exit_price
+                            matched_entry_cost = (
+                                (sell_qty / total_entry_qty) * total_entry_cost
+                                if total_entry_qty > 0 else 0
+                            )
+                            realized_pnl = exit_proceeds - matched_entry_cost
+                            realized_pnl_percent = (
+                                (realized_pnl / matched_entry_cost * 100)
+                                if matched_entry_cost > 0 else 0.0
+                            )
+                            hold_duration = (
+                                (exit_time - entry_time).total_seconds()
+                                if entry_time and exit_time else 0
+                            )
+                            
+                            first_order = await session.get(Order, entry_order_id) if entry_order_id else None
+                            strategy_id = getattr(first_order, "strategy_id", None) if first_order else None
+                            
+                            trade = Trade(
+                                id=trade_id,
+                                fund_id=fund_id,
+                                backtest_id=backtest_id,
+                                symbol=symbol,
+                                entry_order_id=entry_order_id,
+                                entry_time=entry_time or txn.timestamp,
+                                entry_price=avg_entry_price,
+                                entry_quantity=sell_qty,
+                                exit_order_id=exit_order_id,
+                                exit_time=exit_time,
+                                exit_price=exit_price,
+                                exit_quantity=sell_qty,
+                                realized_pnl=realized_pnl,
+                                realized_pnl_percent=realized_pnl_percent,
+                                hold_duration_seconds=int(hold_duration),
+                                strategy_id=strategy_id,
+                                status="closed",
+                                trade_metadata={"backtest": True},
+                            )
+                            
+                            session.add(trade)
+                            trades_created += 1
+                            
+                            for buy_txn in matched_buy_txns:
+                                buy_txn.trade_id = trade_id
+                            txn.trade_id = trade_id
+                            
+                            order_ids = {
+                                order_id
+                                for order_id in [tx.order_id for tx in matched_buy_txns] + [txn.order_id]
+                                if order_id
+                            }
+                            for order_id in order_ids:
+                                order = await session.get(Order, order_id)
+                                if order:
+                                    order.trade_id = trade_id
+                        
+                        except Exception as create_error:
+                            logger.error(
+                                f"Error creating trade from transactions for {symbol}: {create_error}",
+                                exc_info=True
+                            )
+                            continue
         
         await session.commit()
         
-        if trades_created > 0:
-            logger.info(f"✅ Created {trades_created} trade(s) from transactions")
+        logger.info(
+            f"Processed backtest transactions for {fund_id} (backtest {backtest_id[:8]}): "
+            f"{trades_closed} trade(s) closed, {trades_created} trade(s) created."
+        )
+
+    def _get_market_session_bounds(self, backtest_date: date) -> Tuple[datetime, datetime]:
+        """
+        Calculate the UTC start and end timestamps for the market session.
+        """
+        start_local = datetime.combine(
+            backtest_date, self.MARKET_OPEN, tzinfo=self.MARKET_TZ
+        )
+        end_local = datetime.combine(
+            backtest_date, self.MARKET_CLOSE, tzinfo=self.MARKET_TZ
+        )
+        return start_local.astimezone(timezone.utc), end_local.astimezone(timezone.utc)
 

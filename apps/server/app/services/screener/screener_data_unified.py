@@ -6,8 +6,9 @@ Both modes follow the same query pattern for consistency and performance.
 """
 
 import logging
+from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta, date
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 
 from app.services.core.time_context import get_current_time
 from sqlalchemy import text, select
@@ -15,6 +16,38 @@ from app.services.core.database import get_async_session
 from app.models.assets import TickerDetails
 
 logger = logging.getLogger("app.screener.data.unified")
+
+
+@dataclass
+class HistoricalScreenerCache:
+    """
+    Cache container for historical screener lookups.
+    Stores invariants that do not change across minute iterations.
+    """
+
+    signature: Optional[Tuple[Any, ...]] = None
+    daily_data: Optional[Dict[str, Dict[str, Any]]] = None
+    filtered_symbols: Optional[List[str]] = None
+    trailing_volume_sum_map: Optional[Dict[str, float]] = None
+    trailing_volume_count_map: Optional[Dict[str, int]] = None
+    week_ago_volume_map: Optional[Dict[str, float]] = None
+    ticker_details_map: Optional[Dict[str, Dict[str, Any]]] = None
+
+    def ensure_signature(self, signature: Tuple[Any, ...]) -> None:
+        if self.signature is None:
+            self.signature = signature
+            return
+        if self.signature != signature:
+            self.clear()
+            self.signature = signature
+
+    def clear(self) -> None:
+        self.daily_data = None
+        self.filtered_symbols = None
+        self.trailing_volume_sum_map = None
+        self.trailing_volume_count_map = None
+        self.week_ago_volume_map = None
+        self.ticker_details_map = None
 
 
 async def fetch_screener_data_unified(
@@ -28,6 +61,7 @@ async def fetch_screener_data_unified(
     min_relative_volume: Optional[float] = None,
     max_relative_volume: Optional[float] = None,
     min_relative_volume_last_week: Optional[float] = None,
+    cache: Optional[HistoricalScreenerCache] = None,
 ) -> List[Dict[str, Any]]:
     """
     Unified data fetcher for both live and historical screeners.
@@ -76,6 +110,21 @@ async def fetch_screener_data_unified(
         min_relative_volume_last_week,
         target_timestamp.isoformat() if target_timestamp else None,
     )
+
+    cache_signature: Tuple[Any, ...] = (
+        target_date,
+        target_timestamp.date() if target_timestamp else None,
+        market_cap_min,
+        market_cap_max,
+        float_min,
+        float_max,
+        tuple(sorted(asset_types)) if asset_types else (),
+        min_relative_volume,
+        max_relative_volume,
+        min_relative_volume_last_week,
+    )
+    if cache is not None:
+        cache.ensure_signature(cache_signature)
 
     # Determine mode and dates (silent unless debug)
     MIN_SYMBOLS_FOR_DAILY = 1000
@@ -181,6 +230,9 @@ async def fetch_screener_data_unified(
                 prev_trading_day,
                 target_timestamp.isoformat() if target_timestamp else None,
             )
+        if cache and cache.daily_data is not None:
+            daily_data = cache.daily_data
+        else:
             result = await session.execute(
                 text("""
                     SELECT 
@@ -215,17 +267,31 @@ async def fetch_screener_data_unified(
             if not daily_data:
                 logger.warning(f"[UNIFIED] No daily data for {prev_trading_day}")
                 return []
-            
-            # STEP 1.5: Apply database filters if specified (market cap, float, asset types)
-            should_apply_db_filters = (
-                bool(asset_types)
-                or market_cap_min is not None
-                or market_cap_max is not None
-                or float_min is not None
-                or float_max is not None
-            )
 
-            if should_apply_db_filters:
+        # STEP 1.5: Apply database filters if specified (market cap, float, asset types)
+        should_apply_db_filters = (
+            bool(asset_types)
+            or market_cap_min is not None
+            or market_cap_max is not None
+            or float_min is not None
+            or float_max is not None
+        )
+
+        if should_apply_db_filters:
+            if cache and cache.filtered_symbols is not None:
+                allowed_tickers_set = set(cache.filtered_symbols)
+                original_count = len(daily_data)
+                daily_data = {
+                    symbol: data
+                    for symbol, data in daily_data.items()
+                    if symbol in allowed_tickers_set
+                }
+                logger.info(
+                    "[UNIFIED] Using cached filtered tickers (%s -> %s)",
+                    original_count,
+                    len(daily_data),
+                )
+            else:
                 from app.services.screener.ticker_filter import get_filtered_tickers, FilterCriteria
                 
                 logger.info(
@@ -265,6 +331,16 @@ async def fetch_screener_data_unified(
                 if not daily_data:
                     logger.warning(f"[UNIFIED] No symbols remain after market cap filtering")
                     return []
+                
+                if cache is not None:
+                    cache.filtered_symbols = list(daily_data.keys())
+        else:
+            if cache is not None and cache.filtered_symbols is None:
+                cache.filtered_symbols = list(daily_data.keys())
+
+        if cache is not None:
+            # Store the filtered daily snapshot for reuse.
+            cache.daily_data = daily_data
             
             # STEP 2: Get current intraday price + volume snapshots
             start_time = get_current_time()
@@ -323,10 +399,22 @@ async def fetch_screener_data_unified(
 
             trailing_start = today_start - timedelta(days=14)
 
-            trailing_volume_sum_map: Dict[str, float] = {}
-            trailing_volume_count_map: Dict[str, int] = {}
-            week_ago_volume_map: Dict[str, float] = {}
-            ticker_details_map: Dict[str, Dict[str, Any]] = {}
+            if cache and cache.trailing_volume_sum_map is not None:
+                trailing_volume_sum_map = cache.trailing_volume_sum_map
+                trailing_volume_count_map = cache.trailing_volume_count_map or {}
+            else:
+                trailing_volume_sum_map = {}
+                trailing_volume_count_map = {}
+
+            if cache and cache.week_ago_volume_map is not None:
+                week_ago_volume_map = cache.week_ago_volume_map
+            else:
+                week_ago_volume_map = {}
+
+            if cache and cache.ticker_details_map is not None:
+                ticker_details_map = cache.ticker_details_map
+            else:
+                ticker_details_map = {}
 
             if symbols_list:
                 logger.debug(
@@ -348,20 +436,22 @@ async def fetch_screener_data_unified(
                     GROUP BY symbol
                 """)
 
-                trailing_result = await session.execute(
-                    trailing_stmt,
-                    {
-                        "symbols": symbols_list,
-                        "start_time": trailing_start,
-                        "end_time": today_start,
-                    },
-                )
-                for row in trailing_result:
-                    trailing_volume_sum_map[row[0]] = float(row[1]) if row[1] else 0.0
-                    trailing_volume_count_map[row[0]] = int(row[2]) if row[2] else 0
+                if not trailing_volume_sum_map:
+                    trailing_result = await session.execute(
+                        trailing_stmt,
+                        {
+                            "symbols": symbols_list,
+                            "start_time": trailing_start,
+                            "end_time": today_start,
+                        },
+                    )
+                    for row in trailing_result:
+                        trailing_volume_sum_map[row[0]] = float(row[1]) if row[1] else 0.0
+                        trailing_volume_count_map[row[0]] = int(row[2]) if row[2] else 0
 
                 # Query same-day volume from one week ago using hourly bars up to matching time
-                week_stmt = text("""
+                if not week_ago_volume_map:
+                    week_stmt = text("""
                     SELECT symbol, COALESCE(SUM(volume), 0) AS volume
                     FROM market_data
                     WHERE timescale = '1hour'
@@ -371,38 +461,45 @@ async def fetch_screener_data_unified(
                     GROUP BY symbol
                 """)
 
-                week_result = await session.execute(
-                    week_stmt,
-                    {
-                        "symbols": symbols_list,
-                        "start_time": week_ago_start,
-                        "end_time": week_ago_end,
-                    },
-                )
-                for row in week_result:
-                    week_ago_volume_map[row[0]] = float(row[1]) if row[1] else 0.0
+                    week_result = await session.execute(
+                        week_stmt,
+                        {
+                            "symbols": symbols_list,
+                            "start_time": week_ago_start,
+                            "end_time": week_ago_end,
+                        },
+                    )
+                    for row in week_result:
+                        week_ago_volume_map[row[0]] = float(row[1]) if row[1] else 0.0
 
                 # Fetch ticker fundamentals from TickerDetails
-                details_result = await session.execute(
-                    select(
-                        TickerDetails.symbol,
-                        TickerDetails.type,
-                        TickerDetails.primary_exchange,
-                        TickerDetails.sic_description,
-                        TickerDetails.market_cap,
-                        TickerDetails.public_float,
-                    ).where(TickerDetails.symbol.in_(symbols_list))
-                )
+                if not ticker_details_map:
+                    details_result = await session.execute(
+                        select(
+                            TickerDetails.symbol,
+                            TickerDetails.type,
+                            TickerDetails.primary_exchange,
+                            TickerDetails.sic_description,
+                            TickerDetails.market_cap,
+                            TickerDetails.public_float,
+                        ).where(TickerDetails.symbol.in_(symbols_list))
+                    )
 
-                for row in details_result:
-                    mapping = row._mapping
-                    ticker_details_map[mapping["symbol"]] = {
-                        "type": mapping["type"],
-                        "primary_exchange": mapping["primary_exchange"],
-                        "sic_description": mapping["sic_description"],
-                        "market_cap": mapping["market_cap"],
-                        "public_float": mapping["public_float"],
-                    }
+                    for row in details_result:
+                        mapping = row._mapping
+                        ticker_details_map[mapping["symbol"]] = {
+                            "type": mapping["type"],
+                            "primary_exchange": mapping["primary_exchange"],
+                            "sic_description": mapping["sic_description"],
+                            "market_cap": mapping["market_cap"],
+                            "public_float": mapping["public_float"],
+                        }
+
+                if cache:
+                    cache.trailing_volume_sum_map = trailing_volume_sum_map
+                    cache.trailing_volume_count_map = trailing_volume_count_map
+                    cache.week_ago_volume_map = week_ago_volume_map
+                    cache.ticker_details_map = ticker_details_map
 
             logger.info(
                 f"[UNIFIED] Combining {len(daily_data)} symbols with volume statistics, "

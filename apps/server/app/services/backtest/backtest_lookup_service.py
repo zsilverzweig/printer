@@ -6,8 +6,10 @@ which pre-computes "latest bar as-of" data for every trading minute.
 """
 
 import logging
+import os
+import time
 from datetime import datetime, timedelta, timezone, date as date_type
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
@@ -37,9 +39,10 @@ async def check_lookup_coverage(target_date: date_type) -> Dict:
     async with get_async_session() as session:
         result = await session.execute(text("""
             SELECT 
-                COUNT(*) as total_rows,
-                COUNT(DISTINCT symbol) as symbols,
-                COUNT(DISTINCT lookup_time) as minutes
+                COUNT(*) AS total_rows,
+                COUNT(DISTINCT symbol) AS symbols,
+                COUNT(DISTINCT lookup_time) AS minutes,
+                COUNT(*) FILTER (WHERE today_volume IS NOT NULL) AS rows_with_today_volume
             FROM market_data_backtest_lookup
             WHERE lookup_time >= :start_dt
               AND lookup_time <= :end_dt
@@ -47,16 +50,25 @@ async def check_lookup_coverage(target_date: date_type) -> Dict:
         """), {"start_dt": start_dt, "end_dt": end_dt})
         
         row = result.first()
+        total_rows = row[0] or 0
+        rows_with_today_volume = row[3] or 0
         return {
-            "has_data": row[0] > 0,
-            "total_rows": row[0],
-            "symbols": row[1],
-            "minutes": row[2],
-            "expected_minutes": 391  # 9:30 to 16:00
+            "has_data": total_rows > 0,
+            "total_rows": total_rows,
+            "symbols": row[1] or 0,
+            "minutes": row[2] or 0,
+            "expected_minutes": EXPECTED_MINUTES_BY_TIMESCALE.get("1min", 391),
+            "rows_with_today_volume": rows_with_today_volume,
+            "missing_today_volume": max(total_rows - rows_with_today_volume, 0),
+            "has_today_volume": total_rows > 0 and rows_with_today_volume == total_rows,
         }
 
 
-async def populate_lookup_for_date(target_date: date_type, timescale: str = '1min') -> Dict:
+async def populate_lookup_for_date(
+    target_date: date_type,
+    timescale: str = '1min',
+    max_minutes: Optional[int] = None,
+) -> Dict:
     """
     Populate lookup table for one date.
     
@@ -118,8 +130,21 @@ async def populate_lookup_for_date(target_date: date_type, timescale: str = '1mi
         minute_count = 0
         
         while current <= end_dt:
+            if max_minutes is not None and minute_count >= max_minutes:
+                logger.debug(
+                    "  ↳ Reached max_minutes=%d, stopping early at %s",
+                    max_minutes,
+                    current.strftime("%H:%M"),
+                )
+                break
             if minute_count % 60 == 0:
                 logger.info(f"  Processing {current.strftime('%H:%M')}...")
+            logger.debug(
+                "  ↳ Begin minute %s (%d/%d)",
+                current.strftime("%H:%M"),
+                minute_count + 1,
+                expected_minutes,
+            )
             
             # Insert rows for this minute
             await session.execute(text("""
@@ -154,8 +179,8 @@ async def populate_lookup_for_date(target_date: date_type, timescale: str = '1mi
                             md.open,
                             md.high,
                             md.low,
-                            md.volume,
-                            SUM(md.volume) OVER (
+                            COALESCE(md.volume, 0) AS volume,
+                            SUM(COALESCE(md.volume, 0)) OVER (
                                 PARTITION BY md.symbol
                                 ORDER BY md.time
                                 ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
@@ -187,10 +212,17 @@ async def populate_lookup_for_date(target_date: date_type, timescale: str = '1mi
                 "target_date": target_date,
                 "expected_minutes": expected_minutes,
             })
+            logger.debug(
+                "  ↳ Completed minute %s (%d/%d)",
+                current.strftime("%H:%M"),
+                minute_count + 1,
+                expected_minutes,
+            )
             
             # Commit every 10 minutes
             if minute_count % 10 == 0:
                 await session.commit()
+                logger.debug("  ↳ Intermediate commit at %s", current.strftime("%H:%M"))
             
             current += timedelta(minutes=1)
             minute_count += 1

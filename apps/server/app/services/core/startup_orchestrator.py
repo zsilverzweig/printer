@@ -9,7 +9,7 @@ organized flow with consistent logging and health tracking.
 import asyncio
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timedelta, date
 from typing import Dict, List, Optional
 
 from app.services.core.startup_logger import get_startup_logger, Status
@@ -36,6 +36,7 @@ class StartupOrchestrator:
         self.alpaca_websocket = None
         self.reconciliation_service = None
         self.background_metrics_loader = None
+        self.last_lookup_date: Optional[date] = None
     
     async def startup(self) -> None:
         """
@@ -136,6 +137,33 @@ class StartupOrchestrator:
             self.services["Health Monitor"] = Status.FAIL
             self.logger.log_error("Health Monitor", e)
             self.errors.append(f"Health Monitor: {str(e)}")
+        
+        # Backtest lookup readiness (optional)
+        try:
+            auto_populate_enabled = os.getenv("BACKTEST_LOOKUP_AUTOPOPULATE_ENABLED", "true").lower() == "true"
+            if auto_populate_enabled:
+                target_date = self._previous_trading_day()
+                coverage, populated = await self._ensure_backtest_lookup_ready(target_date)
+                rows = coverage.get("total_rows", 0)
+                symbols = coverage.get("symbols", 0)
+                today_volume_rows = coverage.get("rows_with_today_volume", 0)
+                status_msg = (
+                    f"{'populated' if populated else 'ready'} for {target_date.isoformat()} "
+                    f"(rows={rows:,}, symbols={symbols}, today_volume_rows={today_volume_rows:,})"
+                )
+                self.services["Backtest Lookup"] = Status.OK
+                self.logger.log_service("Backtest Lookup", Status.OK, status_msg)
+            else:
+                self.services["Backtest Lookup"] = Status.SKIP
+                self.logger.log_service(
+                    "Backtest Lookup",
+                    Status.SKIP,
+                    "auto-populate disabled via BACKTEST_LOOKUP_AUTOPOPULATE_ENABLED",
+                )
+        except Exception as e:
+            self.services["Backtest Lookup"] = Status.FAIL
+            self.logger.log_error("Backtest Lookup", e)
+            self.errors.append(f"Backtest Lookup: {str(e)}")
         
         # Snapshot Ingestion
         try:
@@ -383,6 +411,49 @@ class StartupOrchestrator:
                 await self.alpaca_websocket.disconnect()
             except Exception:
                 pass
+
+    async def _ensure_backtest_lookup_ready(self, target_date: date):
+        """Ensure the backtest lookup table is populated for the specified trading day."""
+        from app.services.backtest.backtest_lookup_service import (
+            check_lookup_coverage,
+            populate_lookup_for_date,
+        )
+
+        coverage = await check_lookup_coverage(target_date)
+        populated = False
+
+        needs_population = (
+            not coverage.get("has_data") or not coverage.get("has_today_volume", False)
+        )
+
+        if needs_population:
+            self.logger.log_service(
+                "Backtest Lookup",
+                Status.WARN,
+                f"Populating lookup data for {target_date.isoformat()}…",
+            )
+            await populate_lookup_for_date(target_date, timescale="1min")
+            coverage = await check_lookup_coverage(target_date)
+            populated = True
+
+            if not coverage.get("has_today_volume", False):
+                raise RuntimeError(
+                    f"Lookup population for {target_date.isoformat()} completed without today_volume data"
+                )
+
+        self.last_lookup_date = target_date
+
+        return coverage, populated
+
+    def _previous_trading_day(self, reference: Optional[datetime] = None) -> date:
+        """Return the previous weekday trading day relative to the provided reference."""
+        current_date = (
+            reference.date() if isinstance(reference, datetime) else get_current_time().date()
+        )
+        candidate = current_date - timedelta(days=1)
+        while candidate.weekday() >= 5:
+            candidate -= timedelta(days=1)
+        return candidate
 
 
 # Global instance

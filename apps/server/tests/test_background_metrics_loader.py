@@ -20,6 +20,7 @@ class TestBackgroundMetricsLoader:
         """Create a test loader."""
         return BackgroundMetricsLoader(
             batch_size=10,
+            max_concurrent_symbols=1,
         )
 
     @pytest.fixture

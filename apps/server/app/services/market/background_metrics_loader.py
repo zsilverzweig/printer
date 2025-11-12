@@ -48,9 +48,11 @@ class BackgroundMetricsLoader:
         self,
         batch_size: int = 5000,  # Large batches for efficiency
         min_history_bars: int = 100,  # Skip first N bars where long-window metrics are unavailable
+        max_concurrent_symbols: int = 6,  # Limit concurrent symbol processing to balance DB load
     ):
         self.batch_size = batch_size
         self._min_history_bars = min_history_bars
+        self._max_concurrent_symbols = max(1, max_concurrent_symbols)
         self._calculator = MetricsCalculator()
 
     async def process_daily_data(self) -> ProcessingStats:
@@ -95,62 +97,105 @@ class BackgroundMetricsLoader:
             logger.info("BackgroundMetricsLoader _process_cycle completed: no targets")
             return stats
 
-        # Process each target symbol
-        for index, (symbol, timescale, missing_count) in enumerate(targets, start=1):
-            logger.info(
-                (
-                    "BackgroundMetricsLoader progress: processing %s/%s "
-                    "(%d of %d symbols, %.1f%%), %d missing bars"
-                ),
-                symbol,
-                timescale,
-                index,
-                stats.symbols_scanned,
-                (index / stats.symbols_scanned) * 100.0,
-                missing_count,
-            )
+        semaphore = asyncio.Semaphore(self._max_concurrent_symbols)
+        stats_lock = asyncio.Lock()
+        completed_symbols = 0
 
-            try:
-                processed = await self._process_symbol(symbol, timescale)
-                stats.bars_processed += processed
-                stats.metrics_calculated += processed * len(METRIC_FIELDS)
-                stats.database_updates += processed
+        async def process_target(
+            index: int, symbol: str, timescale: str, missing_count: int
+        ) -> None:
+            nonlocal completed_symbols
 
-                bar_progress = (
-                    (stats.bars_processed / total_missing_bars) * 100.0
-                    if total_missing_bars
-                    else 100.0
-                )
+            async with semaphore:
                 logger.info(
                     (
-                        "BackgroundMetricsLoader progress: completed %s/%s "
-                        "(%d bars this symbol, %d total, %.1f%% of %d target bars)"
+                        "BackgroundMetricsLoader progress: processing %s/%s "
+                        "(%d of %d symbols, %.1f%%), %d missing bars"
                     ),
                     symbol,
                     timescale,
-                    processed,
-                    stats.bars_processed,
-                    bar_progress,
-                    total_missing_bars,
+                    index,
+                    stats.symbols_scanned,
+                    (index / stats.symbols_scanned) * 100.0,
+                    missing_count,
                 )
 
-                if processed > 0:
-                    logger.debug(
-                        "Processed %d bars for %s/%s",
-                        processed,
+                processed = 0
+                failed = False
+
+                try:
+                    processed = await self._process_symbol(symbol, timescale)
+                except Exception as exc:
+                    failed = True
+                    async with stats_lock:
+                        stats.errors += 1
+                    logger.warning(
+                        "Failed to process %s/%s: %s",
                         symbol,
                         timescale,
+                        exc,
                     )
-                    
 
-            except Exception as exc:
-                stats.errors += 1
-                logger.warning(
-                    "Failed to process %s/%s: %s",
-                    symbol,
-                    timescale,
-                    exc,
-                )
+                async with stats_lock:
+                    if not failed:
+                        stats.bars_processed += processed
+                        stats.metrics_calculated += processed * len(METRIC_FIELDS)
+                        stats.database_updates += processed
+                    completed_symbols += 1
+                    bars_processed = stats.bars_processed
+                    symbol_progress = (
+                        (completed_symbols / stats.symbols_scanned) * 100.0
+                        if stats.symbols_scanned
+                        else 100.0
+                    )
+                    bar_progress = (
+                        (bars_processed / total_missing_bars) * 100.0
+                        if total_missing_bars
+                        else 100.0
+                    )
+
+                if not failed:
+                    logger.info(
+                        (
+                            "BackgroundMetricsLoader progress: completed %s/%s "
+                            "(%d bars this symbol, %d total, %.1f%% of %d target bars)"
+                        ),
+                        symbol,
+                        timescale,
+                        processed,
+                        bars_processed,
+                        bar_progress,
+                        total_missing_bars,
+                    )
+
+                    if processed > 0:
+                        logger.debug(
+                            "Processed %d bars for %s/%s",
+                            processed,
+                            symbol,
+                            timescale,
+                        )
+                else:
+                    logger.info(
+                        (
+                            "BackgroundMetricsLoader progress: skipped %s/%s after failure "
+                            "(%d of %d symbols, %.1f%% complete, %.1f%% of %d target bars)"
+                        ),
+                        symbol,
+                        timescale,
+                        completed_symbols,
+                        stats.symbols_scanned,
+                        symbol_progress,
+                        bar_progress,
+                        total_missing_bars,
+                    )
+
+        tasks = [
+            asyncio.create_task(process_target(index, symbol, timescale, missing_count))
+            for index, (symbol, timescale, missing_count) in enumerate(targets, start=1)
+        ]
+        if tasks:
+            await asyncio.gather(*tasks)
 
         return stats
 

@@ -375,7 +375,8 @@ class BacktestDataHealthCheck(BaseHealthCheck):
                 SELECT 
                     COUNT(*) as total_rows,
                     COUNT(DISTINCT symbol) as symbols,
-                    COUNT(DISTINCT lookup_time) as minutes
+                    COUNT(DISTINCT lookup_time) as minutes,
+                    COUNT(*) FILTER (WHERE today_volume IS NOT NULL) as rows_with_today_volume
                 FROM market_data_backtest_lookup
                 WHERE lookup_time >= :start_dt
                   AND lookup_time <= :end_dt
@@ -386,13 +387,17 @@ class BacktestDataHealthCheck(BaseHealthCheck):
             total_rows = row[0]
             symbols = row[1]
             minutes = row[2]
+            rows_with_today_volume = row[3] or 0
             
             coverage[target_date.isoformat()] = {
                 "has_data": total_rows > 0,
                 "total_rows": total_rows,
                 "symbols": symbols,
                 "minutes": minutes,
-                "expected_minutes": 391
+                "expected_minutes": 391,
+                "rows_with_today_volume": rows_with_today_volume,
+                "missing_today_volume": max(total_rows - rows_with_today_volume, 0),
+                "has_today_volume": total_rows > 0 and rows_with_today_volume == total_rows,
             }
         
         return coverage
@@ -448,6 +453,10 @@ class BacktestDataHealthCheck(BaseHealthCheck):
         """Populate lookup table for missing dates in background."""
         if self._populating:
             self.logger.debug("Population already in progress, skipping")
+            return
+        
+        if os.getenv("BACKTEST_LOOKUP_AUTOPOPULATE_ENABLED", "true").lower() != "true":
+            self.logger.debug("Auto-populate disabled; skipping populate_missing_dates call")
             return
         
         self._populating = True
@@ -555,8 +564,10 @@ class BacktestDataHealthCheck(BaseHealthCheck):
                 
                 # Find dates that need lookup population
                 missing_lookup_dates = []
+                auto_populate_enabled = os.getenv("BACKTEST_LOOKUP_AUTOPOPULATE_ENABLED", "true").lower() == "true"
+
                 for date_str, info in lookup_coverage.items():
-                    if not info.get("has_data"):
+                    if not info.get("has_data") or not info.get("has_today_volume", False):
                         target_date = datetime.fromisoformat(date_str).date()
                         missing_lookup_dates.append(target_date)
                 
@@ -570,10 +581,15 @@ class BacktestDataHealthCheck(BaseHealthCheck):
                         missing_metrics_dates.append(target_date)
                 
                 # Trigger population for missing lookup data (non-blocking)
-                if missing_lookup_dates and not self._populating:
+                if missing_lookup_dates and auto_populate_enabled and not self._populating:
                     self.logger.info(f"🔧 Found {len(missing_lookup_dates)} dates needing lookup population: {[d.isoformat() for d in missing_lookup_dates]}")
                     self._last_population_task = asyncio.create_task(
                         self._populate_missing_dates(missing_lookup_dates)
+                    )
+                elif missing_lookup_dates and not auto_populate_enabled:
+                    self.logger.info(
+                        "Backtest lookup auto-populate disabled via BACKTEST_LOOKUP_AUTOPOPULATE_ENABLED; "
+                        f"skipping dates: {[d.isoformat() for d in missing_lookup_dates]}"
                     )
                 
                 background_metrics_enabled = os.getenv("BACKGROUND_METRICS_LOADER_ENABLED", "false").lower() == "true"

@@ -3,9 +3,12 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from app.services.screener.screener_compute import ScreenerCompute
+
+if TYPE_CHECKING:
+    from app.services.screener.screener_data_unified import HistoricalScreenerCache
 
 
 class ScreenerHistorical:
@@ -44,6 +47,7 @@ class ScreenerHistorical:
         market_cap_max: Optional[int] = None,
         float_min: Optional[int] = None,
         float_max: Optional[int] = None,
+        cache: Optional["HistoricalScreenerCache"] = None,
     ) -> List[dict]:
         """Compute screener results at a specific historical timestamp.
         
@@ -86,6 +90,7 @@ class ScreenerHistorical:
                 min_relative_volume=min_relative_volume,
                 max_relative_volume=max_relative_volume,
                 min_relative_volume_last_week=min_relative_volume_last_week,
+                cache=cache,
             )
             step_time = time.time() - step_start
             self.logger.info(

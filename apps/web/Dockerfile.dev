@@ -1,27 +1,28 @@
 FROM node:20-alpine
 
-# Install dependencies for node-gyp and other native modules
+# Install build tooling for native npm modules
 RUN apk add --no-cache python3 make g++
 
 # Set working directory
 WORKDIR /app
 
-# Copy package files for dependency installation
-COPY package*.json ./
-COPY packages/shared/package*.json ./packages/shared/
+# Prepare directories needed for selective manifest copies
+RUN mkdir -p apps/web packages/shared
 
-# Copy apps/web package.json (needed for prepare script)
-COPY apps/web/package*.json ./apps/web/
-COPY apps/web/next.config.js ./apps/web/
+# Copy only the manifests required for dependency installation
+COPY package.json package-lock.json nx.json tsconfig.base.json ./
+COPY apps/web/next.config.js apps/web/
+COPY apps/web/project.json apps/web/
+COPY packages/shared/package.json packages/shared/
 
-# Install dependencies
-RUN npm install
+# Install dependencies using lockfile for reproducibility and cache reuse
+RUN npm ci
 
 # Install Rollup for Alpine Linux (musl) - fixes optional dependency issue
 RUN npm install @rollup/rollup-linux-x64-musl --save-optional || true
 
-# Copy the rest of the application
-COPY . .
+# Ensure bind-mount targets exist even before volumes attach
+RUN mkdir -p apps/web/.next packages/shared/src
 
 # Expose Next.js port
 EXPOSE 3000
