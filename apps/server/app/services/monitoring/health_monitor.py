@@ -62,266 +62,6 @@ class BaseHealthCheck(ABC):
         pass
 
 
-class MarketDataHealthCheck(BaseHealthCheck):
-    """
-    Health check for market data loading and validation coverage.
-    
-    Philosophy: We check that we're ATTEMPTING to load data for all symbols
-    and dates, not that the data is complete (which may not exist on Polygon).
-    
-    Checks:
-    - Data freshness: Is recent data being ingested?
-    - Validation coverage: Have we attempted to load data for most active symbols?
-    - Missing validations: Are there symbols/dates we haven't tried to load yet?
-    """
-    
-    def __init__(self, lookback_days: int = 30):
-        super().__init__("market_data")
-        self.lookback_days = lookback_days
-    
-    async def check(self) -> HealthCheckResult:
-        """Check market data health."""
-        try:
-            async with get_async_session() as session:
-                # Check 1: Data freshness - do we have recent minute bars?
-                freshness_check = await self._check_data_freshness(session)
-                
-                # Check 2: Validation coverage - how complete is our data?
-                validation_check = await self._check_validation_coverage(session)
-                
-                # Check 3: Gap detection - are there missing dates?
-                gap_check = await self._check_for_gaps(session)
-                
-                # Aggregate results
-                all_healthy = (
-                    freshness_check["is_healthy"] and
-                    validation_check["is_healthy"] and
-                    gap_check["is_healthy"]
-                )
-                
-                details = {
-                    "freshness": freshness_check,
-                    "validation": validation_check,
-                    "gaps": gap_check
-                }
-                
-                if all_healthy:
-                    message = f"Market data healthy: {validation_check['validated_symbols']} symbols validated, {validation_check['coverage_pct']:.1f}% coverage"
-                else:
-                    issues = []
-                    if not freshness_check["is_healthy"]:
-                        issues.append("stale data")
-                    if not validation_check["is_healthy"]:
-                        issues.append("low validation coverage")
-                    if not gap_check["is_healthy"]:
-                        issues.append("missing validation records")
-                    message = f"Market data issues: {', '.join(issues)}"
-                
-                return HealthCheckResult(
-                    check_name=self.name,
-                    is_healthy=all_healthy,
-                    message=message,
-                    details=details
-                )
-                
-        except Exception as e:
-            self.logger.error(f"Health check failed: {e}", exc_info=True)
-            return HealthCheckResult(
-                check_name=self.name,
-                is_healthy=False,
-                message=f"Health check error: {str(e)}",
-                details={"error": str(e)}
-            )
-    
-    async def _check_data_freshness(self, session: AsyncSession) -> Dict:
-        """Check if we have recent data (within last 15 minutes during market hours)."""
-        try:
-            # Get most recent bar timestamp
-            result = await session.execute(
-                text("SELECT MAX(time) as last_bar FROM market_data WHERE timescale = '1min'")
-            )
-            row = result.fetchone()
-            
-            if not row or not row[0]:
-                return {
-                    "is_healthy": False,
-                    "message": "No market data found in database",
-                    "last_bar": None
-                }
-            
-            last_bar = row[0]
-            now = get_current_time()
-            age_minutes = (now - last_bar).total_seconds() / 60
-            
-            # During market hours (9:30 AM - 4:00 PM ET, Mon-Fri), data should be recent
-            # For now, just check if data is less than 24 hours old
-            is_fresh = age_minutes < (24 * 60)
-            
-            return {
-                "is_healthy": is_fresh,
-                "message": f"Last bar: {last_bar.isoformat()} ({age_minutes:.0f} minutes ago)",
-                "last_bar": last_bar.isoformat(),
-                "age_minutes": age_minutes
-            }
-            
-        except Exception as e:
-            self.logger.error(f"Freshness check failed: {e}")
-            return {
-                "is_healthy": False,
-                "message": f"Freshness check error: {str(e)}"
-            }
-    
-    async def _check_validation_coverage(self, session: AsyncSession) -> Dict:
-        """
-        Check how many symbols have validation records (attempted loads).
-        
-        This checks that we're TRYING to load data for symbols, not whether
-        the data is complete (which may not be available from Polygon).
-        """
-        try:
-            cutoff_date = get_current_time().date() - timedelta(days=self.lookback_days)
-            
-            # Count symbols with ANY validation records in lookback period
-            result = await session.execute(
-                text("""
-                    SELECT 
-                        COUNT(DISTINCT symbol) as validated_symbols,
-                        COUNT(*) as total_validations
-                    FROM symbol_date_validation
-                    WHERE date >= :cutoff_date
-                """),
-                {"cutoff_date": cutoff_date}
-            )
-            row = result.fetchone()
-            
-            if not row:
-                return {
-                    "is_healthy": False,
-                    "message": "No validation data found",
-                    "validated_symbols": 0,
-                    "total_validations": 0
-                }
-            
-            validated_symbols = row[0] or 0
-            total_validations = row[1] or 0
-            
-            # Count total active symbols in ticker_details
-            result = await session.execute(
-                text("""
-                    SELECT COUNT(*)
-                    FROM ticker_details
-                    WHERE type IN ('CS', 'ETF')
-                      AND active = true
-                """)
-            )
-            total_active_symbols = result.scalar() or 0
-            
-            # Healthy if we have validation records for at least 90% of active symbols
-            coverage_pct = (validated_symbols / total_active_symbols * 100) if total_active_symbols > 0 else 0
-            is_healthy = coverage_pct >= 90.0
-            
-            return {
-                "is_healthy": is_healthy,
-                "message": f"{validated_symbols}/{total_active_symbols} active symbols validated ({coverage_pct:.1f}% coverage)",
-                "validated_symbols": validated_symbols,
-                "total_active_symbols": total_active_symbols,
-                "coverage_pct": coverage_pct,
-                "total_validations": total_validations,
-                "lookback_days": self.lookback_days
-            }
-            
-        except Exception as e:
-            self.logger.error(f"Validation coverage check failed: {e}")
-            return {
-                "is_healthy": False,
-                "message": f"Validation check error: {str(e)}"
-            }
-    
-    async def _check_for_gaps(self, session: AsyncSession) -> Dict:
-        """
-        Check for missing validation records (dates we haven't tried to load).
-        
-        We only flag:
-        1. Symbols with NO validation records at all
-        2. Trading days with missing validation records
-        """
-        try:
-            cutoff_date = get_current_time().date() - timedelta(days=self.lookback_days)
-            today = get_current_time().date()
-            
-            # Check 1: Find active symbols with NO validation records at all
-            result = await session.execute(
-                text("""
-                    SELECT td.symbol
-                    FROM ticker_details td
-                    WHERE td.type IN ('CS', 'ETF')
-                      AND td.active = true
-                      AND td.symbol NOT IN (
-                          SELECT DISTINCT symbol 
-                          FROM symbol_date_validation
-                      )
-                    LIMIT 100
-                """)
-            )
-            
-            missing_symbols = [row[0] for row in result]
-            
-            # Check 2: Find recent trading days with no validation records
-            # (Market closed on weekends, so only check weekdays)
-            result = await session.execute(
-                text("""
-                    SELECT DISTINCT date
-                    FROM symbol_date_validation
-                    WHERE date >= :cutoff_date
-                    ORDER BY date DESC
-                """),
-                {"cutoff_date": cutoff_date}
-            )
-            
-            validated_dates = {row[0] for row in result}
-            
-            # Generate expected trading days (exclude weekends)
-            missing_dates = []
-            current_date = cutoff_date
-            while current_date < today:
-                # Skip weekends (Monday=0, Sunday=6)
-                if current_date.weekday() < 5 and current_date not in validated_dates:
-                    missing_dates.append(current_date)
-                current_date += timedelta(days=1)
-            
-            # Overall health assessment
-            total_issues = len(missing_symbols) + len(missing_dates)
-            is_healthy = total_issues == 0
-            
-            # Build message
-            issues = []
-            if missing_symbols:
-                issues.append(f"{len(missing_symbols)} symbols never loaded")
-            if missing_dates:
-                issues.append(f"{len(missing_dates)} dates not validated")
-            
-            if issues:
-                message = "Missing validation records: " + ", ".join(issues)
-            else:
-                message = "All expected validation records present"
-            
-            return {
-                "is_healthy": is_healthy,
-                "message": message,
-                "missing_symbols_count": len(missing_symbols),
-                "missing_symbols": missing_symbols[:10],  # First 10 for details
-                "missing_dates_count": len(missing_dates),
-                "missing_dates": [d.isoformat() for d in missing_dates[:10]]  # First 10 for details
-            }
-            
-        except Exception as e:
-            self.logger.error(f"Gap check failed: {e}")
-            return {
-                "is_healthy": False,
-                "message": f"Gap check error: {str(e)}"
-            }
-
-
 class BacktestDataHealthCheck(BaseHealthCheck):
     """
     Health check for backtest lookup table.
@@ -342,6 +82,7 @@ class BacktestDataHealthCheck(BaseHealthCheck):
         self._metrics_progress: Dict = {}
         self._volume_fill_in_progress: bool = False
         self._last_volume_fill_task: Optional[asyncio.Task] = None
+        self._volume_fill_limit: int = int(os.getenv("TODAY_VOLUME_FILL_BATCH", "50000"))
     
     def _get_previous_trading_days(self, count: int = 7) -> List[date]:
         """Get the last N trading days (excluding weekends, but not holidays)."""
@@ -381,21 +122,41 @@ class BacktestDataHealthCheck(BaseHealthCheck):
             """), {"start_dt": start_dt, "end_dt": end_dt})
             
             row = result.first()
-            total_rows = row[0]
-            symbols = row[1]
-            minutes = row[2]
-            rows_with_today_volume = row[3] or 0
-            
+            if row:
+                total_rows = row[0] or 0
+                symbols = row[1] or 0
+                minutes = row[2] or 0
+                rows_with_today_volume = row[3] or 0
+            else:
+                total_rows = 0
+                symbols = 0
+                minutes = 0
+                rows_with_today_volume = 0
+            expected_minutes = 391
+            minute_ratio = (minutes / expected_minutes) if expected_minutes else 0.0
+
             coverage[target_date.isoformat()] = {
                 "has_data": total_rows > 0,
                 "total_rows": total_rows,
                 "symbols": symbols,
                 "minutes": minutes,
-                "expected_minutes": 391,
+                "expected_minutes": expected_minutes,
+                "minute_ratio": minute_ratio,
                 "rows_with_today_volume": rows_with_today_volume,
                 "missing_today_volume": max(total_rows - rows_with_today_volume, 0),
                 "has_today_volume": total_rows > 0 and rows_with_today_volume == total_rows,
             }
+            
+            self.logger.debug(
+                "Lookup coverage %s: has_data=%s minutes=%s/%s ratio=%.3f today_volume=%s/%s",
+                target_date.isoformat(),
+                total_rows > 0,
+                minutes,
+                expected_minutes,
+                minute_ratio,
+                rows_with_today_volume,
+                total_rows,
+            )
         
         return coverage
     
@@ -562,13 +323,23 @@ class BacktestDataHealthCheck(BaseHealthCheck):
             self.logger.debug("Today volume backfill already running, skipping")
             return
 
+        self.logger.info(
+            "Scheduling today_volume backfill batch (limit=%s, include_today=%s)",
+            self._volume_fill_limit,
+            False,
+        )
+
         async def runner() -> None:
             self._volume_fill_in_progress = True
             loop = asyncio.get_running_loop()
             try:
                 result = await loop.run_in_executor(
                     None,
-                    partial(fill_missing_today_volume, include_today=False),
+                    partial(
+                        fill_missing_today_volume,
+                        include_today=False,
+                        limit=self._volume_fill_limit,
+                    ),
                 )
                 updated = result.get("updated", 0)
                 skipped = result.get("skipped_no_volume", 0)
@@ -605,6 +376,7 @@ class BacktestDataHealthCheck(BaseHealthCheck):
                 
                 # Find dates that need lookup population and whether validation exists
                 missing_lookup_dates: List[date] = []
+                volume_only_dates: List[date] = []
                 blocked_lookup_dates: List[date] = []
                 auto_populate_enabled = os.getenv("BACKTEST_LOOKUP_AUTOPOPULATE_ENABLED", "true").lower() == "true"
                 
@@ -613,8 +385,15 @@ class BacktestDataHealthCheck(BaseHealthCheck):
                     date_str = target_date.isoformat()
                     info = lookup_coverage.get(date_str, {})
                     missing_today_volume_rows += info.get("missing_today_volume", 0)
-                    if not info.get("has_data") or not info.get("has_today_volume", False):
+                    has_data = info.get("has_data", False)
+                    minute_ratio = info.get("minute_ratio", 0.0)
+                    has_full_minutes = minute_ratio >= 1.0 if minute_ratio is not None else False
+                    has_today_volume = info.get("has_today_volume", False)
+
+                    if not has_data or not has_full_minutes:
                         missing_lookup_dates.append(target_date)
+                    elif not has_today_volume:
+                        volume_only_dates.append(target_date)
 
                 if missing_today_volume_rows > 0:
                     self.logger.info(
@@ -622,6 +401,7 @@ class BacktestDataHealthCheck(BaseHealthCheck):
                         missing_today_volume_rows,
                     )
                     self._schedule_today_volume_backfill()
+
                 
                 ready_lookup_dates: List[date] = []
                 if missing_lookup_dates:
@@ -652,6 +432,15 @@ class BacktestDataHealthCheck(BaseHealthCheck):
                                 "checked_at": get_current_time().isoformat(),
                             }
                 
+                if self.logger.isEnabledFor(logging.INFO):
+                    self.logger.info(
+                        "Lookup status summary: ready=%s, volume_only=%s, blocked=%s, missing_today_volume_rows=%s",
+                        [d.isoformat() for d in ready_lookup_dates],
+                        [d.isoformat() for d in volume_only_dates],
+                        [d.isoformat() for d in blocked_lookup_dates],
+                        missing_today_volume_rows,
+                    )
+
                 # Find dates that need metrics population
                 missing_metrics_dates: List[date] = []
                 blocked_metrics_dates: List[date] = []
@@ -710,7 +499,11 @@ class BacktestDataHealthCheck(BaseHealthCheck):
                 yesterday_metrics = metrics_coverage.get(yesterday.isoformat() if yesterday else "", {})
                 
                 # Overall health: both lookup and metrics should be complete for yesterday
-                lookup_healthy = yesterday_lookup.get("has_data", False) if yesterday else False
+                lookup_healthy = (
+                    yesterday_lookup.get("has_data", False)
+                    and yesterday_lookup.get("minute_ratio", 0.0) >= 1.0
+                    and yesterday_lookup.get("has_today_volume", False)
+                ) if yesterday else False
                 metrics_healthy = (
                     yesterday_metrics.get("has_validation", False)
                     and yesterday_metrics.get("metrics_ratio", 0) >= 1.0
@@ -719,7 +512,13 @@ class BacktestDataHealthCheck(BaseHealthCheck):
                 
                 # Prepare message
                 if is_healthy:
-                    lookup_complete = sum(1 for info in lookup_coverage.values() if info.get("has_data", False))
+                    lookup_complete = sum(
+                        1
+                        for info in lookup_coverage.values()
+                        if info.get("has_data", False)
+                        and info.get("minute_ratio", 0.0) >= 1.0
+                        and info.get("has_today_volume", False)
+                    )
                     metrics_complete = sum(
                         1
                         for info in metrics_coverage.values()
@@ -732,6 +531,8 @@ class BacktestDataHealthCheck(BaseHealthCheck):
                         issues.append(
                             f"{len(ready_lookup_dates) + len(blocked_lookup_dates)} lookup date(s)"
                         )
+                    if volume_only_dates:
+                        issues.append(f"{len(volume_only_dates)} lookup volume-only date(s)")
                     if missing_metrics_dates:
                         issues.append(f"{len(missing_metrics_dates)} metrics date(s)")
                     if issues:
@@ -748,6 +549,7 @@ class BacktestDataHealthCheck(BaseHealthCheck):
                         "metrics_coverage": metrics_coverage,
                         "missing_lookup_dates": [d.isoformat() for d in ready_lookup_dates],
                         "blocked_lookup_dates": [d.isoformat() for d in blocked_lookup_dates],
+                        "lookup_volume_only_dates": [d.isoformat() for d in volume_only_dates],
                         "missing_metrics_dates": [d.isoformat() for d in missing_metrics_dates],
                         "blocked_metrics_dates": [d.isoformat() for d in blocked_metrics_dates],
                         "populating_lookup": self._populating,

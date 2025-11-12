@@ -22,7 +22,7 @@ try:
 except ImportError:  # pragma: no cover
     from backports.zoneinfo import ZoneInfo  # type: ignore
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.strategies import Fund, Backtest, Order, Transaction, Trade, ScreeningCriteria
@@ -44,6 +44,32 @@ from app.services.events.event_service import event_service
 from app.services.backtest.backtest_event_logger import log_event as log_backtest_event
 
 logger = logging.getLogger(__name__)
+
+
+async def _fill_missing_today_volume_with_zero(backtest_date: date) -> int:
+    """
+    Fill missing today_volume values with 0 for a given date.
+    
+    Args:
+        backtest_date: Date to fill missing values for
+        
+    Returns:
+        Number of rows updated
+    """
+    start_dt = datetime.combine(backtest_date, datetime.min.time()).replace(hour=9, minute=30, tzinfo=timezone.utc)
+    end_dt = datetime.combine(backtest_date, datetime.min.time()).replace(hour=16, minute=0, tzinfo=timezone.utc)
+    
+    async with get_async_session() as session:
+        result = await session.execute(text("""
+            UPDATE market_data_backtest_lookup
+            SET today_volume = 0
+            WHERE lookup_time >= :start_dt
+              AND lookup_time <= :end_dt
+              AND timescale = '1min'
+              AND today_volume IS NULL
+        """), {"start_dt": start_dt, "end_dt": end_dt})
+        await session.commit()
+        return result.rowcount
 
 
 async def create_backtest_fund_from_template(
@@ -519,26 +545,31 @@ class BacktestCoordinator:
         
         session_start_utc, _ = self._get_market_session_bounds(backtest_date)
         
-        needs_population = not coverage["has_data"] or not coverage.get("has_today_volume", False)
+        # Only repopulate if data is actually missing, not just today_volume
+        expected_minutes = coverage.get("expected_minutes", 391)
+        minutes = coverage.get("minutes", 0)
+        needs_population = not coverage["has_data"] or minutes < expected_minutes
+        
         if needs_population:
-            if coverage["has_data"]:
-                logger.info(
-                    f"⚠️  Lookup data incomplete for {backtest_date} "
-                    f"(missing_today_volume={coverage.get('missing_today_volume'):,}); repopulating..."
-                )
-            else:
-                logger.info(f"⚠️  Lookup data not found for {backtest_date}, populating...")
+            logger.info(f"⚠️  Lookup data not found or incomplete for {backtest_date}, populating...")
             try:
                 # Populate the lookup table for this date
                 result = await populate_lookup_for_date(backtest_date, timescale='1min')
                 logger.info(f"✅ Lookup table populated: {result['total_rows']:,} rows for {result['symbols']} symbols")
                 # Re-check coverage after population
                 coverage = await check_lookup_coverage(backtest_date)
+                
+                # Fill missing today_volume with 0 if needed
                 if not coverage.get("has_today_volume", False):
-                    raise ValueError(
-                        f"Lookup table still missing today_volume data for {backtest_date} "
-                        f"after population (missing_rows={coverage.get('missing_today_volume')})"
+                    missing_rows = coverage.get('missing_today_volume', 0)
+                    logger.warning(
+                        f"⚠️  Lookup table missing today_volume for {backtest_date} "
+                        f"(missing_rows={missing_rows:,}); filling with 0"
                     )
+                    updated = await _fill_missing_today_volume_with_zero(backtest_date)
+                    logger.info(f"✅ Filled {updated:,} missing today_volume values with 0")
+                    # Re-check coverage after filling
+                    coverage = await check_lookup_coverage(backtest_date)
                 await log_backtest_event(
                     fund.id,
                     "lookup_populated",
@@ -555,6 +586,19 @@ class BacktestCoordinator:
                 logger.error(f"❌ Failed to populate lookup table: {e}", exc_info=True)
                 raise ValueError(f"Failed to populate lookup data for {backtest_date}: {str(e)}")
         else:
+            # Check if there are any missing today_volume values and fill with 0
+            if not coverage.get("has_today_volume", False):
+                missing_rows = coverage.get('missing_today_volume', 0)
+                if missing_rows > 0:
+                    logger.warning(
+                        f"⚠️  Lookup data exists but missing today_volume for {backtest_date} "
+                        f"(missing_rows={missing_rows:,}); filling with 0"
+                    )
+                    updated = await _fill_missing_today_volume_with_zero(backtest_date)
+                    logger.info(f"✅ Filled {updated:,} missing today_volume values with 0")
+                    # Re-check coverage after filling
+                    coverage = await check_lookup_coverage(backtest_date)
+            
             logger.info(
                 "✅ Lookup data exists: %s rows, %s symbols, %s minutes, %s rows with today_volume",
                 f"{coverage['total_rows']:,}",

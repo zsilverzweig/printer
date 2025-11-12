@@ -81,14 +81,41 @@ async def populate_lookup_for_date(
     """
     logger.info(f"📊 Populating backtest lookup for {target_date} ({timescale})")
     
-    # Trading hours: 9:30 AM to 4:00 PM UTC
-    start_dt = datetime.combine(target_date, datetime.min.time()).replace(hour=9, minute=30, tzinfo=timezone.utc)
-    end_dt = datetime.combine(target_date, datetime.min.time()).replace(hour=16, minute=0, tzinfo=timezone.utc)
-    
     expected_minutes = EXPECTED_MINUTES_BY_TIMESCALE.get(timescale.lower())
     if expected_minutes is None:
         raise ValueError(f"Unsupported timescale '{timescale}' for backtest lookup population")
 
+    coverage = await check_lookup_coverage(target_date)
+    minutes = coverage.get("minutes", 0)
+    has_today_volume = coverage.get("has_today_volume", False)
+
+    if minutes >= expected_minutes:
+        if has_today_volume:
+            logger.info(
+                "Lookup already complete for %s (%s); skipping population.",
+                target_date,
+                timescale,
+            )
+        else:
+            logger.info(
+                "Lookup minute coverage complete for %s (%s) but today_volume missing (%s rows); skipping population in favor of volume fill.",
+                target_date,
+                timescale,
+                coverage.get("missing_today_volume", 0),
+            )
+        return {
+            "total_rows": coverage.get("total_rows", 0),
+            "symbols": coverage.get("symbols", 0),
+            "minute_count": minutes,
+            "expected_minutes": expected_minutes,
+            "skipped": True,
+            "reason": "lookup_complete" if has_today_volume else "volume_only",
+        }
+
+    # Trading hours: 9:30 AM to 4:00 PM UTC
+    start_dt = datetime.combine(target_date, datetime.min.time()).replace(hour=9, minute=30, tzinfo=timezone.utc)
+    end_dt = datetime.combine(target_date, datetime.min.time()).replace(hour=16, minute=0, tzinfo=timezone.utc)
+    
     async with get_async_session() as session:
         # Fetch validation records and ensure completeness
         try:

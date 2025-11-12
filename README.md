@@ -36,6 +36,7 @@ Printer keeps market data, derived metrics, and backtest snapshots in sync throu
   - Service: `apps/server/app/services/backtest/backtest_lookup_service.py`.
   - Health check waits for `symbol_date_validation` coverage on the prior trading day before invoking `populate_lookup_for_date`.
   - Produces `market_data_backtest_lookup` rows used by historical screeners and backtests.
+  - The backtest lookup population should work on a minute by minute basis, starting from the beginning of the day. When it is done, we should also be populating the today_volume field with the aggregate of the volume used to date.
 
 ### Operational Playbook
 
