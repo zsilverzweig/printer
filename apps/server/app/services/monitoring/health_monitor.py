@@ -537,8 +537,10 @@ class MarketDataLoaderHealthCheck(BaseHealthCheck):
             import app.core as core_module
             
             self.logger.debug("Running market data diagnostics for health monitor...")
+            # Only compute gaps without logging the full table (for performance)
             diagnostics = await market_data_loader_module._log_market_data_diagnostics(
-                context="health_monitor"
+                context="health_monitor",
+                log_table=False
             )
             gaps = diagnostics.get("gaps", [])
 
@@ -556,8 +558,10 @@ class MarketDataLoaderHealthCheck(BaseHealthCheck):
                         batches,
                         ", ".join(sorted(targeted_timescales)),
                     )
+                    # Now show the full table after backfill
                     diagnostics = await market_data_loader_module._log_market_data_diagnostics(
-                        context="health_monitor_post_backfill"
+                        context="health_monitor_post_backfill",
+                        log_table=True
                     )
 
             self._last_report = diagnostics

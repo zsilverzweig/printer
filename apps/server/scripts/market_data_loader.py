@@ -427,15 +427,36 @@ async def detect_market_data_gaps(
         }
 
 
-async def _log_market_data_diagnostics(context: str, lookback_days: int = 5) -> Dict[str, Any]:
-    """Log market data vs validation coverage for recent days."""
+async def _log_market_data_diagnostics(
+    context: str, 
+    lookback_days: int = 5,
+    log_table: bool = True
+) -> Dict[str, Any]:
+    """
+    Log market data vs validation coverage for recent days.
+    
+    Args:
+        context: Context label for the log message
+        lookback_days: Number of trading days to look back
+        log_table: If True, log the full diagnostics table (expensive). If False, only compute gaps.
+    """
     try:
         diagnostics = await detect_market_data_gaps(lookback_days=lookback_days)
-        logger.info(
-            "Market data coverage diagnostics (%s):\n%s",
-            context,
-            diagnostics.get("table", "No data"),
-        )
+        
+        if log_table:
+            logger.info(
+                "Market data coverage diagnostics (%s):\n%s",
+                context,
+                diagnostics.get("table", "No data"),
+            )
+        else:
+            gap_count = len(diagnostics.get("gaps", []))
+            if gap_count > 0:
+                logger.info(
+                    "Market data diagnostics (%s): Found %s gap(s) to fill",
+                    context,
+                    gap_count,
+                )
 
         return diagnostics
 
@@ -638,7 +659,11 @@ async def load_date_range_data(
         await asyncio.gather(*tasks, return_exceptions=True)
 
 
-async def load_comprehensive_data(init_db_flag: bool = True, api_key: Optional[str] = None):
+async def load_comprehensive_data(
+    init_db_flag: bool = True, 
+    api_key: Optional[str] = None,
+    show_diagnostics: bool = False
+):
     """
     Load comprehensive market data:
     - All timescales from yesterday
@@ -649,12 +674,15 @@ async def load_comprehensive_data(init_db_flag: bool = True, api_key: Optional[s
     Args:
         init_db_flag: If True, initialize database (default True). Set to False if already initialized.
         api_key: Polygon API key. If None, reads from POLYGON_API_KEY env var.
+        show_diagnostics: If True, show diagnostics before and after loading (default False for performance).
     """
     # Initialize database if needed
     if init_db_flag:
         await init_db()
     
-    await _log_market_data_diagnostics(context="load_comprehensive_data")
+    # Optional initial diagnostics (expensive, so off by default)
+    if show_diagnostics:
+        await _log_market_data_diagnostics(context="load_comprehensive_data_initial")
 
     # Initialize Polygon client
     if api_key is None:
@@ -713,23 +741,28 @@ async def load_comprehensive_data(init_db_flag: bool = True, api_key: Optional[s
         timescales=['15min', '5min']
     )
 
-    diagnostics = await _log_market_data_diagnostics(context="load_comprehensive_data")
-    targeted_timescales: Set[str] = {"1day", "1hour", "15min", "5min", "1min"}
-    additional_batches = await _backfill_gaps_with_client(
-        client=client,
-        gaps=diagnostics.get("gaps", []),
-        allowed_dates=None,
-        allowed_timescales=targeted_timescales,
-        max_symbols_per_batch=250,
-    )
-
-    if additional_batches:
-        logger.info(
-            "Comprehensive backfill executed %s additional batches across %s",
-            additional_batches,
-            ", ".join(sorted(targeted_timescales)),
+    # Optional final diagnostics and gap backfill
+    # Only run if show_diagnostics is True to avoid blocking
+    if show_diagnostics:
+        diagnostics = await _log_market_data_diagnostics(context="load_comprehensive_data_final")
+        targeted_timescales: Set[str] = {"1day", "1hour", "15min", "5min", "1min"}
+        additional_batches = await _backfill_gaps_with_client(
+            client=client,
+            gaps=diagnostics.get("gaps", []),
+            allowed_dates=None,
+            allowed_timescales=targeted_timescales,
+            max_symbols_per_batch=250,
         )
-        await _log_market_data_diagnostics(context="load_comprehensive_data_post_backfill")
+        
+        if additional_batches:
+            logger.info(
+                "Comprehensive backfill executed %s additional batches across %s",
+                additional_batches,
+                ", ".join(sorted(targeted_timescales)),
+            )
+            await _log_market_data_diagnostics(context="load_comprehensive_data_post_backfill")
+    else:
+        logger.info("✅ Market data loading complete (diagnostics skipped for performance)")
 
 
 # Make it importable
